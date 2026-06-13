@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>WMS — Test wyszukiwania</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Test wyszukiwania (GT)</h1>
+  </header>
+
+  <main>
+    <div id="komunikat" class="komunikat hidden"></div>
+
+    <section class="krok">
+      <h2>Skanuj SKU lub EAN</h2>
+      <input type="text" id="input-szukaj" autocomplete="off" placeholder="Zeskanuj lub wpisz SKU/EAN" autofocus>
+      <label class="pole-checkbox">
+        <input type="checkbox" id="checkbox-ukryj-zero">
+        Ukryj produkty bez stanu (K4/K4G/MAG/LS)
+      </label>
+    </section>
+
+    <section id="wynik" class="krok hidden">
+      <div class="artykul-info">
+        <strong id="wynik-nazwa"></strong>
+        <span id="wynik-symbol"></span><br>
+        <span id="wynik-ean"></span><br>
+        <span id="wynik-id"></span>
+      </div>
+      <p class="hint">Stany GT</p>
+      <div id="wynik-stany"></div>
+      <p class="hint">Lokalizacja wg GT</p>
+      <div id="wynik-lokalizacja"></div>
+    </section>
+
+    <section id="wyniki-wiele" class="krok hidden">
+      <h2>Znaleziono kilka produktów</h2>
+      <div id="lista-wyboru" class="lista-wyboru"></div>
+    </section>
+  </main>
+
+  <script src="karta-produktu.js"></script>
+  <script src="produkty.js"></script>
+</body>
+</html>

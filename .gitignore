@@ -1,0 +1,9 @@
+node_modules/
+db/wms.db
+db/wms.db-*
+db/wms.db.bak*
+.env
+server.log
+*.log
+settings.local.json
+.DS_Store

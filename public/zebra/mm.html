@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>WMS — Przesunięcie MM</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Przesunięcie MM</h1>
+    <input type="text" id="input-operator" placeholder="Operator">
+  </header>
+
+  <main>
+    <div id="komunikat" class="komunikat hidden"></div>
+
+    <section id="krok-start" class="krok">
+      <h2>1. Skanuj SKU lub lokalizację</h2>
+      <input type="text" id="input-start" autocomplete="off" placeholder="Zeskanuj SKU lub lokalizację" autofocus>
+    </section>
+
+    <section id="krok-wybor" class="krok hidden">
+      <h2>2. Wybór</h2>
+      <div id="wybor-naglowek" class="artykul-info"></div>
+      <input type="text" id="input-wybor-skan" autocomplete="off">
+      <p class="hint" id="wybor-hint"></p>
+      <label class="pole-checkbox hidden" id="checkbox-ukryj-zero-wrap">
+        <input type="checkbox" id="checkbox-ukryj-zero">
+        Ukryj produkty bez stanu (K4/K4G/MAG/LS)
+      </label>
+      <div id="lista-wyboru" class="lista-wyboru"></div>
+    </section>
+
+    <section id="krok-cel" class="krok hidden">
+      <h2>3. Ilość i miejsce docelowe</h2>
+      <div id="cel-podsumowanie" class="artykul-info"></div>
+
+      <div class="pole-etykieta">
+        <label for="input-ilosc">Ilość</label>
+        <input type="number" id="input-ilosc" inputmode="decimal" min="0" step="any">
+      </div>
+
+      <div id="cel-magazyn-pole" class="pole-etykieta">
+        <label for="select-cel-magazyn">Do magazynu</label>
+        <select id="select-cel-magazyn"></select>
+      </div>
+
+      <div id="cel-lokalizacja-pole" class="pole-etykieta">
+        <label for="input-cel">Lokalizacja docelowa</label>
+        <input type="text" id="input-cel" autocomplete="off" placeholder="Skanuj lokalizację docelową">
+        <p id="cel-lokalizacja-hint" class="hint"></p>
+      </div>
+
+      <div id="cel-potwierdzenie" class="hidden">
+        <p id="cel-potwierdzenie-tekst" class="hint"></p>
+        <button type="button" id="btn-cel-utworz-tak" class="btn-glowny">Tak, utwórz lokalizację</button>
+        <button type="button" id="btn-cel-utworz-nie" class="btn-pomocniczy">Anuluj</button>
+      </div>
+
+      <button type="button" id="btn-zatwierdz" class="btn-glowny">Zatwierdź MM</button>
+    </section>
+
+    <button type="button" id="btn-reset" class="btn-pomocniczy hidden">Nowy ruch</button>
+  </main>
+
+  <script src="karta-produktu.js"></script>
+  <script src="mm.js"></script>
+</body>
+</html>

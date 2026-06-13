@@ -1,0 +1,346 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-size: 15px;
+  background: #f2f2f2;
+  color: #1a1a1a;
+}
+
+header {
+  background: #1d3557;
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+header h1 {
+  font-size: 1.2rem;
+  margin: 0;
+  white-space: nowrap;
+}
+
+nav {
+  display: flex;
+  gap: 0.5rem;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.tab-link {
+  padding: 0.5rem 1rem;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #fff;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.tab-link.aktywny {
+  background: #fff;
+  color: #1d3557;
+  font-weight: bold;
+}
+
+#input-operator {
+  width: 8rem;
+  font-size: 0.9rem;
+  padding: 0.4rem;
+  border-radius: 4px;
+  border: none;
+}
+
+main {
+  padding: 1.5rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.panel.hidden {
+  display: none;
+}
+
+.panel-naglowek {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.panel-naglowek h2 {
+  margin: 0;
+  color: #1d3557;
+  font-size: 1.2rem;
+}
+
+.filtry {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filtry select,
+.filtry input[type="text"] {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.btn {
+  padding: 0.45rem 0.9rem;
+  border: 1px solid #1d3557;
+  border-radius: 6px;
+  background: #fff;
+  color: #1d3557;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: #f1faee;
+}
+
+.btn-primary {
+  background: #2a9d8f;
+  border-color: #2a9d8f;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #25897c;
+}
+
+.btn:disabled,
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-small {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.85rem;
+  margin-right: 0.3rem;
+}
+
+.tabela {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.tabela th,
+.tabela td {
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+  font-size: 0.9rem;
+}
+
+.tabela thead th {
+  background: #1d3557;
+  color: #fff;
+  font-weight: normal;
+  font-size: 0.85rem;
+}
+
+.tabela tbody tr:hover {
+  background: #f8f9fa;
+}
+
+.tabela tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.opis {
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.tabela-zagniezdzona {
+  box-shadow: none;
+  margin: 0.5rem 0;
+}
+
+.tabela-zagniezdzona thead th {
+  background: #e7f1ff;
+  color: #1d3557;
+}
+
+.hint {
+  color: #666;
+  font-size: 0.9rem;
+  padding: 0.75rem;
+  margin: 0;
+}
+
+.hidden {
+  display: none;
+}
+
+.komunikat {
+  padding: 0.75rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-weight: bold;
+}
+
+.komunikat.blad {
+  background: #fde2e2;
+  color: #9b2226;
+  border: 2px solid #9b2226;
+}
+
+.komunikat.ok {
+  background: #d8f3dc;
+  color: #1b4332;
+  border: 2px solid #1b4332;
+}
+
+.komunikat.info {
+  background: #e7f1ff;
+  color: #1d3557;
+  border: 2px solid #1d3557;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+.badge-warn {
+  background: #fff3cd;
+  color: #664d03;
+  border: 1px solid #e0a800;
+}
+
+.badge-ok {
+  background: #d8f3dc;
+  color: #1b4332;
+  border: 1px solid #2a9d8f;
+}
+
+.badge-err {
+  background: #fde2e2;
+  color: #9b2226;
+  border: 1px solid #9b2226;
+}
+
+.badge-info {
+  background: #e7f1ff;
+  color: #1d3557;
+  border: 1px solid #457b9d;
+}
+
+.badge-neutral {
+  background: #eee;
+  color: #555;
+  border: 1px solid #ccc;
+}
+
+.formularz-inline {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.formularz-inline input,
+.formularz-inline select {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.wiersz-rozwiazanie td,
+.wiersz-zawartosc td,
+.wiersz-szczegoly td {
+  background: #f8f9fa;
+  padding: 1rem;
+}
+
+.korekty-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.korekta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.korekta .kod {
+  font-weight: bold;
+  min-width: 8rem;
+}
+
+.korekta .obecna {
+  color: #666;
+  min-width: 6rem;
+}
+
+.korekta input[type="number"] {
+  width: 6rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.korekty-suma {
+  font-weight: bold;
+}
+
+.korekty-akcje {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.tabela-wrapper {
+  overflow-x: auto;
+}
+
+.paginacja {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+.filtr-grupa {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.filtr-grupa .filtr-etykieta {
+  font-weight: bold;
+  color: #1d3557;
+  margin-right: 0.2rem;
+}

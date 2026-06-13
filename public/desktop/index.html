@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WMS — Panel</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>WMS — Panel</h1>
+    <nav id="zakladki">
+      <button type="button" class="tab-link aktywny" data-panel="produkty">Produkty</button>
+      <button type="button" class="tab-link" data-panel="rozjazdy">Rozjazdy</button>
+      <button type="button" class="tab-link" data-panel="ruchy">Ruchy</button>
+      <button type="button" class="tab-link" data-panel="lokalizacje">Lokalizacje</button>
+      <button type="button" class="tab-link" data-panel="inwentaryzacje">Inwentaryzacje</button>
+    </nav>
+    <input type="text" id="input-operator" placeholder="Operator">
+  </header>
+
+  <main>
+    <div id="komunikat" class="komunikat hidden"></div>
+
+    <section id="panel-produkty" class="panel">
+      <div class="panel-naglowek">
+        <h2>Produkty</h2>
+        <div class="filtry">
+          <input type="text" id="prod-q" placeholder="Szukaj SKU / EAN / nazwa...">
+          <button type="button" id="btn-prod-szukaj" class="btn">Szukaj</button>
+          <button type="button" id="btn-prod-odswiez" class="btn">Odśwież</button>
+          <label><input type="checkbox" id="prod-zablokowane"> Pokaż zablokowane</label>
+          <span class="filtr-grupa">
+            <span class="filtr-etykieta">Magazyn:</span>
+            <label><input type="checkbox" class="prod-magazyn" value="K4"> K4</label>
+            <label><input type="checkbox" class="prod-magazyn" value="K4G"> K4G</label>
+            <label><input type="checkbox" class="prod-magazyn" value="MAG"> MAG</label>
+            <label><input type="checkbox" class="prod-magazyn" value="LS"> LS</label>
+          </span>
+          <span class="filtr-grupa">
+            <span class="filtr-etykieta">Zgodność:</span>
+            <label><input type="checkbox" class="prod-zgodnosc" value="BD"> BD</label>
+            <label><input type="checkbox" class="prod-zgodnosc" value="t_GT"> t_GT</label>
+            <label><input type="checkbox" class="prod-zgodnosc" value="NZ"> NZ</label>
+            <label><input type="checkbox" class="prod-zgodnosc" value="OK"> OK</label>
+          </span>
+          <select id="prod-sort">
+            <option value="sku">SKU</option>
+            <option value="nazwa">Nazwa</option>
+            <option value="ean">EAN</option>
+            <option value="razem">Razem</option>
+            <option value="k4">K4</option>
+            <option value="k4g">K4G</option>
+            <option value="mag">MAG</option>
+            <option value="ls">LS</option>
+          </select>
+          <select id="prod-dir">
+            <option value="asc">↑</option>
+            <option value="desc">↓</option>
+          </select>
+        </div>
+      </div>
+      <div class="tabela-wrapper">
+        <table class="tabela">
+          <thead>
+            <tr>
+              <th>SKU</th><th>Nazwa</th><th>EAN</th>
+              <th>K4</th><th>K4G</th><th>MAG</th><th>LS</th><th>Razem</th>
+              <th>WMS K4</th><th>WMS K4G</th><th>K4G razem</th>
+              <th>Zgodność</th>
+              <th>Lokalizacja K4 z GT</th><th>Lokalizacja K4G z GT</th>
+            </tr>
+          </thead>
+          <tbody id="prod-tbody"></tbody>
+        </table>
+      </div>
+      <p id="prod-brak" class="hint hidden">Brak wyników.</p>
+      <div class="paginacja">
+        <button type="button" id="btn-prod-prev" class="btn btn-small">← Poprzednia</button>
+        <span id="prod-zakres">–</span>
+        <button type="button" id="btn-prod-next" class="btn btn-small">Następna →</button>
+      </div>
+    </section>
+
+    <section id="panel-rozjazdy" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Rozjazdy GT ⇄ WMS</h2>
+        <div class="filtry">
+          <select id="rozjazdy-status">
+            <option value="nowy" selected>Nowe</option>
+            <option value="wyjasniony">Wyjaśnione</option>
+            <option value="">Wszystkie</option>
+          </select>
+          <select id="rozjazdy-magazyn">
+            <option value="">Wszystkie magazyny</option>
+            <option value="K4">K4</option>
+            <option value="K4G">K4 Góra</option>
+          </select>
+          <button type="button" id="btn-rozjazdy-detekcja" class="btn">Wykryj teraz</button>
+          <button type="button" id="btn-rozjazdy-odswiez" class="btn">Odśwież</button>
+        </div>
+      </div>
+      <table class="tabela">
+        <thead>
+          <tr>
+            <th>Artykuł</th><th>Magazyn</th><th>Stan GT</th><th>Stan WMS</th><th>Różnica</th>
+            <th>Status</th><th>Wykryto</th><th>Opis</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="rozjazdy-tbody"></tbody>
+      </table>
+      <p id="rozjazdy-brak" class="hint hidden">Brak rozjazdów do wyświetlenia.</p>
+    </section>
+
+    <section id="panel-ruchy" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Kolejka ruchów</h2>
+        <div class="filtry">
+          <select id="ruchy-status">
+            <option value="pending" selected>Oczekujące (pending)</option>
+            <option value="ok">Zrealizowane</option>
+            <option value="">Wszystkie</option>
+          </select>
+          <button type="button" id="btn-ruchy-odswiez" class="btn">Odśwież</button>
+        </div>
+      </div>
+      <table class="tabela">
+        <thead>
+          <tr>
+            <th>Data</th><th>Typ</th><th>Artykuł</th><th>Ilość</th><th>Źródło</th><th>Cel</th>
+            <th>Status</th><th>Dok. GT</th><th>Błąd</th><th>Operator</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="ruchy-tbody"></tbody>
+      </table>
+      <p id="ruchy-brak" class="hint hidden">Brak ruchów do wyświetlenia.</p>
+    </section>
+
+    <section id="panel-lokalizacje" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Lokalizacje</h2>
+        <div class="filtry">
+          <select id="lok-magazyn">
+            <option value="">Wszystkie magazyny</option>
+            <option value="K4">K4</option>
+            <option value="K4G">K4 Góra</option>
+          </select>
+          <input type="text" id="lok-q" placeholder="Szukaj kodu...">
+          <button type="button" id="btn-lok-odswiez" class="btn">Odśwież</button>
+        </div>
+      </div>
+
+      <form id="form-nowa-lokalizacja" class="formularz-inline">
+        <input type="text" id="nowa-lok-kod" placeholder="Kod lokalizacji" required>
+        <select id="nowa-lok-magazyn">
+          <option value="K4">K4</option>
+          <option value="K4G">K4 Góra</option>
+        </select>
+        <button type="submit" class="btn btn-primary">+ Dodaj lokalizację</button>
+      </form>
+
+      <table class="tabela">
+        <thead>
+          <tr><th>Kod</th><th>Magazyn</th><th>Aktywna</th><th>Utworzona</th><th></th></tr>
+        </thead>
+        <tbody id="lok-tbody"></tbody>
+      </table>
+      <p id="lok-brak" class="hint hidden">Brak lokalizacji do wyświetlenia.</p>
+    </section>
+
+    <section id="panel-inwentaryzacje" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Inwentaryzacje</h2>
+        <button type="button" id="btn-inw-odswiez" class="btn">Odśwież</button>
+      </div>
+      <table class="tabela">
+        <thead>
+          <tr><th>ID</th><th>Magazyn</th><th>Status</th><th>Otwarto</th><th>Zamknięto</th><th>Operator</th><th></th></tr>
+        </thead>
+        <tbody id="inw-tbody"></tbody>
+      </table>
+      <p id="inw-brak" class="hint hidden">Brak inwentaryzacji.</p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

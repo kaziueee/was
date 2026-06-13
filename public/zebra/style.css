@@ -1,0 +1,337 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-size: 18px;
+  background: #f2f2f2;
+  color: #1a1a1a;
+}
+
+header {
+  background: #1d3557;
+  color: #fff;
+  padding: 0.75rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+header h1 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+header a {
+  color: #fff;
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+#input-operator {
+  width: 7rem;
+  font-size: 0.9rem;
+  padding: 0.35rem;
+  border-radius: 4px;
+  border: none;
+}
+
+main {
+  padding: 1rem;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.krok {
+  background: #fff;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.krok.hidden {
+  display: none;
+}
+
+.krok h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+  color: #1d3557;
+}
+
+input[type="text"],
+input[type="number"] {
+  width: 100%;
+  font-size: 1.3rem;
+  padding: 0.6rem;
+  border: 2px solid #ccc;
+  border-radius: 6px;
+  margin-top: 0.5rem;
+}
+
+#input-start,
+#input-wybor-skan,
+#input-cel {
+  text-transform: uppercase;
+}
+
+input:focus {
+  border-color: #1d3557;
+  outline: none;
+}
+
+.hint {
+  color: #666;
+  font-size: 0.9rem;
+  margin: 0.75rem 0 0;
+}
+
+.lista-wyboru {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.lista-wyboru button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  font-size: 1.1rem;
+  border: 2px solid #ddd;
+  border-radius: 6px;
+  background: #fafafa;
+  text-align: left;
+}
+
+.lista-wyboru button .etykieta-glowna {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.lista-wyboru button .nazwa-produktu {
+  font-size: 0.85rem;
+}
+
+.lista-wyboru button .stany-magazynowe {
+  font-size: 0.8rem;
+  font-weight: normal;
+  color: #666;
+}
+
+.lista-wyboru button .kod {
+  font-weight: bold;
+}
+
+.lista-wyboru button .magazyn {
+  font-size: 0.8rem;
+  color: #fff;
+  background: #457b9d;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  margin-left: 0.5rem;
+}
+
+.lista-wyboru button .ilosc {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: #1d3557;
+}
+
+.lista-wyboru button.wybrany {
+  border-color: #2a9d8f;
+  background: #e6f5f3;
+}
+
+.pole-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  font-size: 0.95rem;
+  color: #444;
+}
+
+.pole-checkbox input[type="checkbox"] {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.pole-etykieta {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.5rem;
+}
+
+.pole-etykieta label {
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 0.25rem;
+}
+
+.pole-etykieta select {
+  width: 100%;
+  font-size: 1.1rem;
+  padding: 0.5rem;
+  border: 2px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  color: #1a1a1a;
+}
+
+.pole-etykieta select:focus {
+  border-color: #1d3557;
+  outline: none;
+}
+
+.przelacznik {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.przelacznik button {
+  flex: 1;
+  padding: 0.6rem;
+  font-size: 1rem;
+  border: 2px solid #1d3557;
+  border-radius: 6px;
+  background: #fff;
+  color: #1d3557;
+}
+
+.przelacznik button.aktywny {
+  background: #1d3557;
+  color: #fff;
+}
+
+.btn-glowny {
+  width: 100%;
+  margin-top: 1rem;
+  padding: 0.9rem;
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #fff;
+  background: #2a9d8f;
+  border: none;
+  border-radius: 6px;
+}
+
+.btn-glowny:disabled {
+  background: #aaa;
+}
+
+.btn-pomocniczy {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.7rem;
+  font-size: 1rem;
+  color: #1d3557;
+  background: #fff;
+  border: 2px solid #1d3557;
+  border-radius: 6px;
+}
+
+.btn-pomocniczy.hidden,
+.komunikat.hidden,
+.hidden {
+  display: none;
+}
+
+.komunikat {
+  padding: 0.75rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-weight: bold;
+}
+
+.komunikat.blad {
+  background: #fde2e2;
+  color: #9b2226;
+  border: 2px solid #9b2226;
+}
+
+.komunikat.ok {
+  background: #d8f3dc;
+  color: #1b4332;
+  border: 2px solid #1b4332;
+}
+
+.komunikat.info {
+  background: #e7f1ff;
+  color: #1d3557;
+  border: 2px solid #1d3557;
+}
+
+.artykul-info {
+  background: #f1faee;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.artykul-info strong {
+  display: block;
+  font-size: 1.2rem;
+}
+
+.artykul-info span {
+  color: #444;
+  font-size: 0.95rem;
+}
+
+#cel-info {
+  background: #f1faee;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.5rem;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+#cel-info.hidden {
+  display: none;
+}
+
+#cel-potwierdzenie {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: #fff3cd;
+  border: 2px solid #e0a800;
+  border-radius: 6px;
+}
+
+#cel-potwierdzenie .hint {
+  margin: 0 0 0.5rem;
+  color: #664d03;
+}
+
+.potwierdzenie {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: #fff3cd;
+  border: 2px solid #e0a800;
+  border-radius: 6px;
+}
+
+.potwierdzenie .hint {
+  margin: 0 0 0.5rem;
+  color: #664d03;
+}
+
+#raport-lista h3 {
+  margin: 1rem 0 0.5rem;
+  font-size: 1rem;
+  color: #1d3557;
+}

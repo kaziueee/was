@@ -27,11 +27,13 @@ async function wywolaj(sciezka, opcje = {}) {
   }
 }
 
-// POST /api/mm - wystawia dokument MM w GT, zwraca numer dokumentu
-function wystawMM({ artykul_gt_id, magazyn_zrodlowy, magazyn_docelowy, ilosc, operator }) {
+// POST /api/mm - wystawia dokument MM w GT, zwraca numer dokumentu.
+// magazyn_*_id (sl_Magazyn.mag_Id) sa tym, czym posluguje sie Sfera; symbole ida
+// dodatkowo do logow/diagnostyki.
+function wystawMM({ artykul_gt_id, magazyn_zrodlowy, magazyn_docelowy, magazyn_zrodlowy_id, magazyn_docelowy_id, ilosc, operator }) {
   return wywolaj('/api/mm', {
     method: 'POST',
-    body: JSON.stringify({ artykul_gt_id, magazyn_zrodlowy, magazyn_docelowy, ilosc, operator }),
+    body: JSON.stringify({ artykul_gt_id, magazyn_zrodlowy, magazyn_docelowy, magazyn_zrodlowy_id, magazyn_docelowy_id, ilosc, operator }),
   });
 }
 

@@ -8,6 +8,7 @@
 const db = require('../db/database');
 const gtBridge = require('./gt-bridge');
 const gtFields = require('./gt-fields');
+const { MAGAZYN_GT_ID } = require('../config/magazyny');
 
 // Probuje dokonczyc ruch po stronie GT: dla MM bez dok_gt_numer wystawia dokument MM,
 // nastepnie (zawsze) synchronizuje pola lokalizacyjne K4/K4gora. Idempotentne -
@@ -26,19 +27,29 @@ async function wykonajRuchGT(ruchId) {
 
   if (ruch.typ === 'MM' && !ruch.dok_gt_numer) {
     const magazynDocelowy = cel ? cel.magazyn : ruch.mag_cel_zewnetrzny;
-    const odpowiedz = await gtBridge.wystawMM({
-      artykul_gt_id: ruch.artykul_gt_id,
-      magazyn_zrodlowy: zrodlo.magazyn,
-      magazyn_docelowy: magazynDocelowy,
-      ilosc: ruch.ilosc,
-      operator: ruch.operator,
-    });
+    const magZrodloId = MAGAZYN_GT_ID[zrodlo.magazyn];
+    const magCelId = MAGAZYN_GT_ID[magazynDocelowy];
 
-    if (odpowiedz.ok && odpowiedz.dane?.sukces) {
-      db.prepare('UPDATE ruchy SET dok_gt_numer = ? WHERE id = ?').run(odpowiedz.dane.numer_dokumentu ?? null, ruchId);
-    } else {
+    if (!magZrodloId || !magCelId) {
       dokOk = false;
-      bladDok = odpowiedz.blad ?? odpowiedz.dane?.blad ?? `Most GT zwrocil status ${odpowiedz.status}`;
+      bladDok = `Nieznany magazyn dla MM (zrodlo: ${zrodlo.magazyn}, cel: ${magazynDocelowy}) - brak mapowania na mag_Id GT`;
+    } else {
+      const odpowiedz = await gtBridge.wystawMM({
+        artykul_gt_id: ruch.artykul_gt_id,
+        magazyn_zrodlowy: zrodlo.magazyn,
+        magazyn_docelowy: magazynDocelowy,
+        magazyn_zrodlowy_id: magZrodloId,
+        magazyn_docelowy_id: magCelId,
+        ilosc: ruch.ilosc,
+        operator: ruch.operator,
+      });
+
+      if (odpowiedz.ok && odpowiedz.dane?.sukces) {
+        db.prepare('UPDATE ruchy SET dok_gt_numer = ? WHERE id = ?').run(odpowiedz.dane.numer_dokumentu ?? null, ruchId);
+      } else {
+        dokOk = false;
+        bladDok = odpowiedz.blad ?? odpowiedz.dane?.blad ?? `Most GT zwrocil status ${odpowiedz.status}`;
+      }
     }
   }
 

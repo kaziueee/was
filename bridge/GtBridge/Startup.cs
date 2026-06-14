@@ -9,19 +9,32 @@ namespace GtBridge
 {
     public class Startup
     {
-        public Startup(IConfiguration configuration)
+        public Startup(IConfiguration configuration, IWebHostEnvironment env)
         {
             Configuration = configuration;
+            Srodowisko = env;
         }
 
         public IConfiguration Configuration { get; }
+        public IWebHostEnvironment Srodowisko { get; }
 
         public void ConfigureServices(IServiceCollection services)
         {
             services.Configure<SferaOptions>(Configuration.GetSection(SferaOptions.Sekcja));
 
-            // TODO: po wdrozeniu na serwerze z Subiekt GT + Sfera podmienic na SferaGtService
-            services.AddSingleton<ISferaGtService, MockSferaGtService>();
+            // Mock w developmencie (Mac, bez Sfery) lub gdy wymuszony przez
+            // konfiguracje (Sfera:UzyjMock=true). Na serwerze Windows z GT+Sfera
+            // (Production - domyslne srodowisko) wchodzi prawdziwy SferaGtService.
+            bool uzyjMock = Srodowisko.IsDevelopment()
+                || Configuration.GetValue<bool>($"{SferaOptions.Sekcja}:UzyjMock");
+            if (uzyjMock)
+            {
+                services.AddSingleton<ISferaGtService, MockSferaGtService>();
+            }
+            else
+            {
+                services.AddSingleton<ISferaGtService, SferaGtService>();
+            }
 
             services.AddControllers();
         }

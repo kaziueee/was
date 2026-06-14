@@ -200,17 +200,59 @@ na żaden filtr/sortowanie.
 
 ## Otwarte
 
-- **`bridge/GtBridge/Services/SferaGtService.cs`** — wszystkie metody
-  (`WystawMmAsync`, `ZapiszLokalizacjeAsync`, `PobierzStanyAsync`, `PobierzArtykulAsync`,
-  `WystawRwAsync`, `WystawPwAsync`) to szkielet (`NotImplementedException`).
-  Implementacja wymaga modelu obiektowego Sfery (`SuDokumentyManager`, `TowaryManager`,
-  `SuPozycja`, `Towar.Pole1`/`Pole8`, `TwCechy`/`pwd_Tekst09`, sekwencja logowania).
-  `sfera.pdf` / `sfera opis.txt` w repo to głównie grafika (drzewo obiektów jako obraz,
-  bez tekstu do wyciągnięcia). Potrzebne: zrzuty/tekst z `Pomoc > gta.chm > Model
-  obiektowy - Subiekt Sfera` z maszyny z zainstalowanym InsERT GT, albo przykładowy kod.
-  **Zgodnie z decyzją: ten temat zostaje na koniec, po dopracowaniu reszty WMS.**
+- **MM przez Sferę — ZAIMPLEMENTOWANE, czeka na test na Windows.** `WystawMmAsync`
+  + logowanie (`Polacz`) w `SferaGtService.cs` napisane wg modelu obiektowego z
+  `gta.chm` (zob. dziennik 2026-06-14). **Nie da się tego skompilować/przetestować
+  na Macu** (Windows COM + .NET + licencja Sfery). Do zrobienia na maszynie Windows
+  z GT+Sferą: uzupełnić `appsettings.json` (sekcja `Sfera`: Serwer/Baza/Uzytkownik/
+  UzytkownikHaslo/Operator/OperatorHaslo), `dotnet build`, uruchomić most na :5000,
+  test MM na jednym towarze. Uwaga środowiskowa z chm: Windows musi mieć stronę
+  kodową 1250 + ustawienia regionalne PL; użytkownik SQL potrzebuje VIEW SERVER STATE.
+- **Zapis lokalizacji — DECYZJA: bezpośredni SQL z Node'a, nie przez Sferę.**
+  `tw_Pole1` (K4) + `tw_Pole8` (K4G) zapisywane `UPDATE tw__Towar` przez istniejące
+  połączenie `sa`. `pwd_Tekst09` (Lokalizacja Zapas) **całkowicie pomijane** — overflow
+  ponad ~50 znaków K4G zostaje tylko w WMS. To świadome odejście od zasady nadrzędnej
+  #1 z CLAUDE.md (pola lokalizacyjne nie są stanami). **Jeszcze nieimplementowane** —
+  trzeba przepiąć `gt-fields.js synchronizujLokalizacje` z `gtBridge.zapiszLokalizacje`
+  na `query()` UPDATE i dostroić sukces w `ruchy-gt.js`. `ZapiszLokalizacjeAsync` w
+  C# zostaje martwym stubem.
+- **Pozostałe metody Sfery** (`PobierzStanyAsync`, `PobierzArtykulAsync`, `WystawRwAsync`,
+  `WystawPwAsync`) — nadal szkielet. RW/PW (inwentaryzacja) do zrobienia analogicznie
+  do MM, gdy MM się sprawdzi na Windows.
 
 ## Dziennik zmian
+
+### 2026-06-14
+
+- **Most MM przez Sferę — implementacja** (`bridge/GtBridge`). Na podstawie modelu
+  obiektowego wyciągniętego z `gta.chm` (InsERT GT dla aplikacji 1.0):
+  - `SferaGtService.Polacz()` — logowanie przez `InsERT.GT`: `Produkt=1` (Subiekt),
+    `Autentykacja=0` (mieszana), Serwer/Baza/Uzytkownik/UzytkownikHaslo/Operator,
+    hasła szyfrowane w runtime przez `InsERT.Dodatki.Szyfruj`, uruchomienie dedykowanej
+    instancji w tle `Uruchom(2, gtaUruchomNowy|gtaUruchomWTle = 6)`.
+  - `SferaGtService.WystawMmAsync()` — `Subiekt.Dokumenty.DodajMM()`, ustawienie
+    `MagazynNadawczyId`/`MagazynOdbiorczyId` (dowolny kierunek K4/K4G/MAG/LS),
+    `Pozycje.Dodaj(tw_Id)` + `IloscJm`, `StatusDokumentu=1` (Wywolany), `Zapisz()`,
+    odczyt `NumerPelny`. Błędy COM mapowane na czytelne komunikaty (brak towaru
+    0x80040F60, brak licencji Sfery, zła strona kodowa itd.) → zwracane w
+    `DokumentResponse.Blad` (ruch zostaje `pending`, nie ginie).
+  - `Dispose` zamyka aplikację przez `Zakoncz()`.
+  - `SferaOptions`/`appsettings.json` — `ProgId="InsERT.GT"`, dodane
+    `Uzytkownik`/`UzytkownikHaslo` (SQL, jawne — szyfrowane w runtime).
+  - `MmRequest` — dodane `magazyn_zrodlowy_id`/`magazyn_docelowy_id` (mag_Id GT).
+  - Node: `config/magazyny.js` — `gtId` per magazyn (K4=4, K4G=8, MAG=1, LS=6,
+    z `sl_Magazyn`) + `MAGAZYN_GT_ID`; `gt-bridge.js`/`ruchy-gt.js` rozwiązują
+    symbol→mag_Id i wysyłają id do mostu.
+  - **Fix STA (z pierwszego testu na żywym GT):** Sfera (COM automation) wymaga
+    wątku STA. Wątki ASP.NET Core są MTA → tworzenie obiektu COM zwracało
+    `0x8000FFFF E_UNEXPECTED` ("katastrofalny błąd"). `SferaGtService` przerobiony:
+    cała praca z COM (tworzenie + użycie + Zakoncz) idzie na jeden dedykowany
+    wątek STA (`BlockingCollection` + `NaWatkuSta`), który zarazem serializuje
+    wywołania (zastąpił `lock`).
+  - **Status: kod gotowy, w trakcie testów na Windows.** Build x86 OK
+    (`dotnet publish -c Release -r win-x86 --self-contained`), most startuje
+    (`Now listening :5000`, env Production = prawdziwa Sfera). Logowanie/MM po
+    fixie STA do ponownego sprawdzenia.
 
 ### 2026-06-12
 

@@ -42,14 +42,15 @@ router.get('/', async (req, res, next) => {
     const dir = req.query.dir === 'desc' ? 'desc' : 'asc';
     const magazyny = parsujListe(req.query.magazyn, KODY_MAGAZYNOW);
     const zgodnosc = parsujListe(req.query.zgodnosc, KODY_ZGODNOSCI);
+    const zRezerwacja = req.query.z_rezerwacja === '1';
     const pokazZablokowane = req.query.pokaz_zablokowane === '1';
 
     let lista, total, tryb;
     if (zgodnosc.length > 0) {
-      ({ produkty: lista, total } = await pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny, zgodnosc, pokazZablokowane }));
+      ({ produkty: lista, total } = await pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny, zgodnosc, zRezerwacja, pokazZablokowane }));
       tryb = 'zbior_wms';
     } else {
-      ({ produkty: lista, total } = await listujProdukty({ q, limit, offset, sort, dir, magazyny, pokazZablokowane }));
+      ({ produkty: lista, total } = await listujProdukty({ q, limit, offset, sort, dir, magazyny, zRezerwacja, pokazZablokowane }));
       tryb = 'katalog';
     }
 

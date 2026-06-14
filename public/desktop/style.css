@@ -171,6 +171,13 @@ main {
   font-size: 0.85rem;
 }
 
+.rez {
+  color: #9b2226;
+  font-size: 0.8rem;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
 .tabela-zagniezdzona {
   box-shadow: none;
   margin: 0.5rem 0;

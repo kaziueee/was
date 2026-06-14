@@ -125,6 +125,7 @@ async function odswiezProdukty() {
   const zgodnosc = zaznaczoneWartosci('.prod-zgodnosc');
   if (zgodnosc.length > 0) params.set('zgodnosc', zgodnosc.join(','));
 
+  if (el('prod-rezerwacja').checked) params.set('z_rezerwacja', '1');
   if (el('prod-zablokowane').checked) params.set('pokaz_zablokowane', '1');
 
   try {
@@ -136,6 +137,16 @@ async function odswiezProdukty() {
 
 function ilg(stanyGt, magazyn) {
   return stanyGt?.[magazyn]?.ilosc ?? 0;
+}
+
+// Komorka stanu magazynu: stan, a gdy jest rezerwacja (st_StanRez) - druga
+// linijka "rez N". Druga linijka pojawia sie tylko gdy rezerwacja != 0,
+// zeby nie zasmiecac kolumn (rezerwacje w praktyce ma garstka towarow).
+function komorkaStan(stanyGt, magazyn) {
+  const stan = stanyGt?.[magazyn]?.ilosc ?? 0;
+  const rez = stanyGt?.[magazyn]?.rezerwacja ?? 0;
+  if (!rez) return String(stan);
+  return `${stan}<br><span class="rez">rez ${rez}</span>`;
 }
 
 function renderujProdukty({ produkty, total, limit, offset, tryb }) {
@@ -157,10 +168,10 @@ function renderujProdukty({ produkty, total, limit, offset, tryb }) {
       <td><strong>${p.symbol}</strong></td>
       <td>${p.nazwa}</td>
       <td>${p.ean ?? '–'}</td>
-      <td>${ilg(p.stany_gt, 'K4')}</td>
-      <td>${ilg(p.stany_gt, 'K4G')}</td>
-      <td>${ilg(p.stany_gt, 'MAG')}</td>
-      <td>${ilg(p.stany_gt, 'LS')}</td>
+      <td>${komorkaStan(p.stany_gt, 'K4')}</td>
+      <td>${komorkaStan(p.stany_gt, 'K4G')}</td>
+      <td>${komorkaStan(p.stany_gt, 'MAG')}</td>
+      <td>${komorkaStan(p.stany_gt, 'LS')}</td>
       <td>${p.razem}</td>
       <td>${wmsK4}</td>
       <td>${wmsK4g}</td>
@@ -201,6 +212,10 @@ el('btn-prod-next').addEventListener('click', () => {
 });
 
 el('prod-zablokowane').addEventListener('change', () => {
+  prodOffset = 0;
+  odswiezProdukty();
+});
+el('prod-rezerwacja').addEventListener('change', () => {
   prodOffset = 0;
   odswiezProdukty();
 });

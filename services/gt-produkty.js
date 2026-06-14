@@ -154,6 +154,12 @@ function wyrazenieStanu(kodMagazynu) {
   return `COALESCE(SUM(CASE WHEN m.mag_Symbol = '${kodMagazynu}' THEN s.st_Stan END), 0)`;
 }
 
+// Jak wyzej, ale dla rezerwacji (st_StanRez) - uzywane w HAVING filtra
+// "tylko z rezerwacja".
+function wyrazenieRez(kodMagazynu) {
+  return `COALESCE(SUM(CASE WHEN m.mag_Symbol = '${kodMagazynu}' THEN s.st_StanRez END), 0)`;
+}
+
 // Dozwolone klucze sortowania (i HAVING dla magazynow) - wspolne dla trybu
 // katalogowego (SQL) i trybu "zbior WMS" (Node, zob. wartoscSortowania).
 const SORT_WYRAZENIA = {
@@ -168,6 +174,7 @@ const SORT_WYRAZENIA = {
 };
 const SORT_KLUCZE = Object.keys(SORT_WYRAZENIA);
 const MAGAZYNY_WYRAZENIA = { K4: SORT_WYRAZENIA.k4, K4G: SORT_WYRAZENIA.k4g, MAG: SORT_WYRAZENIA.mag, LS: SORT_WYRAZENIA.ls };
+const REZ_WYRAZENIA = Object.fromEntries(MAGAZYNY.map((m) => [m.kod, wyrazenieRez(m.kod)]));
 
 // Wartosc danego "klucza sortowania" dla produktu zlozonego w JS - uzywane w
 // trybie "zbior WMS" (pobierzProduktyZUniwersum), gdzie sortowanie/filtrowanie
@@ -208,7 +215,7 @@ function stanyGtZWiersza(row) {
 // (stare/wylaczone produkty).
 // Zwraca {produkty, total} - total to liczba wszystkich wynikow (bez limitu),
 // do wyswietlenia "X-Y z Z" i obliczenia czy jest nastepna strona.
-async function listujProdukty({ q, limit = 50, offset = 0, sort = 'sku', dir = 'asc', magazyny = [], pokazZablokowane = false } = {}) {
+async function listujProdukty({ q, limit = 50, offset = 0, sort = 'sku', dir = 'asc', magazyny = [], zRezerwacja = false, pokazZablokowane = false } = {}) {
   const parametry = { limit, offset };
   let where = '1=1';
 
@@ -229,10 +236,17 @@ async function listujProdukty({ q, limit = 50, offset = 0, sort = 'sku', dir = '
     where += ' AND t.tw_Zablokowany = 0';
   }
 
-  let having = '';
+  // Filtr magazynowy (stan > 0) i "z rezerwacja" (st_StanRez > 0) lacza sie przez
+  // AND; oba w obrebie wybranych magazynow (lub wszystkich, gdy filtr magazynu pusty).
+  const warunkiHaving = [];
   if (magazyny.length > 0) {
-    having = `HAVING (${magazyny.map((m) => `${MAGAZYNY_WYRAZENIA[m]} > 0`).join(' OR ')})`;
+    warunkiHaving.push(`(${magazyny.map((m) => `${MAGAZYNY_WYRAZENIA[m]} > 0`).join(' OR ')})`);
   }
+  if (zRezerwacja) {
+    const kody = magazyny.length > 0 ? magazyny : MAGAZYNY.map((m) => m.kod);
+    warunkiHaving.push(`(${kody.map((m) => `${REZ_WYRAZENIA[m]} > 0`).join(' OR ')})`);
+  }
+  const having = warunkiHaving.length > 0 ? `HAVING ${warunkiHaving.join(' AND ')}` : '';
 
   const wyrazenieSort = SORT_WYRAZENIA[sort];
   const kierunek = dir === 'desc' ? 'DESC' : 'ASC';
@@ -343,7 +357,7 @@ async function pobierzPodstawoweInfo(ids) {
 // K4 -> k4g, inaczej -> ogolna). Kombinacje dajace zero wynikow (np.
 // magazyny=['LS'] + zgodnosc=['NZ']) zwracaja po prostu pusta liste - bez
 // specjalnej obslugi, tak jak ustalono (brak automatycznych blokad UI).
-async function pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny, zgodnosc, pokazZablokowane }) {
+async function pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny, zgodnosc, zRezerwacja, pokazZablokowane }) {
   const ids = await pobierzZbiorWmsIds({ pokazZablokowane });
   if (ids.length === 0) return { produkty: [], total: 0 };
 
@@ -386,6 +400,11 @@ async function pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny
 
   if (magazyny.length > 0) {
     produkty = produkty.filter((p) => magazyny.some((m) => p.stany_gt[m].ilosc > 0));
+  }
+
+  if (zRezerwacja) {
+    const kody = magazyny.length > 0 ? magazyny : MAGAZYNY.map((m) => m.kod);
+    produkty = produkty.filter((p) => kody.some((m) => p.stany_gt[m].rezerwacja > 0));
   }
 
   if (zgodnosc.length > 0) {

@@ -200,14 +200,11 @@ na żaden filtr/sortowanie.
 
 ## Otwarte
 
-- **MM przez Sferę — ZAIMPLEMENTOWANE, czeka na test na Windows.** `WystawMmAsync`
-  + logowanie (`Polacz`) w `SferaGtService.cs` napisane wg modelu obiektowego z
-  `gta.chm` (zob. dziennik 2026-06-14). **Nie da się tego skompilować/przetestować
-  na Macu** (Windows COM + .NET + licencja Sfery). Do zrobienia na maszynie Windows
-  z GT+Sferą: uzupełnić `appsettings.json` (sekcja `Sfera`: Serwer/Baza/Uzytkownik/
-  UzytkownikHaslo/Operator/OperatorHaslo), `dotnet build`, uruchomić most na :5000,
-  test MM na jednym towarze. Uwaga środowiskowa z chm: Windows musi mieć stronę
-  kodową 1250 + ustawienia regionalne PL; użytkownik SQL potrzebuje VIEW SERVER STATE.
+- **MM przez Sferę — ✅ DZIAŁA (przetestowane na żywym GT 2026-06-14).** `WystawMmAsync`
+  + logowanie (`Polacz`) w `SferaGtService.cs` wg modelu z `gta.chm`. Most stoi na
+  maszynie Windows z GT+Sferą (`C:\Users\Mateusz\Desktop\GtBridge`), build x86
+  self-contained. Szczegóły testu i fixów (STA, `Dodaj(-27)`) — dziennik 2026-06-14.
+  Środowisko: Windows ze stroną kodową 1250 + PL, user SQL z VIEW SERVER STATE (sa ma).
 - **Zapis lokalizacji — DECYZJA: bezpośredni SQL z Node'a, nie przez Sferę.**
   `tw_Pole1` (K4) + `tw_Pole8` (K4G) zapisywane `UPDATE tw__Towar` przez istniejące
   połączenie `sa`. `pwd_Tekst09` (Lokalizacja Zapas) **całkowicie pomijane** — overflow
@@ -249,10 +246,19 @@ na żaden filtr/sortowanie.
     cała praca z COM (tworzenie + użycie + Zakoncz) idzie na jeden dedykowany
     wątek STA (`BlockingCollection` + `NaWatkuSta`), który zarazem serializuje
     wywołania (zastąpił `lock`).
-  - **Status: kod gotowy, w trakcie testów na Windows.** Build x86 OK
-    (`dotnet publish -c Release -r win-x86 --self-contained`), most startuje
-    (`Now listening :5000`, env Production = prawdziwa Sfera). Logowanie/MM po
-    fixie STA do ponownego sprawdzenia.
+  - **Fix nazwy metody (z testu):** `Subiekt.Dokumenty` to kolekcja `SuDokumenty`
+    (nie ma `DodajMM`). MM tworzy się przez `Dokumenty.Dodaj(gtaSubiektDokumentMM)`,
+    gdzie `gtaSubiektDokumentMM = -27` (0xFFFFFFE5). Poprawione.
+  - **✅ PRZETESTOWANE NA ŻYWYM GT (2026-06-14).** Build x86 self-contained,
+    most startuje (env Production = prawdziwa Sfera). Test MM 1 szt K4→K4G dla
+    towaru 4180 (PANBAT02475): zwrócił `sukces:true`, `numer "MM 180/2026"`;
+    zweryfikowano w bazie — stany realnie ruszyły (K4 26→25, K4G 0→1), dokument
+    MM 180/2026 istnieje. Most MM działa end-to-end.
+  - **Wnioski środowiskowe (Windows):** PowerShell `Invoke-RestMethod` szło przez
+    systemowe proxy (502 na localhost) — testować klientem z `UseProxy=$false`
+    (Node tego nie dotyczy). Build/run: `dotnet publish -c Release -r win-x86
+    --self-contained` + uruchamiać `...\publish\GtBridge.exe` (runtime w środku,
+    omija brak x86 runtime).
 
 ### 2026-06-12
 

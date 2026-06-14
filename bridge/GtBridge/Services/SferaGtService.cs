@@ -75,6 +75,7 @@ namespace GtBridge.Services
         private const int UruchomNowy = 2;               // UruchomEnum.gtaUruchomNowy
         private const int UruchomWTle = 4;               // UruchomEnum.gtaUruchomWTle
         private const int DokumentStatusWywolany = 1;    // SubiektDokumentStatusEnum.gtaSubiektDokumentStatusWywolany
+        private const int SubiektDokumentMM = -27;       // SubiektDokumentEnum.gtaSubiektDokumentMM (0xFFFFFFE5)
 
         // Laczy sie z Subiektem GT przez Sfere (obiekt InsERT.GT -> Subiekt). Uruchamia
         // dedykowana instancje w tle (gtaUruchomNowy | gtaUruchomWTle) - bez okna UI.
@@ -135,7 +136,7 @@ namespace GtBridge.Services
                 {
                     dynamic subiekt = Polacz();
 
-                    dynamic dok = subiekt.Dokumenty.DodajMM();
+                    dynamic dok = subiekt.Dokumenty.Dodaj(SubiektDokumentMM);
                     dok.MagazynNadawczyId = request.MagazynZrodlowyId;
                     dok.MagazynOdbiorczyId = request.MagazynDocelowyId;
 

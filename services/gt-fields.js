@@ -11,7 +11,6 @@
 //   lokalizacja_zapas    -> vwPolaWlasne_Towar.pwd_Tekst09 (dynamiczne pole wlasne, wolne)
 
 const db = require('../db/database');
-const gtBridge = require('./gt-bridge');
 const { query, naCzesci } = require('./gt-sql');
 
 const LIMIT_POLA = 50;
@@ -85,11 +84,14 @@ function obliczPolaLokalizacji(artykulGtId) {
   };
 }
 
-// Przelicza pola lokalizacyjne dla artykulu i wysyla je do GT przez most C# (/api/lok).
-// magazyny: Set magazynow zaangazowanych w ruch - pola K4 / K4gora sa przeliczane
-// i wysylane tylko jesli odpowiedni magazyn znajduje sie w tym zbiorze, w pozostalych
-// przypadkach wysylamy null ("nie zmieniaj"). Zwraca null, jesli synchronizacja
-// nie dotyczy zadnego z pol obslugiwanych przez WMS (K4 / K4gora).
+// Przelicza pola lokalizacyjne dla artykulu i zapisuje je bezposrednio w GT
+// (UPDATE tw__Towar.tw_Pole1/tw_Pole8) - bez mostu/Sfery, lokalizacje nie sa
+// stanami magazynowymi. magazyny: Set magazynow zaangazowanych w ruch - pola
+// K4 / K4gora sa przeliczane i zapisywane tylko jesli odpowiedni magazyn
+// znajduje sie w tym zbiorze. "Lokalizacja Zapas" (pwd_Tekst09, overflow K4G)
+// jest pomijana - zostaje tylko w WMS, zob. PROGRESS.md "Otwarte".
+// Zwraca null, jesli synchronizacja nie dotyczy zadnego z pol obslugiwanych
+// przez WMS (K4 / K4gora), albo {ok, dane: {sukces}} / {ok: false, blad}.
 async function synchronizujLokalizacje(artykulGtId, magazyny) {
   const dotyczyK4 = magazyny.has('K4');
   const dotyczyK4G = magazyny.has('K4G');
@@ -100,12 +102,23 @@ async function synchronizujLokalizacje(artykulGtId, magazyny) {
 
   const pola = obliczPolaLokalizacji(artykulGtId);
 
-  return gtBridge.zapiszLokalizacje({
-    artykul_gt_id: artykulGtId,
-    miejsce_na_magazynie: dotyczyK4 ? pola.miejsce_na_magazynie : null,
-    lokalizacja_gorna: dotyczyK4G ? pola.lokalizacja_gorna : null,
-    lokalizacja_zapas: dotyczyK4G ? pola.lokalizacja_zapas : null,
-  });
+  const ustawienia = [];
+  const parametry = { id: Number(artykulGtId) };
+  if (dotyczyK4) {
+    ustawienia.push('tw_Pole1 = @pole1');
+    parametry.pole1 = pola.miejsce_na_magazynie;
+  }
+  if (dotyczyK4G) {
+    ustawienia.push('tw_Pole8 = @pole8');
+    parametry.pole8 = pola.lokalizacja_gorna;
+  }
+
+  try {
+    await query(`UPDATE tw__Towar SET ${ustawienia.join(', ')} WHERE tw_Id = @id`, parametry);
+    return { ok: true, dane: { sukces: true } };
+  } catch (err) {
+    return { ok: false, blad: `Zapis lokalizacji (SQL): ${err.message}` };
+  }
 }
 
 // Pobiera aktualne wartosci pol lokalizacyjnych z GT (vwPolaWlasne_Towar) dla

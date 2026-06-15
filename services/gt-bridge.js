@@ -37,14 +37,6 @@ function wystawMM({ artykul_gt_id, magazyn_zrodlowy, magazyn_docelowy, magazyn_z
   });
 }
 
-// POST /api/lok - aktualizuje pola wlasne artykulu (lokalizacje WMS) w kartotece GT
-function zapiszLokalizacje({ artykul_gt_id, miejsce_na_magazynie, lokalizacja_gorna, lokalizacja_zapas }) {
-  return wywolaj('/api/lok', {
-    method: 'POST',
-    body: JSON.stringify({ artykul_gt_id, miejsce_na_magazynie, lokalizacja_gorna, lokalizacja_zapas }),
-  });
-}
-
 // GET /api/stan/:magId - stany magazynowe z GT (do joba rozjazdow)
 function pobierzStany(magId) {
   return wywolaj(`/api/stan/${encodeURIComponent(magId)}`);
@@ -71,4 +63,4 @@ function wystawPW({ magazyn, pozycje, operator }) {
   });
 }
 
-module.exports = { wystawMM, zapiszLokalizacje, pobierzStany, pobierzArtykul, wystawRW, wystawPW };
+module.exports = { wystawMM, pobierzStany, pobierzArtykul, wystawRW, wystawPW };

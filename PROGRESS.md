@@ -205,14 +205,15 @@ na żaden filtr/sortowanie.
   maszynie Windows z GT+Sferą (`C:\Users\Mateusz\Desktop\GtBridge`), build x86
   self-contained. Szczegóły testu i fixów (STA, `Dodaj(-27)`) — dziennik 2026-06-14.
   Środowisko: Windows ze stroną kodową 1250 + PL, user SQL z VIEW SERVER STATE (sa ma).
-- **Zapis lokalizacji — DECYZJA: bezpośredni SQL z Node'a, nie przez Sferę.**
-  `tw_Pole1` (K4) + `tw_Pole8` (K4G) zapisywane `UPDATE tw__Towar` przez istniejące
-  połączenie `sa`. `pwd_Tekst09` (Lokalizacja Zapas) **całkowicie pomijane** — overflow
-  ponad ~50 znaków K4G zostaje tylko w WMS. To świadome odejście od zasady nadrzędnej
-  #1 z CLAUDE.md (pola lokalizacyjne nie są stanami). **Jeszcze nieimplementowane** —
-  trzeba przepiąć `gt-fields.js synchronizujLokalizacje` z `gtBridge.zapiszLokalizacje`
-  na `query()` UPDATE i dostroić sukces w `ruchy-gt.js`. `ZapiszLokalizacjeAsync` w
-  C# zostaje martwym stubem.
+- **Zapis lokalizacji — ✅ ZROBIONE (przetestowane na bazie testowej 2026-06-15).**
+  `tw_Pole1` (K4) + `tw_Pole8` (K4G) zapisywane `UPDATE tw__Towar` bezpośrednim SQL-em
+  z Node (`gt-fields.js synchronizujLokalizacje`, połączenie `sa`, bez mostu/Sfery).
+  `pwd_Tekst09` (Lokalizacja Zapas) **całkowicie pomijane** — overflow ponad ~50 znaków
+  K4G zostaje tylko w WMS. To świadome odejście od zasady nadrzędnej #1 z CLAUDE.md
+  (pola lokalizacyjne nie są stanami). Test: artykuł 46226 (NERE0011) — `tw_Pole1`
+  `"M2-C7  "`→`"M2-C7"`, `tw_Pole8` przeliczone na `"M2-B27-P3(2010)"` zgodnie z WMS.
+  `gtBridge.zapiszLokalizacje`/`/api/lok` w moście C# usunięte z Node (martwe);
+  `ZapiszLokalizacjeAsync` w C# zostaje nieużywanym stubem.
 - **Pozostałe metody Sfery** (`PobierzStanyAsync`, `PobierzArtykulAsync`, `WystawRwAsync`,
   `WystawPwAsync`) — nadal szkielet. RW/PW (inwentaryzacja) do zrobienia analogicznie
   do MM, gdy MM się sprawdzi na Windows.
@@ -229,8 +230,8 @@ na żaden filtr/sortowanie.
 
 Kolejność robocza (niekoniecznie priorytet), ustalona w rozmowie:
 
-1. **Zapis lokalizacji (Pole1/Pole8) bezpośrednim SQL** — opisane wyżej w "Otwarte",
-   następny krok do zrobienia.
+1. ~~**Zapis lokalizacji (Pole1/Pole8) bezpośrednim SQL**~~ — ✅ zrobione
+   2026-06-15, opisane wyżej w "Otwarte".
 2. **Baza lokalizacji z typami i ewentualnie wymiarami** — rozbudowa `lokalizacje`
    (dziś pewnie tylko kod/magazyn) o typ lokalizacji (np. regał/półka/paleta) i
    może wymiary (do walidacji co się gdzie zmieści?). Szczegóły do dopracowania.
@@ -275,6 +276,25 @@ Kolejność robocza (niekoniecznie priorytet), ustalona w rozmowie:
 - Punkt 4 (zabezpieczenia/uprawnienia) — wciąż do ustalenia, bez zmian.
 
 ## Dziennik zmian
+
+### 2026-06-15 (cd.)
+
+- **Zapis lokalizacji przez SQL — zaimplementowane i przetestowane.**
+  `services/gt-fields.js`: `synchronizujLokalizacje` zamiast wołać most
+  (`gtBridge.zapiszLokalizacje`/`/api/lok`) robi `UPDATE tw__Towar SET
+  tw_Pole1=..., tw_Pole8=...` przez istniejące połączenie SQL (`gt-sql.js`,
+  user `sa`) - bez Sfery/mostu. `pwd_Tekst09` ("Lokalizacja Zapas") nadal
+  pomijane. Kształt wyniku (`{ok, dane:{sukces}}` / `{ok:false, blad}`)
+  zachowany, więc `ruchy-gt.js`, `routes/inwentaryzacja.js`,
+  `routes/rozjazdy.js` działają bez zmian. Usunięto martwy kod:
+  `gtBridge.zapiszLokalizacje` z `services/gt-bridge.js` (import `gtBridge`
+  w `gt-fields.js` też usunięty). `ZapiszLokalizacjeAsync` w C# (most)
+  zostaje nieużywanym stubem.
+  - **Test na żywo (baza testowa Z_KAJTEK_IdeaERP):** artykuł 46226 (NERE0011),
+    `synchronizujLokalizacje(46226, {K4, K4G})` → `{ok:true, dane:{sukces:true}}`.
+    `tw_Pole1` `"M2-C7  "` → `"M2-C7"`, `tw_Pole8` `"M2-B27-B34-P4/M2-C13-15-P4/  "`
+    → `"M2-B27-P3(2010)"` (zgodnie z aktualnym stanem WMS). Działa z Maca, bez
+    mostu na Windows.
 
 ### 2026-06-14
 

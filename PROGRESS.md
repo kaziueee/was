@@ -225,6 +225,34 @@ na żaden filtr/sortowanie.
   drugoplanowy powód.) Szczegóły (np. .bat/skrót na pulpicie, ewentualnie
   auto-restart) do dopracowania później.
 
+## Plan — kolejne etapy (2026-06-15, ustalone z userem, jeszcze nie zaczęte)
+
+Kolejność robocza (niekoniecznie priorytet), ustalona w rozmowie:
+
+1. **Zapis lokalizacji (Pole1/Pole8) bezpośrednim SQL** — opisane wyżej w "Otwarte",
+   następny krok do zrobienia.
+2. **Baza lokalizacji z typami i ewentualnie wymiarami** — rozbudowa `lokalizacje`
+   (dziś pewnie tylko kod/magazyn) o typ lokalizacji (np. regał/półka/paleta) i
+   może wymiary (do walidacji co się gdzie zmieści?). Szczegóły do dopracowania.
+3. **Log / historia zmian** — log audytowy zmian (kto/co/kiedy zmienił —
+   lokalizacje, stany, dokumenty GT), do diagnostyki i rozliczalności.
+4. **Przegląd zabezpieczeń / uprawnień WMS↔GT** — co WMS może, a czego **nie
+   powinien** móc zrobić na bazie Subiekta (np. ograniczyć `sa` do potrzebnego
+   minimum, osobny user SQL z węższymi prawami, walidacja po stronie Node przed
+   zapisem). Do przemyślenia po zapisie lokalizacji, gdy będzie jasne co realnie
+   piszemy do GT.
+5. **Interfejs desktop dla użytkowników** — dziś desktop to głównie tabela
+   kontrolna "Produkty" (read-only, dla admina). Potrzebny osobny,
+   prostszy interfejs dla zwykłych użytkowników (jakie akcje, jaki zakres —
+   do ustalenia).
+6. **Most na kliknięcie** — opisane wyżej w "Otwarte".
+7. **Analityka magazynowa** — raporty/wskaźniki na bazie danych WMS+GT
+   (np. rotacja, rozjazdy w czasie, wykorzystanie lokalizacji) — zakres do
+   ustalenia.
+8. **Postawienie w sieci na WiFi** — Node WMS + most razem na maszynie Windows
+   z GT/Sferą (most zostaje na `localhost`, Node wystawia port 3000 na LAN dla
+   Zebr/desktopów). Odłożone na razie.
+
 ## Dziennik zmian
 
 ### 2026-06-14

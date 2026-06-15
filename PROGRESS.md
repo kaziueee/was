@@ -216,6 +216,14 @@ na żaden filtr/sortowanie.
 - **Pozostałe metody Sfery** (`PobierzStanyAsync`, `PobierzArtykulAsync`, `WystawRwAsync`,
   `WystawPwAsync`) — nadal szkielet. RW/PW (inwentaryzacja) do zrobienia analogicznie
   do MM, gdy MM się sprawdzi na Windows.
+- **Tryb pracy mostu — DECYZJA (na później): start na kliknięcie użytkownika.**
+  Chodzi o łatwy restart, gdy most się wysypie/zawiesi (np. po błędzie Sfery)
+  — użytkownik ma móc go odpalić jednym kliknięciem, bez grzebania w konsoli/
+  terminalu na Windows. (Dodatkowo: most trzyma sesję Sfery cały czas, dopóki
+  proces żyje — `Polacz()` cache'uje `_subiekt`, zwalniane tylko przy
+  `Dispose`/`Zakoncz` — więc start-na-żądanie pomaga też z licencją, ale to
+  drugoplanowy powód.) Szczegóły (np. .bat/skrót na pulpicie, ewentualnie
+  auto-restart) do dopracowania później.
 
 ## Dziennik zmian
 
@@ -259,6 +267,15 @@ na żaden filtr/sortowanie.
     (Node tego nie dotyczy). Build/run: `dotnet publish -c Release -r win-x86
     --self-contained` + uruchamiać `...\publish\GtBridge.exe` (runtime w środku,
     omija brak x86 runtime).
+
+### 2026-06-15
+
+- **Cofnięcie testowego MM (K4G→K4, 1 szt, towar 4180/PANBAT02475)** — drugi
+  test mostu, w odwrotnym kierunku niż 2026-06-14. Zwrócił `sukces:true`,
+  `numer "MM 316/2026"`. Zweryfikowano w bazie: K4 25→26, K4G 1→0 (powrót do
+  stanu wyjściowego), dokument MM 316/2026 istnieje. **Most MM potwierdzony
+  w obu kierunkach** — uznajemy temat MM za zamknięty, kolejne kroki:
+  zapis lokalizacji (SQL) i RW/PW.
 
 ### 2026-06-12
 

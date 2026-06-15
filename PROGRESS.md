@@ -253,6 +253,27 @@ Kolejność robocza (niekoniecznie priorytet), ustalona w rozmowie:
    z GT/Sferą (most zostaje na `localhost`, Node wystawia port 3000 na LAN dla
    Zebr/desktopów). Odłożone na razie.
 
+### Dodatkowe punkty (ustalone 2026-06-15)
+
+- **Backup `db/wms.db` — MUST HAVE.** To jedyne źródło prawdy dla lokalizacji
+  WMS (GT to tylko odzwierciedlenie). Priorytet wysoki, niezależny od kolejności
+  powyżej — zrobić jak najszybciej (np. prosty cron/skrypt kopiujący plik z
+  rotacją).
+- **WAŻNE — `Z_KAJTEK_IdeaERP` to baza TESTOWA**, nie produkcyjna/aktualna —
+  ma taką samą strukturę jak realna, ale dane nie są "live". Dotychczasowe
+  testy mostu (MM 180/2026, MM 316/2026) były więc na danych testowych, nie
+  na żywej produkcji — bezpieczniejsze niż wcześniej zakładano. Do potwierdzenia:
+  czy docelowo WMS ma się przełączyć na inną (prawdziwą produkcyjną) bazę, czy
+  ta testowa zostaje "na zawsze" jako środowisko WMS.
+- **Kontrolki połączenia / brak cichych porażek.** Jeśli zapis (MM, lokalizacja)
+  się nie powiedzie, użytkownik musi to widzieć — np. wskaźnik stanu połączenia
+  z mostem/GT w UI, i operacja (np. zamknięcie ekranu/procesu na Zebrze) nie
+  powinna się "zamknąć"/zakończyć sukcesem, jeśli zapis faktycznie nie przeszedł.
+- **Prosty mechanizm użytkowników/logowania** — dodawanie userów + logowanie,
+  potrzebne m.in. do punktu 3 (log historii — kto co zmienił) i do punktu 5
+  (interfejs dla zwykłych użytkowników).
+- Punkt 4 (zabezpieczenia/uprawnienia) — wciąż do ustalenia, bez zmian.
+
 ## Dziennik zmian
 
 ### 2026-06-14

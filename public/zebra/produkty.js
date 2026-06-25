@@ -1,13 +1,4 @@
-const el = (id) => document.getElementById(id);
-
-const komunikat = el('komunikat');
-function pokazKomunikat(tekst, typ) {
-  komunikat.textContent = tekst;
-  komunikat.className = `komunikat ${typ}`;
-}
-function ukryjKomunikat() {
-  komunikat.className = 'komunikat hidden';
-}
+// el, pokazKomunikat, ukryjKomunikat - z kreator.js (ladowany przed tym plikiem)
 
 const inputSzukaj = el('input-szukaj');
 const wynik = el('wynik');

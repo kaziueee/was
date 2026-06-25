@@ -70,11 +70,11 @@ const panele = {
   rozjazdy: { sekcja: 'panel-rozjazdy', zaladowano: false, odswiez: odswiezRozjazdy },
   ruchy: { sekcja: 'panel-ruchy', zaladowano: false, odswiez: odswiezRuchy },
   lokalizacje: { sekcja: 'panel-lokalizacje', zaladowano: false, odswiez: odswiezLokalizacje },
-  inwentaryzacje: { sekcja: 'panel-inwentaryzacje', zaladowano: false, odswiez: odswiezInwentaryzacje },
   mm: { sekcja: 'panel-mm', zaladowano: false, odswiez: () => {} },
 };
 
 function pokazPanel(nazwa) {
+  if (!panele[nazwa]) nazwa = 'produkty';
   for (const [klucz, p] of Object.entries(panele)) {
     el(p.sekcja).classList.toggle('hidden', klucz !== nazwa);
   }
@@ -88,9 +88,14 @@ function pokazPanel(nazwa) {
   }
 }
 
-document.querySelectorAll('.tab-link').forEach((btn) => {
-  btn.addEventListener('click', () => pokazPanel(btn.dataset.panel));
-});
+// Routing po hashu (#mm itd.) - zakladki to <a href="#...">, wiec prawy/srodkowy/
+// Cmd-klik otwiera panel w nowej karcie; klik zmienia hash -> hashchange.
+function panelZHasha() {
+  const h = decodeURIComponent(location.hash.replace(/^#/, ''));
+  return panele[h] ? h : 'produkty';
+}
+
+window.addEventListener('hashchange', () => pokazPanel(panelZHasha()));
 
 // === PRODUKTY ===
 
@@ -648,87 +653,6 @@ el('form-nowa-lokalizacja').addEventListener('submit', async (e) => {
     pokazKomunikat(err.message, 'blad');
   }
 });
-
-// === INWENTARYZACJE ===
-
-async function odswiezInwentaryzacje() {
-  try {
-    renderujInwentaryzacje(await api('/api/inwentaryzacja'));
-  } catch (err) {
-    pokazKomunikat(err.message, 'blad');
-  }
-}
-
-function renderujInwentaryzacje(lista) {
-  const tbody = el('inw-tbody');
-  tbody.innerHTML = '';
-  el('inw-brak').classList.toggle('hidden', lista.length > 0);
-
-  for (const i of lista) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>#${i.id}</td>
-      <td>${i.magazyn}</td>
-      <td>${badge(i.status)}</td>
-      <td>${formatDatetime(i.data_otwarcia)}</td>
-      <td>${formatDatetime(i.data_zamkniecia)}</td>
-      <td>${i.operator ?? '–'}</td>
-      <td></td>
-    `;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn btn-small';
-    btn.textContent = 'Szczegóły';
-    btn.addEventListener('click', () => przelaczSzczegolyInwentaryzacji(i, tr));
-    tr.lastElementChild.appendChild(btn);
-    tbody.appendChild(tr);
-  }
-}
-
-async function przelaczSzczegolyInwentaryzacji(inw, tr) {
-  const istniejacy = tr.nextElementSibling;
-  if (istniejacy?.classList.contains('wiersz-szczegoly')) {
-    istniejacy.remove();
-    return;
-  }
-  document.querySelectorAll('.wiersz-szczegoly').forEach((w) => w.remove());
-
-  const wiersz = document.createElement('tr');
-  wiersz.className = 'wiersz-szczegoly';
-  const td = document.createElement('td');
-  td.colSpan = 7;
-
-  try {
-    if (inw.status === 'otwarta') {
-      const dane = await api(`/api/inwentaryzacja/${inw.id}`);
-      const s = dane.statystyki;
-      td.innerHTML = `<p class="hint">Pozycji: ${s.pozycje_total}, zliczonych: ${s.zliczone}, z różnicą: ${s.z_roznica}</p>`;
-    } else {
-      const raport = await api(`/api/inwentaryzacja/${inw.id}/raport`);
-      const czesci = [];
-      if (raport.nadwyzki.length > 0) czesci.push('<h3>Nadwyżki</h3>' + tabelaRoznic(raport.nadwyzki));
-      if (raport.niedobory.length > 0) czesci.push('<h3>Niedobory</h3>' + tabelaRoznic(raport.niedobory));
-      if (czesci.length === 0) czesci.push('<p class="hint">Spis zamknięty bez różnic.</p>');
-      td.innerHTML = czesci.join('');
-    }
-  } catch (err) {
-    td.innerHTML = `<p class="hint">Błąd: ${err.message}</p>`;
-  }
-
-  wiersz.appendChild(td);
-  tr.after(wiersz);
-}
-
-function tabelaRoznic(pozycje) {
-  return `<table class="tabela tabela-zagniezdzona">
-    <thead><tr><th>Lokalizacja</th><th>Artykuł</th><th>Stan GT</th><th>Policzono</th><th>Różnica</th></tr></thead>
-    <tbody>${pozycje.map((p) => `
-      <tr><td>${p.lokalizacja_kod}</td><td>${p.artykul_symbol}</td><td>${p.ilosc_gt}</td><td>${p.ilosc_liczona}</td><td>${p.roznica > 0 ? '+' : ''}${p.roznica}</td></tr>
-    `).join('')}</tbody>
-  </table>`;
-}
-
-el('btn-inw-odswiez').addEventListener('click', odswiezInwentaryzacje);
 
 // === MM PANEL ===
 
@@ -1516,4 +1440,4 @@ el('btn-modal-akcja-wykonaj').addEventListener('click', async () => {
 
 // --- init ---
 
-pokazPanel('produkty');
+pokazPanel(panelZHasha());

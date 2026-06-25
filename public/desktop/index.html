@@ -14,12 +14,11 @@
   <header>
     <h1>WMS — Panel</h1>
     <nav id="zakladki">
-      <button type="button" class="tab-link aktywny" data-panel="produkty">Produkty</button>
-      <button type="button" class="tab-link" data-panel="rozjazdy">Rozjazdy</button>
-      <button type="button" class="tab-link" data-panel="ruchy">Ruchy</button>
-      <button type="button" class="tab-link" data-panel="lokalizacje">Lokalizacje</button>
-      <button type="button" class="tab-link" data-panel="mm">MM</button>
-      <button type="button" class="tab-link" data-panel="inwentaryzacje">Inwentaryzacje</button>
+      <a href="#produkty" class="tab-link aktywny" data-panel="produkty">Produkty</a>
+      <a href="#rozjazdy" class="tab-link" data-panel="rozjazdy">Rozjazdy</a>
+      <a href="#ruchy" class="tab-link" data-panel="ruchy">Ruchy</a>
+      <a href="#lokalizacje" class="tab-link" data-panel="lokalizacje">Lokalizacje</a>
+      <a href="#mm" class="tab-link" data-panel="mm">MM</a>
     </nav>
     <input type="text" id="input-operator" placeholder="Operator">
   </header>
@@ -312,19 +311,6 @@
       </div>
     </div>
 
-    <section id="panel-inwentaryzacje" class="panel hidden">
-      <div class="panel-naglowek">
-        <h2>Inwentaryzacje</h2>
-        <button type="button" id="btn-inw-odswiez" class="btn">Odśwież</button>
-      </div>
-      <table class="tabela">
-        <thead>
-          <tr><th>ID</th><th>Magazyn</th><th>Status</th><th>Otwarto</th><th>Zamknięto</th><th>Operator</th><th></th></tr>
-        </thead>
-        <tbody id="inw-tbody"></tbody>
-      </table>
-      <p id="inw-brak" class="hint hidden">Brak inwentaryzacji.</p>
-    </section>
   </main>
 
   <script src="app.js"></script>

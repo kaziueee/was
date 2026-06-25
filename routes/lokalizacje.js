@@ -225,7 +225,13 @@ router.get('/skan/:kod', async (req, res, next) => {
 
     const produktGt = await pobierzProdukt(kod);
     if (produktGt) {
-      return res.json(await dolaczDaneGt({ typ: 'artykul', ...artykulZGt(produktGt) }));
+      // Produkt z katalogu GT (najczesciej skan EAN). Wiersze stany_lokalizacji czesto
+      // nie maja zapisanego artykul_ean, wiec lookup po EAN (wyzej) ich nie znajduje -
+      // sprobuj jeszcze dolaczyc istniejace lokalizacje WMS po symbolu z GT, zeby skan
+      // EAN zlokalizowanego towaru dawal to samo co skan/wpis SKU (zrodlo, nie "brak").
+      const wynikPoSymbolu = lokalizacjeDlaArtykulu(produktGt.symbol);
+      const payload = wynikPoSymbolu ?? artykulZGt(produktGt);
+      return res.json(await dolaczDaneGt({ typ: 'artykul', ...payload }));
     }
 
     if (kod.length >= 2) {

@@ -1,7 +1,15 @@
-const el = (id) => document.getElementById(id);
+// Ekran "Ruch towaru" - zlaczony MM + zmiana lokalizacji (zob. desktopowe "okno akcji").
+// Operacja wynika z wyboru celu w kroku 3:
+//   - "Ta sama (zmiana lokalizacji)" lub przypisanie pierwszej lokalizacji -> LOK
+//   - inny magazyn WMS / zewnetrzny -> MM
+// Wspolne helpery (el, komunikaty, onScan, operator) pochodza z kreator.js,
+// formatowanie kart i wyslijRuch z karta-produktu.js.
+
+// wartownik wartosci selecta "cel" oznaczajacy LOK w obrebie magazynu zrodlowego
+const SAME = '__SAME__';
 
 const stan = {
-  artykul: null,   // {artykul_gt_id, artykul_symbol, artykul_nazwa}
+  artykul: null,   // {artykul_gt_id, artykul_symbol, artykul_nazwa, stany_gt, lokalizacja_gt}
   zrodlo: null,    // {lokalizacja_id, kod, magazyn, ilosc} albo null - produkt bez lokalizacji w WMS
   cel: null,       // {typ:'wms', id, kod, magazyn} albo {typ:'zew', magazyn, nazwa}
   iloscSugestia: null, // podpowiedz ilosci przy braku zrodla (np. deficyt K4gora)
@@ -10,7 +18,7 @@ const stan = {
                                      // magazyn jest zgadywany na podstawie stanow GT
 };
 
-// krok 3 - kod lokalizacji oczekujacy na potwierdzenie utworzenia (gdy skan nie pasuje do zadnej istniejacej)
+// krok 3 - kod lokalizacji oczekujacy na potwierdzenie utworzenia (gdy skan nie pasuje do istniejacej)
 let kodDoUtworzenia = null;
 
 // krok 2 - co aktualnie wybieramy z listy
@@ -20,10 +28,10 @@ let opcjeWyboru = []; // [{klucz, artykul, zrodlo, etykieta, ilosc}]
 let ostatniaListaArtykulow = null;
 // tryb obslugi skanu/wyboru w kroku 2:
 // 'wybor' - dopasuj zeskanowany kod do opcjeWyboru po kluczu (lokalizacja/SKU)
-// 'szukaj' - kazdy skan/wpis przechodzi ponownie przez wykonajSkan (lista artykulow z wyszukiwania po nazwie)
+// 'szukaj' - kazdy skan/wpis przechodzi ponownie przez wykonajSkan (lista z wyszukiwania po nazwie)
 let trybWyboru = 'wybor';
 
-// lista magazynow (z /api/magazyny), do wyboru "Do" w kroku 3
+// lista magazynow (z /api/magazyny), do wyboru celu w kroku 3
 let magazynyLista = [];
 const magazynyMapa = {}; // kod -> {kod, nazwa, typ}
 
@@ -33,33 +41,15 @@ async function initMagazyny() {
   magazynyLista.forEach((m) => { magazynyMapa[m.kod] = m; });
 }
 
-// --- operator (zapamietany w localStorage) ---
-const inputOperator = el('input-operator');
-inputOperator.value = localStorage.getItem('wms_operator') || '';
-inputOperator.addEventListener('change', () => {
-  localStorage.setItem('wms_operator', inputOperator.value.trim());
-});
-
-// --- komunikaty ---
-const komunikat = el('komunikat');
-function pokazKomunikat(tekst, typ) {
-  komunikat.textContent = tekst;
-  komunikat.className = `komunikat ${typ}`;
-}
-function ukryjKomunikat() {
-  komunikat.className = 'komunikat hidden';
+// realny kod magazynu docelowego (SAME -> magazyn zrodla)
+function celMagazynKod() {
+  const v = el('select-cel-magazyn').value;
+  return v === SAME ? (stan.zrodlo ? stan.zrodlo.magazyn : null) : v;
 }
 
-// --- pomocnik: obsluga skanu/Enter na polu tekstowym ---
-function onScan(input, callback) {
-  input.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const wartosc = input.value.trim().toUpperCase();
-    input.value = '';
-    if (!wartosc) return;
-    callback(wartosc);
-  });
+// czy biezacy cel to zmiana lokalizacji w obrebie magazynu (LOK) a nie przesuniecie (MM)
+function czyZmiana() {
+  return el('select-cel-magazyn').value === SAME;
 }
 
 // --- kroki ---
@@ -69,13 +59,37 @@ const kroki = {
   cel: el('krok-cel'),
 };
 const btnReset = el('btn-reset');
+const btnWstecz = el('btn-wstecz');
 
 function pokazKrok(nazwa) {
   for (const [klucz, sekcja] of Object.entries(kroki)) {
     sekcja.classList.toggle('hidden', klucz !== nazwa);
   }
   btnReset.classList.toggle('hidden', nazwa === 'start');
+  btnWstecz.classList.toggle('hidden', nazwa === 'start');
 }
+
+// krok o jeden wstecz w kreatorze (cel -> wybor/start, wybor -> start)
+function wstecz() {
+  ukryjKomunikat();
+  ukryjPotwierdzenie();
+  if (!kroki.cel.classList.contains('hidden')) {
+    // z kroku "cel": wroc do listy wyboru jesli byla, inaczej do startu
+    if (opcjeWyboru.length > 0 || ostatniaListaArtykulow) {
+      pokazKrok('wybor');
+      el('input-wybor-skan').focus();
+    } else {
+      pokazKrok('start');
+      el('input-start').focus();
+    }
+  } else if (!kroki.wybor.classList.contains('hidden')) {
+    el('input-start').value = '';
+    pokazKrok('start');
+    el('input-start').focus();
+  }
+}
+
+btnWstecz.addEventListener('click', wstecz);
 
 function reset() {
   stan.artykul = null;
@@ -91,9 +105,11 @@ function reset() {
   el('input-wybor-skan').value = '';
   el('input-cel').value = '';
   el('input-ilosc').value = '';
+  el('input-ilosc').readOnly = false;
   el('lista-wyboru').innerHTML = '';
   el('checkbox-ukryj-zero-wrap').classList.add('hidden');
   el('checkbox-ukryj-zero').checked = false;
+  el('pozostanie').classList.add('hidden');
 
   ukryjKomunikat();
   ukryjPotwierdzenie();
@@ -288,7 +304,7 @@ onScan(el('input-wybor-skan'), (kod) => {
   wybierzOpcje(opcja);
 });
 
-// --- krok 3: ilosc + magazyn i lokalizacja docelowa ---
+// --- krok 3: cel (magazyn + lokalizacja) i ilosc ---
 function przejdzDoCelu() {
   ukryjKomunikat();
   ukryjPotwierdzenie();
@@ -308,8 +324,7 @@ function przejdzDoCelu() {
   const inputIlosc = el('input-ilosc');
 
   if (!stan.zrodlo) {
-    // produkt nie ma jeszcze lokalizacji w WMS (lub w K4gora wciaz brakuje czesci
-    // ilosci) - przypisujemy (kolejna) lokalizacje, bez przesuniecia/MM
+    // przypisanie pierwszej/kolejnej lokalizacji w WMS (bez przesuniecia/MM) - brak wyboru magazynu
     inputIlosc.removeAttribute('max');
     inputIlosc.value = stan.iloscSugestia != null ? String(stan.iloscSugestia) : '';
     inputIlosc.readOnly = false;
@@ -320,29 +335,32 @@ function przejdzDoCelu() {
       ? `Skanuj lokalizację (${stan.celMagazynNowejLokalizacji})`
       : 'Skanuj lokalizację (K4 lub K4gora)';
     el('cel-lokalizacja-hint').textContent = '';
+    aktualizujPozostanie();
     pokazKrok('cel');
     el('input-cel').focus();
     return;
   }
 
+  // jest zrodlo - select celu: "Ta sama (zmiana lokalizacji)" + inne magazyny (MM)
   el('cel-magazyn-pole').classList.remove('hidden');
-  inputIlosc.max = stan.zrodlo.ilosc;
-  inputIlosc.value = stan.zrodlo.ilosc;
-
-  const opcjeCel = magazynyLista.filter((m) => m.kod !== stan.zrodlo.magazyn);
   const select = el('select-cel-magazyn');
-  select.innerHTML = opcjeCel.map((m) => `<option value="${m.kod}">${m.nazwa}</option>`).join('');
+  const inne = magazynyLista.filter((m) => m.kod !== stan.zrodlo.magazyn);
+  const optSame = `<option value="${SAME}">Ta sama — zmiana lokalizacji (${stan.zrodlo.magazyn})</option>`;
+  select.innerHTML = optSame + inne.map((m) => `<option value="${m.kod}">${m.nazwa}</option>`).join('');
 
-  const zapamietany = localStorage.getItem('wms_cel_magazyn');
-  select.value = opcjeCel.some((m) => m.kod === zapamietany) ? zapamietany : opcjeCel[0].kod;
+  const zapamietany = localStorage.getItem('wms_cel');
+  select.value = (zapamietany === SAME || inne.some((m) => m.kod === zapamietany)) ? zapamietany : SAME;
 
   pokazKrok('cel');
   aktualizujKrokCel();
 }
 
-// po wybraniu focus albo na ilosci (lokalizacja juz znana), albo na skanie lokalizacji
+// po wybraniu focus albo na ilosci (lokalizacja juz znana i edytowalna), albo na skanie lokalizacji
 function skupSieNaIlosciLubLokalizacji() {
-  if (stan.cel) {
+  if (stan.cel && !el('input-ilosc').readOnly) {
+    el('input-ilosc').focus();
+    el('input-ilosc').select();
+  } else if (el('cel-lokalizacja-pole').classList.contains('hidden')) {
     el('input-ilosc').focus();
     el('input-ilosc').select();
   } else {
@@ -350,34 +368,54 @@ function skupSieNaIlosciLubLokalizacji() {
   }
 }
 
-// odpowiada na wybor magazynu docelowego: dla K4 podpowiada stale miejsce SKU (jesli istnieje)
+// odpowiada na wybor celu: ustawia ilosc (K4 zmiana = cala), pokazuje/ukrywa lokalizacje,
+// dla K4 jako celu MM podpowiada stale miejsce SKU (jesli istnieje)
 async function aktualizujKrokCel() {
   ukryjKomunikat();
   ukryjPotwierdzenie();
-  const wybrany = magazynyMapa[el('select-cel-magazyn').value];
-  localStorage.setItem('wms_cel_magazyn', wybrany.kod);
+  stan.cel = null;
+  if (!stan.zrodlo) return;
 
-  if (wybrany.typ === 'zewnetrzny') {
+  localStorage.setItem('wms_cel', el('select-cel-magazyn').value);
+
+  const inputIlosc = el('input-ilosc');
+  const zmiana = czyZmiana();
+  inputIlosc.max = stan.zrodlo.ilosc;
+  // K4 + zmiana lokalizacji: 1 SKU = 1 lokalizacja -> zawsze cala ilosc
+  const calaIlosc = zmiana && stan.zrodlo.magazyn === 'K4';
+  inputIlosc.readOnly = calaIlosc;
+  inputIlosc.value = stan.zrodlo.ilosc;
+  aktualizujPozostanie();
+
+  const docelowy = celMagazynKod();
+  const magInfo = magazynyMapa[docelowy];
+
+  // magazyn zewnetrzny -> bez lokalizacji
+  if (magInfo && magInfo.typ === 'zewnetrzny') {
     el('cel-lokalizacja-pole').classList.add('hidden');
     el('input-cel').value = '';
     el('cel-lokalizacja-hint').textContent = '';
-    stan.cel = { typ: 'zew', magazyn: wybrany.kod, nazwa: wybrany.nazwa };
+    stan.cel = { typ: 'zew', magazyn: docelowy, nazwa: magInfo.nazwa };
     skupSieNaIlosciLubLokalizacji();
     return;
   }
 
+  // magazyn WMS -> lokalizacja
   el('cel-lokalizacja-pole').classList.remove('hidden');
   el('input-cel').value = '';
-  el('input-cel').placeholder = `Skanuj lokalizację docelową (${wybrany.nazwa})`;
-  el('cel-lokalizacja-hint').textContent = '';
-  stan.cel = null;
+  el('input-cel').placeholder = zmiana
+    ? `Skanuj nową lokalizację (${stan.zrodlo.magazyn})`
+    : `Skanuj lokalizację docelową (${magInfo ? magInfo.nazwa : docelowy})`;
+  el('cel-lokalizacja-hint').textContent = calaIlosc
+    ? 'K4: 1 SKU = 1 lokalizacja — przenoszona jest cała ilość'
+    : '';
 
-  if (wybrany.kod === 'K4') {
+  // K4 jako cel przesuniecia -> podpowiedz stalego miejsca SKU
+  if (!zmiana && docelowy === 'K4') {
     try {
       const res = await fetch(`/api/lokalizacje/k4-dom/${encodeURIComponent(stan.artykul.artykul_gt_id)}`);
       const dane = await res.json();
-      // jesli uzytkownik zmienil wybor magazynu w trakcie zapytania - pomin wynik
-      if (el('select-cel-magazyn').value !== 'K4') return;
+      if (celMagazynKod() !== 'K4') return; // uzytkownik zmienil wybor w trakcie zapytania
       if (dane) {
         el('input-cel').value = dane.kod;
         el('cel-lokalizacja-hint').textContent = `Stałe miejsce w K4 (obecnie: ${dane.ilosc} szt.) — zeskanuj inną, by zmienić`;
@@ -393,9 +431,23 @@ async function aktualizujKrokCel() {
   skupSieNaIlosciLubLokalizacji();
 }
 
-el('select-cel-magazyn').addEventListener('change', () => {
-  aktualizujKrokCel();
-});
+el('select-cel-magazyn').addEventListener('change', aktualizujKrokCel);
+
+// "pozostanie na lokalizacji" = stan zrodla - wpisana ilosc (czerwone gdy < 0); ukryte gdy brak zrodla
+function aktualizujPozostanie() {
+  const span = el('pozostanie');
+  if (!stan.zrodlo) {
+    span.classList.add('hidden');
+    return;
+  }
+  const ile = Number(el('input-ilosc').value);
+  const poz = stan.zrodlo.ilosc - (Number.isFinite(ile) ? ile : 0);
+  span.textContent = `Na źródle: ${stan.zrodlo.ilosc} → pozostanie: ${poz}`;
+  span.classList.toggle('pozostanie-blad', poz < 0);
+  span.classList.remove('hidden');
+}
+
+el('input-ilosc').addEventListener('input', aktualizujPozostanie);
 
 // select-all przy wejsciu w pole, zeby skan lokalizacji nadpisal podpowiedz
 el('input-cel').addEventListener('focus', () => el('input-cel').select());
@@ -425,11 +477,15 @@ async function przetworzLokalizacjeCelu(kod) {
       return false;
     }
     if (stan.zrodlo) {
-      const docelowyMagazyn = el('select-cel-magazyn').value;
-      if (dane.magazyn !== docelowyMagazyn) {
-        const oczekiwany = magazynyMapa[docelowyMagazyn]?.nazwa || docelowyMagazyn;
-        const rzeczywisty = magazynyMapa[dane.magazyn]?.nazwa || dane.magazyn;
-        pokazKomunikat(`Kod "${dane.kod}" jest juz uzyty w magazynie ${rzeczywisty} (kody lokalizacji sa unikalne globalnie). Wybierz inny kod dla magazynu ${oczekiwany}.`, 'blad');
+      const docelowy = celMagazynKod();
+      if (dane.magazyn !== docelowy) {
+        if (czyZmiana()) {
+          pokazKomunikat(`Kod "${dane.kod}" jest w magazynie ${dane.magazyn} — zmiana lokalizacji dziala tylko w ${stan.zrodlo.magazyn}. Aby przeniesc miedzy magazynami, wybierz magazyn docelowy powyzej.`, 'blad');
+        } else {
+          const oczekiwany = magazynyMapa[docelowy]?.nazwa || docelowy;
+          const rzeczywisty = magazynyMapa[dane.magazyn]?.nazwa || dane.magazyn;
+          pokazKomunikat(`Kod "${dane.kod}" jest juz uzyty w magazynie ${rzeczywisty} (kody lokalizacji sa unikalne globalnie). Wybierz inny kod dla magazynu ${oczekiwany}.`, 'blad');
+        }
         return false;
       }
     } else if (stan.celMagazynNowejLokalizacji) {
@@ -455,18 +511,22 @@ async function przetworzLokalizacjeCelu(kod) {
 
 onScan(el('input-cel'), async (kod) => {
   const ok = await przetworzLokalizacjeCelu(kod);
-  if (ok) {
+  if (ok && !el('input-ilosc').readOnly) {
     el('input-ilosc').focus();
     el('input-ilosc').select();
   }
 });
 
 // --- potwierdzenie utworzenia nieznanej lokalizacji docelowej ---
+function magazynDlaNowejCel() {
+  return stan.zrodlo
+    ? celMagazynKod()
+    : (stan.celMagazynNowejLokalizacji ?? magazynDlaNowejLokalizacji(stan.artykul.stany_gt));
+}
+
 function pokazPotwierdzenieUtworzenia(kod) {
   kodDoUtworzenia = kod;
-  const magazynKod = stan.zrodlo
-    ? el('select-cel-magazyn').value
-    : (stan.celMagazynNowejLokalizacji ?? magazynDlaNowejLokalizacji(stan.artykul.stany_gt));
+  const magazynKod = magazynDlaNowejCel();
   const nazwaMagazynu = magazynyMapa[magazynKod]?.nazwa ?? magazynKod;
   el('cel-potwierdzenie-tekst').textContent = `Lokalizacja "${kod}" nie istnieje w magazynie ${nazwaMagazynu}. Utworzyć?`;
   el('cel-potwierdzenie').classList.remove('hidden');
@@ -479,9 +539,7 @@ function ukryjPotwierdzenie() {
 
 el('btn-cel-utworz-tak').addEventListener('click', async () => {
   if (!kodDoUtworzenia) return;
-  const magazyn = stan.zrodlo
-    ? el('select-cel-magazyn').value
-    : (stan.celMagazynNowejLokalizacji ?? magazynDlaNowejLokalizacji(stan.artykul.stany_gt));
+  const magazyn = magazynDlaNowejCel();
   try {
     const res = await fetch('/api/lokalizacje', {
       method: 'POST',
@@ -497,8 +555,10 @@ el('btn-cel-utworz-tak').addEventListener('click', async () => {
     stan.cel = { typ: 'wms', id: dane.id, kod: dane.kod, magazyn: dane.magazyn };
     el('input-cel').value = dane.kod;
     ukryjPotwierdzenie();
-    el('input-ilosc').focus();
-    el('input-ilosc').select();
+    if (!el('input-ilosc').readOnly) {
+      el('input-ilosc').focus();
+      el('input-ilosc').select();
+    }
   } catch (err) {
     pokazKomunikat('Blad polaczenia z serwerem', 'blad');
   }
@@ -510,8 +570,9 @@ el('btn-cel-utworz-nie').addEventListener('click', () => {
   el('input-cel').focus();
 });
 
-// --- zatwierdzenie ruchu ---
-async function zatwierdzMM() {
+// --- zatwierdzenie ruchu (LOK albo MM, zaleznie od celu) ---
+async function zatwierdz() {
+  // upewnij sie, ze cel WMS jest ustawiony (gdy wpisano kod bez Enter); cel zewnetrzny ma stan.cel z aktualizujKrokCel
   if (!stan.cel) {
     const wpisany = el('input-cel').value.trim().toUpperCase();
     if (!wpisany) {
@@ -519,7 +580,6 @@ async function zatwierdzMM() {
       el('input-cel').focus();
       return;
     }
-    // wpisano kod, ale nie potwierdzono Enterem - przetworz go tak, jakby zostal zeskanowany
     el('input-cel').value = '';
     const ok = await przetworzLokalizacjeCelu(wpisany);
     if (!ok) {
@@ -527,30 +587,27 @@ async function zatwierdzMM() {
       return;
     }
   }
+
   const ilo = Number(el('input-ilosc').value);
   if (!Number.isFinite(ilo) || ilo <= 0) {
     pokazKomunikat('Podaj poprawna ilosc > 0', 'blad');
     return;
   }
-
-  let url, body, komunikatSukces;
   if (stan.zrodlo) {
     if (ilo > stan.zrodlo.ilosc) {
       pokazKomunikat(`Ilosc przekracza dostepna (${stan.zrodlo.ilosc})`, 'blad');
       return;
     }
-    url = '/api/ruchy/mm';
-    body = {
-      artykul_gt_id: stan.artykul.artykul_gt_id,
-      lok_zrodlo_id: stan.zrodlo.lokalizacja_id,
-      ilosc: ilo,
-      operator: inputOperator.value.trim() || null,
-    };
-    if (stan.cel.typ === 'wms') body.lok_cel_id = stan.cel.id;
-    else body.mag_cel_zewnetrzny = stan.cel.magazyn;
-    komunikatSukces = (dane) => `MM #${dane.id} zapisane (status: ${dane.status})`;
-  } else {
-    // produkt nie mial jeszcze lokalizacji w WMS - przypisanie pierwszej, bez przesuniecia/MM
+    if (czyZmiana() && stan.zrodlo.magazyn === 'K4' && ilo !== stan.zrodlo.ilosc) {
+      pokazKomunikat('W magazynie K4 mozna zmienic lokalizacje tylko dla calej ilosci', 'blad');
+      return;
+    }
+  }
+
+  const symbol = stan.artykul.artykul_symbol;
+  let url, body, podsumowanie;
+  if (!stan.zrodlo) {
+    // przypisanie pierwszej/kolejnej lokalizacji w WMS (LOK)
     url = '/api/ruchy/lok';
     body = {
       artykul_gt_id: stan.artykul.artykul_gt_id,
@@ -559,9 +616,40 @@ async function zatwierdzMM() {
       artykul_symbol: stan.artykul.artykul_symbol,
       artykul_nazwa: stan.artykul.artykul_nazwa,
       ilosc: ilo,
-      operator: inputOperator.value.trim() || null,
+      operator: operator(),
     };
-    komunikatSukces = () => `Zapisano lokalizację: ${stan.cel.kod}`;
+    podsumowanie = () => `Zapisano lokalizację ${symbol} (${ilo} szt.): ${stan.cel.kod}`;
+  } else if (czyZmiana()) {
+    // zmiana lokalizacji w obrebie magazynu (LOK)
+    url = '/api/ruchy/lok';
+    body = {
+      artykul_gt_id: stan.artykul.artykul_gt_id,
+      lok_zrodlo_id: stan.zrodlo.lokalizacja_id,
+      lok_cel_id: stan.cel.id,
+      ilosc: ilo,
+      operator: operator(),
+    };
+    podsumowanie = () => `Zmieniono lokalizację ${symbol} (${ilo} szt.): ${stan.zrodlo.kod} → ${stan.cel.kod}`;
+  } else {
+    // przesuniecie miedzy magazynami (MM)
+    url = '/api/ruchy/mm';
+    body = {
+      artykul_gt_id: stan.artykul.artykul_gt_id,
+      lok_zrodlo_id: stan.zrodlo.lokalizacja_id,
+      ilosc: ilo,
+      operator: operator(),
+    };
+    if (stan.cel.typ === 'wms') body.lok_cel_id = stan.cel.id;
+    else body.mag_cel_zewnetrzny = stan.cel.magazyn;
+    podsumowanie = () => {
+      const celMagTekst = stan.cel.typ === 'wms' ? stan.cel.magazyn : (stan.cel.nazwa || stan.cel.magazyn);
+      const celLok = stan.cel.typ === 'wms' ? ` lok ${stan.cel.kod}` : '';
+      const pozostalo = stan.zrodlo.ilosc - ilo;
+      // K4G: gdy nic nie zostaje, lokalizacja jest zwalniana; K4 zostaje jako stale miejsce SKU
+      const zwolniona = pozostalo <= 0 && stan.zrodlo.magazyn !== 'K4';
+      const ogon = zwolniona ? ' — lokalizacja zwolniona' : ` (pozostało ${pozostalo})`;
+      return `Przeniesiono ${ilo} szt. ${symbol}: ${stan.zrodlo.magazyn} → ${celMagTekst}${celLok}${ogon}`;
+    };
   }
 
   ukryjKomunikat();
@@ -570,17 +658,71 @@ async function zatwierdzMM() {
     pokazKomunikat(dane.blad || 'Blad zapisu ruchu', 'blad');
     return;
   }
-  pokazKomunikat(komunikatSukces(dane), 'ok');
-  setTimeout(reset, 1500);
+  let tekst = podsumowanie();
+  if (dane && dane.status && dane.status !== 'ok') tekst += ' · GT: oczekuje';
+  pokazSukces(tekst);
 }
 
-el('btn-zatwierdz').addEventListener('click', zatwierdzMM);
+// --- ekran sukcesu (overlay + sygnal dzwiekowy; znika dopiero po dotknieciu) ---
+let audioCtx = null;
+
+// Odblokowanie audio na pierwszy gest (Android/Chrome blokuje dzwiek bez interakcji).
+// Trzymamy kontekst aktywny, zeby beep po skanie faktycznie zagral.
+function odblokujAudio() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) { /* audio opcjonalne */ }
+}
+document.addEventListener('pointerdown', odblokujAudio);
+document.addEventListener('keydown', odblokujAudio);
+
+function beep() {
+  try {
+    odblokujAudio();
+    if (!audioCtx) return;
+    const t0 = audioCtx.currentTime;
+    // dwa wznoszace tony, fala prostokatna = wyrazniejszy/glosniejszy sygnal "OK"
+    for (const [freq, dt] of [[988, 0], [1319, 0.15]]) {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.connect(g);
+      g.connect(audioCtx.destination);
+      o.type = 'square';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t0 + dt);
+      g.gain.exponentialRampToValueAtTime(0.5, t0 + dt + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.16);
+      o.start(t0 + dt);
+      o.stop(t0 + dt + 0.17);
+    }
+  } catch (e) {
+    // dzwiek opcjonalny - brak Web Audio nie blokuje potwierdzenia
+  }
+}
+
+function pokazSukces(tekst) {
+  el('sukces-tekst').textContent = tekst;
+  el('sukces-overlay').classList.remove('hidden');
+  beep();
+}
+
+// ekran sukcesu znika po dotknieciu i resetuje kreator do nowego ruchu
+el('sukces-overlay').addEventListener('click', () => {
+  el('sukces-overlay').classList.add('hidden');
+  reset();
+});
+
+el('btn-zatwierdz').addEventListener('click', zatwierdz);
 el('input-ilosc').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
-    zatwierdzMM();
+    zatwierdz();
   }
 });
+
+// pola skanu bez automatycznej klawiatury ekranowej (dotkniecie = reczne wpisanie)
+polaSkanuBezKlawiatury(el('input-start'), el('input-wybor-skan'), el('input-cel'));
 
 (async () => {
   await initMagazyny();

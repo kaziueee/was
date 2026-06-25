@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>WMS — Test skanera</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 16px; background: #f2f2f2; color: #1a1a1a; }
+    header { background: #1d3557; color: #fff; padding: 0.6rem 0.9rem; }
+    header h1 { font-size: 1rem; margin: 0; }
+    main { padding: 0.8rem; }
+    input { width: 100%; font-size: 1.3rem; padding: 0.6rem; border: 2px solid #1d3557; border-radius: 6px; }
+    .pasek { display: flex; gap: 0.5rem; margin: 0.6rem 0; }
+    button { flex: 1; padding: 0.6rem; font-size: 1rem; border: 2px solid #1d3557; border-radius: 6px; background: #fff; color: #1d3557; }
+    .podsum { background: #fff; border-radius: 6px; padding: 0.6rem; margin-bottom: 0.6rem; font-size: 0.95rem; line-height: 1.5; }
+    .podsum b { color: #1d3557; }
+    .tak { color: #1b4332; font-weight: bold; }
+    .nie { color: #9b2226; font-weight: bold; }
+    #log { background: #11161c; color: #d6e2ee; border-radius: 6px; padding: 0.5rem; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.8rem; line-height: 1.45; white-space: pre-wrap; word-break: break-all; max-height: 55vh; overflow-y: auto; }
+    .l-keydown { color: #ffd166; }
+    .l-beforeinput { color: #8ecae6; }
+    .l-input { color: #95d5b2; }
+    .l-sep { color: #6c757d; }
+    .znak { color: #f4a5b8; }
+  </style>
+</head>
+<body>
+  <header><h1>Test skanera (DataWedge → przeglądarka)</h1></header>
+  <main>
+    <div class="podsum" id="podsum">Zeskanuj cokolwiek w pole poniżej. Po skanie zobaczysz, co dotarło.</div>
+    <input type="text" id="pole" autocomplete="off" autofocus placeholder="Skanuj tutaj">
+    <div class="pasek">
+      <button type="button" id="btn-clear">Wyczyść log</button>
+      <button type="button" id="btn-refocus">Ustaw kursor</button>
+    </div>
+    <div id="log"></div>
+  </main>
+
+  <script>
+    const pole = document.getElementById('pole');
+    const log = document.getElementById('log');
+    const podsum = document.getElementById('podsum');
+
+    // statystyki ostatniego "skanu" (seria zdarzen do bezczynnosci)
+    let stat = { keydownEnter: 0, inputLineBreak: 0, crlfWValue: 0, crlfWData: 0, znaki: 0 };
+    let idleTimer = null;
+
+    function widoczne(s) {
+      if (s === null || s === undefined) return '∅';
+      return String(s)
+        .replace(/\r/g, '⟨CR⟩')
+        .replace(/\n/g, '⟨LF⟩')
+        .replace(/\t/g, '⟨TAB⟩');
+    }
+
+    function dopisz(klasa, tekst) {
+      const t = (performance.now()).toFixed(0).padStart(6, ' ');
+      const div = document.createElement('div');
+      div.className = klasa;
+      div.textContent = `${t}ms  ${tekst}`;
+      log.prepend(div);
+    }
+
+    function odswiezPodsum() {
+      const tak = (b) => b ? '<span class="tak">TAK</span>' : '<span class="nie">nie</span>';
+      podsum.innerHTML =
+        `<b>Ostatni skan:</b><br>` +
+        `znaki danych: <b>${stat.znaki}</b><br>` +
+        `keydown Enter: ${tak(stat.keydownEnter > 0)} (${stat.keydownEnter})<br>` +
+        `input insertLineBreak: ${tak(stat.inputLineBreak > 0)} (${stat.inputLineBreak})<br>` +
+        `CR/LF w event.data: ${tak(stat.crlfWData > 0)} (${stat.crlfWData})<br>` +
+        `CR/LF w wartości pola: ${tak(stat.crlfWValue > 0)} (${stat.crlfWValue})<br>` +
+        `wartość pola: <b>"${widoczne(pole.value)}"</b>`;
+    }
+
+    function nowySkanReset() {
+      // po krotkiej bezczynnosci traktujemy kolejna serie jako nowy skan i zerujemy licznik
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        stat = { keydownEnter: 0, inputLineBreak: 0, crlfWValue: 0, crlfWData: 0, znaki: 0 };
+        pole.value = '';
+        dopisz('l-sep', '──────── nowy skan ────────');
+      }, 600);
+    }
+
+    pole.addEventListener('keydown', (e) => {
+      dopisz('l-keydown', `keydown  key="${e.key}" code="${e.code}" keyCode=${e.keyCode}`);
+      if (e.key === 'Enter') { stat.keydownEnter++; e.preventDefault(); }
+      odswiezPodsum();
+      nowySkanReset();
+    });
+
+    pole.addEventListener('beforeinput', (e) => {
+      dopisz('l-beforeinput', `beforeinput  inputType="${e.inputType}" data="${widoczne(e.data)}"`);
+      if (/[\r\n]/.test(e.data || '')) stat.crlfWData++;
+      odswiezPodsum();
+      nowySkanReset();
+    });
+
+    pole.addEventListener('input', (e) => {
+      dopisz('l-input', `input  inputType="${e.inputType}" data="${widoczne(e.data)}"  value="${widoczne(pole.value)}"`);
+      if (e.inputType === 'insertLineBreak') stat.inputLineBreak++;
+      if (/[\r\n]/.test(e.data || '')) stat.crlfWData++;
+      if (/[\r\n]/.test(pole.value)) stat.crlfWValue++;
+      if (e.inputType === 'insertText' && e.data && !/[\r\n]/.test(e.data)) stat.znaki += e.data.length;
+      odswiezPodsum();
+      nowySkanReset();
+    });
+
+    document.getElementById('btn-clear').addEventListener('click', () => {
+      log.innerHTML = '';
+      stat = { keydownEnter: 0, inputLineBreak: 0, crlfWValue: 0, crlfWData: 0, znaki: 0 };
+      pole.value = '';
+      odswiezPodsum();
+      pole.focus();
+    });
+    document.getElementById('btn-refocus').addEventListener('click', () => pole.focus());
+
+    odswiezPodsum();
+  </script>
+</body>
+</html>

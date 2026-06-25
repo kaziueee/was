@@ -35,6 +35,7 @@ nav {
 }
 
 .tab-link {
+  display: inline-block;
   padding: 0.5rem 1rem;
   border: 2px solid transparent;
   border-radius: 6px;
@@ -42,6 +43,7 @@ nav {
   color: #fff;
   font-size: 0.95rem;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .tab-link.aktywny {

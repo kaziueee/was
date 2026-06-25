@@ -47,20 +47,4 @@ function pobierzArtykul(artykulGtId) {
   return wywolaj(`/api/artykul/${encodeURIComponent(artykulGtId)}`);
 }
 
-// POST /api/inwentaryzacja/rw - wystawia RW w GT (niedobory z inwentaryzacji)
-function wystawRW({ magazyn, pozycje, operator }) {
-  return wywolaj('/api/inwentaryzacja/rw', {
-    method: 'POST',
-    body: JSON.stringify({ magazyn, pozycje, operator }),
-  });
-}
-
-// POST /api/inwentaryzacja/pw - wystawia PW w GT (nadwyzki z inwentaryzacji)
-function wystawPW({ magazyn, pozycje, operator }) {
-  return wywolaj('/api/inwentaryzacja/pw', {
-    method: 'POST',
-    body: JSON.stringify({ magazyn, pozycje, operator }),
-  });
-}
-
-module.exports = { wystawMM, pobierzStany, pobierzArtykul, wystawRW, wystawPW };
+module.exports = { wystawMM, pobierzStany, pobierzArtykul };

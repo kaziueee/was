@@ -56,18 +56,6 @@ router.post('/mm', async (req, res, next) => {
     }
   }
 
-  // blokada inwentaryzacji ('otwarta') dla magazynow zaangazowanych w ruch
-  const magazynyDoSprawdzenia = new Set([zrodlo.magazyn]);
-  if (cel) magazynyDoSprawdzenia.add(cel.magazyn);
-  for (const mag of magazynyDoSprawdzenia) {
-    const otwarta = db.prepare(
-      "SELECT id FROM inwentaryzacje WHERE magazyn = ? AND status = 'otwarta'"
-    ).get(mag);
-    if (otwarta) {
-      return res.status(409).json({ blad: `Inwentaryzacja w toku dla magazynu ${mag} - MM zablokowane` });
-    }
-  }
-
   // zasada: w K4 artykul moze miec tylko jedna lokalizacje
   if (cel && cel.magazyn === 'K4') {
     const obecneK4 = db.prepare(
@@ -218,18 +206,6 @@ router.post('/lok', async (req, res, next) => {
     return res.status(400).json({ blad: 'Nowa lokalizacja musi byc w tym samym magazynie - przesuniecie miedzy magazynami zrob przez MM' });
   }
 
-  // blokada inwentaryzacji ('otwarta') dla magazynow zaangazowanych w ruch
-  const magazynyDoSprawdzenia = new Set([cel.magazyn]);
-  if (zrodlo) magazynyDoSprawdzenia.add(zrodlo.magazyn);
-  for (const mag of magazynyDoSprawdzenia) {
-    const otwarta = db.prepare(
-      "SELECT id FROM inwentaryzacje WHERE magazyn = ? AND status = 'otwarta'"
-    ).get(mag);
-    if (otwarta) {
-      return res.status(409).json({ blad: `Inwentaryzacja w toku dla magazynu ${mag} - zmiana lokalizacji zablokowana` });
-    }
-  }
-
   if (!zrodlo && cel.magazyn === 'K4') {
     // pierwsza lokalizacja w K4: artykul nie moze juz miec innej lokalizacji w K4 (1 SKU = 1 lokalizacja)
     const inna = db.prepare(
@@ -332,11 +308,6 @@ router.post('/przyjecie', async (req, res, next) => {
   if (cel.aktywna !== 1) return res.status(409).json({ blad: 'Lokalizacja docelowa jest nieaktywna' });
   if (!['K4', 'K4G'].includes(cel.magazyn)) {
     return res.status(400).json({ blad: 'Przyjecie moze trafic tylko do magazynu WMS (K4/K4G)' });
-  }
-
-  for (const mag of [zrodloMag, cel.magazyn]) {
-    const otwarta = db.prepare("SELECT id FROM inwentaryzacje WHERE magazyn = ? AND status = 'otwarta'").get(mag);
-    if (otwarta) return res.status(409).json({ blad: `Inwentaryzacja w toku dla magazynu ${mag} - przyjecie zablokowane` });
   }
 
   if (cel.magazyn === 'K4') {

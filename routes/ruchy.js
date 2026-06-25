@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db/database');
 const { MAGAZYNY_ZEWNETRZNE } = require('../config/magazyny');
 const { wykonajRuchGT } = require('../services/ruchy-gt');
+const { pobierzStanyGt } = require('../services/gt-produkty');
 
 const router = express.Router();
 
@@ -215,6 +216,30 @@ router.post('/lok', async (req, res, next) => {
     ).get(artykul_gt_id);
     if (inna) {
       return res.status(409).json({ blad: `Artykul ma juz lokalizacje w K4 (${inna.kod}) - 1 SKU = 1 lokalizacja` });
+    }
+  }
+
+  // Inwariant: suma WMS <= stan GT per magazyn. Przy przypisaniu (bez zrodla) nie wolno
+  // zaklepac wiecej niz GT ma jeszcze nieprzypisane w docelowym magazynie - inaczej powstaje
+  // fantomowy stan WMS > GT (rozjazd). Walidacja w backendzie chroni jednakowo Zebre i desktop.
+  if (!zrodlo) {
+    let gtStan;
+    try {
+      const stany = await pobierzStanyGt([artykul_gt_id]);
+      gtStan = stany.get(String(artykul_gt_id))?.[cel.magazyn]?.ilosc ?? 0;
+    } catch (err) {
+      return res.status(503).json({ blad: 'Nie mozna zweryfikowac stanu GT (most niedostepny) - przypisanie wstrzymane. Sprobuj ponownie.' });
+    }
+    const sumaWMS = db.prepare(
+      `SELECT COALESCE(SUM(s.ilosc), 0) AS suma FROM stany_lokalizacji s
+       JOIN lokalizacje l ON l.id = s.lokalizacja_id
+       WHERE s.artykul_gt_id = ? AND l.magazyn = ?`
+    ).get(artykul_gt_id, cel.magazyn).suma;
+    const deficyt = gtStan - sumaWMS;
+    if (ilo > deficyt) {
+      return res.status(409).json({
+        blad: `Mozna przypisac najwyzej ${Math.max(deficyt, 0)} szt. w ${cel.magazyn} (GT: ${gtStan}, juz w WMS: ${sumaWMS}). Nie da sie zaklepac wiecej niz jest w GT.`,
+      });
     }
   }
 

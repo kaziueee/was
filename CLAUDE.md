@@ -21,7 +21,9 @@ wms/
 ├── routes/
 │   ├── lokalizacje.js
 │   ├── ruchy.js
-│   └── inwentaryzacja.js
+│   ├── magazyny.js
+│   ├── produkty.js
+│   └── rozjazdy.js
 ├── services/
 │   ├── gt-bridge.js       # HTTP klient do mostu C#
 │   ├── gt-fields.js       # kompresja lokalizacji do pól własnych GT
@@ -29,11 +31,15 @@ wms/
 ├── public/
 │   ├── zebra/
 │   │   ├── index.html
-│   │   ├── lokalizowanie.html
-│   │   ├── mm.html
-│   │   └── inwentaryzacja.html
+│   │   ├── ruch.html         # MM + zmiana lokalizacji (zlane)
+│   │   ├── ruch.js
+│   │   ├── kreator.js        # wspólne helpery ekranów-kreatorów
+│   │   ├── karta-produktu.js
+│   │   ├── produkty.html     # test wyszukiwania GT
+│   │   └── test-skan.html    # diagnostyka skanera DataWedge
 │   └── desktop/
-│       └── index.html
+│       ├── index.html
+│       └── app.js
 ├── bridge/
 │   └── GtBridge/          # projekt C# .NET
 ├── app.js
@@ -69,20 +75,37 @@ Format atomowy w WMS: `M2-J14-P2`. Format skrócony do GT: `M2-J14-P2/3; M2-J15-
 2. **WMS = master lokalizacji** — pola własne GT to kopia do wyświetlenia
 3. **Inwariant:** suma sztuk na lokalizacjach WMS = stan GT dla każdej pary (artykuł, magazyn)
 4. **Kolejka:** każdy ruch zapisuje się do tabeli `ruchy` ze statusem `pending` zanim wywoła most C#. Przy błędzie Sfery ruch zostaje `pending` — nie ginie
+5. **Backend = jedyne źródło prawdy dla inwariantów** — każda reguła biznesowa MUSI być wymuszona w `routes/` (serwer). Walidacja we froncie (desktop/Zebra) jest tylko dla UX (szybki feedback) i NIE jest autorytatywna. Nigdy nie zostawiamy reguły wyłącznie we froncie — drugi klient albo bezpośrednie wywołanie API ją ominie. Tak powstał rozjazd na HKV50: limit przypisania był tylko w desktopie, Zebra go omijała.
+
+### Inwarianty — gdzie egzekwowane (audyt 2026-06-25)
+
+| Inwariant | Egzekwowane | Gdzie |
+|---|---|---|
+| MM: ilość ≤ stan lokalizacji źródłowej | ✅ backend | `/ruchy/mm` |
+| MM: cel w INNYM magazynie niż źródło | ✅ backend | `/ruchy/mm` |
+| LOK: cel w TYM SAMYM magazynie co źródło | ✅ backend | `/ruchy/lok` |
+| K4 = 1 SKU = 1 lokalizacja | ✅ backend | `/ruchy/mm`, `/lok`, `/przyjecie` |
+| Przypisanie (LOK bez źródła): ilość ≤ stan_GT − suma_WMS | ✅ backend | `/ruchy/lok` |
+| Lokalizacja: kod unikalny globalnie, magazyn ∈ {K4, K4G} | ✅ backend | `/lokalizacje` |
+| Przyjęcie z zewn.: ilość ≤ stan GT magazynu MAG/LS | ✅ backend | `/ruchy/przyjecie` |
+| K4 LOK = cała ilość (nie częściowa) | ✅ backend | `/ruchy/lok` |
+
+Wszystkie inwarianty są egzekwowane w backendzie. Dodając nową regułę: najpierw `routes/`, front tylko jako UX.
 
 ## Schemat bazy (już w 001_init.sql)
 
-Tabele: `lokalizacje`, `stany_lokalizacji`, `ruchy`, `inwentaryzacje`, `pozycje_inwentaryzacji`, `rozjazdy`
+Tabele: `lokalizacje`, `stany_lokalizacji`, `ruchy`, `rozjazdy`
 
 Typy ruchów: `LOK` (lokalizowanie po PZ/FZ, bez dokumentu GT), `MM` (przesunięcie, generuje MM w GT)
 
+> Moduł inwentaryzacji usunięty (2026-06-25) — tabele `inwentaryzacje`/`pozycje_inwentaryzacji`, route `/api/inwentaryzacja`, ekran Zebry i panel desktopu już nie istnieją. Do zrobienia od nowa. Most C# nadal ma endpointy RW/PW (nieużywane).
+
 ## Ekrany Zebry
 
-1. **Lokalizowanie** — lista artykułów gdzie `stan_GT > suma_WMS`. Skan SKU → skan lok → ilość → zapisz
-2. **MM** — skan SKU → wybór lok źródłowej → cel + ilość → MM w GT
-3. **Inwentaryzacja** — snapshot GT → skan po lokalizacjach → raport różnic → RW/PW w GT
+1. **Ruch towaru** (`ruch.html`) — zlany MM + zmiana lokalizacji. Skan SKU/EAN/lokalizacji → wybór → krok „Dokąd i ile?": select **Cel** (Ta sama = LOK w obrębie magazynu / inny magazyn = MM) + ilość + lokalizacja. Operacja LOK/MM wyprowadzana automatycznie. Po zatwierdzeniu ekran sukcesu (dotknięcie zamyka) + sygnał dźwiękowy.
+2. **Test wyszukiwania** (`produkty.html`) — podgląd karty produktu z GT.
 
-Inwentaryzacja blokuje MM i LOK dla danego magazynu (sprawdź `inwentaryzacje` gdzie `status = 'otwarta'`).
+Pola skanu mają `inputmode="none"` (skaner DataWedge wstrzykuje dane, klawiatura nie wyskakuje; dotknięcie pola = ręczne wpisanie). DataWedge (działająca konfiguracja): Keystroke output → Basic data formatting → **Send ENTER key** ON (dokłada Enter) + Key event options → **Send Characters as Events** ON + **Send Enter as string** ON. `onScan` w `kreator.js` łapie ten Enter także jako znak CR / `inputType:insertLineBreak`.
 
 ## Most C# — endpointy (localhost:5000)
 
@@ -102,14 +125,10 @@ POST /api/inwentaryzacja/pw
 - GT < WMS w K4gora → ekran "rozjazdy", magazynier decyduje
 - Job detekcji co godzinę w `services/rozjazdy.js`
 
-## Kolejność budowania
+## Stan obecny
 
-1. `db/001_init.sql` + `db/database.js`
-2. `routes/lokalizacje.js` — CRUD
-3. `public/zebra/mm.html` — ekran MM (test DataWedge)
-4. `bridge/GtBridge/` — endpoint `/api/mm` + `/api/lok`
-5. Integracja MM end-to-end
-6. `public/zebra/lokalizowanie.html`
-7. `services/rozjazdy.js` — job
-8. `public/zebra/inwentaryzacja.html`
-9. `public/desktop/index.html`
+Zbudowane i działające: baza + `routes/` (lokalizacje, ruchy, magazyny, produkty, rozjazdy), most C# (`/api/mm`, `/api/lok`), ekran Zebry „Ruch towaru", panel desktopu (produkty, rozjazdy, ruchy, lokalizacje, MM), job rozjazdów.
+
+Do zrobienia od nowa: moduł inwentaryzacji (usunięty 2026-06-25).
+
+Uruchomienie: `node app.js` (albo `start-wms.command` / `stop-wms.command` na macOS). Serwer na `:3000`, `/` → menu Zebry.

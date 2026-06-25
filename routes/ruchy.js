@@ -207,6 +207,12 @@ router.post('/lok', async (req, res, next) => {
     return res.status(400).json({ blad: 'Nowa lokalizacja musi byc w tym samym magazynie - przesuniecie miedzy magazynami zrob przez MM' });
   }
 
+  // K4 = 1 SKU = 1 lokalizacja: zmiana lokalizacji przenosi CALA ilosc. Czesciowy LOK na K4
+  // skasowalby zrodlo i zostawil tylko czesc w celu -> WMS K4 < GT. Odrzucamy w backendzie.
+  if (zrodlo && zrodlo.magazyn === 'K4' && stanZrodlo && ilo !== stanZrodlo.ilosc) {
+    return res.status(400).json({ blad: `W magazynie K4 zmiana lokalizacji przenosi cala ilosc (${stanZrodlo.ilosc} szt.) - 1 SKU = 1 lokalizacja` });
+  }
+
   if (!zrodlo && cel.magazyn === 'K4') {
     // pierwsza lokalizacja w K4: artykul nie moze juz miec innej lokalizacji w K4 (1 SKU = 1 lokalizacja)
     const inna = db.prepare(
@@ -344,6 +350,19 @@ router.post('/przyjecie', async (req, res, next) => {
     if (obecneK4.length > 0) {
       return res.status(409).json({ blad: 'W magazynie K4 artykul moze miec tylko jedna lokalizacje - towar juz istnieje w innym miejscu K4' });
     }
+  }
+
+  // Inwariant WMS<=GT: nie wolno przyjac do WMS wiecej niz GT ma w magazynie zrodlowym (MAG/LS).
+  // Inaczej WMS K4/K4G rosnie ponad stan GT (rozjazd). Walidacja w backendzie chroni oba klienty.
+  let gtStanZrodla;
+  try {
+    const stany = await pobierzStanyGt([artykul_gt_id]);
+    gtStanZrodla = stany.get(String(artykul_gt_id))?.[zrodloMag]?.ilosc ?? 0;
+  } catch (err) {
+    return res.status(503).json({ blad: 'Nie mozna zweryfikowac stanu GT (most niedostepny) - przyjecie wstrzymane. Sprobuj ponownie.' });
+  }
+  if (ilo > gtStanZrodla) {
+    return res.status(409).json({ blad: `W magazynie ${zrodloMag} jest tylko ${gtStanZrodla} szt. wg GT - nie mozna przyjac ${ilo}.` });
   }
 
   // potrzebujemy symbolu/nazwy do wpisania w stany_lokalizacji

@@ -23,7 +23,12 @@ let poolPromise;
 
 function getPool() {
   if (!poolPromise) {
-    poolPromise = sql.connect(config);
+    // Gdy polaczenie sie nie uda, wyzeruj cache - inaczej odrzucona obietnica
+    // zostaje w poolPromise na zawsze i kazde kolejne zapytanie pada az do restartu.
+    poolPromise = sql.connect(config).catch((err) => {
+      poolPromise = undefined;
+      throw err;
+    });
   }
   return poolPromise;
 }

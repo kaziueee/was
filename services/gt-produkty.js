@@ -408,10 +408,8 @@ async function pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny
   }
 
   if (zgodnosc.length > 0) {
-    const maK4 = magazyny.includes('K4');
-    const maK4G = magazyny.includes('K4G');
-    const pole = maK4 && !maK4G ? 'k4' : (maK4G && !maK4 ? 'k4g' : 'ogolna');
-    produkty = produkty.filter((p) => zgodnosc.includes(p.zgodnosc[pole]));
+    // filtr po zgodnosci ogolnej - spojnie z badge na liscie i statusem w modalu
+    produkty = produkty.filter((p) => zgodnosc.includes(p.zgodnosc.ogolna));
   }
 
   const kier = dir === 'desc' ? -1 : 1;

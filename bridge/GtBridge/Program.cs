@@ -14,8 +14,8 @@ namespace GtBridge
             Host.CreateDefaultBuilder(args)
                 .ConfigureWebHostDefaults(webBuilder =>
                 {
-                    // Adres z CLAUDE.md - Node WMS oczekuje mostu na localhost:5000
-                    webBuilder.UseUrls("http://localhost:5000");
+                    // 0.0.0.0 - dostepny tez z sieci lokalnej (Mac dev); na prod localhost wystarczy
+                    webBuilder.UseUrls("http://0.0.0.0:5000");
                     webBuilder.UseStartup<Startup>();
                 });
     }

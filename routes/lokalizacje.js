@@ -3,7 +3,7 @@ const db = require('../db/database');
 const { MAGAZYNY_WMS } = require('../config/magazyny');
 const { podzielNaSlowa, LIMIT_WYSZUKIWANIA } = require('../services/wyszukiwanie');
 const { pobierzProdukt, szukajProdukty, pobierzStanyGt } = require('../services/gt-produkty');
-const { pobierzStatusLokalizacjiGt } = require('../services/gt-fields');
+const { pobierzStatusLokalizacjiGt, synchronizujLokalizacje } = require('../services/gt-fields');
 
 const router = express.Router();
 
@@ -35,7 +35,7 @@ router.get('/', (req, res) => {
 // lokalizacje WMS z zapasem dla danego SKU (lub null gdy brak)
 function lokalizacjeDlaArtykulu(symbol) {
   const wiersze = db.prepare(
-    `SELECT s.lokalizacja_id, l.kod, l.magazyn, s.artykul_gt_id, s.artykul_symbol, s.artykul_nazwa, s.ilosc
+    `SELECT s.lokalizacja_id, l.kod, l.magazyn, s.artykul_gt_id, s.artykul_symbol, s.artykul_nazwa, s.ilosc, s.zapas_kod, s.ostatnia_zmiana
      FROM stany_lokalizacji s
      JOIN lokalizacje l ON l.id = s.lokalizacja_id
      WHERE s.artykul_symbol = ? AND s.ilosc > 0
@@ -48,7 +48,7 @@ function lokalizacjeDlaArtykulu(symbol) {
     artykul_gt_id: wiersze[0].artykul_gt_id,
     artykul_symbol: wiersze[0].artykul_symbol,
     artykul_nazwa: wiersze[0].artykul_nazwa,
-    lokalizacje: wiersze.map(({ lokalizacja_id, kod, magazyn, ilosc }) => ({ lokalizacja_id, kod, magazyn, ilosc }))
+    lokalizacje: wiersze.map(({ lokalizacja_id, kod, magazyn, ilosc, zapas_kod, ostatnia_zmiana }) => ({ lokalizacja_id, kod, magazyn, ilosc, zapas_kod, ostatnia_zmiana }))
   };
 }
 
@@ -269,12 +269,58 @@ router.get('/kod/:kod', (req, res) => {
 // niezaleznie od ilosci - do auto-podpowiedzi lokalizacji docelowej przy uzupelnieniu K4
 router.get('/k4-dom/:artykul_gt_id', (req, res) => {
   const wiersz = db.prepare(
-    `SELECT s.lokalizacja_id, l.kod, s.ilosc
+    `SELECT s.lokalizacja_id, l.kod, s.ilosc, s.zapas_kod, s.ostatnia_zmiana
      FROM stany_lokalizacji s
      JOIN lokalizacje l ON l.id = s.lokalizacja_id
      WHERE s.artykul_gt_id = ? AND l.magazyn = 'K4' AND l.aktywna = 1`
   ).get(req.params.artykul_gt_id);
   res.json(wiersz ?? null);
+});
+
+// PUT /api/lokalizacje/k4-zapas/:artykul_gt_id - ustaw/wyczysc adnotacje "zapas" K4
+// (decyzja A: towar w 2 miejscach, np. zbior A1 + nadmiar P5 -> GT tw_Pole1 "A1/P5").
+// Nie zmienia stanu - tylko adnotacja + resync pola lokalizacyjnego GT.
+router.put('/k4-zapas/:artykul_gt_id', async (req, res, next) => {
+  const artykulGtId = req.params.artykul_gt_id;
+  const zapas = (req.body?.zapas_kod ?? '').trim().toUpperCase() || null;
+
+  const k4 = db.prepare(
+    `SELECT s.id FROM stany_lokalizacji s
+     JOIN lokalizacje l ON l.id = s.lokalizacja_id
+     WHERE s.artykul_gt_id = ? AND l.magazyn = 'K4' AND s.ilosc > 0`
+  ).get(artykulGtId);
+  if (!k4) return res.status(404).json({ blad: 'Brak lokalizacji K4 z zapasem dla tego SKU - najpierw przypisz lokalizacje zbioru' });
+
+  db.prepare('UPDATE stany_lokalizacji SET zapas_kod = ? WHERE id = ?').run(zapas, k4.id);
+
+  try {
+    const wynik = await synchronizujLokalizacje(artykulGtId, new Set(['K4']));
+    const ok = wynik && wynik.ok;
+    res.json({ zapas_kod: zapas, sync_ok: !!ok, blad: ok ? null : (wynik?.blad ?? null) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/lokalizacje/plan/:artykul_gt_id?magazyn= - zachowany plan lokalizacji z GT
+router.get('/plan/:artykul_gt_id', (req, res) => {
+  const mag = (req.query.magazyn ?? 'K4G').toUpperCase();
+  const w = db.prepare('SELECT tekst FROM plan_lokalizacji WHERE artykul_gt_id = ? AND magazyn = ?').get(req.params.artykul_gt_id, mag);
+  res.json(w ?? null);
+});
+
+// PUT /api/lokalizacje/plan/:artykul_gt_id - zapisz/wyczysc plan (pusty tekst = usun)
+router.put('/plan/:artykul_gt_id', (req, res) => {
+  const id = req.params.artykul_gt_id;
+  const mag = (req.body?.magazyn ?? 'K4G').toUpperCase();
+  const tekst = (req.body?.tekst ?? '').trim();
+  if (!tekst) {
+    db.prepare('DELETE FROM plan_lokalizacji WHERE artykul_gt_id = ? AND magazyn = ?').run(id, mag);
+    return res.json({ tekst: null });
+  }
+  db.prepare(`INSERT INTO plan_lokalizacji (artykul_gt_id, magazyn, tekst) VALUES (?, ?, ?)
+              ON CONFLICT(artykul_gt_id, magazyn) DO UPDATE SET tekst = excluded.tekst`).run(id, mag, tekst);
+  res.json({ tekst });
 });
 
 // GET /api/lokalizacje/:id - szczegoly lokalizacji + jej zawartosc

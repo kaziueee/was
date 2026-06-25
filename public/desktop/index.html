@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- aplikacja wewnetrzna (LAN) - nie cache'uj statykow, zeby zmiany byly od razu widoczne -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>WMS — Panel</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -14,6 +18,7 @@
       <button type="button" class="tab-link" data-panel="rozjazdy">Rozjazdy</button>
       <button type="button" class="tab-link" data-panel="ruchy">Ruchy</button>
       <button type="button" class="tab-link" data-panel="lokalizacje">Lokalizacje</button>
+      <button type="button" class="tab-link" data-panel="mm">MM</button>
       <button type="button" class="tab-link" data-panel="inwentaryzacje">Inwentaryzacje</button>
     </nav>
     <input type="text" id="input-operator" placeholder="Operator">
@@ -70,6 +75,7 @@
               <th>WMS K4</th><th>WMS K4G</th><th>K4G razem</th>
               <th>Zgodność</th>
               <th>Lokalizacja K4 z GT</th><th>Lokalizacja K4G z GT</th>
+              <th>Akcje</th>
             </tr>
           </thead>
           <tbody id="prod-tbody"></tbody>
@@ -168,6 +174,143 @@
       </table>
       <p id="lok-brak" class="hint hidden">Brak lokalizacji do wyświetlenia.</p>
     </section>
+
+    <!-- Panel MM -->
+    <section id="panel-mm" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Przesunięcia MM</h2>
+        <div class="filtry">
+          <select id="mm-kierunek">
+            <option value="K4:K4G">K4 → K4G</option>
+            <option value="K4:MAG">K4 → Kajtek</option>
+            <option value="K4:LS">K4 → Leszno</option>
+            <option value="K4G:K4">K4G → K4</option>
+            <option value="K4G:MAG">K4G → Kajtek</option>
+            <option value="K4G:LS">K4G → Leszno</option>
+            <option value="MAG:K4">Kajtek → K4</option>
+            <option value="MAG:K4G">Kajtek → K4G</option>
+            <option value="MAG:LS">Kajtek → Leszno</option>
+            <option value="LS:K4">Leszno → K4</option>
+            <option value="LS:K4G">Leszno → K4G</option>
+            <option value="LS:MAG">Leszno → Kajtek</option>
+          </select>
+          <input type="text" id="mm-q" placeholder="SKU / EAN / nazwa...">
+          <button type="button" id="btn-mm-szukaj" class="btn">Szukaj</button>
+        </div>
+      </div>
+
+      <div id="mm-szukaj-wyniki" class="mm-szukaj-panel hidden"></div>
+
+      <div id="mm-formularz" class="mm-formularz-panel hidden">
+        <div class="mm-formularz-naglowek">
+          <strong id="mm-f-sku"></strong> <span id="mm-f-nazwa"></span>
+          <span id="mm-f-stany" class="mm-f-stany"></span>
+        </div>
+        <div class="mm-formularz-pola">
+          <div class="mm-pole">
+            <label>Lok. źródła</label>
+            <input type="text" id="mm-f-zrodlo" class="lok-combo hidden" list="mm-f-zrodlo-list" placeholder="wpisz/wybierz…" autocomplete="off">
+            <datalist id="mm-f-zrodlo-list"></datalist>
+            <span id="mm-f-zrodlo-brak" class="brak-pola hidden"></span>
+          </div>
+          <div class="mm-pole mm-pole-ilosc">
+            <label>Ilość</label>
+            <input type="number" id="mm-f-ilosc" min="1" value="1">
+            <span id="mm-f-pozostanie" class="pozostanie hidden"></span>
+          </div>
+          <div class="mm-pole">
+            <label>Lok. celu</label>
+            <input type="text" id="mm-f-cel" class="lok-combo hidden" list="mm-f-cel-list" placeholder="wpisz/wybierz…" autocomplete="off">
+            <datalist id="mm-f-cel-list"></datalist>
+            <span id="mm-f-cel-brak" class="brak-pola hidden"></span>
+            <span id="mm-f-cel-info" class="mm-f-stany hidden"></span>
+          </div>
+          <button type="button" id="btn-mm-dodaj" class="btn btn-primary">+ Dodaj</button>
+          <button type="button" id="btn-mm-anuluj" class="btn">Anuluj</button>
+        </div>
+      </div>
+
+      <div class="tabela-wrapper">
+        <table class="tabela" id="mm-tabela">
+          <thead>
+            <tr>
+              <th>SKU</th><th>Nazwa</th>
+              <th>Lok. źródła</th><th>Ilość</th><th>Lok. celu</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="mm-tbody"></tbody>
+        </table>
+      </div>
+      <p id="mm-brak" class="hint">Wyszukaj produkt i dodaj pozycje do listy.</p>
+
+      <div id="mm-footer" class="mm-footer hidden">
+        <span id="mm-liczba" class="opis"></span>
+        <button type="button" id="btn-mm-wyczysc" class="btn">Wyczyść listę</button>
+        <button type="button" id="btn-mm-wyslij" class="btn btn-primary">Wyślij wszystko →</button>
+      </div>
+
+      <div id="mm-wyniki-wysylki" class="hidden"></div>
+    </section>
+
+    <!-- Modal: MM / Lok dla pojedynczego produktu (z tabeli Produkty) -->
+    <div id="modal-produkt" class="modal-overlay hidden">
+      <div class="modal-box">
+        <div class="modal-naglowek">
+          <div>
+            <strong id="modal-prod-sku"></strong>
+            <span id="modal-prod-nazwa" class="opis"></span>
+          </div>
+          <button type="button" id="btn-modal-zamknij" class="btn btn-small">✕</button>
+        </div>
+        <div id="modal-prod-stany" class="modal-stany"></div>
+
+        <!-- Rozklad towaru po magazynach i lokalizacjach (renderowany w JS) -->
+        <div id="modal-rozklad"></div>
+        <datalist id="inline-lok-list"></datalist>
+        <datalist id="zapas-lok-list"></datalist>
+
+        <div id="modal-komunikat" class="komunikat hidden"></div>
+      </div>
+    </div>
+
+    <!-- Osobne okno akcji (przenies / zmien lok / przypisz) - na wierzchu modalu produktu -->
+    <div id="modal-akcja-overlay" class="modal-overlay hidden">
+      <div class="modal-box modal-akcja-box">
+        <div class="modal-naglowek">
+          <strong id="modal-akcja-typ"></strong>
+          <button type="button" id="btn-modal-akcja-x" class="btn btn-small">✕</button>
+        </div>
+        <div class="modal-akcja-naglowek" id="modal-akcja-tytul"></div>
+        <div class="mm-formularz-pola">
+          <div class="mm-pole">
+            <label>Magazyn docelowy</label>
+            <select id="modal-akcja-magazyn">
+              <option value="K4">K4 Hala</option>
+              <option value="K4G">K4 Góra</option>
+              <option value="MAG">Kajtek (MAG)</option>
+              <option value="LS">Leszno (LS)</option>
+            </select>
+          </div>
+          <div class="mm-pole mm-pole-ilosc">
+            <label>Ilość</label>
+            <input type="number" id="modal-akcja-ile" min="1" value="1">
+            <span id="modal-akcja-pozostanie" class="pozostanie hidden"></span>
+          </div>
+          <div class="mm-pole">
+            <label>Lokalizacja docelowa</label>
+            <input type="text" id="modal-akcja-lok" class="lok-combo" list="modal-akcja-lok-list" placeholder="wpisz/wybierz…" autocomplete="off">
+            <datalist id="modal-akcja-lok-list"></datalist>
+            <span id="modal-akcja-lok-brak" class="brak-pola hidden">brak pola (magazyn zewnętrzny)</span>
+          </div>
+        </div>
+        <div class="modal-akcja-stopka">
+          <button type="button" id="btn-modal-akcja-wykonaj" class="btn btn-primary">Wykonaj</button>
+          <button type="button" id="btn-modal-akcja-anuluj" class="btn">Anuluj</button>
+        </div>
+        <div id="modal-akcja-komunikat" class="komunikat hidden"></div>
+      </div>
+    </div>
 
     <section id="panel-inwentaryzacje" class="panel hidden">
       <div class="panel-naglowek">

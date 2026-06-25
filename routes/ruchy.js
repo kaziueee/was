@@ -196,7 +196,9 @@ router.post('/lok', async (req, res, next) => {
       'SELECT * FROM stany_lokalizacji WHERE lokalizacja_id = ? AND artykul_gt_id = ?'
     ).get(lok_zrodlo_id, artykul_gt_id);
 
-    if (!stanZrodlo || stanZrodlo.ilosc < ilo) {
+    // K4: stan WMS moze byc nieaktualny - sprzedaz/MM w Subiekcie zmienia stan GT
+    // bez wiedzy WMS. Dla K4 ilosc pochodzi z GT, nie sprawdzamy dostepnosci w WMS.
+    if (zrodlo.magazyn !== 'K4' && (!stanZrodlo || stanZrodlo.ilosc < ilo)) {
       return res.status(409).json({
         blad: `Niewystarczajaca ilosc na lokalizacji zrodlowej (dostepne: ${stanZrodlo ? stanZrodlo.ilosc : 0})`
       });
@@ -228,12 +230,7 @@ router.post('/lok', async (req, res, next) => {
     }
   }
 
-  if (zrodlo) {
-    // K4: 1 SKU = 1 lokalizacja - zmiana lokalizacji przenosi cale stale miejsce, nie czesc ilosci
-    if (zrodlo.magazyn === 'K4' && ilo !== stanZrodlo.ilosc) {
-      return res.status(400).json({ blad: 'W magazynie K4 mozna zmienic lokalizacje tylko dla calej ilosci (1 SKU = 1 lokalizacja)' });
-    }
-  } else if (cel.magazyn === 'K4') {
+  if (!zrodlo && cel.magazyn === 'K4') {
     // pierwsza lokalizacja w K4: artykul nie moze juz miec innej lokalizacji w K4 (1 SKU = 1 lokalizacja)
     const inna = db.prepare(
       `SELECT l.kod FROM stany_lokalizacji s
@@ -261,20 +258,28 @@ router.post('/lok', async (req, res, next) => {
 
     if (stanZrodlo) {
       const pozostanie = stanZrodlo.ilosc - ilo;
-      if (pozostanie > 0) {
+      // K4: zawsze usuwamy stary wpis - SKU ma jedno stale miejsce, ilosc pochodzi z GT
+      if (pozostanie > 0 && zrodlo?.magazyn !== 'K4') {
         db.prepare('UPDATE stany_lokalizacji SET ilosc = ?, ostatnia_zmiana = CURRENT_TIMESTAMP, operator = ? WHERE id = ?')
           .run(pozostanie, operator ?? null, stanZrodlo.id);
       } else {
-        // przenosimy stale miejsce SKU - stara lokalizacja juz go nie reprezentuje
         db.prepare('DELETE FROM stany_lokalizacji WHERE id = ?').run(stanZrodlo.id);
       }
+    } else if (zrodlo?.magazyn === 'K4') {
+      // Brak wpisu WMS w podanej lokalizacji K4 - wyczysc wszystkie stale miejsca K4 tego artykulu
+      db.prepare(`
+        DELETE FROM stany_lokalizacji
+        WHERE artykul_gt_id = ? AND lokalizacja_id IN (SELECT id FROM lokalizacje WHERE magazyn = 'K4')
+      `).run(artykul_gt_id);
     }
 
+    // Dla K4: nadpisz ilosc aktualnym stanem (reconcylacja z GT); dla K4G: dodaj
     const stanCel = db.prepare('SELECT * FROM stany_lokalizacji WHERE lokalizacja_id = ? AND artykul_gt_id = ?')
       .get(lok_cel_id, artykul_gt_id);
     if (stanCel) {
-      db.prepare('UPDATE stany_lokalizacji SET ilosc = ilosc + ?, ostatnia_zmiana = CURRENT_TIMESTAMP, operator = ? WHERE id = ?')
-        .run(ilo, operator ?? null, stanCel.id);
+      const nowaIlosc = cel.magazyn === 'K4' ? ilo : stanCel.ilosc + ilo;
+      db.prepare('UPDATE stany_lokalizacji SET ilosc = ?, ostatnia_zmiana = CURRENT_TIMESTAMP, operator = ? WHERE id = ?')
+        .run(nowaIlosc, operator ?? null, stanCel.id);
     } else {
       db.prepare(`
         INSERT INTO stany_lokalizacji (lokalizacja_id, artykul_gt_id, artykul_symbol, artykul_nazwa, artykul_ean, ilosc, operator)
@@ -282,8 +287,8 @@ router.post('/lok', async (req, res, next) => {
       `).run(lok_cel_id, artykul_gt_id, symbol, nazwa, ean, ilo, operator ?? null);
     }
 
+    // Dla nowej pierwszej lokalizacji K4: wyczysc stare puste wpisy
     if (!zrodlo && cel.magazyn === 'K4') {
-      // SKU ma teraz stale miejsce w cel.id - usun ewentualny stary, oprozniony wpis w innej lokalizacji K4
       db.prepare(`
         DELETE FROM stany_lokalizacji
         WHERE artykul_gt_id = ? AND ilosc = 0 AND lokalizacja_id != ?
@@ -298,6 +303,130 @@ router.post('/lok', async (req, res, next) => {
   }
 
   // LOK nie generuje dokumentu GT - status 'ok'/'pending' zalezy wylacznie od synchronizacji pol lokalizacyjnych
+  try {
+    res.status(201).json(await wykonajRuchGT(ruchId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/ruchy/przyjecie - przyjecie towaru z magazynu zewnetrznego (MAG/LS) do
+// lokalizacji WMS (K4/K4G). Nie wymaga lok_zrodlo_id (zewnetrzny nie ma lokalizacji WMS).
+// Tworzy MM w GT przez most i dodaje stan do lokalizacji docelowej.
+router.post('/przyjecie', async (req, res, next) => {
+  const { artykul_gt_id, mag_zrodlo_zewnetrzny, lok_cel_id, ilosc, operator,
+          artykul_symbol, artykul_nazwa, artykul_ean } = req.body ?? {};
+
+  if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });
+  if (!mag_zrodlo_zewnetrzny || !MAGAZYNY_ZEWNETRZNE.includes(String(mag_zrodlo_zewnetrzny).trim().toUpperCase())) {
+    return res.status(400).json({ blad: `Pole "mag_zrodlo_zewnetrzny" musi byc jednym z: ${MAGAZYNY_ZEWNETRZNE.join(', ')}` });
+  }
+  if (!Number.isInteger(lok_cel_id)) return res.status(400).json({ blad: 'Pole "lok_cel_id" jest wymagane' });
+  const ilo = Number(ilosc);
+  if (!Number.isFinite(ilo) || ilo <= 0) return res.status(400).json({ blad: 'Pole "ilosc" musi byc liczba > 0' });
+
+  const zrodloMag = String(mag_zrodlo_zewnetrzny).trim().toUpperCase();
+
+  const cel = db.prepare('SELECT * FROM lokalizacje WHERE id = ?').get(lok_cel_id);
+  if (!cel) return res.status(404).json({ blad: 'Lokalizacja docelowa nie istnieje' });
+  if (cel.aktywna !== 1) return res.status(409).json({ blad: 'Lokalizacja docelowa jest nieaktywna' });
+  if (!['K4', 'K4G'].includes(cel.magazyn)) {
+    return res.status(400).json({ blad: 'Przyjecie moze trafic tylko do magazynu WMS (K4/K4G)' });
+  }
+
+  for (const mag of [zrodloMag, cel.magazyn]) {
+    const otwarta = db.prepare("SELECT id FROM inwentaryzacje WHERE magazyn = ? AND status = 'otwarta'").get(mag);
+    if (otwarta) return res.status(409).json({ blad: `Inwentaryzacja w toku dla magazynu ${mag} - przyjecie zablokowane` });
+  }
+
+  if (cel.magazyn === 'K4') {
+    const obecneK4 = db.prepare(
+      `SELECT s.lokalizacja_id FROM stany_lokalizacji s
+       JOIN lokalizacje l ON l.id = s.lokalizacja_id
+       WHERE s.artykul_gt_id = ? AND l.magazyn = 'K4' AND s.ilosc > 0 AND s.lokalizacja_id != ?`
+    ).all(artykul_gt_id, lok_cel_id);
+    if (obecneK4.length > 0) {
+      return res.status(409).json({ blad: 'W magazynie K4 artykul moze miec tylko jedna lokalizacje - towar juz istnieje w innym miejscu K4' });
+    }
+  }
+
+  // potrzebujemy symbolu/nazwy do wpisania w stany_lokalizacji
+  const symbolDoWpisu = artykul_symbol
+    ?? db.prepare("SELECT artykul_symbol FROM stany_lokalizacji WHERE artykul_gt_id = ? LIMIT 1").get(artykul_gt_id)?.artykul_symbol
+    ?? String(artykul_gt_id);
+  const nazwaDoWpisu = artykul_nazwa
+    ?? db.prepare("SELECT artykul_nazwa FROM stany_lokalizacji WHERE artykul_gt_id = ? LIMIT 1").get(artykul_gt_id)?.artykul_nazwa
+    ?? '';
+  const eanDoWpisu = artykul_ean
+    ?? db.prepare("SELECT artykul_ean FROM stany_lokalizacji WHERE artykul_gt_id = ? LIMIT 1").get(artykul_gt_id)?.artykul_ean
+    ?? null;
+
+  let ruchId;
+  db.exec('BEGIN');
+  try {
+    const ruch = db.prepare(`
+      INSERT INTO ruchy (typ, artykul_gt_id, artykul_symbol, lok_zrodlo_id, lok_cel_id, mag_zrodlo_zewnetrzny, ilosc, status, operator)
+      VALUES ('MM', ?, ?, NULL, ?, ?, ?, 'pending', ?)
+    `).run(artykul_gt_id, symbolDoWpisu, lok_cel_id, zrodloMag, ilo, operator ?? null);
+    ruchId = ruch.lastInsertRowid;
+
+    const stanCel = db.prepare('SELECT * FROM stany_lokalizacji WHERE lokalizacja_id = ? AND artykul_gt_id = ?')
+      .get(lok_cel_id, artykul_gt_id);
+    if (stanCel) {
+      db.prepare('UPDATE stany_lokalizacji SET ilosc = ilosc + ?, ostatnia_zmiana = CURRENT_TIMESTAMP, operator = ? WHERE id = ?')
+        .run(ilo, operator ?? null, stanCel.id);
+    } else {
+      db.prepare(`
+        INSERT INTO stany_lokalizacji (lokalizacja_id, artykul_gt_id, artykul_symbol, artykul_nazwa, artykul_ean, ilosc, operator)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(lok_cel_id, artykul_gt_id, symbolDoWpisu, nazwaDoWpisu, eanDoWpisu, ilo, operator ?? null);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    return next(err);
+  }
+
+  try {
+    res.status(201).json(await wykonajRuchGT(ruchId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/ruchy/mm-zewnetrzny - MM miedzy dwoma magazynami zewnetrznymi (MAG/LS).
+// Brak zmian stanow WMS (zadna strona nie ma lokalizacji WMS). Tylko rejestracja ruchu
+// i dokument MM w GT przez most.
+router.post('/mm-zewnetrzny', async (req, res, next) => {
+  const { artykul_gt_id, mag_zrodlo, mag_cel, ilosc, operator, artykul_symbol } = req.body ?? {};
+
+  if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });
+  if (!mag_zrodlo || !MAGAZYNY_ZEWNETRZNE.includes(String(mag_zrodlo).trim().toUpperCase())) {
+    return res.status(400).json({ blad: `Pole "mag_zrodlo" musi byc jednym z: ${MAGAZYNY_ZEWNETRZNE.join(', ')}` });
+  }
+  if (!mag_cel || !MAGAZYNY_ZEWNETRZNE.includes(String(mag_cel).trim().toUpperCase())) {
+    return res.status(400).json({ blad: `Pole "mag_cel" musi byc jednym z: ${MAGAZYNY_ZEWNETRZNE.join(', ')}` });
+  }
+  if (mag_zrodlo === mag_cel) return res.status(400).json({ blad: 'Magazyn zrodlowy i docelowy nie moga byc identyczne' });
+  const ilo = Number(ilosc);
+  if (!Number.isFinite(ilo) || ilo <= 0) return res.status(400).json({ blad: 'Pole "ilosc" musi byc liczba > 0' });
+
+  const symbolDoWpisu = artykul_symbol
+    ?? db.prepare("SELECT artykul_symbol FROM stany_lokalizacji WHERE artykul_gt_id = ? LIMIT 1").get(artykul_gt_id)?.artykul_symbol
+    ?? String(artykul_gt_id);
+
+  let ruchId;
+  try {
+    const ruch = db.prepare(`
+      INSERT INTO ruchy (typ, artykul_gt_id, artykul_symbol, lok_zrodlo_id, lok_cel_id,
+                         mag_zrodlo_zewnetrzny, mag_cel_zewnetrzny, ilosc, status, operator)
+      VALUES ('MM', ?, ?, NULL, NULL, ?, ?, ?, 'pending', ?)
+    `).run(artykul_gt_id, symbolDoWpisu, String(mag_zrodlo).toUpperCase(), String(mag_cel).toUpperCase(), ilo, operator ?? null);
+    ruchId = ruch.lastInsertRowid;
+  } catch (err) {
+    return next(err);
+  }
+
   try {
     res.status(201).json(await wykonajRuchGT(ruchId));
   } catch (err) {

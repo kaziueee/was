@@ -71,6 +71,7 @@ const panele = {
   ruchy: { sekcja: 'panel-ruchy', zaladowano: false, odswiez: odswiezRuchy },
   lokalizacje: { sekcja: 'panel-lokalizacje', zaladowano: false, odswiez: odswiezLokalizacje },
   inwentaryzacje: { sekcja: 'panel-inwentaryzacje', zaladowano: false, odswiez: odswiezInwentaryzacje },
+  mm: { sekcja: 'panel-mm', zaladowano: false, odswiez: () => {} },
 };
 
 function pokazPanel(nazwa) {
@@ -95,6 +96,7 @@ document.querySelectorAll('.tab-link').forEach((btn) => {
 
 const ZGODNOSC_BADGE = {
   OK: 'badge-ok',
+  OF: 'badge-ok',
   t_GT: 'badge-info',
   NZ: 'badge-err',
   BD: 'badge-neutral',
@@ -139,6 +141,13 @@ function ilg(stanyGt, magazyn) {
   return stanyGt?.[magazyn]?.ilosc ?? 0;
 }
 
+// Pola lokalizacyjne GT to wpisy sklejone "; " (np. "A(1); B(2)"). Renderujemy
+// kazdy wpis w osobnej linii (nie zawijamy w srodku wpisu) - oszczedza szerokosc.
+function komorkaLok(tekst) {
+  if (!tekst) return '–';
+  return tekst.split('; ').map((w) => `<span class="lok-wpis">${w}</span>`).join('');
+}
+
 // Komorka stanu magazynu: stan, a gdy jest rezerwacja (st_StanRez) - druga
 // linijka "rez N". Druga linijka pojawia sie tylko gdy rezerwacja != 0,
 // zeby nie zasmiecac kolumn (rezerwacje w praktyce ma garstka towarow).
@@ -157,10 +166,12 @@ function renderujProdukty({ produkty, total, limit, offset, tryb }) {
   for (const p of produkty) {
     const wmsK4 = p.wms_k4 ? `${p.wms_k4.kod} (${p.wms_k4.ilosc})` : '–';
     const wmsK4g = p.wms_k4g.length > 0
-      ? p.wms_k4g.map((l) => `${l.kod}: ${l.ilosc}`).join(', ')
+      ? p.wms_k4g.map((l) => `<span class="lok-wpis">${l.kod}: ${l.ilosc}</span>`).join('')
       : '–';
     const z = p.zgodnosc;
-    const klasa = ZGODNOSC_BADGE[z.ogolna] ?? 'badge-neutral';
+    // Badge zawsze = ogolna (najgorszy przypadek K4/K4G) - spojnie z modalem i filtrem.
+    const stanZg = z.ogolna;
+    const klasa = ZGODNOSC_BADGE[stanZg] ?? 'badge-neutral';
     const tytul = `K4: ${z.k4} | K4G: ${z.k4g}`;
 
     const tr = document.createElement('tr');
@@ -173,13 +184,15 @@ function renderujProdukty({ produkty, total, limit, offset, tryb }) {
       <td>${komorkaStan(p.stany_gt, 'MAG')}</td>
       <td>${komorkaStan(p.stany_gt, 'LS')}</td>
       <td>${p.razem}</td>
-      <td>${wmsK4}</td>
-      <td>${wmsK4g}</td>
+      <td class="kol-lok">${wmsK4}</td>
+      <td class="kol-lok">${wmsK4g}</td>
       <td>${p.k4g_razem}</td>
-      <td><span class="badge ${klasa}" title="${tytul}">${z.ogolna}</span></td>
-      <td>${p.lokalizacja_k4_gt || '–'}</td>
-      <td>${p.lokalizacja_k4g_gt || '–'}</td>
+      <td><span class="badge ${klasa}" title="${tytul}">${stanZg}</span></td>
+      <td class="kol-lok">${komorkaLok(p.lokalizacja_k4_gt)}</td>
+      <td class="kol-lok">${komorkaLok(p.lokalizacja_k4g_gt)}</td>
+      <td class="td-akcja"><button class="btn btn-small btn-prod-edytuj" type="button">Edytuj</button></td>
     `;
+    tr.querySelector('.btn-prod-edytuj').addEventListener('click', () => otworzModalProdukt(p));
     tbody.appendChild(tr);
   }
 
@@ -716,6 +729,790 @@ function tabelaRoznic(pozycje) {
 }
 
 el('btn-inw-odswiez').addEventListener('click', odswiezInwentaryzacje);
+
+// === MM PANEL ===
+
+function mmCzyWms(mag) {
+  return mag === 'K4' || mag === 'K4G';
+}
+
+function mmParsujKierunek(val) {
+  const [zrodlo, cel] = val.split(':');
+  return { zrodlo, cel };
+}
+
+// Pola lokalizacji to combo (input + datalist) - przy dziesiatkach lokalizacji
+// pozwala wpisywac i zawezac liste. Mapa kod->id per pole (do odczytu wybranego id).
+const lokMapy = {};
+// Mapa kod->stan (ilosc na lokalizacji zrodlowej) per pole - do "pozostanie na lokalizacji"
+const lokStany = {};
+
+function ustawDatalist(inputEl, opcje) {
+  // opcje: [{id, kod, hint?, stan?}]
+  const dl = el(`${inputEl.id}-list`);
+  dl.innerHTML = '';
+  const mapa = new Map();
+  const stany = new Map();
+  for (const o of opcje) {
+    mapa.set(o.kod, o.id);
+    if (o.stan !== undefined) stany.set(o.kod, o.stan);
+    const opt = document.createElement('option');
+    opt.value = o.kod;
+    if (o.hint) opt.label = `${o.kod} — ${o.hint}`;
+    dl.appendChild(opt);
+  }
+  lokMapy[inputEl.id] = mapa;
+  lokStany[inputEl.id] = stany;
+  inputEl.value = '';
+}
+
+// Pokazuje "pozostanie na lokalizacji" = stan zrodla - wpisana ilosc. Dynamicznie
+// przy zmianie zrodla lub ilosci. Ukryte gdy zrodlo bez znanego stanu (MAG/LS / puste).
+function aktualizujPozostanie(srcId, qtyId, spanId) {
+  const span = el(spanId);
+  const src = el(srcId);
+  const kod = src.value.trim();
+  const stan = lokStany[srcId]?.get(kod);
+  if (stan === undefined || src.classList.contains('hidden')) {
+    span.classList.add('hidden');
+    return;
+  }
+  const qty = Number(el(qtyId).value);
+  const pozostanie = stan - (Number.isFinite(qty) ? qty : 0);
+  span.textContent = `Na lokalizacji: ${stan} → pozostanie: ${pozostanie}`;
+  span.classList.toggle('pozostanie-blad', pozostanie < 0);
+  span.classList.remove('hidden');
+}
+
+// Zwraca id lokalizacji dla aktualnie wpisanego kodu, lub null gdy nie pasuje do listy
+function lokComboId(inputEl) {
+  const mapa = lokMapy[inputEl.id];
+  if (!mapa) return null;
+  return mapa.get(inputEl.value.trim()) ?? null;
+}
+
+async function mmZaladujLokZrodlo(inputEl, brakEl, mag, symbol) {
+  if (!mmCzyWms(mag)) {
+    inputEl.classList.add('hidden');
+    if (brakEl) brakEl.classList.remove('hidden');
+    ustawDatalist(inputEl, []);
+    return;
+  }
+  inputEl.classList.remove('hidden');
+  if (brakEl) brakEl.classList.add('hidden');
+  try {
+    const dane = await api(`/api/lokalizacje/artykul/${encodeURIComponent(symbol)}`);
+    const loki = dane.lokalizacje.filter((l) => l.magazyn === mag && l.ilosc > 0);
+    ustawDatalist(inputEl, loki.map((l) => ({ id: l.lokalizacja_id, kod: l.kod, hint: `${l.ilosc} szt.`, stan: l.ilosc })));
+    if (loki.length === 1) inputEl.value = loki[0].kod;
+  } catch { ustawDatalist(inputEl, []); }
+}
+
+// Gdy cel = K4 (1 SKU = 1 lokalizacja): podpowiedz stale miejsce K4 artykulu
+// (tez puste, ilosc 0) z mozliwoscia zmiany + info o stanie i rezerwacji GT.
+async function mmUstawCelK4(celInputEl, infoSpanId, mag, produkt) {
+  const span = infoSpanId ? el(infoSpanId) : null;
+  if (mag !== 'K4') { if (span) span.classList.add('hidden'); return; }
+  if (span) {
+    const il = produkt.stany_gt?.K4?.ilosc ?? 0;
+    const rez = produkt.stany_gt?.K4?.rezerwacja ?? 0;
+    span.textContent = `Na K4: ${il}${rez ? ` (rez ${rez})` : ''}`;
+    span.classList.remove('hidden');
+  }
+  try {
+    const dom = await api(`/api/lokalizacje/k4-dom/${produkt.artykul_gt_id}`);
+    if (dom && dom.kod) celInputEl.value = dom.kod;
+  } catch { /* brak stalego miejsca - uzytkownik wybierze */ }
+}
+
+async function mmZaladujLokCel(inputEl, brakEl, mag) {
+  if (!mmCzyWms(mag)) {
+    inputEl.classList.add('hidden');
+    if (brakEl) brakEl.classList.remove('hidden');
+    ustawDatalist(inputEl, []);
+    return;
+  }
+  inputEl.classList.remove('hidden');
+  if (brakEl) brakEl.classList.add('hidden');
+  try {
+    const lista = await api(`/api/lokalizacje?magazyn=${mag}&aktywna=1`);
+    ustawDatalist(inputEl, lista.map((l) => ({ id: l.id, kod: l.kod })));
+  } catch { ustawDatalist(inputEl, []); }
+}
+
+function mmBudujPayload({ artykul_gt_id, symbol, nazwa, ean, zrodloMag, celMag, lokZrodloId, lokCelId, ilosc }) {
+  const wmsZ = mmCzyWms(zrodloMag);
+  const wmsC = mmCzyWms(celMag);
+  if (wmsZ && wmsC) {
+    return { url: '/api/ruchy/mm', body: { artykul_gt_id, lok_zrodlo_id: lokZrodloId, lok_cel_id: lokCelId, ilosc, operator: operator() } };
+  } else if (wmsZ && !wmsC) {
+    return { url: '/api/ruchy/mm', body: { artykul_gt_id, lok_zrodlo_id: lokZrodloId, mag_cel_zewnetrzny: celMag, ilosc, operator: operator() } };
+  } else if (!wmsZ && wmsC) {
+    return { url: '/api/ruchy/przyjecie', body: { artykul_gt_id, mag_zrodlo_zewnetrzny: zrodloMag, lok_cel_id: lokCelId, ilosc, artykul_symbol: symbol, artykul_nazwa: nazwa, artykul_ean: ean, operator: operator() } };
+  } else {
+    return { url: '/api/ruchy/mm-zewnetrzny', body: { artykul_gt_id, mag_zrodlo: zrodloMag, mag_cel: celMag, ilosc, artykul_symbol: symbol, operator: operator() } };
+  }
+}
+
+function pokazKomunikatEl(elId, tekst, typ) {
+  const k = el(elId);
+  k.textContent = tekst;
+  k.className = `komunikat ${typ}`;
+}
+
+// --- lista staging ---
+
+let mmLista = [];
+let mmWybranyProdukt = null;
+
+function mmRenderujTabele() {
+  const tbody = el('mm-tbody');
+  tbody.innerHTML = '';
+  el('mm-brak').classList.toggle('hidden', mmLista.length > 0);
+  el('mm-footer').classList.toggle('hidden', mmLista.length === 0);
+  el('mm-liczba').textContent = mmLista.length;
+
+  for (let i = 0; i < mmLista.length; i++) {
+    const p = mmLista[i];
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${p.symbol}</strong></td>
+      <td>${p.nazwa}</td>
+      <td>${p.lokZrodloKod ?? p.zrodloMag}</td>
+      <td>${p.ilosc}</td>
+      <td>${p.lokCelKod ?? p.celMag}</td>
+      <td><button type="button" class="btn btn-small btn-danger" data-idx="${i}">✕</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll('[data-idx]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      mmLista.splice(Number(btn.dataset.idx), 1);
+      mmRenderujTabele();
+    });
+  });
+}
+
+// --- wyszukiwanie ---
+
+el('btn-mm-szukaj').addEventListener('click', mmSzukaj);
+el('mm-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') mmSzukaj(); });
+
+async function mmSzukaj() {
+  const q = el('mm-q').value.trim();
+  const wyniki = el('mm-szukaj-wyniki');
+  if (!q) return;
+  wyniki.innerHTML = '<p class="hint">Szukam…</p>';
+  wyniki.classList.remove('hidden');
+  try {
+    const { produkty } = await api(`/api/produkty?q=${encodeURIComponent(q)}&limit=20`);
+    wyniki.innerHTML = '';
+    if (produkty.length === 0) { wyniki.innerHTML = '<p class="hint">Brak wyników.</p>'; return; }
+    for (const p of produkty) {
+      const stany = Object.entries(p.stany_gt ?? {}).map(([m, s]) => `${m}:${s.ilosc}`).join(' ');
+      const wiersz = document.createElement('div');
+      wiersz.className = 'mm-szukaj-wiersz';
+      wiersz.innerHTML = `
+        <span class="mm-sku">${p.symbol}</span>
+        <span class="mm-nazwa">${p.nazwa}</span>
+        <span class="mm-stany">${stany}</span>
+      `;
+      wiersz.addEventListener('click', () => mmWybierzProdukt(p));
+      wyniki.appendChild(wiersz);
+    }
+  } catch (err) {
+    wyniki.innerHTML = `<p class="hint">Błąd: ${err.message}</p>`;
+  }
+}
+
+async function mmWybierzProdukt(p) {
+  mmWybranyProdukt = p;
+  el('mm-szukaj-wyniki').classList.add('hidden');
+  el('mm-q').value = '';
+  el('mm-f-sku').textContent = p.symbol;
+  el('mm-f-nazwa').textContent = p.nazwa;
+  el('mm-f-stany').textContent = Object.entries(p.stany_gt ?? {}).map(([m, s]) => `${m}:${s.ilosc}`).join(' | ');
+  el('mm-f-ilosc').value = 1;
+  el('mm-formularz').classList.remove('hidden');
+  await mmOdswiezLokFormularz();
+}
+
+async function mmOdswiezLokFormularz() {
+  if (!mmWybranyProdukt) return;
+  const { zrodlo, cel } = mmParsujKierunek(el('mm-kierunek').value);
+  await Promise.all([
+    mmZaladujLokZrodlo(el('mm-f-zrodlo'), el('mm-f-zrodlo-brak'), zrodlo, mmWybranyProdukt.symbol),
+    mmZaladujLokCel(el('mm-f-cel'), el('mm-f-cel-brak'), cel),
+  ]);
+  await mmUstawCelK4(el('mm-f-cel'), 'mm-f-cel-info', cel, mmWybranyProdukt);
+  aktualizujPozostanie('mm-f-zrodlo', 'mm-f-ilosc', 'mm-f-pozostanie');
+}
+
+el('mm-kierunek').addEventListener('change', mmOdswiezLokFormularz);
+el('mm-f-zrodlo').addEventListener('input', () => aktualizujPozostanie('mm-f-zrodlo', 'mm-f-ilosc', 'mm-f-pozostanie'));
+el('mm-f-ilosc').addEventListener('input', () => aktualizujPozostanie('mm-f-zrodlo', 'mm-f-ilosc', 'mm-f-pozostanie'));
+
+el('btn-mm-anuluj').addEventListener('click', () => {
+  el('mm-formularz').classList.add('hidden');
+  mmWybranyProdukt = null;
+});
+
+el('btn-mm-dodaj').addEventListener('click', () => {
+  if (!mmWybranyProdukt) return;
+  const { zrodlo, cel } = mmParsujKierunek(el('mm-kierunek').value);
+  const ilosc = Number(el('mm-f-ilosc').value);
+  if (!ilosc || ilosc <= 0) return;
+
+  let lokZrodloId = null, lokZrodloKod = null;
+  let lokCelId = null, lokCelKod = null;
+
+  if (mmCzyWms(zrodlo)) {
+    const id = lokComboId(el('mm-f-zrodlo'));
+    if (!id) { alert('Wybierz prawidłową lokalizację źródłową z listy.'); return; }
+    lokZrodloId = id;
+    lokZrodloKod = el('mm-f-zrodlo').value.trim();
+  }
+  if (mmCzyWms(cel)) {
+    const id = lokComboId(el('mm-f-cel'));
+    if (!id) { alert('Wybierz prawidłową lokalizację docelową z listy.'); return; }
+    lokCelId = id;
+    lokCelKod = el('mm-f-cel').value.trim();
+  }
+
+  mmLista.push({
+    artykul_gt_id: mmWybranyProdukt.artykul_gt_id,
+    symbol: mmWybranyProdukt.symbol,
+    nazwa: mmWybranyProdukt.nazwa,
+    ean: mmWybranyProdukt.ean ?? null,
+    zrodloMag: zrodlo,
+    celMag: cel,
+    lokZrodloId,
+    lokZrodloKod,
+    lokCelId,
+    lokCelKod,
+    ilosc,
+  });
+  mmRenderujTabele();
+  el('mm-formularz').classList.add('hidden');
+  mmWybranyProdukt = null;
+});
+
+el('btn-mm-wyczysc').addEventListener('click', () => {
+  mmLista = [];
+  mmRenderujTabele();
+  el('mm-wyniki-wysylki').innerHTML = '';
+});
+
+el('btn-mm-wyslij').addEventListener('click', async () => {
+  if (mmLista.length === 0) return;
+  const btnWyslij = el('btn-mm-wyslij');
+  btnWyslij.disabled = true;
+
+  const listaDiv = el('mm-wyniki-wysylki');
+  listaDiv.innerHTML = '<div class="mm-wyniki-lista"></div>';
+  const listaEl = listaDiv.firstChild;
+
+  const kopia = [...mmLista];
+  const wynikWiersze = kopia.map((p, i) => {
+    const div = document.createElement('div');
+    div.className = 'mm-wynik-wiersz pending';
+    div.textContent = `[${i + 1}] ${p.symbol} × ${p.ilosc} (${p.zrodloMag} → ${p.celMag}) – oczekuje…`;
+    listaEl.appendChild(div);
+    return div;
+  });
+
+  let bledy = 0;
+  for (let i = 0; i < kopia.length; i++) {
+    const p = kopia[i];
+    const { url, body } = mmBudujPayload({
+      artykul_gt_id: p.artykul_gt_id, symbol: p.symbol, nazwa: p.nazwa, ean: p.ean,
+      zrodloMag: p.zrodloMag, celMag: p.celMag, lokZrodloId: p.lokZrodloId, lokCelId: p.lokCelId, ilosc: p.ilosc,
+    });
+    try {
+      const wynik = await api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const stan = wynik.status === 'ok' ? 'ok' : 'pending';
+      wynikWiersze[i].className = `mm-wynik-wiersz ${stan}`;
+      wynikWiersze[i].textContent = `[${i + 1}] ${p.symbol} × ${p.ilosc} – ${stan === 'ok' ? `OK (${wynik.dok_gt_numer ?? 'brak nr dok.'})` : `oczekuje: ${wynik.blad_opis ?? ''}` }`;
+      if (stan !== 'ok') bledy++;
+    } catch (err) {
+      wynikWiersze[i].className = 'mm-wynik-wiersz blad';
+      wynikWiersze[i].textContent = `[${i + 1}] ${p.symbol} × ${p.ilosc} – BŁĄD: ${err.message}`;
+      bledy++;
+    }
+  }
+
+  mmLista = [];
+  mmRenderujTabele();
+  btnWyslij.disabled = false;
+  if (bledy === 0) pokazKomunikat('Wszystkie ruchy wysłane pomyślnie.', 'ok');
+  else pokazKomunikat(`${bledy} z ${kopia.length} ruchów wymaga uwagi (pending/błąd).`, 'info');
+});
+
+// === MODAL PRODUKTU (edytowalny rozklad po magazynach) ===
+
+const MAG_LABEL = { K4: 'K4 Hala', K4G: 'K4 Góra', MAG: 'Kajtek (MAG)', LS: 'Leszno (LS)' };
+const MAG_EXT = ['MAG', 'LS'];
+
+let modalProdukt = null;
+let modalAkcjaCtx = null;
+
+function otworzModalProdukt(p) {
+  modalProdukt = p;
+  el('modal-produkt').classList.remove('hidden');
+  el('modal-prod-sku').textContent = p.symbol;
+  el('modal-prod-nazwa').textContent = p.nazwa;
+  zamknijAkcje();
+  el('modal-komunikat').className = 'komunikat hidden';
+  renderModalRozklad();
+}
+
+function zamknijModal() {
+  el('modal-produkt').classList.add('hidden');
+  modalProdukt = null;
+}
+
+el('btn-modal-zamknij').addEventListener('click', zamknijModal);
+el('modal-produkt').addEventListener('click', (e) => {
+  if (e.target === el('modal-produkt')) zamknijModal();
+});
+
+function modalAktualizujStany() {
+  const st = modalProdukt.zgodnosc?.ogolna ?? '–';
+  el('modal-prod-stany').innerHTML = `Status: <span class="badge ${ZGODNOSC_BADGE[st] ?? 'badge-neutral'}">${st}</span>`;
+}
+
+// Odswiezenie danych produktu z API (stany GT moga sie zmienic po MM)
+async function odswiezModalProdukt() {
+  try {
+    const { produkty } = await api(`/api/produkty?q=${encodeURIComponent(modalProdukt.symbol)}&limit=10`);
+    const p = produkty.find((x) => String(x.artykul_gt_id) === String(modalProdukt.artykul_gt_id));
+    if (p) modalProdukt = p;
+  } catch { /* zostaw stare dane */ }
+}
+
+async function renderModalRozklad() {
+  if (!modalProdukt) return;
+  const cont = el('modal-rozklad');
+  cont.innerHTML = '<p class="hint">Ładuję…</p>';
+
+  await odswiezModalProdukt();
+  modalAktualizujStany();
+
+  // lokalizacje WMS z zapasem + stale miejsce K4 (tez puste, ilosc 0) + zapas_kod
+  let loki = [];
+  try {
+    const dane = await api(`/api/lokalizacje/artykul/${encodeURIComponent(modalProdukt.symbol)}`);
+    loki = dane.lokalizacje;
+  } catch { loki = []; }
+  let k4Zapas = null;
+  try {
+    const dom = await api(`/api/lokalizacje/k4-dom/${modalProdukt.artykul_gt_id}`);
+    if (dom && dom.kod) {
+      k4Zapas = dom.zapas_kod ?? null;
+      if (!loki.some((l) => l.magazyn === 'K4' && l.kod === dom.kod)) {
+        loki.push({ lokalizacja_id: dom.lokalizacja_id, kod: dom.kod, magazyn: 'K4', ilosc: dom.ilosc, ostatnia_zmiana: dom.ostatnia_zmiana });
+      }
+    }
+  } catch { /* brak stalego miejsca */ }
+
+  // lista lokalizacji K4 do podpowiedzi w polu "zapas" (mozna tez wpisac wlasna)
+  try {
+    const k4all = await api('/api/lokalizacje?magazyn=K4&aktywna=1');
+    const dl = el('zapas-lok-list');
+    dl.innerHTML = '';
+    for (const lk of k4all) {
+      const o = document.createElement('option');
+      o.value = lk.kod;
+      dl.appendChild(o);
+    }
+  } catch { /* podpowiedzi opcjonalne */ }
+
+  // Plan lokalizacji z GT (K4 i K4G) - zachowany do pelnego przypisania (zeby przy
+  // rozkladaniu np. 3 lokalizacji nie zgubic pozostalych po nadpisaniu pola GT).
+  const planK4 = await pobierzPlan('K4', loki);
+  const planK4g = await pobierzPlan('K4G', loki);
+
+  const tabela = document.createElement('table');
+  tabela.className = 'tabela tabela-zagniezdzona rozklad-tabela';
+  tabela.innerHTML = '<thead><tr><th>Magazyn</th><th>Stan</th><th>Lokalizacja</th><th>Zapas</th><th></th><th>Ost. edycja</th></tr></thead>';
+  const tbody = document.createElement('tbody');
+
+  dodajMagWms(tbody, 'K4', loki, k4Zapas, planK4);
+  dodajMagWms(tbody, 'K4G', loki, k4Zapas, planK4g);
+  for (const mag of ['MAG', 'LS']) dodajMagZewn(tbody, mag);
+
+  // podsumowania na dole
+  const rezRazem = ['K4', 'K4G', 'MAG', 'LS'].reduce((s, m) => s + (modalProdukt.stany_gt?.[m]?.rezerwacja ?? 0), 0);
+  tbody.appendChild(wierszPodsumowania('Razem', modalProdukt.razem ?? '', 'rozklad-total'));
+  if (rezRazem > 0) tbody.appendChild(wierszPodsumowania('Rezerwacje', rezRazem, 'rozklad-total'));
+
+  tabela.appendChild(tbody);
+  cont.innerHTML = '';
+  cont.appendChild(tabela);
+}
+
+function przyciskAkcji(label, onClick, primary) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn btn-small' + (primary ? ' btn-primary' : '');
+  b.textContent = label;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+// Plan lokalizacji z GT (K4/K4G): gdy cos jest nieprzypisane - przy pierwszym
+// otwarciu (zanim WMS nadpisze pole GT) zapamietujemy oryginalny tekst lokalizacji
+// GT i pokazujemy go jako sciage. Gdy wszystko zlokalizowane - czyscimy plan.
+async function pobierzPlan(mag, loki) {
+  const id = modalProdukt.artykul_gt_id;
+  const gtStan = modalProdukt.stany_gt?.[mag]?.ilosc ?? 0;
+  const wmsSum = loki.filter((l) => l.magazyn === mag).reduce((s, l) => s + l.ilosc, 0);
+  const niezlok = Math.max(gtStan - wmsSum, 0);
+  const tekstGt = mag === 'K4' ? modalProdukt.lokalizacja_k4_gt : modalProdukt.lokalizacja_k4g_gt;
+  try {
+    if (niezlok <= 0) {
+      await api(`/api/lokalizacje/plan/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ magazyn: mag, tekst: '' }) });
+      return null;
+    }
+    const plan = await api(`/api/lokalizacje/plan/${id}?magazyn=${mag}`);
+    if (plan && plan.tekst) return plan.tekst;
+    if (tekstGt) {
+      await api(`/api/lokalizacje/plan/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ magazyn: mag, tekst: tekstGt }) });
+      return tekstGt;
+    }
+  } catch { /* plan opcjonalny */ }
+  return null;
+}
+
+function komorka(tekst, cls) {
+  const td = document.createElement('td');
+  if (tekst !== undefined && tekst !== null && tekst !== '') td.textContent = tekst;
+  if (cls) td.className = cls;
+  return td;
+}
+
+function wierszPodsumowania(etykieta, wartosc, cls) {
+  const tr = document.createElement('tr');
+  tr.className = cls;
+  tr.appendChild(komorka(etykieta));
+  tr.appendChild(komorka(wartosc));
+  const reszta = document.createElement('td');
+  reszta.colSpan = 4;
+  tr.appendChild(reszta);
+  return tr;
+}
+
+function dataEdycji(s) {
+  return s ? s.slice(0, 10) : '';
+}
+
+function dodajMagWms(tbody, mag, loki, k4Zapas, planTekst) {
+  const gt = modalProdukt.stany_gt?.[mag] ?? { ilosc: 0, rezerwacja: 0 };
+  const wmsLoki = loki.filter((l) => l.magazyn === mag).sort((a, b) => a.kod.localeCompare(b.kod, 'pl'));
+  const wmsSum = wmsLoki.reduce((s, l) => s + l.ilosc, 0);
+  const niezlok = Math.max(gt.ilosc - wmsSum, 0);
+  let rezPokazana = false;
+
+  for (const l of wmsLoki) {
+    const tr = document.createElement('tr');
+    tr.appendChild(komorka(mag));
+
+    // stan z rezerwacja (na poziomie magazynu) - pokazana raz, przy pierwszym wierszu
+    const stanTxt = (!rezPokazana && gt.rezerwacja) ? `${l.ilosc}(${gt.rezerwacja})` : String(l.ilosc);
+    rezPokazana = true;
+    tr.appendChild(komorka(stanTxt));
+
+    // Lokalizacja - klik = inline zmiana lokalizacji (LOK, cala ilosc, ten sam magazyn)
+    const tdLok = komorka(l.kod);
+    if (l.ilosc > 0) {
+      tdLok.classList.add('rozklad-lok-edyt');
+      tdLok.title = 'Kliknij, aby zmienić lokalizację (przenosi całą ilość)';
+      tdLok.addEventListener('click', () => edytujLokalizacjeInline(tdLok, l, mag));
+    }
+    tr.appendChild(tdLok);
+
+    // kolumna Zapas - edytowalna tylko dla K4 (decyzja A); inaczej pusto
+    const tdZapas = document.createElement('td');
+    if (mag === 'K4') {
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.className = 'rozklad-zapas-input';
+      inp.setAttribute('list', 'zapas-lok-list');
+      inp.autocomplete = 'off';
+      inp.value = k4Zapas ?? '';
+      inp.placeholder = '—';
+      inp.title = 'Nadmiar w innym miejscu na K4 (w GT zapis jako zbiór/zapas)';
+      inp.addEventListener('change', () => zapiszZapas(inp.value));
+      tdZapas.appendChild(inp);
+    }
+    tr.appendChild(tdZapas);
+
+    const tdA = document.createElement('td');
+    const btn = przyciskAkcji('Przenieś', () => otworzAkcje({ typ: 'wms', zrodloMag: mag, zrodloLokId: l.lokalizacja_id, zrodloKod: l.kod, dostepne: l.ilosc }));
+    btn.disabled = l.ilosc <= 0;
+    tdA.appendChild(btn);
+    tr.appendChild(tdA);
+
+    tr.appendChild(komorka(dataEdycji(l.ostatnia_zmiana)));
+    tbody.appendChild(tr);
+  }
+
+  if (niezlok > 0) {
+    const tr = document.createElement('tr');
+    tr.className = 'rozklad-nieprzypisano';
+    tr.appendChild(komorka(mag));
+    tr.appendChild(komorka(niezlok));
+    // Lokalizacja: "(nieprzypisano)" + plan z GT (sciaga gdzie rozlozyc), gdy jest
+    const tdLok = document.createElement('td');
+    tdLok.textContent = '(nieprzypisano)';
+    if (planTekst) {
+      const p = document.createElement('div');
+      p.className = 'rozklad-plan';
+      p.textContent = `wg GT: ${planTekst}`;
+      p.title = 'Plan lokalizacji z GT - zachowany do pełnego przypisania';
+      tdLok.appendChild(p);
+    }
+    tr.appendChild(tdLok);
+    tr.appendChild(komorka());
+    const tdA = document.createElement('td');
+    tdA.appendChild(przyciskAkcji('Przypisz', () => otworzAkcje({ typ: 'gt', zrodloMag: mag, zrodloLokId: null, zrodloKod: null, dostepne: niezlok }), true));
+    tr.appendChild(tdA);
+    tr.appendChild(komorka());
+    tbody.appendChild(tr);
+  }
+
+  if (wmsLoki.length === 0 && niezlok === 0) {
+    const tr = document.createElement('tr');
+    tr.appendChild(komorka(mag));
+    tr.appendChild(komorka(0));
+    const reszta = document.createElement('td');
+    reszta.colSpan = 4;
+    reszta.className = 'rozklad-puste';
+    reszta.textContent = 'brak stanu';
+    tr.appendChild(reszta);
+    tbody.appendChild(tr);
+  }
+
+  // podsumowanie magazynu (gdy >1 lokalizacja albo jest niezlokalizowany zapas)
+  if (wmsLoki.length > 1 || niezlok > 0) {
+    const tr = document.createElement('tr');
+    tr.className = 'rozklad-subtotal';
+    tr.appendChild(komorka(`${mag} razem`));
+    const tdSum = komorka(wmsSum);
+    if (wmsSum !== gt.ilosc) { tdSum.classList.add('rozklad-niezg'); tdSum.textContent = `${wmsSum}/${gt.ilosc}`; }
+    tr.appendChild(tdSum);
+    const reszta = document.createElement('td');
+    reszta.colSpan = 4;
+    tr.appendChild(reszta);
+    tbody.appendChild(tr);
+  }
+}
+
+function dodajMagZewn(tbody, mag) {
+  const gt = modalProdukt.stany_gt?.[mag] ?? { ilosc: 0, rezerwacja: 0 };
+  const tr = document.createElement('tr');
+  tr.appendChild(komorka(mag));
+  tr.appendChild(komorka(gt.rezerwacja ? `${gt.ilosc}(${gt.rezerwacja})` : String(gt.ilosc)));
+  const tdInfo = komorka('magazyn zewnętrzny', 'rozklad-puste');
+  tdInfo.colSpan = 2;
+  tr.appendChild(tdInfo);
+  const tdA = document.createElement('td');
+  if (gt.ilosc > 0) tdA.appendChild(przyciskAkcji('Przenieś', () => otworzAkcje({ typ: 'ext', zrodloMag: mag, zrodloLokId: null, zrodloKod: null, dostepne: gt.ilosc })));
+  tr.appendChild(tdA);
+  tr.appendChild(komorka());
+  tbody.appendChild(tr);
+}
+
+// Inline zmiana lokalizacji w tabeli rozkladu: klik w komorke -> combo z lokalizacjami
+// tego samego magazynu -> wybor -> LOK (cala ilosc wiersza ze starej na nowa lokalizacje).
+function edytujLokalizacjeInline(td, l, mag) {
+  td.classList.remove('rozklad-lok-edyt');
+  td.textContent = '';
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.id = 'inline-lok';
+  inp.className = 'lok-combo rozklad-lok-input';
+  inp.setAttribute('list', 'inline-lok-list');
+  inp.autocomplete = 'off';
+  td.appendChild(inp);
+
+  mmZaladujLokCel(inp, null, mag).then(() => { inp.value = l.kod; inp.focus(); });
+
+  let zakonczone = false;
+  const zakoncz = async (zatwierdz) => {
+    if (zakonczone) return;
+    if (zatwierdz) {
+      const wpisane = inp.value.trim();
+      const nowyId = lokComboId(inp);
+      if (nowyId && nowyId !== l.lokalizacja_id) {
+        zakonczone = true;
+        await wykonajZmianeLok(l, nowyId);
+        return;
+      }
+      // wpisano kod, ktorego nie ma na liscie lokalizacji (i to nie jest obecna)
+      if (wpisane && wpisane !== l.kod && !nowyId) {
+        zakonczone = true;
+        pokazKomunikatEl('modal-komunikat', `Lokalizacja „${wpisane}" nie istnieje w systemie — dodaj ją w panelu Lokalizacje.`, 'blad');
+        await renderModalRozklad();
+        return;
+      }
+    }
+    renderModalRozklad(); // brak zmiany / anulowanie -> przywroc widok
+  };
+  inp.addEventListener('change', () => zakoncz(true));
+  inp.addEventListener('blur', () => setTimeout(() => zakoncz(true), 150));
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') zakoncz(false); });
+}
+
+async function wykonajZmianeLok(l, lokCelId) {
+  try {
+    const wynik = await api('/api/ruchy/lok', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        artykul_gt_id: modalProdukt.artykul_gt_id, lok_zrodlo_id: l.lokalizacja_id, lok_cel_id: lokCelId,
+        ilosc: l.ilosc, operator: operator(), artykul_symbol: modalProdukt.symbol, artykul_nazwa: modalProdukt.nazwa,
+      }),
+    });
+    const ok = wynik.status === 'ok';
+    pokazKomunikatEl('modal-komunikat', ok ? 'Lokalizacja zmieniona.' : `Zapisano, oczekuje: ${wynik.blad_opis ?? ''}`, ok ? 'ok' : 'info');
+  } catch (err) {
+    pokazKomunikatEl('modal-komunikat', err.message, 'blad');
+  }
+  await renderModalRozklad();
+  odswiezProdukty();
+}
+
+// Zapis adnotacji "zapas" K4 (decyzja A) - PUT, potem odswiezenie
+async function zapiszZapas(val) {
+  if (!modalProdukt) return;
+  try {
+    await api(`/api/lokalizacje/k4-zapas/${modalProdukt.artykul_gt_id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ zapas_kod: val }),
+    });
+    pokazKomunikatEl('modal-komunikat', 'Zapisano zapas K4.', 'ok');
+    await renderModalRozklad();
+    odswiezProdukty();
+  } catch (err) {
+    pokazKomunikatEl('modal-komunikat', err.message, 'blad');
+  }
+}
+
+// --- panel akcji (przenies / zmien lok / przypisz) ---
+
+function otworzAkcje(ctx) {
+  modalAkcjaCtx = ctx;
+  el('modal-akcja-komunikat').className = 'komunikat hidden';
+  el('modal-akcja-overlay').classList.remove('hidden');
+
+  // naglowek: typ akcji + (SKU nazwa — z zrodlo)
+  el('modal-akcja-typ').textContent = ctx.typ === 'gt' ? 'Przypisz' : 'Przenieś';
+  let zrodloTxt;
+  if (ctx.typ === 'gt') zrodloTxt = `z puli „nieprzypisano" (${MAG_LABEL[ctx.zrodloMag]})`;
+  else if (ctx.typ === 'ext') zrodloTxt = `z ${MAG_LABEL[ctx.zrodloMag]}`;
+  else zrodloTxt = `z ${ctx.zrodloKod} (${MAG_LABEL[ctx.zrodloMag]})`;
+  el('modal-akcja-tytul').innerHTML = `<strong>${modalProdukt.symbol}</strong> ${modalProdukt.nazwa} <span class="modal-akcja-zrodlo">${zrodloTxt}</span>`;
+
+  el('modal-akcja-ile').value = ctx.dostepne || 1;
+
+  const magSel = el('modal-akcja-magazyn');
+  if (ctx.typ === 'gt') {
+    // przypisanie tylko w obrębie tego samego magazynu WMS
+    magSel.value = ctx.zrodloMag;
+    magSel.disabled = true;
+  } else {
+    magSel.disabled = false;
+    // domyslny cel: przesuniecie miedzy K4 a K4G (uzupelnianie/odkladanie).
+    // z K4 -> K4G, z K4G -> K4, z zewnetrznego -> K4G.
+    if (ctx.typ === 'ext') magSel.value = 'K4G';
+    else magSel.value = ctx.zrodloMag === 'K4' ? 'K4G' : 'K4';
+  }
+
+  akcjaOdswiezCel();
+}
+
+function zamknijAkcje() {
+  modalAkcjaCtx = null;
+  el('modal-akcja-overlay').classList.add('hidden');
+}
+
+el('btn-modal-akcja-x').addEventListener('click', zamknijAkcje);
+el('modal-akcja-overlay').addEventListener('click', (e) => {
+  if (e.target === el('modal-akcja-overlay')) zamknijAkcje();
+});
+
+async function akcjaOdswiezCel() {
+  if (!modalAkcjaCtx) return;
+  const celMag = el('modal-akcja-magazyn').value;
+  await mmZaladujLokCel(el('modal-akcja-lok'), el('modal-akcja-lok-brak'), celMag);
+  if (mmCzyWms(celMag)) await mmUstawCelK4(el('modal-akcja-lok'), null, celMag, modalProdukt);
+  akcjaPozostanie();
+}
+
+function akcjaPozostanie() {
+  const span = el('modal-akcja-pozostanie');
+  const stan = modalAkcjaCtx?.dostepne ?? 0;
+  const ile = Number(el('modal-akcja-ile').value);
+  const pozostanie = stan - (Number.isFinite(ile) ? ile : 0);
+  span.textContent = `Na źródle: ${stan} → pozostanie: ${pozostanie}`;
+  span.classList.toggle('pozostanie-blad', pozostanie < 0);
+  span.classList.remove('hidden');
+}
+
+el('modal-akcja-magazyn').addEventListener('change', akcjaOdswiezCel);
+el('modal-akcja-ile').addEventListener('input', akcjaPozostanie);
+el('btn-modal-akcja-anuluj').addEventListener('click', zamknijAkcje);
+
+el('btn-modal-akcja-wykonaj').addEventListener('click', async () => {
+  if (!modalAkcjaCtx || !modalProdukt) return;
+  const ctx = modalAkcjaCtx;
+  const celMag = el('modal-akcja-magazyn').value;
+  const ile = Number(el('modal-akcja-ile').value);
+  if (!ile || ile <= 0) return;
+  if (ile > ctx.dostepne) { pokazKomunikatEl('modal-akcja-komunikat', `Najwyżej ${ctx.dostepne} szt. dostępne na źródle.`, 'blad'); return; }
+  if (ctx.typ === 'ext' && celMag === ctx.zrodloMag) { pokazKomunikatEl('modal-akcja-komunikat', 'Wybierz inny magazyn docelowy.', 'blad'); return; }
+
+  // lokalizacja docelowa (gdy cel jest magazynem WMS)
+  let lokCelId = null;
+  if (mmCzyWms(celMag)) {
+    lokCelId = lokComboId(el('modal-akcja-lok'));
+    if (!lokCelId) { pokazKomunikatEl('modal-akcja-komunikat', 'Wybierz prawidłową lokalizację docelową z listy.', 'blad'); return; }
+  }
+  if (ctx.typ === 'wms' && celMag === ctx.zrodloMag && lokCelId === ctx.zrodloLokId) {
+    pokazKomunikatEl('modal-akcja-komunikat', 'Lokalizacja docelowa jest taka sama jak źródłowa.', 'blad'); return;
+  }
+
+  // dobór operacji: w obrębie magazynu WMS / przypisanie z GT -> LOK; między magazynami -> MM
+  let url, body;
+  if (ctx.typ === 'gt') {
+    url = '/api/ruchy/lok';
+    body = { artykul_gt_id: modalProdukt.artykul_gt_id, lok_zrodlo_id: null, lok_cel_id: lokCelId, ilosc: ile,
+             operator: operator(), artykul_symbol: modalProdukt.symbol, artykul_nazwa: modalProdukt.nazwa };
+  } else if (ctx.typ === 'wms' && celMag === ctx.zrodloMag) {
+    url = '/api/ruchy/lok';
+    body = { artykul_gt_id: modalProdukt.artykul_gt_id, lok_zrodlo_id: ctx.zrodloLokId, lok_cel_id: lokCelId, ilosc: ile,
+             operator: operator(), artykul_symbol: modalProdukt.symbol, artykul_nazwa: modalProdukt.nazwa };
+  } else {
+    ({ url, body } = mmBudujPayload({
+      artykul_gt_id: modalProdukt.artykul_gt_id, symbol: modalProdukt.symbol, nazwa: modalProdukt.nazwa, ean: modalProdukt.ean ?? null,
+      zrodloMag: ctx.zrodloMag, celMag, lokZrodloId: ctx.zrodloLokId, lokCelId, ilosc: ile,
+    }));
+  }
+
+  const btn = el('btn-modal-akcja-wykonaj');
+  btn.disabled = true;
+  try {
+    const wynik = await api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const ok = wynik.status === 'ok';
+    pokazKomunikatEl('modal-komunikat', ok ? `Wykonano${wynik.dok_gt_numer ? ` (${wynik.dok_gt_numer})` : ''}.` : `Zapisano, oczekuje GT: ${wynik.blad_opis ?? ''}`, ok ? 'ok' : 'info');
+    zamknijAkcje();
+    await renderModalRozklad();
+    odswiezProdukty();
+  } catch (err) {
+    pokazKomunikatEl('modal-akcja-komunikat', err.message, 'blad');
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // --- init ---
 

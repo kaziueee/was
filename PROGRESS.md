@@ -246,7 +246,14 @@ Kolejność robocza (niekoniecznie priorytet), ustalona w rozmowie:
    kontrolna "Produkty" (read-only, dla admina). Potrzebny osobny,
    prostszy interfejs dla zwykłych użytkowników (jakie akcje, jaki zakres —
    do ustalenia).
-6. **Most na kliknięcie** — opisane wyżej w "Otwarte".
+6. **Most jako proces z ikoną w trayu (tray icon)** — preferencja usera
+   (ustalone 2026-06-19): most ma działać jako proces z **ikoną przy zegarze**
+   (system tray), gdzie jednym kliknięciem widać czy działa i można go
+   zrestartować. **NIE** ukryta usługa Windows — user chce widoczny, sterowalny
+   proces. Bonus: proces działa w sesji użytkownika, więc Sfera (COM) nie ma
+   problemu z brakiem sesji (problem usługi Windows opisany przez kolegę).
+   Alternatywa minimalna: po prostu otwarte okno konsoli też jest OK.
+   Zastępuje wcześniejsze "Most na kliknięcie".
 7. **Analityka magazynowa** — raporty/wskaźniki na bazie danych WMS+GT
    (np. rotacja, rozjazdy w czasie, wykorzystanie lokalizacji) — zakres do
    ustalenia.
@@ -275,7 +282,222 @@ Kolejność robocza (niekoniecznie priorytet), ustalona w rozmowie:
   (interfejs dla zwykłych użytkowników).
 - Punkt 4 (zabezpieczenia/uprawnienia) — wciąż do ustalenia, bez zmian.
 
+### Z propozycji kolegi (gist, analiza 2026-06-19)
+
+Kolega przysłał plan przejścia na C#/ASP.NET + React (MVP = moduł MM end-to-end).
+Decyzja: **zostajemy na Node** (działający system), ale bierzemy z propozycji
+rzeczy infrastrukturalne, niezależne od stosu:
+
+- **Tailscale (VPN)** — zdalny dostęp do peceta/WMS bez wystawiania portów na
+  świat. Czysty zysk, do wzięcia od ręki.
+- **Login SQL least-privilege zamiast `sa`** — PILNE. Dziś łączymy się jako `sa`;
+  zrobić dedykowany login `db_datareader` (+ `VIEW SERVER STATE` dla Sfery) na
+  bazie testowej. Pokrywa się z punktem 4 powyżej.
+- **Env-guard** — aplikacja przy starcie sprawdza nazwę bazy; odmawia startu, jeśli
+  nie wskazuje na znaną bazę testową (ochrona "dev build trafił na prod").
+- **deploy.ps1 / rollback.ps1** — skrypt jedno-klik: backup wms.db → build →
+  podmiana → health-check → auto-rollback przy błędzie. Do zrobienia przy
+  wdrożeniu na pecet.
+- **Do zweryfikowania:** czy Sfera umie zapisać `Towar.Pole1/Pole8` (standardowe
+  pola dodatkowe). Jeśli tak — można zamknąć direct-SQL dla lokalizacji bez
+  rewrite'u, przez istniejący most. `pwd_Tekst09` (dynamiczne pole) to osobny,
+  trudniejszy przypadek.
+- **Rewrite na C# — odłożony.** Dobry kierunek długoterminowy (jeden język, brak
+  mostu, brak direct-SQL), ale nie nagła konieczność dla działającego systemu
+  solo-dev. Jeśli kiedyś robić, to dokładnie jak kolega: MVP MM na teście, Node
+  żyje równolegle, cutover później jako osobna decyzja.
+
+## Edytowalna tabela produktu — ZREALIZOWANE (2026-06-20, cd.)
+
+Zastąpiliśmy zakładki MM/Lok jednym oknem z rozkładem towaru. Szczegóły w dzienniku
+niżej (wpis "2026-06-20 (cd. — edytowalna tabela)"). Plan poniżej został wdrożony.
+
+## Plan na kolejną sesję — edytowalna tabela produktu (zamiast zakładek MM/Lok)
+
+Ustalone z userem 2026-06-20. Zmieniamy podejście do edycji w modalu produktu:
+dziś są dwie zakładki (MM, Zmień lok.) z formularzami. Docelowo ma być **jedna
+edytowalna tabela** pokazująca pełny rozkład towaru po magazynach i lokalizacjach.
+
+### UX docelowy
+
+1. **Na liście Produkty: jeden przycisk akcji** (zamiast dwóch [MM] [Lok]) —
+   otwiera to samo okno/modal co teraz.
+2. **W oknie: dane jako edytowalna tabela.** Przykład (produkt X, stan GT 180):
+   ```
+   Produkt X — stan GT 180
+
+   K4
+     lokalizacja | stan | rezerwacja
+     A2          | 20   | 1
+   K4G
+     A3          | 60   | 0
+     (nieprzypisano) | 100 |
+     razem 160
+   MAG
+     brak | 0
+   LS
+     brak | 0
+   ```
+3. **Edycja w polach:**
+   - Zmiana pola **lokalizacji** (np. A1 → A2) = działa jak zmiana lokalizacji (LOK).
+   - Usunięcie/zmniejszenie **stanu** na lokalizacji → pojawia się info "wolne do
+     przeniesienia"; zapis na inny magazyn = **MM**.
+   - **Dodawanie nowej lokalizacji** (przycisk +): do rozbijania towaru na 2+
+     lokalizacje, albo przypisania puli "(nieprzypisano)".
+4. **"(nieprzypisano)"** = stan GT danego magazynu minus suma WMS (to dzisiejsze
+   `modalLokNiezlok` / status NZ na K4G). Rozłożenie tej puli = LOK z lok_zrodlo_id=null.
+
+### Otwarte pytanie (do decyzji na starcie sesji)
+
+Czy edytujemy **inline w komórce** (klik w pole lokalizacji/stanu → edycja w miejscu),
+czy dajemy **osobne kolumny "zmień"** dla lokalizacji i stanu?
+- Rekomendacja: **inline w komórce** + jeden przycisk "Zapisz zmiany" na dole, który
+  zbiera wszystkie edycje i wykonuje je jako serię ruchów (LOK/MM) — spójne z dzisiejszą
+  "listą zbiorczą" w panelu MM. Mniej klikania niż osobne kolumny, czytelniejsze przy
+  wielu lokalizacjach. Ryzyko: trzeba dobrze rozróżnić "zmiana lokalizacji" (LOK) od
+  "przeniesienie ilości na inny magazyn" (MM) na podstawie tego, co user zmienił.
+
+### Otwarte pytanie 2 — lokalizacja K4 z "zapasem" (połączona)
+
+Przypadek brzegowy (user, 2026-06-20): czasem towar na K4 jest **wyjątkowo w dwóch
+miejscach** — zbiór na półce (np. H10-P1), a nadmiar na innej (P5). W GT zapisywane
+jako **`H10-P1/P5`** (lokalizacja połączona).
+
+Kontekst: na K4 ilość WMS **nie jest autorytatywna** (rządzi GT, sprzedaż zmniejsza
+GT bez WMS) → zgodność K4 jest tekstowa, nie ilościowa. Więc lokalizacja K4 to raczej
+"wskaźnik gdzie leży", nie licznik per półka.
+
+**DECYZJA (user, 2026-06-20): idziemy w wariant A.**
+
+- **A (WYBRANE): lokalizacja K4 + opcjonalne pole "zapas" (adnotacja).** Jedna
+  realna lokalizacja zbioru + krótki "zapas" (P5), składane w GT jako `H10-P1/P5`.
+  WMS nie dzieli ilości na dwa liczniki. 1 SKU = 1 miejsce zbioru zostaje; "/P5" to
+  podpowiedź o nadmiarze. W edytowalnej tabeli: komórka "lokalizacja" + opcjonalna
+  "zapas". Tanie, zgodne z modelem i notacją GT.
+- ~~B: dwa wpisy K4 z ilościami~~ — odrzucone (łamie prostotę "jedno miejsce",
+  korzyść wątpliwa skoro ilość K4 nie jest rozliczana per lokalizacja).
+
+Do przemyślenia przy implementacji A:
+- Gdzie trzymać "zapas" — najprościej dodatkowe pole przy lokalizacji K4 SKU
+  (np. kolumna w `stany_lokalizacji` dla wpisu K4, albo osobny lekki zapis).
+- Składanie `tw_Pole1` = `zbior/zapas` (gdy zapas pusty → samo `zbior`).
+- Poluzować regułę "1 SKU = 1 lokalizacja K4", ale tylko o pole zapasu (nie o
+  drugą pełną lokalizację).
+- "/" jako separator zbiór/zapas — uważać przy parsowaniu starych wpisów GT.
+
+Uwaga: backend ma twardą regułę "1 SKU = 1 lokalizacja K4" (`routes/ruchy.js` ~72-90,
++ analogiczne w `/lok` i `/przyjecie`) — przy każdym wariancie trzeba ją poluzować
+dla pola "zapas".
+
+### Co reużyć
+
+- Backend gotowy: `POST /api/ruchy/lok` (zmiana lokalizacji + pierwsze/dodatkowe
+  przypisanie z `lok_zrodlo_id=null`), `POST /api/ruchy/mm` + `/przyjecie` +
+  `/mm-zewnetrzny`. Logika "(nieprzypisano)" = stan GT − suma WMS już policzona we
+  froncie (`modalLokNiezlok`) i w backendzie (zgodność K4G ilościowa).
+- `GET /api/lokalizacje/k4-dom/:artykul_gt_id` — stałe miejsce K4 (też puste).
+- `GET /api/lokalizacje/artykul/:symbol` — lokalizacje WMS z zapasem.
+- Combo z wyszukiwaniem (`ustawDatalist`/`lokComboId`) — do pól lokalizacji w tabeli.
+- "Pozostanie na lokalizacji" (`aktualizujPozostanie`) — do walidacji rozbijania ilości.
+
 ## Dziennik zmian
+
+### 2026-06-20 (cd. 2 — okno akcji, inline edycja, dopracowania)
+
+- **Akcja w osobnym oknie** — „Przenieś"/„Przypisz" otwiera overlay na wierzchu modalu
+  produktu (z-index 1100), zamiast doklejać panel na dole. Nagłówek: typ + `SKU nazwa —
+  z <źródło>`. Pola w jednym rzędzie (Magazyn | Ilość | Lokalizacja). Błędy walidacji
+  w oknie akcji, sukces → komunikat na modalu produktu.
+- **Inline zmiana lokalizacji** w tabeli rozkładu: klik w komórkę „Lokalizacja" →
+  combo (lokalizacje tego samego magazynu) → wybór → LOK od razu (cała ilość wiersza).
+  Kropkowane podkreślenie jako podpowiedź. Wpisanie nieistniejącego kodu → błąd
+  „Lokalizacja … nie istnieje w systemie" (zamiast cichego powrotu). Esc/brak zmiany
+  → revert. Tylko gdy stan > 0.
+- **Reguła domyślnego magazynu w „Przenieś"**: źródło K4 → domyślnie K4G, źródło K4G
+  → domyślnie K4 (pętla uzupełniania/odkładania); zewnętrzny → K4G. Po wydzieleniu
+  zmiany lokalizacji do inline, „Przenieś" służy głównie do przesunięć ilości / MM.
+- **Pole „zapas" K4 z podpowiedziami** — combo z listą lokalizacji K4 (datalist),
+  z możliwością wpisania własnego kodu (to adnotacja nadmiaru, nie musi być formalną
+  lokalizacją).
+- **Fix `.brak-pola` zawsze widoczne** — `.brak-pola` (display:inline-block) wygrywało
+  z `.hidden`; dodano `.brak-pola.hidden { display:none }`. Teraz „brak pola" tylko
+  dla magazynu zewnętrznego.
+
+### 2026-06-20 (cd. — edytowalna tabela produktu)
+
+Przebudowa modalu produktu wg makiety usera (Wariant A → finalnie układ tabelaryczny).
+
+- **Jeden przycisk „Edytuj"** na liście Produkty (zamiast [MM] [Lok]). Modal pokazuje
+  pełny rozkład; akcje wykonuje się per wiersz.
+- **Modal = jedna tabela:** `Magazyn | Stan | Lokalizacja | Zapas | (akcja) | Ost. edycja`.
+  Stan z rezerwacją inline `20(2)` (rezerwacja na poziomie magazynu). Podsumowania
+  „{mag} razem", „Razem" (suma GT), „Rezerwacje". Nagłówek: `Status: <zgodność ogólna>`.
+- **Wspólny panel akcji** (przenieś/zmień/przypisz) zamiast osobnych formularzy MM/Lok.
+  Dobór operacji automatyczny: ten sam magazyn WMS lub przypisanie z GT → LOK;
+  między magazynami → MM (`mmBudujPayload`: /mm, /przyjecie, /mm-zewnetrzny).
+  „Na źródle → pozostanie" liczone z dostępnej ilości.
+- **Pole „zapas" K4 (decyzja A) — funkcjonalne.** Kolumna Zapas edytowalna dla K4;
+  zapis przez `PUT /api/lokalizacje/k4-zapas/:id` → składa `tw_Pole1` jako `zbiór/zapas`
+  (np. `A1/P5`). Migracja: kolumna `zapas_kod` w `stany_lokalizacji`; `obliczPolaLokalizacji`
+  składa zbiór/zapas; nie dzieli ilości.
+- **Plan lokalizacji z GT (K4 i K4G)** — `plan_lokalizacji (artykul_gt_id, magazyn, tekst)`.
+  Gdy coś jest nieprzypisane, przy pierwszym otwarciu zapamiętujemy oryginalny tekst
+  lokalizacji GT i pokazujemy go jako ściągę na wierszu „(nieprzypisano)" — żeby przy
+  rozkładaniu np. 3 lokalizacji nie zgubić pozostałych po nadpisaniu pola GT przez WMS.
+  Czyszczony, gdy wszystko zlokalizowane. Endpointy `GET/PUT /api/lokalizacje/plan/:id`.
+- **Data ostatniej edycji** dodana do odpowiedzi `/artykul/:symbol` i `/k4-dom`.
+- **Fix: badge zgodności = `ogolna` wszędzie** (lista i modal) + filtr zgodności po
+  `ogolna`. Wcześniej lista pokazywała wymiar zależny od filtra magazynu → rozjazd
+  „lista OK / modal NZ" dla NERE9533 (K4 OK, K4G NZ). Teraz spójne, naprawia też
+  stary „filtruję BD a widzę t_GT".
+- **UX wyciszony (oczopląs):** „(nieprzypisano)"/niezgodność w bursztynie zamiast
+  czerwieni (czerwień tylko realny błąd), panel akcji stonowany, mniej ramek, cache
+  statyków wyłączony (`no-cache`) by zmiany były od razu widoczne.
+
+### 2026-06-20
+
+Sesja testów MM/lokalizacji na żywym moście + UX panelu Produkty:
+
+- **Zapis lokalizacji bez mostu — potwierdzony w boju.** `synchronizujLokalizacje`
+  robi `UPDATE tw__Towar` przez SQL (bez Sfery). Wymagał restartu serwera po
+  poprzedniej sesji (stary kod w pamięci Node).
+- **MM przez most z Maca** — działa po: ustawieniu `GT_BRIDGE_URL=http://192.168.0.200:5000`
+  w `.env` (Node na Macu, most na Windows) i zmianie `Program.cs` mostu na
+  `UseUrls("http://0.0.0.0:5000")` (nasłuch na LAN, nie tylko localhost) +
+  reguła firewalla na porcie 5000. Na produkcji (Node+most na jednym pececie)
+  zostanie localhost.
+- **LOK na K4 poprawione:** zniesiono wymóg "całej ilości"; ilość brana z GT
+  (sprzedaż w Subiekcie zmienia stan bez WMS); transakcja czyści stare wpisy K4.
+- **Pierwsze i dodatkowe przypisanie lokalizacji** w modalu "Zmień lok.": źródło
+  "↪ z GT (niezlokalizowane)" pozwala rozkładać stan, który jest w GT a nie ma
+  jeszcze lokalizacji WMS (wysyłka `lok_zrodlo_id=null`). Z limitem (nie więcej
+  niż niezlokalizowano) i auto-wyborem gdy towar tylko w GT.
+- **Zgodność K4G = ilościowa** (`services/gt-fields.js` `pobierzPrzegladLokalizacji`):
+  Σ WMS K4G vs stan GT K4G (mag 8). Różnica → NZ (część niezlokalizowana/nadmiar),
+  równe + pole za krótkie → OF, równe + tekst OK → OK, nic w WMS + jest w GT → t_GT.
+  K4 zostaje porównaniem tekstu (ilość K4 zmienia się przez sprzedaż — to normalne).
+  Nowy status **OF** (Obcięte) — zielony, nie błąd.
+- **UX panelu Produkty:**
+  - Lokalizacje: każdy wpis w osobnej linii, bez zawijania w środku wpisu
+    (`komorkaLok` + `.lok-wpis`); stare wpisy GT z separatorem `/` zostają jak są.
+  - Szerszy layout (`max-width: min(1600px,96vw)`), mniejszy padding komórek.
+  - Badge zgodności pokazuje wymiar zgodny z filtrem magazynu (tylko K4 → k4,
+    tylko K4G → k4g, inaczej ogólna) — koniec "filtruję BD a widzę t_GT".
+- **Pola lokalizacji = combo z wyszukiwaniem** (input + datalist) we wszystkich
+  formularzach MM/Lok — wpisywanie zawęża listę (przy dziesiątkach lokalizacji).
+  Walidacja kod→id (`lokComboId`), "z listy" przy błędzie.
+- **"Pozostanie na lokalizacji"** — dynamiczny wiersz pod ilością (stan źródła −
+  wpisana ilość; czerwony gdy ujemne).
+- **Cel = K4 podpowiada stałe miejsce** (`/k4-dom`) z info "Na K4: N (rez M)".
+- **Naprawione buggi:** stale pool w `gt-sql.js` (odrzucona obietnica cache'owana
+  na zawsze → reset przy błędzie), `st_TwId`→`st_TowId`, typ id (SQLite tekst vs
+  SQL Server liczba) w sumach K4G, cache przeglądarki (`no-cache` w HTML),
+  `data-tab` na modal-tab-content, null-source crash w `ruchy-gt.js`,
+  migracja `mag_zrodlo_zewnetrzny`.
+- **Decyzja: most jako tray icon, nie usługa Windows** (widoczny, restartowalny,
+  proces w sesji usera = brak problemu COM/Sfery bez sesji).
+- **Analiza propozycji kolegi (gist)** — zostajemy na Node, bierzemy Tailscale +
+  login least-privilege + deploy.ps1; rewrite C# odłożony (sekcja wyżej).
 
 ### 2026-06-15 (cd.)
 

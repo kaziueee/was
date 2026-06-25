@@ -60,7 +60,7 @@ nav {
 
 main {
   padding: 1.5rem;
-  max-width: 1200px;
+  max-width: min(1600px, 96vw);
   margin: 0 auto;
 }
 
@@ -145,7 +145,7 @@ main {
 
 .tabela th,
 .tabela td {
-  padding: 0.6rem 0.75rem;
+  padding: 0.55rem 0.6rem;
   text-align: left;
   border-bottom: 1px solid #eee;
   font-size: 0.9rem;
@@ -164,6 +164,17 @@ main {
 
 .tabela tbody tr:last-child td {
   border-bottom: none;
+}
+
+/* Kolumny lokalizacji: kazdy wpis w osobnej linii, bez zawijania w srodku wpisu */
+.kol-lok {
+  white-space: nowrap;
+}
+
+.lok-wpis {
+  display: block;
+  white-space: nowrap;
+  line-height: 1.35;
 }
 
 .opis {
@@ -350,4 +361,300 @@ main {
   font-weight: bold;
   color: #1d3557;
   margin-right: 0.2rem;
+}
+
+/* --- MM panel --- */
+
+.mm-szukaj-panel {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  max-height: 240px;
+  overflow-y: auto;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+.mm-szukaj-wiersz {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+}
+
+.mm-szukaj-wiersz:last-child { border-bottom: none; }
+.mm-szukaj-wiersz:hover { background: #f1faee; }
+
+.mm-szukaj-wiersz .mm-sku { font-weight: bold; min-width: 7rem; }
+.mm-szukaj-wiersz .mm-nazwa { flex: 1; color: #444; font-size: 0.9rem; }
+.mm-szukaj-wiersz .mm-stany { font-size: 0.82rem; color: #666; white-space: nowrap; }
+
+.mm-formularz-panel {
+  background: #f8f9fa;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.mm-formularz-naglowek {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.mm-f-stany { font-size: 0.82rem; color: #666; }
+
+.pozostanie {
+  font-size: 0.82rem;
+  color: #1b4332;
+  font-weight: bold;
+  margin-top: 0.25rem;
+  white-space: nowrap;
+}
+
+.pozostanie.pozostanie-blad {
+  color: #9b2226;
+}
+
+.mm-formularz-pola {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.mm-pole {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.mm-pole label {
+  font-size: 0.8rem;
+  color: #555;
+  font-weight: bold;
+}
+
+.mm-pole select,
+.mm-pole input[type="number"],
+.mm-pole input[type="text"] {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  min-width: 10rem;
+}
+
+.mm-pole-ilosc select,
+.mm-pole-ilosc input[type="number"] { min-width: 5rem; }
+
+.brak-pola {
+  display: inline-block;
+  padding: 0.4rem 0.6rem;
+  background: #eee;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  color: #888;
+  white-space: nowrap;
+}
+
+/* .brak-pola ma wlasne display:inline-block, ktore wygrywalo z .hidden (ta sama
+   specyficznosc, .brak-pola pozniej w pliku) -> jawnie chowamy gdy ma klase hidden */
+.brak-pola.hidden { display: none; }
+
+.mm-footer {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #ddd;
+}
+
+.btn-danger {
+  background: #fff;
+  border-color: #9b2226;
+  color: #9b2226;
+}
+
+.btn-danger:hover { background: #fde2e2; }
+
+/* --- wyniki wysyłki MM --- */
+
+.mm-wyniki-lista {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.mm-wynik-wiersz {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.88rem;
+  background: #fff;
+  border: 1px solid #eee;
+}
+
+.mm-wynik-wiersz.ok { border-color: #2a9d8f; background: #d8f3dc; }
+.mm-wynik-wiersz.blad { border-color: #9b2226; background: #fde2e2; }
+.mm-wynik-wiersz.pending { border-color: #e0a800; background: #fff3cd; }
+
+/* --- modal produktu --- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.modal-overlay.hidden { display: none; }
+
+.modal-box {
+  background: #fff;
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  min-width: 480px;
+  max-width: 640px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+
+.modal-naglowek {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+}
+
+.modal-stany {
+  font-size: 0.85rem;
+  color: #555;
+  margin-bottom: 0.75rem;
+  padding: 0.4rem 0.6rem;
+  background: #f8f9fa;
+  border-radius: 4px;
+}
+
+.modal-akcje {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* --- rozklad towaru: Wariant A (jedna tabela: Magazyn|Stan|Lokalizacja|Zapas|akcja|data) --- */
+
+.rozklad-tabela { box-shadow: none; }
+.rozklad-tabela td { vertical-align: middle; }
+.rozklad-tabela td:first-child { font-weight: bold; color: #1d3557; }
+
+/* podsumowanie magazynu (np. "K4G razem") - lekki pasek */
+.rozklad-subtotal td {
+  background: #f1f3f5;
+  font-weight: bold;
+}
+
+/* podsumowania ogolne (Razem / Rezerwacje) */
+.rozklad-total td {
+  border-top: 2px solid #ddd;
+  font-weight: bold;
+}
+
+/* niezgodnosc ilosci - bursztyn, nie czerwien (czerwien tylko na realny blad) */
+.rozklad-niezg {
+  color: #9a6700;
+  font-weight: bold;
+}
+
+.rozklad-nieprzypisano td:nth-child(2),
+.rozklad-nieprzypisano td:nth-child(3) {
+  color: #9a6700;
+  font-style: italic;
+}
+
+.rozklad-puste {
+  color: #999;
+  font-size: 0.85rem;
+}
+
+/* plan lokalizacji K4G z GT (sciaga na wierszu nieprzypisano) */
+.rozklad-plan {
+  font-size: 0.78rem;
+  color: #9a6700;
+  margin-top: 0.15rem;
+  white-space: normal;
+}
+
+/* pole "zapas" K4 (decyzja A) */
+.rozklad-zapas-input {
+  width: 5rem;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+/* --- okno akcji (przenies / zmien lok / przypisz) - overlay na wierzchu modalu --- */
+
+#modal-akcja-overlay { z-index: 1100; }
+
+.modal-akcja-box { min-width: 520px; max-width: 700px; width: 100%; }
+
+/* pola akcji w jednym rzedzie (Magazyn | Ilosc | Lokalizacja) */
+.modal-akcja-box .mm-formularz-pola { flex-wrap: nowrap; gap: 14px; align-items: flex-start; }
+.modal-akcja-box .mm-pole { flex: 1; min-width: 0; }
+.modal-akcja-box .mm-pole-ilosc { flex: 0 0 7rem; }
+.modal-akcja-box .mm-pole select,
+.modal-akcja-box .mm-pole input { min-width: 0; width: 100%; }
+
+/* inline edycja lokalizacji w tabeli rozkladu */
+.rozklad-lok-edyt {
+  cursor: pointer;
+  text-decoration: underline dotted #999;
+  text-underline-offset: 3px;
+}
+.rozklad-lok-edyt:hover { color: #2a9d8f; }
+.rozklad-lok-input { width: 8rem; }
+
+.modal-akcja-naglowek {
+  color: #1d3557;
+  margin-bottom: 0.9rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-akcja-zrodlo {
+  color: #2a9d8f;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.modal-akcja-stopka {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+/* kolumny akcji w tabeli Produkty */
+.tabela td.td-akcja,
+.tabela th.th-akcja {
+  text-align: center;
+  white-space: nowrap;
+  width: 3rem;
 }

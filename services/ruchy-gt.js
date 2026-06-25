@@ -26,17 +26,18 @@ async function wykonajRuchGT(ruchId) {
   let bladDok = null;
 
   if (ruch.typ === 'MM' && !ruch.dok_gt_numer) {
+    const magazynZrodlowy = zrodlo ? zrodlo.magazyn : ruch.mag_zrodlo_zewnetrzny;
     const magazynDocelowy = cel ? cel.magazyn : ruch.mag_cel_zewnetrzny;
-    const magZrodloId = MAGAZYN_GT_ID[zrodlo.magazyn];
+    const magZrodloId = MAGAZYN_GT_ID[magazynZrodlowy];
     const magCelId = MAGAZYN_GT_ID[magazynDocelowy];
 
     if (!magZrodloId || !magCelId) {
       dokOk = false;
-      bladDok = `Nieznany magazyn dla MM (zrodlo: ${zrodlo.magazyn}, cel: ${magazynDocelowy}) - brak mapowania na mag_Id GT`;
+      bladDok = `Nieznany magazyn dla MM (zrodlo: ${magazynZrodlowy}, cel: ${magazynDocelowy}) - brak mapowania na mag_Id GT`;
     } else {
       const odpowiedz = await gtBridge.wystawMM({
         artykul_gt_id: ruch.artykul_gt_id,
-        magazyn_zrodlowy: zrodlo.magazyn,
+        magazyn_zrodlowy: magazynZrodlowy,
         magazyn_docelowy: magazynDocelowy,
         magazyn_zrodlowy_id: magZrodloId,
         magazyn_docelowy_id: magCelId,

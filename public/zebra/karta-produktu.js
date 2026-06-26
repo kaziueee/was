@@ -5,12 +5,12 @@
 // i w widokach szczegolowych we wszystkich ekranach Zebry.
 
 // formatuje stany_gt ({K4: {ilosc, rezerwacja}, ...}) do podgladu, pomijajac
-// magazyny z zerowym stanem, np. "K4:15(2) K4G:46 MAG:2"
+// magazyny z zerowym stanem, np. "K4:15 (rez 2) K4G:46 MAG:2"
 function formatStanyGt(stanyGt) {
   const wpisy = Object.entries(stanyGt || {}).filter(([, w]) => w.ilosc !== 0);
   if (wpisy.length === 0) return 'brak stanu w GT';
   return wpisy.map(([magazyn, w]) => {
-    const rezerwacja = w.rezerwacja ? `(${w.rezerwacja})` : '';
+    const rezerwacja = w.rezerwacja ? ` (rez ${w.rezerwacja})` : '';
     return `${magazyn}:${w.ilosc}${rezerwacja}`;
   }).join(' ');
 }
@@ -21,6 +21,22 @@ function formatLokalizacjaGt(lokalizacjaGt) {
   if (!lokalizacjaGt) return '';
   const ikona = lokalizacjaGt.zgodna ? '✅' : '❌';
   return `${ikona} ${lokalizacjaGt.tekst}`;
+}
+
+// klasa CSS badge'a statusu zgodnosci - te same stany co tabela desktopu (zgodnosc.ogolna)
+const ZGODNOSC_BADGE = { OK: 'zg-ok', OF: 'zg-ok', t_GT: 'zg-info', NZ: 'zg-err', BD: 'zg-neutral' };
+
+// kolorowy badge statusu zgodnosci WMS<->GT (OK / t_GT / NZ / BD / OF) - '' gdy brak danych
+function statusZgodnosciBadge(produkt) {
+  const z = produkt.zgodnosc;
+  if (!z || !z.ogolna) return '';
+  const klasa = ZGODNOSC_BADGE[z.ogolna] || 'zg-neutral';
+  return `<span class="zg-badge ${klasa}" title="K4: ${z.k4 ?? '–'} | K4G: ${z.k4g ?? '–'}">${z.ogolna}</span>`;
+}
+
+// suma rezerwacji ze stany_gt (wszystkie magazyny) - do pokazania "(rez N)" przy ilosci
+function sumaRezerwacji(stanyGt) {
+  return Object.values(stanyGt || {}).reduce((s, w) => s + (w.rezerwacja || 0), 0);
 }
 
 // buduje {podetykieta, podetykieta2} dla pozycji listy wyboru (zob.
@@ -99,7 +115,8 @@ function renderujListeProduktow(kontener, produkty, checkboxUkryjZero, onWybierz
     const { podetykieta, podetykieta2 } = etykietyKartyProduktu(produkt);
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.innerHTML = `<span class="etykieta-glowna"><span class="nazwa-produktu">${symbol} — ${nazwa}</span>`
+    btn.innerHTML = `<span class="etykieta-glowna">`
+      + `<span class="nazwa-produktu">${symbol} — ${nazwa} ${statusZgodnosciBadge(produkt)}</span>`
       + `<span class="stany-magazynowe">${podetykieta}</span>`
       + (podetykieta2 ? `<span class="stany-magazynowe">${podetykieta2}</span>` : '')
       + `</span>`;

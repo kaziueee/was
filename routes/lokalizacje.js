@@ -3,7 +3,7 @@ const db = require('../db/database');
 const { MAGAZYNY_WMS } = require('../config/magazyny');
 const { podzielNaSlowa, LIMIT_WYSZUKIWANIA } = require('../services/wyszukiwanie');
 const { pobierzProdukt, szukajProdukty, pobierzStanyGt } = require('../services/gt-produkty');
-const { pobierzStatusLokalizacjiGt, synchronizujLokalizacje } = require('../services/gt-fields');
+const { pobierzStatusLokalizacjiGt, synchronizujLokalizacje, pobierzPrzegladLokalizacji } = require('../services/gt-fields');
 
 const router = express.Router();
 
@@ -152,15 +152,23 @@ async function dolaczDaneGt(payload) {
       return payload;
     }
 
-    const [stanyMap, statusMap] = await Promise.all([
+    const [stanyMap, statusMap, przegladMap] = await Promise.all([
       pobierzStanyGt(idy),
       pobierzStatusLokalizacjiGt(idy),
+      pobierzPrzegladLokalizacji(idy),
     ]);
+
+    // {k4, k4g, ogolna} z enumem OK/t_GT/NZ/BD/OF (jak w tabeli desktopu) - do badge'a statusu na froncie
+    const zgodnoscZPrzegladu = (id) => {
+      const p = przegladMap.get(String(id));
+      return p ? { k4: p.k4?.stan, k4g: p.k4g?.stan, ogolna: p.ogolna } : null;
+    };
 
     const wzbogac = (item) => ({
       ...item,
       stany_gt: stanyMap.get(String(item.artykul_gt_id)),
       lokalizacja_gt: statusMap.get(String(item.artykul_gt_id)),
+      zgodnosc: zgodnoscZPrzegladu(item.artykul_gt_id),
     });
 
     if (payload.typ === 'lokalizacja') {
@@ -168,6 +176,7 @@ async function dolaczDaneGt(payload) {
     } else if (payload.typ === 'artykul') {
       payload.stany_gt = stanyMap.get(String(payload.artykul_gt_id));
       payload.lokalizacja_gt = statusMap.get(String(payload.artykul_gt_id));
+      payload.zgodnosc = zgodnoscZPrzegladu(payload.artykul_gt_id);
 
       // K4gora to "1 SKU = N lokalizacji" - nawet gdy artykul ma juz jakas
       // lokalizacje w K4G, w GT moze byc wiecej sztuk niz zsumowano w WMS

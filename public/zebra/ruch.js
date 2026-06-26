@@ -163,6 +163,8 @@ function obsluzLokalizacje({ lokalizacja, zawartosc }) {
     zrodlo: { lokalizacja_id: lokalizacja.id, kod: lokalizacja.kod, magazyn: lokalizacja.magazyn, ilosc: poz.ilosc },
     etykieta: `${poz.artykul_symbol} — ${poz.artykul_nazwa}`,
     ...etykietyKartyProduktu(poz),
+    statusBadge: statusZgodnosciBadge(poz),
+    rez: sumaRezerwacji(poz.stany_gt),
     ilosc: poz.ilosc,
   }));
 
@@ -274,10 +276,12 @@ function renderujWybor(opcje, onWybierz) {
   opcje.forEach((opcja) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    const ilosc = opcja.ilosc !== undefined ? `<span class="ilosc">${opcja.ilosc} szt.</span>` : '';
+    const rezTekst = opcja.rez > 0 ? ` <span class="rez">(rez ${opcja.rez})</span>` : '';
+    const ilosc = opcja.ilosc !== undefined ? `<span class="ilosc">${opcja.ilosc} szt.${rezTekst}</span>` : '';
+    const badge = opcja.statusBadge ? ` ${opcja.statusBadge}` : '';
     const podetykieta = opcja.podetykieta ? `<span class="stany-magazynowe">${opcja.podetykieta}</span>` : '';
     const podetykieta2 = opcja.podetykieta2 ? `<span class="stany-magazynowe">${opcja.podetykieta2}</span>` : '';
-    btn.innerHTML = `<span class="etykieta-glowna"><span>${opcja.etykieta}</span>${podetykieta}${podetykieta2}</span>${ilosc}`;
+    btn.innerHTML = `<span class="etykieta-glowna"><span>${opcja.etykieta}${badge}</span>${podetykieta}${podetykieta2}</span>${ilosc}`;
     btn.addEventListener('click', () => onWybierz(opcja));
     lista.appendChild(btn);
   });
@@ -502,6 +506,17 @@ async function przetworzLokalizacjeCelu(kod) {
       : '';
     stan.cel = { typ: 'wms', id: dane.id, kod: dane.kod, magazyn: dane.magazyn };
     el('input-cel').value = dane.kod;
+    // Przypisanie (brak zrodla): podpowiedz CALY stan do rozlozenia w tym magazynie.
+    // K4G z deficytem -> deficyt_k4g; czyste przypisanie -> pelny stan GT magazynu (WMS=0).
+    if (!stan.zrodlo) {
+      const pelny = stan.celMagazynNowejLokalizacji != null
+        ? stan.iloscSugestia
+        : (stan.artykul.stany_gt?.[dane.magazyn]?.ilosc ?? null);
+      if (pelny != null && pelny > 0) {
+        el('input-ilosc').value = String(pelny);
+        aktualizujPozostanie();
+      }
+    }
     return true;
   } catch (err) {
     pokazKomunikat('Blad polaczenia z serwerem', 'blad');

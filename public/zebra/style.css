@@ -219,6 +219,25 @@ input:focus {
   color: #1d3557;
 }
 
+.lista-wyboru button .ilosc .rez {
+  font-size: 0.8rem;
+  color: #9a6700;
+}
+
+.zg-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: bold;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+.zg-ok { background: #d8f3dc; color: #1b4332; }
+.zg-info { background: #e7f1ff; color: #1d3557; }
+.zg-err { background: #fde2e2; color: #9b2226; }
+.zg-neutral { background: #eaeaea; color: #555; }
+
 .lista-wyboru button.wybrany {
   border-color: #2a9d8f;
   background: #e6f5f3;

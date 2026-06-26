@@ -112,8 +112,33 @@ async function synchronizujLokalizacje(artykulGtId, magazyny) {
     parametry.pole1 = pola.miejsce_na_magazynie;
   }
   if (dotyczyK4G) {
-    ustawienia.push('tw_Pole8 = @pole8');
-    parametry.pole8 = pola.lokalizacja_gorna;
+    // Nie nadpisuj pola K4G (tw_Pole8) dopoki nie rozlozono calego stanu GT w WMS
+    // (deficyt_k4g > 0) - inaczej GT dostaje niepelny obraz i ginie plan "gdzie dolozyc
+    // reszte". Gdy stan GT niedostepny -> nie blokujemy (traktujemy jak pelne rozlozenie).
+    // Lazy require pobierzStanyGt: gt-produkty wymaga gt-fields (cykl) - bezpieczne w czasie wywolania.
+    let pomijajK4G = false;
+    try {
+      const { pobierzStanyGt } = require('./gt-produkty');
+      const sumaK4G = db.prepare(
+        `SELECT COALESCE(SUM(s.ilosc), 0) AS suma FROM stany_lokalizacji s
+         JOIN lokalizacje l ON l.id = s.lokalizacja_id
+         WHERE s.artykul_gt_id = ? AND l.magazyn = 'K4G'`
+      ).get(artykulGtId).suma;
+      const stany = await pobierzStanyGt([artykulGtId]);
+      const gtK4G = stany.get(String(artykulGtId))?.K4G?.ilosc ?? sumaK4G;
+      if (gtK4G - sumaK4G > 0) pomijajK4G = true;
+    } catch (err) {
+      pomijajK4G = false;
+    }
+    if (!pomijajK4G) {
+      ustawienia.push('tw_Pole8 = @pole8');
+      parametry.pole8 = pola.lokalizacja_gorna;
+    }
+  }
+
+  if (ustawienia.length === 0) {
+    // tylko K4G i jest deficyt - nic nie zapisujemy, plan w GT zostaje nietkniety
+    return { ok: true, dane: { sukces: true, pominietoK4G: true } };
   }
 
   try {

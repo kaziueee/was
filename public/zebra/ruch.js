@@ -84,11 +84,16 @@ function naglowekHtml() {
     + `<div class="rzad naglowek-kontekst">${kontekst}</div>`;
 }
 
-// Naglowek produktu (SKU+nazwa+stan+kontekst zrodla) ma sens tylko w kroku "cel" -
-// tam znamy zrodlo i decydujemy o celu. Na "skan" i "wybor" naglowek jest pusty/ukryty,
-// dzieki czemu Wstecz od razu go usuwa (a box "Stan w..." nie wisi bez wybranego zrodla).
+// Naglowek gornego paska zalezy od kroku:
+//  - "cel": SKU + nazwa + chipy zrodla (naglowekHtml),
+//  - "wybor": kontekst ustawiony przez obsluz* (np. lokalizacja+magazyn dla zawartosci lokalizacji),
+//  - "start": pusty/ukryty.
+// Pusty naglowek jest chowany (Wstecz od razu go usuwa).
+let naglowekWyborHtml = '';
 function ustawNaglowek(nazwa) {
-  const html = nazwa === 'cel' ? naglowekHtml() : '';
+  let html = '';
+  if (nazwa === 'cel') html = naglowekHtml();
+  else if (nazwa === 'wybor') html = naglowekWyborHtml;
   el('ekran-naglowek').innerHTML = html;
   el('ekran-naglowek').classList.toggle('hidden', html === '');
 }
@@ -193,15 +198,18 @@ function obsluzLokalizacje({ lokalizacja, zawartosc }) {
     artykul: { artykul_gt_id: poz.artykul_gt_id, artykul_symbol: poz.artykul_symbol, artykul_nazwa: poz.artykul_nazwa, stany_gt: poz.stany_gt, lokalizacja_gt: poz.lokalizacja_gt },
     zrodlo: { lokalizacja_id: lokalizacja.id, kod: lokalizacja.kod, magazyn: lokalizacja.magazyn, ilosc: poz.ilosc },
     etykieta: `${poz.artykul_symbol} — ${poz.artykul_nazwa}`,
-    ...etykietyKartyProduktu(poz),
-    statusBadge: statusZgodnosciBadge(poz),
+    statusBadge: statusZgodnosciBadge(poz), // tylko status; opisy GT (stany/lokalizacja) pomijamy
     rez: sumaRezerwacji(poz.stany_gt),
     ilosc: poz.ilosc,
   }));
 
-  el('wybor-naglowek').innerHTML = `<strong>${lokalizacja.kod}</strong><span>${lokalizacja.magazyn} — wybierz produkt do przeniesienia</span>`;
-  el('wybor-hint').textContent = '...lub zeskanuj kod towaru';
-  el('input-wybor-skan').placeholder = 'Skanuj SKU';
+  // kontekst lokalizacji w gornym pasku: kod (duzy) + magazyn (chip) w tej samej linii
+  naglowekWyborHtml = `<div class="ekran-sku"><h1>${lokalizacja.kod}</h1>`
+    + `<span class="chip">${lokalizacja.magazyn}</span></div>`;
+  el('wybor-naglowek').innerHTML = '';
+  el('wybor-naglowek').classList.add('hidden'); // kontekst jest w gornym naglowku
+  el('wybor-hint').textContent = '';
+  el('input-wybor-skan').placeholder = 'Skanuj produkt';
   el('checkbox-ukryj-zero-wrap').classList.add('hidden');
 
   trybWyboru = 'wybor';
@@ -262,6 +270,8 @@ function obsluzArtykul(dane) {
   const naglowekAkcja = dane.deficyt_k4g > 0
     ? 'Wybierz lokalizację źródłową lub dodaj nową (K4gora)'
     : 'Wybierz lokalizację źródłową';
+  naglowekWyborHtml = ''; // kontekst SKU jest w karcie wybor-naglowek ponizej, nie w gornym pasku
+  el('wybor-naglowek').classList.remove('hidden');
   el('wybor-naglowek').innerHTML = `<strong>${dane.artykul_symbol}</strong><span>${dane.artykul_nazwa}</span><span>${naglowekAkcja}</span>`;
   el('wybor-hint').textContent = '...lub zeskanuj etykietę lokalizacji';
   el('input-wybor-skan').placeholder = 'Skanuj lokalizację';
@@ -277,6 +287,8 @@ function obsluzArtykul(dane) {
 function obsluzListaArtykulow(artykuly, obciete) {
   ostatniaListaArtykulow = artykuly;
 
+  naglowekWyborHtml = '';
+  el('wybor-naglowek').classList.remove('hidden');
   el('wybor-naglowek').innerHTML = `<span>Znaleziono ${liczbaArtykulow(artykuly.length)} — wybierz</span>`;
   el('wybor-hint').textContent = '...lub zeskanuj SKU / EAN towaru';
   el('input-wybor-skan').placeholder = 'Skanuj SKU lub EAN';

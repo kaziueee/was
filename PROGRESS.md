@@ -622,14 +622,20 @@ Sesja testów MM/lokalizacji na żywym moście + UX panelu Produkty:
   Kolejność **Cel → Lokalizacja docelowa → Ilość**. Stepper ilości, „Pozostanie w X"
   (0 neutralne), etykieta akcji opisuje skutek (PRZENIEŚ/ZMIEŃ/ZAPISZ). Ikona skanera = Enter.
   Niższy nagłówek (−50%) i pola/przyciski (−15..25%). Atrybuty anty-autofill.
+- **Klawiatura**: usunięty auto-focus na pole ilości (`type=number`) → koniec z numeryczną
+  klawiaturą przy zmianie magazynu/skanie; `blur()` po poprawnym skanie lokalizacji.
+- **Przypisanie (towar bez lokalizacji WMS)**: select magazynu WMS ze stanem GT
+  (K4/K4G + ilość), ilość pobierana z wybranego magazynu, podpowiedź „wg GT" pod polem
+  lokalizacji (miejsce z `tw_Pole1`/`tw_Pole8` per magazyn). Usunięty przycisk-ikona skanera.
+- **Widok zawartości lokalizacji (3.1)**: nagłówek = kod lokalizacji + magazyn (chip) w jednej
+  linii; pole „Skanuj produkt"; lista z widocznym statusem (OK/NZ/t_GT/BD), bez opisów GT;
+  na dole tylko „Wstecz".
 
 #### Do zrobienia (kolejka)
 
-- **Wyskakująca klawiatura** (pierwszy ogień): A) bez auto-focusu na `input-ilosc`
-  (numeryczna klawiatura mimo steppera); B) `blur()` po poprawnym Enter/skanie; C) audyt
-  pozostałych `focus()`; D) autofill — wyłączenie w ustawieniach Chrome/EHS.
-- **Nowe ekrany** (czekają na komplet makiet): 3.1 zawartość lokalizacji, 3.2 rozkład
-  produktu (mobilny odpowiednik desktopowego rozkładu, tap → „Dokąd i ile?").
+- **Ekran 3.2 — rozkład produktu** (mobilny odpowiednik desktopowego rozkładu, tap → „Dokąd i ile?").
+- **Audyt** pozostałych `focus()` (start/wybór — `blur()` po sukcesie) + autofill (wyłączenie
+  w ustawieniach Chrome/EHS — atrybuty HTML już są).
 - **Redesign kart listy** na `.lista-poz` (pasek statusu z lewej, mag-badge).
 - **Inwentaryzacja od nowa**.
 - Opcjonalnie: wybór operatora przy starcie apki; HTTPS + ikony PNG (prawdziwe PWA);

@@ -68,7 +68,7 @@ function naglowekHtml() {
   if (!a) return ''; // start: bez duzego naglowka - tytul "Skanuj..." jest w tresci
 
   const kontekst = stan.zrodlo
-    ? `<span class="chip">Z: <b>${stan.zrodlo.kod}</b></span><span class="chip">${stan.zrodlo.magazyn}</span><span class="chip-tekst">Lokalizacja źródłowa</span>`
+    ? `<span class="chip">Z: <b>${stan.zrodlo.kod}</b></span><span class="chip">${stan.zrodlo.magazyn}</span>`
     : '<span class="chip chip-uwaga">Brak lokalizacji w WMS</span>';
 
   return `<div class="naglowek-glowna"><h1>${a.artykul_symbol}</h1><p class="ekran-nazwa">${a.artykul_nazwa}</p></div>`
@@ -340,21 +340,28 @@ function przejdzDoCelu() {
   const inputIlosc = el('input-ilosc');
 
   if (!stan.zrodlo) {
-    // przypisanie pierwszej/kolejnej lokalizacji w WMS (bez przesuniecia/MM) - brak wyboru magazynu
-    inputIlosc.removeAttribute('max');
-    inputIlosc.value = stan.iloscSugestia != null ? String(stan.iloscSugestia) : '';
-    inputIlosc.readOnly = false;
-    el('cel-magazyn-pole').classList.add('hidden');
+    // PRZYPISANIE (brak zrodla w WMS): wybierz magazyn WMS (K4/K4G ze stanem GT),
+    // ilosc pobierana z tego magazynu. Gdy magazyn narzucony (opcja "+ Nowa lok. K4G")
+    // - tylko ten jeden. Stany K4 i K4G NIE sa pokazywane razem - jeden magazyn naraz.
+    const stany = stan.artykul.stany_gt || {};
+    const wmsKody = magazynyLista.filter((m) => m.typ === 'wms').map((m) => m.kod);
+    let opcjeMag = stan.celMagazynNowejLokalizacji
+      ? [stan.celMagazynNowejLokalizacji]
+      : wmsKody.filter((m) => (stany[m]?.ilosc ?? 0) > 0);
+    if (opcjeMag.length === 0) opcjeMag = wmsKody; // brak stanu GT - pozwol wskazac recznie
+
+    const select = el('select-cel-magazyn');
+    select.innerHTML = opcjeMag.map((m) => {
+      const ile = stany[m]?.ilosc ?? 0;
+      const nazwa = magazynyMapa[m]?.nazwa ?? m;
+      return `<option value="${m}">${nazwa}${ile ? ` — ${ile} szt.` : ''}</option>`;
+    }).join('');
+
+    el('cel-magazyn-pole').classList.remove('hidden');
     el('cel-lokalizacja-pole').classList.remove('hidden');
-    el('input-cel').value = '';
-    el('input-cel').placeholder = stan.celMagazynNowejLokalizacji
-      ? `Skanuj lokalizację (${stan.celMagazynNowejLokalizacji})`
-      : 'Skanuj lokalizację (K4 lub K4gora)';
-    el('cel-lokalizacja-hint').textContent = '';
-    aktualizujPozostanie();
-    aktualizujAkcjeLabel();
+    inputIlosc.readOnly = false;
     pokazKrok('cel');
-    el('input-cel').focus();
+    aktualizujKrokCelPrzypisanie();
     return;
   }
 
@@ -372,15 +379,11 @@ function przejdzDoCelu() {
   aktualizujKrokCel();
 }
 
-// po wybraniu focus albo na ilosci (lokalizacja juz znana i edytowalna), albo na skanie lokalizacji
+// Po wyborze celu NIE fokusujemy pola ilosci (type=number -> wyskakuje numeryczna klawiatura,
+// a ilosc i tak jest podpowiedziana + jest stepper). Fokus idzie na pole skanu lokalizacji
+// (inputmode=none -> bez klawiatury, gotowe na skan). Edycja ilosci = dotkniecie liczby.
 function skupSieNaIlosciLubLokalizacji() {
-  if (stan.cel && !el('input-ilosc').readOnly) {
-    el('input-ilosc').focus();
-    el('input-ilosc').select();
-  } else if (el('cel-lokalizacja-pole').classList.contains('hidden')) {
-    el('input-ilosc').focus();
-    el('input-ilosc').select();
-  } else {
+  if (!el('cel-lokalizacja-pole').classList.contains('hidden')) {
     el('input-cel').focus();
   }
 }
@@ -449,7 +452,37 @@ async function aktualizujKrokCel() {
   skupSieNaIlosciLubLokalizacji();
 }
 
-el('select-cel-magazyn').addEventListener('change', aktualizujKrokCel);
+// Krok cel dla PRZYPISANIA (brak zrodla): wybrany magazyn WMS narzuca ilosc (stan GT
+// tego magazynu; dla K4G z czesciowym deficytem - deficyt) i magazyn lokalizacji docelowej.
+// Backend i tak kapuje do deficytu. Brak "pozostanie" (nie ma zrodla).
+function aktualizujKrokCelPrzypisanie() {
+  ukryjKomunikat();
+  ukryjPotwierdzenie();
+  stan.cel = null;
+  const mag = el('select-cel-magazyn').value;
+  stan.celMagazynNowejLokalizacji = mag;
+
+  const ile = (mag === 'K4G' && stan.iloscSugestia != null)
+    ? stan.iloscSugestia
+    : (stan.artykul.stany_gt?.[mag]?.ilosc ?? 0);
+  const inputIlosc = el('input-ilosc');
+  inputIlosc.removeAttribute('max'); // backend kapuje do deficytu magazynu
+  inputIlosc.value = ile > 0 ? String(ile) : '';
+
+  el('input-cel').value = '';
+  el('input-cel').placeholder = `Skanuj lokalizację (${magazynyMapa[mag]?.nazwa ?? mag})`;
+  el('cel-lokalizacja-hint').textContent = mag === 'K4'
+    ? 'K4: 1 SKU = 1 lokalizacja — cała ilość'
+    : '';
+  aktualizujPozostanie();   // brak zrodla -> ukryje sie
+  aktualizujAkcjeLabel();
+  el('input-cel').focus();
+}
+
+el('select-cel-magazyn').addEventListener('change', () => {
+  if (stan.zrodlo) aktualizujKrokCel();
+  else aktualizujKrokCelPrzypisanie();
+});
 
 // "Pozostanie w <lok>: N szt." = stan zrodla - wpisana ilosc. 0 jest NEUTRALNE
 // (wyzerowanie lokalizacji to nie blad) - czerwone tylko gdy przekroczono (< 0).
@@ -493,13 +526,6 @@ function zmienIlosc(delta) {
 el('btn-ilosc-minus').addEventListener('click', () => zmienIlosc(-1));
 el('btn-ilosc-plus').addEventListener('click', () => zmienIlosc(1));
 
-// ikona skanera w polu = zatwierdzenie wpisanego kodu (dziala jak Enter / skan)
-document.querySelectorAll('.ikona-skan[data-skan]').forEach((b) => {
-  b.addEventListener('click', () => {
-    const inp = el(b.dataset.skan);
-    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  });
-});
 
 // select-all przy wejsciu w pole, zeby skan lokalizacji nadpisal podpowiedz
 el('input-cel').addEventListener('focus', () => el('input-cel').select());
@@ -574,10 +600,8 @@ async function przetworzLokalizacjeCelu(kod) {
 
 onScan(el('input-cel'), async (kod) => {
   const ok = await przetworzLokalizacjeCelu(kod);
-  if (ok && !el('input-ilosc').readOnly) {
-    el('input-ilosc').focus();
-    el('input-ilosc').select();
-  }
+  // po poprawnym celu chowamy klawiature (B); ilosci NIE fokusujemy (A) - stepper/tap-to-edit
+  if (ok) el('input-cel').blur();
 });
 
 // --- potwierdzenie utworzenia nieznanej lokalizacji docelowej ---
@@ -618,10 +642,7 @@ el('btn-cel-utworz-tak').addEventListener('click', async () => {
     stan.cel = { typ: 'wms', id: dane.id, kod: dane.kod, magazyn: dane.magazyn };
     el('input-cel').value = dane.kod;
     ukryjPotwierdzenie();
-    if (!el('input-ilosc').readOnly) {
-      el('input-ilosc').focus();
-      el('input-ilosc').select();
-    }
+    // lokalizacja utworzona - nie fokusujemy ilosci (bez numerycznej klawiatury)
   } catch (err) {
     pokazKomunikat('Blad polaczenia z serwerem', 'blad');
   }

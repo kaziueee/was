@@ -645,12 +645,13 @@ Sesja testów MM/lokalizacji na żywym moście + UX panelu Produkty:
   (zawartość lokalizacji 3.1, lista po nazwie) — oba nietknięte. Fast-path 0/1 lokalizacji
   bez zmian. CSS: `.podsumowanie-stanu`, `#krok-wybor` gap, `.brak .poz-mag`/`.poz-kod`.
 
-- **Budżet ekranu Zebry (fullscreen = bonus, nie założenie)**: wygaszenie ekranu na
-  magazynie zrzuca pełny ekran Chrome, więc kroki **decyzyjne** (start, „Dokąd i ile?")
-  mają mieścić się **bez scrolla w najwęższym wariancie** (Chrome z paskiem URL + dolną
-  nawigacją ≈ **360×536** na 5" Zebrze). Listy (rozkład) mogą się przewijać — to naturalne.
-  Audyt 2026-06-29: wszystkie warianty kroku „cel" (zmiana lok. K4, MM K4↔K4G, MM zewnętrzny,
-  przypisanie, worst-case z 2-liniową nazwą) mieszczą się przy 360×536 z 0px nadmiaru.
+- **Urządzenie docelowe = Zebra TC52** (5.0", 1280×720 px, DPR 2.0). Viewport CSS w Chrome
+  potwierdzony na żywo: **360×640** (pełny ekran) / **360×536** (worst-case: Chrome z paskiem
+  URL ~56px + dolną nawigacją ~48px, gdy fullscreen pada — częste po wygaszeniu ekranu).
+- **Budżet ekranu (fullscreen = bonus, nie założenie)**: kroki **decyzyjne** (start,
+  „Dokąd i ile?") mają mieścić się **bez scrolla przy 360×536**. Listy (rozkład) mogą się
+  przewijać — to naturalne. Audyt 2026-06-29: wszystkie warianty kroku „cel" (zmiana lok. K4,
+  MM K4↔K4G, MM zewnętrzny, przypisanie, worst-case z 2-liniową nazwą) = 0px nadmiaru przy 360×536.
 - **Stopka „Dokąd i ile?" w podziale**: jeden rząd — `Wstecz` (wtórne, lewo, `flex 1`) |
   `Zmień lokalizację/Przenieś` (główne, prawo, `flex 2`), oba 48px. Gdy `Zatwierdź` ukryty
   (kroki start/wybór) — `Wstecz` wypełnia rząd. `app.css`: `.ekran-stopka` row + niższy padding.

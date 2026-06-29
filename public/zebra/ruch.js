@@ -58,15 +58,39 @@ const kroki = {
   wybor: el('krok-wybor'),
   cel: el('krok-cel'),
 };
-const btnReset = el('btn-reset');
 const btnWstecz = el('btn-wstecz');
+
+// Naglowek: na starcie tytul; po wyborze artykulu SKU + nazwa + box "Stan w <lok>"
+// + chipy kontekstu zrodla. Dlugi podpis z danymi GT (stany/lokalizacja) celowo
+// usuniety - kontekst do decyzji wystarczy.
+function naglowekHtml() {
+  const a = stan.artykul;
+  if (!a) return ''; // start: bez duzego naglowka - tytul "Skanuj..." jest w tresci
+
+  const kontekst = stan.zrodlo
+    ? `<span class="chip">Z: <b>${stan.zrodlo.kod}</b></span><span class="chip">${stan.zrodlo.magazyn}</span><span class="chip-tekst">Lokalizacja źródłowa</span>`
+    : '<span class="chip chip-uwaga">Brak lokalizacji w WMS</span>';
+
+  return `<div class="naglowek-glowna"><h1>${a.artykul_symbol}</h1><p class="ekran-nazwa">${a.artykul_nazwa}</p></div>`
+    + `<div class="rzad naglowek-kontekst">${kontekst}</div>`;
+}
+
+// Naglowek produktu (SKU+nazwa+stan+kontekst zrodla) ma sens tylko w kroku "cel" -
+// tam znamy zrodlo i decydujemy o celu. Na "skan" i "wybor" naglowek jest pusty/ukryty,
+// dzieki czemu Wstecz od razu go usuwa (a box "Stan w..." nie wisi bez wybranego zrodla).
+function ustawNaglowek(nazwa) {
+  const html = nazwa === 'cel' ? naglowekHtml() : '';
+  el('ekran-naglowek').innerHTML = html;
+  el('ekran-naglowek').classList.toggle('hidden', html === '');
+}
 
 function pokazKrok(nazwa) {
   for (const [klucz, sekcja] of Object.entries(kroki)) {
     sekcja.classList.toggle('hidden', klucz !== nazwa);
   }
-  btnReset.classList.toggle('hidden', nazwa === 'start');
-  btnWstecz.classList.toggle('hidden', nazwa === 'start');
+  // glowna akcja (Zatwierdz) widoczna tylko w kroku "cel"; Wstecz zawsze w stopce
+  el('btn-zatwierdz').classList.toggle('hidden', nazwa !== 'cel');
+  ustawNaglowek(nazwa);
 }
 
 // krok o jeden wstecz w kreatorze (cel -> wybor/start, wybor -> start)
@@ -74,18 +98,18 @@ function wstecz() {
   ukryjKomunikat();
   ukryjPotwierdzenie();
   if (!kroki.cel.classList.contains('hidden')) {
-    // z kroku "cel": wroc do listy wyboru jesli byla, inaczej do startu
+    // z kroku "cel": wroc do listy wyboru jesli byla, inaczej do czystego skanu
     if (opcjeWyboru.length > 0 || ostatniaListaArtykulow) {
       pokazKrok('wybor');
       el('input-wybor-skan').focus();
     } else {
-      pokazKrok('start');
-      el('input-start').focus();
+      reset(); // brak listy -> czysty skan (czysci stan i naglowek)
     }
   } else if (!kroki.wybor.classList.contains('hidden')) {
-    el('input-start').value = '';
-    pokazKrok('start');
-    el('input-start').focus();
+    reset(); // z listy wyboru -> czysty skan
+  } else {
+    // na kroku startowym: Wstecz wraca do widoku menu (bez przeladowania -> pelny ekran trzyma)
+    history.back();
   }
 }
 
@@ -116,8 +140,6 @@ function reset() {
   pokazKrok('start');
   el('input-start').focus();
 }
-
-btnReset.addEventListener('click', reset);
 
 // --- krok 1: skan SKU, EAN, lokalizacji albo (czesci) nazwy artykulu ---
 async function wykonajSkan(kod) {
@@ -227,11 +249,11 @@ function obsluzArtykul(dane) {
     });
   }
 
-  const { podetykieta, podetykieta2 } = etykietyKartyProduktu(dane);
+  stan.artykul = artykul; // naglowek pokaze SKU+nazwa juz przy wyborze zrodla
   const naglowekAkcja = dane.deficyt_k4g > 0
-    ? 'wybierz lokalizację źródłową lub dodaj nową (K4gora)'
-    : 'wybierz lokalizację źródłową';
-  el('wybor-naglowek').innerHTML = `<strong>${dane.artykul_symbol}</strong><span>${dane.artykul_nazwa} — ${naglowekAkcja}</span><span>${podetykieta}</span>${podetykieta2 ? `<span>${podetykieta2}</span>` : ''}`;
+    ? 'Wybierz lokalizację źródłową lub dodaj nową (K4gora)'
+    : 'Wybierz lokalizację źródłową';
+  el('wybor-naglowek').innerHTML = `<strong>${dane.artykul_symbol}</strong><span>${dane.artykul_nazwa}</span><span>${naglowekAkcja}</span>`;
   el('wybor-hint').textContent = '...lub zeskanuj etykietę lokalizacji';
   el('input-wybor-skan').placeholder = 'Skanuj lokalizację';
   el('checkbox-ukryj-zero-wrap').classList.add('hidden');
@@ -314,17 +336,7 @@ function przejdzDoCelu() {
   ukryjPotwierdzenie();
   stan.cel = null;
 
-  const stanyLinia = `<br>${formatStanyGt(stan.artykul.stany_gt)}`;
-  const gtPodetykieta = formatLokalizacjaGt(stan.artykul.lokalizacja_gt);
-  const gtLinia = gtPodetykieta ? `<br>${gtPodetykieta}` : '';
-  const zrodloLinia = stan.zrodlo
-    ? `<br>Z: ${stan.zrodlo.kod} (${stan.zrodlo.magazyn}, dostępne: ${stan.zrodlo.ilosc} szt.)`
-    : stan.celMagazynNowejLokalizacji
-      ? `<br>Brak w WMS — wskaż nową lokalizację w ${stan.celMagazynNowejLokalizacji}`
-      : '<br>Brak lokalizacji w WMS — wskaż lokalizację (K4 lub K4gora)';
-  el('cel-podsumowanie').innerHTML =
-    `<strong>${stan.artykul.artykul_symbol}</strong><span>${stan.artykul.artykul_nazwa}${zrodloLinia}${stanyLinia}${gtLinia}</span>`;
-
+  // kontekst produktu/zrodla jest teraz w naglowku (SKU+nazwa+stan+chipy), nie w tresci
   const inputIlosc = el('input-ilosc');
 
   if (!stan.zrodlo) {
@@ -340,6 +352,7 @@ function przejdzDoCelu() {
       : 'Skanuj lokalizację (K4 lub K4gora)';
     el('cel-lokalizacja-hint').textContent = '';
     aktualizujPozostanie();
+    aktualizujAkcjeLabel();
     pokazKrok('cel');
     el('input-cel').focus();
     return;
@@ -390,6 +403,7 @@ async function aktualizujKrokCel() {
   inputIlosc.readOnly = calaIlosc;
   inputIlosc.value = stan.zrodlo.ilosc;
   aktualizujPozostanie();
+  aktualizujAkcjeLabel();
 
   const docelowy = celMagazynKod();
   const magInfo = magazynyMapa[docelowy];
@@ -437,7 +451,8 @@ async function aktualizujKrokCel() {
 
 el('select-cel-magazyn').addEventListener('change', aktualizujKrokCel);
 
-// "pozostanie na lokalizacji" = stan zrodla - wpisana ilosc (czerwone gdy < 0); ukryte gdy brak zrodla
+// "Pozostanie w <lok>: N szt." = stan zrodla - wpisana ilosc. 0 jest NEUTRALNE
+// (wyzerowanie lokalizacji to nie blad) - czerwone tylko gdy przekroczono (< 0).
 function aktualizujPozostanie() {
   const span = el('pozostanie');
   if (!stan.zrodlo) {
@@ -446,12 +461,45 @@ function aktualizujPozostanie() {
   }
   const ile = Number(el('input-ilosc').value);
   const poz = stan.zrodlo.ilosc - (Number.isFinite(ile) ? ile : 0);
-  span.textContent = `Na źródle: ${stan.zrodlo.ilosc} → pozostanie: ${poz}`;
-  span.classList.toggle('pozostanie-blad', poz < 0);
+  span.textContent = `Pozostanie w ${stan.zrodlo.kod}: ${poz} szt.`;
+  span.classList.toggle('blad', poz < 0);
   span.classList.remove('hidden');
 }
 
-el('input-ilosc').addEventListener('input', aktualizujPozostanie);
+// etykieta glownej akcji opisuje skutek: PRZENIES / ZMIEN LOKALIZACJE / ZAPISZ
+function aktualizujAkcjeLabel() {
+  const btn = el('btn-zatwierdz');
+  const ilo = Number(el('input-ilosc').value) || 0;
+  if (!stan.zrodlo) {
+    btn.textContent = `ZAPISZ ${ilo} SZT.`;
+  } else if (czyZmiana()) {
+    btn.textContent = 'ZMIEŃ LOKALIZACJĘ';
+  } else {
+    btn.textContent = `PRZENIEŚ ${ilo} SZT.`;
+  }
+}
+
+el('input-ilosc').addEventListener('input', () => { aktualizujPozostanie(); aktualizujAkcjeLabel(); });
+
+// stepper ilosci (-/+ 64x64); dotkniecie liczby = wpisanie reczne (natywny number input)
+function zmienIlosc(delta) {
+  const inp = el('input-ilosc');
+  if (inp.readOnly) return; // K4 zmiana lokalizacji = cala ilosc
+  const n = Math.max(0, (Number(inp.value) || 0) + delta);
+  inp.value = String(n);
+  aktualizujPozostanie();
+  aktualizujAkcjeLabel();
+}
+el('btn-ilosc-minus').addEventListener('click', () => zmienIlosc(-1));
+el('btn-ilosc-plus').addEventListener('click', () => zmienIlosc(1));
+
+// ikona skanera w polu = zatwierdzenie wpisanego kodu (dziala jak Enter / skan)
+document.querySelectorAll('.ikona-skan[data-skan]').forEach((b) => {
+  b.addEventListener('click', () => {
+    const inp = el(b.dataset.skan);
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  });
+});
 
 // select-all przy wejsciu w pole, zeby skan lokalizacji nadpisal podpowiedz
 el('input-cel').addEventListener('focus', () => el('input-cel').select());
@@ -739,7 +787,21 @@ el('input-ilosc').addEventListener('keydown', (e) => {
 // pola skanu bez automatycznej klawiatury ekranowej (dotkniecie = reczne wpisanie)
 polaSkanuBezKlawiatury(el('input-start'), el('input-wybor-skan'), el('input-cel'));
 
-(async () => {
-  await initMagazyny();
-  reset();
-})();
+// --- router widokow (SPA: menu <-> ruch bez przeladowania, pelny ekran sie trzyma) ---
+function pokazWidok(nazwa) {
+  el('widok-menu').classList.toggle('hidden', nazwa !== 'menu');
+  el('widok-ruch').classList.toggle('hidden', nazwa !== 'ruch');
+  if (nazwa === 'ruch') reset();
+}
+el('btn-go-ruch').addEventListener('click', () => {
+  pokazWidok('ruch');
+  history.pushState({ v: 'ruch' }, '');
+});
+el('btn-pelny-ekran').addEventListener('click', () => {
+  if (window.przelaczPelnyEkran) window.przelaczPelnyEkran();
+});
+// systemowy/przegladarkowy Back -> wroc do menu (nie wychodz z apki)
+window.addEventListener('popstate', () => pokazWidok('menu'));
+
+(async () => { await initMagazyny(); })();
+pokazWidok('menu');

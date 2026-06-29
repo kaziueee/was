@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>WMS — Kit (system v2)</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="ekran">
+
+    <!-- STALY NAGLOWEK -->
+    <header class="ekran-naglowek">
+      <div class="ekran-sku">
+        <h1>NERE0011</h1>
+        <span class="badge badge-err">NZ</span>
+      </div>
+      <p class="ekran-nazwa">Nerf N-Strike Elite Surgefire PRO</p>
+    </header>
+
+    <!-- PRZEWIJANA TRESC -->
+    <main class="ekran-tresc">
+      <div>
+        <h2 class="ekran-tytul">Wybierz lokalizację źródłową</h2>
+        <div class="rzad">
+          <span class="chip">Łączny stan: <b>2045 szt.</b></span>
+          <span class="chip">Rezerwacje: <b>1</b></span>
+        </div>
+      </div>
+
+      <div>
+        <label class="pole-etykieta" for="kit-skan">Lokalizacja źródłowa</label>
+        <div class="pole-skan">
+          <input id="kit-skan" type="text" inputmode="none" autocomplete="off" placeholder="Skanuj lub wpisz kod">
+          <button type="button" class="ikona-skan" aria-label="Skanuj">⊟</button>
+        </div>
+        <p class="pole-hint">lub wybierz z listy poniżej</p>
+      </div>
+
+      <div class="lista">
+        <button type="button" class="lista-poz st-ok">
+          <span class="poz-mag">K4</span>
+          <span class="poz-glowna"><span class="poz-kod">A2</span></span>
+          <span class="poz-prawa"><span class="poz-ilosc">28 szt.</span><span class="poz-rez">(rez 1)</span></span>
+          <span class="poz-strzalka">›</span>
+        </button>
+
+        <button type="button" class="lista-poz st-info">
+          <span class="poz-mag">K4G</span>
+          <span class="poz-glowna"><span class="poz-kod">M2-B27-P3</span></span>
+          <span class="poz-prawa"><span class="poz-ilosc">2010 szt.</span></span>
+          <span class="poz-strzalka">›</span>
+        </button>
+
+        <button type="button" class="lista-poz st-ok">
+          <span class="poz-mag">K4G</span>
+          <span class="poz-glowna"><span class="poz-kod">M5-A02-P1</span></span>
+          <span class="poz-prawa"><span class="poz-ilosc">1 szt.</span></span>
+          <span class="poz-strzalka">›</span>
+        </button>
+
+        <button type="button" class="lista-poz brak">
+          <span class="poz-mag">K4G</span>
+          <span class="poz-glowna">
+            <span class="poz-kod">BRAK LOKALIZACJI</span>
+            <span class="poz-podpis">(nieprzypisano)</span>
+            <span class="poz-plan">wg GT: A12P3 / A11P3 / A2P3 / B2P3 / M2-I14-16-P3</span>
+          </span>
+          <span class="poz-prawa"><span class="poz-ilosc">2000 szt.</span></span>
+          <span class="poz-strzalka">›</span>
+        </button>
+      </div>
+
+      <!-- przyklad: badge statusow -->
+      <div>
+        <p class="pole-etykieta">Statusy</p>
+        <div class="rzad">
+          <span class="badge badge-ok">OK</span>
+          <span class="badge badge-info">t_GT</span>
+          <span class="badge badge-err">NZ</span>
+          <span class="badge badge-neutral">BD</span>
+          <span class="badge badge-warn">OF</span>
+        </div>
+      </div>
+
+      <!-- przyklad: stepper ilosci -->
+      <div>
+        <label class="pole-etykieta">Ilość</label>
+        <div class="stepper">
+          <button type="button" id="kit-minus">−</button>
+          <input id="kit-ile" class="stepper-wartosc" type="number" inputmode="numeric" value="28">
+          <button type="button" id="kit-plus">+</button>
+        </div>
+        <p class="pozostanie" id="kit-pozostanie">Pozostanie w A2: 0 szt.</p>
+      </div>
+    </main>
+
+    <!-- STALA STOPKA AKCJI -->
+    <footer class="ekran-stopka">
+      <button type="button" class="btn-akcja" id="kit-akcja">PRZENIEŚ 28 SZT.</button>
+      <button type="button" class="btn-wstecz">← Wstecz</button>
+    </footer>
+  </div>
+
+  <script>
+    // demo: stepper + live "Pozostanie" (0 neutralne, ujemne = czerwone)
+    const STAN = 28;
+    const ile = document.getElementById('kit-ile');
+    const poz = document.getElementById('kit-pozostanie');
+    const akcja = document.getElementById('kit-akcja');
+    function przelicz() {
+      const n = Number(ile.value) || 0;
+      const r = STAN - n;
+      poz.textContent = `Pozostanie w A2: ${r} szt.`;
+      poz.classList.toggle('blad', r < 0);
+      akcja.textContent = `PRZENIEŚ ${n} SZT.`;
+    }
+    document.getElementById('kit-minus').addEventListener('click', () => { ile.value = Math.max(0, (Number(ile.value) || 0) - 1); przelicz(); });
+    document.getElementById('kit-plus').addEventListener('click', () => { ile.value = (Number(ile.value) || 0) + 1; przelicz(); });
+    ile.addEventListener('input', przelicz);
+    przelicz();
+  </script>
+</body>
+</html>

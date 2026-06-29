@@ -16,8 +16,8 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// goly host -> menu Zebry (public/ nie ma indexu w roocie)
-app.get('/', (req, res) => res.redirect('/zebra/index.html'));
+// goly host -> aplikacja Zebry (SPA: menu + Ruch w ruch.html)
+app.get('/', (req, res) => res.redirect('/zebra/ruch.html'));
 
 app.use(express.static(path.join(__dirname, 'public')));
 

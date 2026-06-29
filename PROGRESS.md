@@ -584,3 +584,53 @@ Sesja testów MM/lokalizacji na żywym moście + UX panelu Produkty:
     polska odmiana ("1 artykuł" / "2 artykuły" / "5 artykułów").
   - `mm.js`, `lokalizowanie.js`, `inwentaryzacja.js` — nagłówki list wyboru
     używają `liczbaArtykulow(...)`.
+
+### 2026-06-25 — usunięcie inwentaryzacji + backend = źródło prawdy
+
+- **Moduł inwentaryzacji usunięty w całości** (do zrobienia od nowa): tabele
+  `inwentaryzacje`/`pozycje_inwentaryzacji` (DROP + `001_init.sql`), `routes/inwentaryzacja.js`,
+  rejestracja w `app.js`, blokady MM/LOK w `routes/ruchy.js`, helpery RW/PW w `gt-bridge.js`,
+  ekran Zebry i panel desktopu. Most C# (RW/PW) zostaje nieużywany.
+- **Zlanie MM + Lokalizowanie → jeden ekran „Ruch towaru"** (`ruch.html`/`ruch.js`),
+  operacja LOK/MM wyprowadzana z wyboru celu. Wspólny `kreator.js`. Usunięte `mm.*`,
+  `lokalizowanie.*`. Redirect `/` → menu.
+- **Zasada 5 (CLAUDE.md): backend = jedyne źródło prawdy dla inwariantów.** Audyt +
+  domknięcie reguł, które żyły tylko we froncie:
+  - przypisanie (LOK bez źródła): `ilość ≤ stan_GT − suma_WMS` (`/ruchy/lok`),
+  - przyjęcie z zewn.: `ilość ≤ stan GT magazynu MAG/LS` (`/ruchy/przyjecie`),
+  - K4 LOK = cała ilość (`/ruchy/lok`).
+- **Skan po EAN** znajduje lokalizacje WMS po symbolu z GT (gdy `stany_lokalizacji` nie ma EAN).
+- **Guard pola K4G**: `gt-fields.js` nie nadpisuje `tw_Pole8` dopóki `deficyt_k4g > 0`
+  (plan lokalizacji w GT przeżywa). Status zgodności (OK/t_GT/NZ/BD/OF) w odpowiedzi skanu.
+- **DataWedge**: skan = Enter — działa przez „Send ENTER key" + „Send Enter as string";
+  `onScan` łapie CR także jako `inputType:insertLineBreak`. Strona diag. `test-skan.html`.
+- Startery macOS: `start-wms.command` / `stop-wms.command` (caffeinate, adres LAN).
+
+### 2026-06-29 — Zebra v2: system projektowy + SPA + pełny ekran
+
+- **System projektowy `app.css`**: tokeny `:root` (kolory/typografia/odstępy), powłoka
+  3-strefowa (stały nagłówek / przewijana treść / stała stopka), komponenty
+  (`btn-akcja`/`btn-wstecz`, `pole-skan` z ikoną, `stepper`, `badge`, `karta-info`, `chip`).
+  Galeria `kit.html`. Fix poziomego rozpychania (`min-width:0` na polach flex).
+- **SPA**: menu + Ruch w jednym dokumencie (`ruch.html`), przełączanie widoków bez
+  przeładowania (żeby utrzymać pełny ekran). Systemowy Back → menu, bez pull-to-refresh.
+- **Pełny ekran bez PWA/EHS** (`fullscreen.js`): podwójny tap WCHODZI w pełny ekran (nie
+  wychodzi), przycisk „Tryb pełnoekranowy" w menu przełącza. PWA manifest + ikona — gotowe
+  na HTTPS (po HTTP Chrome nie da instalacji/standalone). Na zablokowanym terminalu docelowo EHS Kiosk.
+- **Ekran Ruch — przebudowa**: nagłówek SKU+nazwa+chipy **tylko na kroku „cel"** (znika
+  przy Wstecz); bez „Ruch towaru"/operatora/podpisu GT i bez „Dokąd przenieść?"/boxa stanu.
+  Kolejność **Cel → Lokalizacja docelowa → Ilość**. Stepper ilości, „Pozostanie w X"
+  (0 neutralne), etykieta akcji opisuje skutek (PRZENIEŚ/ZMIEŃ/ZAPISZ). Ikona skanera = Enter.
+  Niższy nagłówek (−50%) i pola/przyciski (−15..25%). Atrybuty anty-autofill.
+
+#### Do zrobienia (kolejka)
+
+- **Wyskakująca klawiatura** (pierwszy ogień): A) bez auto-focusu na `input-ilosc`
+  (numeryczna klawiatura mimo steppera); B) `blur()` po poprawnym Enter/skanie; C) audyt
+  pozostałych `focus()`; D) autofill — wyłączenie w ustawieniach Chrome/EHS.
+- **Nowe ekrany** (czekają na komplet makiet): 3.1 zawartość lokalizacji, 3.2 rozkład
+  produktu (mobilny odpowiednik desktopowego rozkładu, tap → „Dokąd i ile?").
+- **Redesign kart listy** na `.lista-poz` (pasek statusu z lewej, mag-badge).
+- **Inwentaryzacja od nowa**.
+- Opcjonalnie: wybór operatora przy starcie apki; HTTPS + ikony PNG (prawdziwe PWA);
+  sprzątnięcie wzmianek o inwentaryzacji w README/CONTEXT/moście C#.

@@ -206,11 +206,9 @@ function obsluzLokalizacje({ lokalizacja, zawartosc }) {
   // kontekst lokalizacji w gornym pasku: kod (duzy) + magazyn (chip) w tej samej linii
   naglowekWyborHtml = `<div class="ekran-sku"><h1>${lokalizacja.kod}</h1>`
     + `<span class="chip">${lokalizacja.magazyn}</span></div>`;
-  el('wybor-naglowek').innerHTML = '';
-  el('wybor-naglowek').classList.add('hidden'); // kontekst jest w gornym naglowku
+  przygotujKrokWybor(); // kontekst jest w gornym naglowku - sekcje rozkladu chowamy
   el('wybor-hint').textContent = '';
   el('input-wybor-skan').placeholder = 'Skanuj produkt';
-  el('checkbox-ukryj-zero-wrap').classList.add('hidden');
 
   trybWyboru = 'wybor';
   renderujWybor(opcjeWyboru, wybierzOpcje);
@@ -219,8 +217,21 @@ function obsluzLokalizacje({ lokalizacja, zawartosc }) {
 }
 
 // zeskanowano SKU lub EAN -> wybierz lokalizacje zrodlowa
+// przywraca krok "wybor" do stanu bazowego - chowa wszystkie opcjonalne elementy
+// (naglowek-karta, tytul rozkladu, podsumowanie, etykieta pola, checkbox), zeby
+// kazdy tryb (szukaj / zawartosc lokalizacji / rozklad artykulu) wlaczyl tylko swoje.
+function przygotujKrokWybor() {
+  el('wybor-naglowek').innerHTML = '';
+  el('wybor-naglowek').classList.add('hidden');
+  el('wybor-tytul').classList.add('hidden');
+  el('wybor-podsumowanie').classList.add('hidden');
+  el('wybor-podsumowanie').innerHTML = '';
+  el('wybor-skan-etykieta').classList.add('hidden');
+  el('checkbox-ukryj-zero-wrap').classList.add('hidden');
+}
+
 function obsluzArtykul(dane) {
-  const artykul = { artykul_gt_id: dane.artykul_gt_id, artykul_symbol: dane.artykul_symbol, artykul_nazwa: dane.artykul_nazwa, stany_gt: dane.stany_gt, lokalizacja_gt: dane.lokalizacja_gt };
+  const artykul = { artykul_gt_id: dane.artykul_gt_id, artykul_symbol: dane.artykul_symbol, artykul_nazwa: dane.artykul_nazwa, stany_gt: dane.stany_gt, lokalizacja_gt: dane.lokalizacja_gt, zgodnosc: dane.zgodnosc };
 
   if (dane.lokalizacje.length === 0) {
     // produkt ma stan w GT, ale nie ma jeszcze zadnej lokalizacji w WMS - przypisz pierwsza
@@ -241,17 +252,36 @@ function obsluzArtykul(dane) {
     return;
   }
 
-  // 2+ lokalizacje, albo 1 lokalizacja, ale w K4gora wciaz brakuje czesci
-  // ilosci w WMS (deficyt_k4g) - dodaj opcje "nowa lokalizacja K4gora" obok
-  // istniejacych lokalizacji do przesuniecia
-  opcjeWyboru = dane.lokalizacje.map((lok) => ({
-    klucz: lok.kod,
-    artykul,
-    zrodlo: lok,
-    iloscSugestia: null,
-    etykieta: `${lok.kod} <span class="magazyn">${lok.magazyn}</span>`,
-    ilosc: lok.ilosc,
-  }));
+  // 2+ lokalizacje, albo 1 lokalizacja, ale w K4gora wciaz brakuje czesci ilosci
+  // w WMS (deficyt_k4g) - pokaz rozklad zrodel (mobilny blizniak desktopowego
+  // okna rozkladu): wiersz per lokalizacja + wiersz "BRAK LOKALIZACJI" gdy deficyt.
+  pokazRozkladZrodel(dane, artykul);
+}
+
+// Rozklad zrodel po skanie SKU/EAN: naglowek SKU+nazwa+status, podsumowanie stanu,
+// lista lokalizacji (.lista-poz) + wiersz "BRAK LOKALIZACJI / wg GT: ..." dla
+// nieprzypisanej czesci K4gora. Tap w wiersz -> wybierzOpcje -> krok "Dokad i ile?".
+function pokazRozkladZrodel(dane, artykul) {
+  stan.artykul = artykul; // ustaw przed budowa opcji - gtLokDlaMagazynu czyta stan.artykul
+
+  // rezerwacja jest na poziomie magazynu - pokazujemy ja raz, przy pierwszym
+  // wierszu danego magazynu (jak w rozkladzie desktopu).
+  const rezPokazana = {};
+  opcjeWyboru = dane.lokalizacje.map((lok) => {
+    const rezMag = artykul.stany_gt?.[lok.magazyn]?.rezerwacja ?? 0;
+    const rez = !rezPokazana[lok.magazyn] && rezMag ? rezMag : 0;
+    rezPokazana[lok.magazyn] = true;
+    return {
+      klucz: lok.kod,
+      artykul,
+      zrodlo: lok,
+      iloscSugestia: null,
+      mag: lok.magazyn,
+      kod: lok.kod,
+      ilosc: lok.ilosc,
+      rez,
+    };
+  });
 
   if (dane.deficyt_k4g > 0) {
     opcjeWyboru.push({
@@ -260,27 +290,63 @@ function obsluzArtykul(dane) {
       zrodlo: null,
       iloscSugestia: dane.deficyt_k4g,
       celMagazyn: 'K4G',
-      etykieta: '+ Nowa lokalizacja <span class="magazyn">K4G</span>',
-      podetykieta: `${dane.deficyt_k4g} szt. bez przypisanej lokalizacji w K4gora`,
+      brak: true,
+      mag: 'K4G',
       ilosc: dane.deficyt_k4g,
+      plan: gtLokDlaMagazynu('K4G') || '', // sciaga "wg GT" gdzie dolozyc reszte
     });
   }
 
-  stan.artykul = artykul; // naglowek pokaze SKU+nazwa juz przy wyborze zrodla
-  const naglowekAkcja = dane.deficyt_k4g > 0
-    ? 'Wybierz lokalizację źródłową lub dodaj nową (K4gora)'
-    : 'Wybierz lokalizację źródłową';
-  naglowekWyborHtml = ''; // kontekst SKU jest w karcie wybor-naglowek ponizej, nie w gornym pasku
-  el('wybor-naglowek').classList.remove('hidden');
-  el('wybor-naglowek').innerHTML = `<strong>${dane.artykul_symbol}</strong><span>${dane.artykul_nazwa}</span><span>${naglowekAkcja}</span>`;
-  el('wybor-hint').textContent = '...lub zeskanuj etykietę lokalizacji';
-  el('input-wybor-skan').placeholder = 'Skanuj lokalizację';
-  el('checkbox-ukryj-zero-wrap').classList.add('hidden');
+  // gorny pasek: SKU (duzy) + status zgodnosci, nazwa pod spodem
+  naglowekWyborHtml = `<div class="ekran-sku"><h1>${artykul.artykul_symbol}</h1>${statusZgodnosciBadge(artykul)}</div>`
+    + `<p class="ekran-nazwa">${artykul.artykul_nazwa}</p>`;
+
+  przygotujKrokWybor();
+  el('wybor-tytul').textContent = 'Wybierz lokalizację źródłową';
+  el('wybor-tytul').classList.remove('hidden');
+
+  const lacznyStan = sumaStanowGt(artykul.stany_gt);
+  const rezRazem = sumaRezerwacji(artykul.stany_gt);
+  el('wybor-podsumowanie').innerHTML = `<span>Łączny stan: <b>${lacznyStan} szt.</b></span>`
+    + `<span class="podsumowanie-sep"></span>`
+    + `<span>Rezerwacje: <b>${rezRazem}</b></span>`;
+  el('wybor-podsumowanie').classList.remove('hidden');
+
+  el('wybor-skan-etykieta').textContent = 'Lokalizacja źródłowa';
+  el('wybor-skan-etykieta').classList.remove('hidden');
+  el('input-wybor-skan').placeholder = 'Skanuj lub wpisz kod';
+  el('wybor-hint').textContent = 'lub wybierz z listy poniżej';
 
   trybWyboru = 'wybor';
-  renderujWybor(opcjeWyboru, wybierzOpcje);
+  renderujRozklad(opcjeWyboru, wybierzOpcje);
   pokazKrok('wybor');
-  el('input-wybor-skan').focus();
+  // preventScroll: skupiamy pole na skan, ale NIE przewijamy tresci - tytul i
+  // podsumowanie maja zostac widoczne na gorze (lista i tak jest przewijalna).
+  el('input-wybor-skan').focus({ preventScroll: true });
+}
+
+// renderuje liste pozycji rozkladu jako karty .lista-poz (mag-badge, kod, ilosc,
+// rez, strzalka); wiersz z flaga `brak` dostaje wariant .brak + podpis "(nieprzypisano)"
+// i opcjonalny plan "wg GT: ...".
+function renderujRozklad(opcje, onWybierz) {
+  const lista = el('lista-wyboru');
+  lista.innerHTML = '';
+  opcje.forEach((o) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'lista-poz' + (o.brak ? ' brak' : '');
+    const rez = o.rez > 0 ? `<span class="poz-rez">(${o.rez} rez.)</span>` : '';
+    const glowna = o.brak
+      ? `<span class="poz-kod">BRAK LOKALIZACJI</span><span class="poz-podpis">(nieprzypisano)</span>`
+        + (o.plan ? `<span class="poz-plan">wg GT: ${o.plan}</span>` : '')
+      : `<span class="poz-kod">${o.kod}</span>`;
+    btn.innerHTML = `<span class="poz-mag">${o.mag}</span>`
+      + `<span class="poz-glowna">${glowna}</span>`
+      + `<span class="poz-prawa"><span class="poz-ilosc">${o.ilosc} szt.</span>${rez}</span>`
+      + `<span class="poz-strzalka">›</span>`;
+    btn.addEventListener('click', () => onWybierz(o));
+    lista.appendChild(btn);
+  });
 }
 
 // znaleziono kilka artykulow po (czesci) nazwy -> wybierz konkretny artykul
@@ -288,6 +354,7 @@ function obsluzListaArtykulow(artykuly, obciete) {
   ostatniaListaArtykulow = artykuly;
 
   naglowekWyborHtml = '';
+  przygotujKrokWybor();
   el('wybor-naglowek').classList.remove('hidden');
   el('wybor-naglowek').innerHTML = `<span>Znaleziono ${liczbaArtykulow(artykuly.length)} — wybierz</span>`;
   el('wybor-hint').textContent = '...lub zeskanuj SKU / EAN towaru';

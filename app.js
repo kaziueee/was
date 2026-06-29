@@ -19,7 +19,13 @@ app.use(express.json());
 // goly host -> aplikacja Zebry (SPA: menu + Ruch w ruch.html)
 app.get('/', (req, res) => res.redirect('/zebra/ruch.html'));
 
-app.use(express.static(path.join(__dirname, 'public')));
+// Cache-Control: no-cache => przegladarka (Chrome na Zebrze) ZAWSZE rewaliduje
+// statyki (CSS/JS/HTML). Pliki sa male, siec to LAN, a dzieki temu po edycji
+// terminal od razu dostaje swieza wersje - bez tego Chrome serwuje stary app.css
+// (tak powstal "duch" kroku wybor na ekranie start po zmianie CSS).
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+}));
 
 app.use('/api/lokalizacje', lokalizacjeRouter);
 app.use('/api/ruchy', ruchyRouter);

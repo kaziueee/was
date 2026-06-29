@@ -631,9 +631,40 @@ Sesja testów MM/lokalizacji na żywym moście + UX panelu Produkty:
   linii; pole „Skanuj produkt"; lista z widocznym statusem (OK/NZ/t_GT/BD), bez opisów GT;
   na dole tylko „Wstecz".
 
+- **Ekran 3.2 — rozkład produktu (zrobione)**: po skanie SKU/EAN z 2+ lokalizacjami
+  (albo deficytem K4G) `obsluzArtykul` pokazuje rozkład źródeł zamiast płaskiej listy
+  (`pokazRozkladZrodel`/`renderujRozklad` w `ruch.js`). Górny pasek: SKU + badge zgodności
+  (NZ/OK/…) + nazwa. Treść: tytuł „Wybierz lokalizację źródłową", podsumowanie
+  „Łączny stan: N szt. | Rezerwacje: M" (`.podsumowanie-stanu` z separatorem; łączny stan
+  = suma stanów GT = suma wszystkich wierszy), etykieta + pole skanu, lista `.lista-poz`
+  (mag-badge, kod, ilość, „(N rez.)" raz per magazyn, strzałka) + czerwony wiersz
+  `.brak` „BRAK LOKALIZACJI / (nieprzypisano) / wg GT: …" dla deficytu K4G. Tap w wiersz →
+  istniejące `wybierzOpcje` → krok „Dokąd i ile?" (źródło = lokalizacja, albo przypisanie
+  dla wiersza BRAK). `focus({preventScroll})` na polu skanu (tytuł zostaje na górze).
+  Wspólny `przygotujKrokWybor()` chowa sekcje rozkładu w pozostałych trybach kroku „wybór"
+  (zawartość lokalizacji 3.1, lista po nazwie) — oba nietknięte. Fast-path 0/1 lokalizacji
+  bez zmian. CSS: `.podsumowanie-stanu`, `#krok-wybor` gap, `.brak .poz-mag`/`.poz-kod`.
+
+- **Budżet ekranu Zebry (fullscreen = bonus, nie założenie)**: wygaszenie ekranu na
+  magazynie zrzuca pełny ekran Chrome, więc kroki **decyzyjne** (start, „Dokąd i ile?")
+  mają mieścić się **bez scrolla w najwęższym wariancie** (Chrome z paskiem URL + dolną
+  nawigacją ≈ **360×536** na 5" Zebrze). Listy (rozkład) mogą się przewijać — to naturalne.
+  Audyt 2026-06-29: wszystkie warianty kroku „cel" (zmiana lok. K4, MM K4↔K4G, MM zewnętrzny,
+  przypisanie, worst-case z 2-liniową nazwą) mieszczą się przy 360×536 z 0px nadmiaru.
+- **Stopka „Dokąd i ile?" w podziale**: jeden rząd — `Wstecz` (wtórne, lewo, `flex 1`) |
+  `Zmień lokalizację/Przenieś` (główne, prawo, `flex 2`), oba 48px. Gdy `Zatwierdź` ukryty
+  (kroki start/wybór) — `Wstecz` wypełnia rząd. `app.css`: `.ekran-stopka` row + niższy padding.
+  **„Cel" zostaje** (magazyny zewnętrzne MAG/LS nie mają lokalizacji do skanu — to jedyny
+  sposób wskazania celu). Kontekst „Z:/magazyn" już w nagłówku (chipy za nazwą).
+- **Fix specyficzności (regresja złapana w audycie)**: `#krok-wybor` (id) wygrywał z `.hidden`
+  (klasa) → sekcja „wybór" nie chowała się i nachodziła na inne kroki (duch pól na ekranie
+  start). Poprawione na `#krok-wybor:not(.hidden)`.
+- **Cache statyk** (`app.js`): `express.static` z `Cache-Control: no-cache` — Chrome na Zebrze
+  ZAWSZE rewaliduje CSS/JS/HTML, więc po edycji terminal dostaje świeżą wersję (bez tego
+  serwował stary `app.css` → mylące „duchy" po zmianach). Wymaga restartu `node app.js`.
+
 #### Do zrobienia (kolejka)
 
-- **Ekran 3.2 — rozkład produktu** (mobilny odpowiednik desktopowego rozkładu, tap → „Dokąd i ile?").
 - **Audyt** pozostałych `focus()` (start/wybór — `blur()` po sukcesie) + autofill (wyłączenie
   w ustawieniach Chrome/EHS — atrybuty HTML już są).
 - **Redesign kart listy** na `.lista-poz` (pasek statusu z lewej, mag-badge).

@@ -46,7 +46,10 @@
       <!-- krok 2: wybor -->
       <section id="krok-wybor" class="hidden">
         <div id="wybor-naglowek" class="karta-info"></div>
+        <h2 id="wybor-tytul" class="ekran-tytul hidden"></h2>
+        <div id="wybor-podsumowanie" class="podsumowanie-stanu hidden"></div>
         <div class="pole-blok">
+          <label class="pole-etykieta hidden" id="wybor-skan-etykieta" for="input-wybor-skan"></label>
           <div class="pole-skan">
             <input type="text" id="input-wybor-skan" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj lub wpisz">
           </div>
@@ -93,8 +96,8 @@
     </main>
 
     <footer class="ekran-stopka">
-      <button type="button" id="btn-zatwierdz" class="btn-akcja hidden">Zatwierdź</button>
       <button type="button" id="btn-wstecz" class="btn-wstecz">← Wstecz</button>
+      <button type="button" id="btn-zatwierdz" class="btn-akcja hidden">Zatwierdź</button>
     </footer>
 
     <div id="sukces-overlay" class="sukces-overlay hidden">

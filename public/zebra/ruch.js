@@ -77,7 +77,7 @@ function naglowekHtml() {
   if (!a) return ''; // start: bez duzego naglowka - tytul "Skanuj..." jest w tresci
 
   const kontekst = stan.zrodlo
-    ? `<span class="chip">Z: <b>${stan.zrodlo.kod}</b></span><span class="chip">${stan.zrodlo.magazyn}</span>`
+    ? `<span class="chip chip-magazyn">${stan.zrodlo.magazyn}</span><span class="chip">Z: <b>${stan.zrodlo.kod}</b></span>`
     : '<span class="chip chip-uwaga">Brak lokalizacji w WMS</span>';
 
   return `<div class="naglowek-glowna"><h1>${a.artykul_symbol}</h1><p class="ekran-nazwa">${a.artykul_nazwa}</p></div>`
@@ -302,8 +302,6 @@ function pokazRozkladZrodel(dane, artykul) {
     + `<p class="ekran-nazwa">${artykul.artykul_nazwa}</p>`;
 
   przygotujKrokWybor();
-  el('wybor-tytul').textContent = 'Wybierz lokalizację źródłową';
-  el('wybor-tytul').classList.remove('hidden');
 
   const lacznyStan = sumaStanowGt(artykul.stany_gt);
   const rezRazem = sumaRezerwacji(artykul.stany_gt);
@@ -312,10 +310,8 @@ function pokazRozkladZrodel(dane, artykul) {
     + `<span>Rezerwacje: <b>${rezRazem}</b></span>`;
   el('wybor-podsumowanie').classList.remove('hidden');
 
-  el('wybor-skan-etykieta').textContent = 'Lokalizacja źródłowa';
-  el('wybor-skan-etykieta').classList.remove('hidden');
-  el('input-wybor-skan').placeholder = 'Skanuj lub wpisz kod';
-  el('wybor-hint').textContent = 'lub wybierz z listy poniżej';
+  el('input-wybor-skan').placeholder = 'Skanuj kod lokalizacji';
+  el('wybor-hint').textContent = ''; // bez etykiety/hintu - pole skanu mówi samo za siebie
 
   trybWyboru = 'wybor';
   renderujRozklad(opcjeWyboru, wybierzOpcje);
@@ -457,11 +453,13 @@ function przejdzDoCelu() {
   el('cel-magazyn-pole').classList.remove('hidden');
   const select = el('select-cel-magazyn');
   const inne = magazynyLista.filter((m) => m.kod !== stan.zrodlo.magazyn);
-  const optSame = `<option value="${SAME}">Ta sama — zmiana lokalizacji (${stan.zrodlo.magazyn})</option>`;
+  const optSame = `<option value="${SAME}">${stan.zrodlo.magazyn} — bez MM</option>`;
   select.innerHTML = optSame + inne.map((m) => `<option value="${m.kod}">${m.nazwa}</option>`).join('');
 
-  const zapamietany = localStorage.getItem('wms_cel');
-  select.value = (zapamietany === SAME || inne.some((m) => m.kod === zapamietany)) ? zapamietany : SAME;
+  // domyslny cel = przeciwny magazyn WMS (zrodlo K4 -> cel K4G i odwrotnie); to
+  // najczestszy ruch miedzy pick-floor a bulk. Gdy brak drugiego WMS - "ta sama".
+  const przeciwnyWms = inne.find((m) => m.typ === 'wms');
+  select.value = przeciwnyWms ? przeciwnyWms.kod : SAME;
 
   pokazKrok('cel');
   aktualizujKrokCel();
@@ -483,8 +481,6 @@ async function aktualizujKrokCel() {
   ukryjPotwierdzenie();
   stan.cel = null;
   if (!stan.zrodlo) return;
-
-  localStorage.setItem('wms_cel', el('select-cel-magazyn').value);
 
   const inputIlosc = el('input-ilosc');
   const zmiana = czyZmiana();

@@ -183,6 +183,13 @@ html, body {
   font-size: var(--font-label);
 }
 .chip b { font-weight: 700; }
+/* chip magazynu - mocniejsze (wypelnione) tlo, zeby od razu bylo widac z jakiego magazynu */
+.chip.chip-magazyn {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+  font-weight: 700;
+}
 
 /* --- Menu (widok startowy SPA) --- */
 .btn-menu {

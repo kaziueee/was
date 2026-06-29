@@ -663,6 +663,12 @@ Sesja testów MM/lokalizacji na żywym moście + UX panelu Produkty:
 - **Cache statyk** (`app.js`): `express.static` z `Cache-Control: no-cache` — Chrome na Zebrze
   ZAWSZE rewaliduje CSS/JS/HTML, więc po edycji terminal dostaje świeżą wersję (bez tego
   serwował stary `app.css` → mylące „duchy" po zmianach). Wymaga restartu `node app.js`.
+- **Czyszczenie tekstów + domyślny cel (iteracja na makietach)**: start — bez etykiety „Kod";
+  rozkład produktu — bez tytułu „Wybierz lokalizację źródłową", bez etykiety/hintu nad polem,
+  placeholder „Skanuj kod lokalizacji". Nagłówek zmiany lokalizacji — chip magazynu (wypełniony
+  navy `.chip-magazyn`) PRZED chipem „Z: <lok>". Opcja „ta sama" w selekcie Cel = „<MAG> — bez MM"
+  (symbol z przodu). **Domyślny cel = przeciwny magazyn WMS** (źródło K4→K4G, K4G→K4; najczęstszy
+  ruch pick-floor↔bulk) zamiast zapamiętanego — usunięty `localStorage` `wms_cel`.
 
 #### Do zrobienia (kolejka)
 

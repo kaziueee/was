@@ -52,6 +52,15 @@ function czyZmiana() {
   return el('select-cel-magazyn').value === SAME;
 }
 
+// fragment "wg GT" dla danego magazynu z lokalizacja_gt.tekst
+// (np. "K4: A2 | K4G: M5-A01-P2(215)" -> dla K4 "K4: A2"); '' gdy brak
+function gtLokDlaMagazynu(mag) {
+  const t = stan.artykul?.lokalizacja_gt?.tekst || '';
+  if (!t) return '';
+  const czesc = t.split(' | ').find((p) => p.startsWith(mag + ':'));
+  return czesc ? czesc.replace(new RegExp('^' + mag + ':\\s*'), '').trim() : '';
+}
+
 // --- kroki ---
 const kroki = {
   start: el('krok-start'),
@@ -471,9 +480,10 @@ function aktualizujKrokCelPrzypisanie() {
 
   el('input-cel').value = '';
   el('input-cel').placeholder = `Skanuj lokalizację (${magazynyMapa[mag]?.nazwa ?? mag})`;
-  el('cel-lokalizacja-hint').textContent = mag === 'K4'
-    ? 'K4: 1 SKU = 1 lokalizacja — cała ilość'
-    : '';
+  // podpowiedz "wg GT" - gdzie GT trzyma lokalizacje tego magazynu (tw_Pole1/tw_Pole8) + regula K4
+  const gtLok = gtLokDlaMagazynu(mag);
+  const regulaK4 = mag === 'K4' ? 'K4: 1 SKU = 1 lokalizacja — cała ilość' : '';
+  el('cel-lokalizacja-hint').textContent = [gtLok && `wg GT: ${gtLok}`, regulaK4].filter(Boolean).join(' · ');
   aktualizujPozostanie();   // brak zrodla -> ukryje sie
   aktualizujAkcjeLabel();
   el('input-cel').focus();

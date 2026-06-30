@@ -697,6 +697,13 @@ Sesja testów MM/lokalizacji na żywym moście + UX panelu Produkty:
   gdy NIC nie zlokalizowane; gdy część zrobiona (OK/OF) a reszta w GT bez WMS → `NZ` (spójnie z
   częściowym K4G). Kubełki: t_GT=od zera · NZ=do dokończenia/poprawy · OK=zrobione. Logika
   zweryfikowana tabelą prawdy (11 przypadków); liczy się przez most GT (restart + skan).
+- **Wpisany tekst wyszukiwania zostaje w polu** (`ruch.js`): po szukaniu po nazwie zapytanie
+  pozostaje w polu wyników (do doprecyzowania/poprawy), kursor na końcu BEZ zaznaczenia. Skan
+  (bez dotknięcia pola) kasuje stary tekst przy pierwszym znaku (flaga `prefillWyszukiwaniaStale`,
+  rozróżnienie tap=edycja vs skan=czyść). Czyszczone w rozkładzie/zawartości lokalizacji i przy reset.
+- **Klawiatura chowa się po Enterze przy ręcznym wpisaniu** (`kreator.js` `onScan`): pole w trybie
+  `inputmode="text"` (klawiatura) → po Enterze `blur()` ją chowa; skan (`inputmode="none"`)
+  zostawiamy z fokusem na kolejny skan.
 
 #### Do zrobienia (kolejka)
 

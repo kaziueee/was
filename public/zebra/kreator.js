@@ -38,6 +38,10 @@ function onScan(input, callback) {
   function zatwierdz() {
     const wartosc = input.value.replace(/[\r\n]+/g, '').trim().toUpperCase();
     input.value = '';
+    // Reczne wpisanie (pole w trybie tekstowym = klawiatura na ekranie) -> po Enterze
+    // chowamy klawiature przez blur (blur handler wraca do inputmode="none"). Skan
+    // (inputmode="none", bez klawiatury) zostawiamy z fokusem, by kolejny skan wpadl.
+    if (input.getAttribute('inputmode') === 'text') input.blur();
     if (!wartosc) return;
     callback(wartosc);
   }

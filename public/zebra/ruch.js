@@ -26,6 +26,12 @@ let opcjeWyboru = []; // [{klucz, artykul, zrodlo, etykieta, ilosc}]
 // krok 2, tryb 'szukaj' - ostatnia lista artykulow z wyszukiwania po nazwie (do ponownego
 // renderowania po zmianie checkboxa "Ukryj produkty bez stanu")
 let ostatniaListaArtykulow = null;
+// ostatni wpisany tekst wyszukiwania po nazwie - zostaje w polu w wynikach, zeby mozna
+// go bylo doprecyzowac/poprawic bez przepisywania od nowa (tryb 'szukaj').
+let ostatnieZapytanieNazwa = '';
+// czy w polu wyszukiwania jest "stary" tekst zapytania (prefill) - skan (bez dotkniecia
+// pola) wtedy kasuje go przy pierwszym znaku; dotkniecie pola wylacza flage (edycja reczna).
+let prefillWyszukiwaniaStale = false;
 // tryb obslugi skanu/wyboru w kroku 2:
 // 'wybor' - dopasuj zeskanowany kod do opcjeWyboru po kluczu (lokalizacja/SKU)
 // 'szukaj' - kazdy skan/wpis przechodzi ponownie przez wykonajSkan (lista z wyszukiwania po nazwie)
@@ -166,6 +172,8 @@ function reset() {
   stan.celMagazynNowejLokalizacji = null;
   opcjeWyboru = [];
   ostatniaListaArtykulow = null;
+  ostatnieZapytanieNazwa = '';
+  prefillWyszukiwaniaStale = false;
   trybWyboru = 'wybor';
   powrotDoWyszukiwania = false;
 
@@ -198,6 +206,7 @@ async function wykonajSkan(kod) {
     if (dane.typ === 'lokalizacja') {
       obsluzLokalizacje(dane);
     } else if (dane.typ === 'lista_artykulow') {
+      ostatnieZapytanieNazwa = kod; // zapamietaj wpisany tekst - zostanie w polu wynikow
       obsluzListaArtykulow(dane.artykuly, dane.obciete);
     } else {
       obsluzArtykul(dane);
@@ -259,6 +268,8 @@ function przygotujKrokWybor() {
   el('wybor-podsumowanie').innerHTML = '';
   el('wybor-skan-etykieta').classList.add('hidden');
   el('checkbox-ukryj-zero-wrap').classList.add('hidden');
+  el('input-wybor-skan').value = ''; // czyste pole; tryb 'szukaj' wypelni je z powrotem zapytaniem
+  prefillWyszukiwaniaStale = false;
 }
 
 function obsluzArtykul(dane) {
@@ -423,6 +434,8 @@ function obsluzListaArtykulow(artykuly, obciete) {
   el('wybor-tytul').classList.remove('hidden');
   el('wybor-hint').textContent = '';
   el('input-wybor-skan').placeholder = 'Skanuj SKU lub EAN';
+  el('input-wybor-skan').value = ostatnieZapytanieNazwa; // zostaw wpisany tekst do poprawienia/zawężenia
+  prefillWyszukiwaniaStale = !!ostatnieZapytanieNazwa; // skan skasuje go przy pierwszym znaku
   el('checkbox-ukryj-zero-wrap').classList.remove('hidden');
 
   trybWyboru = 'szukaj';
@@ -746,6 +759,18 @@ el('btn-ilosc-plus').addEventListener('click', () => zmienIlosc(1));
 
 // select-all przy wejsciu w pole, zeby skan lokalizacji nadpisal podpowiedz
 el('input-cel').addEventListener('focus', () => el('input-cel').select());
+
+// Pole wyszukiwania: zapamietany tekst zostaje do edycji (kursor normalnie, bez zaznaczenia,
+// zeby latwo dopisac/poprawic). Reczne pisanie wymaga DOTKNIECIA pola (klawiatura schowana) -
+// dotkniecie = edycja, tekst zostaje. Skan wpada BEZ dotkniecia - wtedy pierwszy znak kasuje
+// stary tekst, by skan nie sklejal sie z zapytaniem.
+el('input-wybor-skan').addEventListener('click', () => { prefillWyszukiwaniaStale = false; });
+el('input-wybor-skan').addEventListener('keydown', (e) => {
+  if (prefillWyszukiwaniaStale && e.key && e.key.length === 1) {
+    el('input-wybor-skan').value = '';
+    prefillWyszukiwaniaStale = false;
+  }
+});
 
 // sprawdza kod lokalizacji docelowej i ustawia stan.cel jesli pasuje;
 // zwraca true gdy stan.cel zostal ustawiony, false gdy pokazano blad/dialog tworzenia

@@ -247,6 +247,12 @@ router.post('/lok', async (req, res, next) => {
         blad: `Mozna przypisac najwyzej ${Math.max(deficyt, 0)} szt. w ${cel.magazyn} (GT: ${gtStan}, juz w WMS: ${sumaWMS}). Nie da sie zaklepac wiecej niz jest w GT.`,
       });
     }
+    // K4 = 1 SKU = 1 lokalizacja = CALA ilosc. Czesciowe pierwsze przypisanie zostawiloby
+    // K4 z niepelnym stanem, a kolejne przypisanie blokuje "juz ma lokalizacje K4" -> zakleszczenie.
+    // Wymagamy calej dostepnej ilosci, tak jak przy zmianie lokalizacji K4 (1 SKU = 1 lokalizacja).
+    if (cel.magazyn === 'K4' && ilo !== deficyt) {
+      return res.status(400).json({ blad: `W magazynie K4 przypisz cala ilosc (${deficyt} szt.) - 1 SKU = 1 lokalizacja` });
+    }
   }
 
   const symbol = stanZrodlo ? stanZrodlo.artykul_symbol : artykul_symbol;

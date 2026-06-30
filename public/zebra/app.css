@@ -158,6 +158,8 @@ html, body {
 .stan-box .sb-ilosc { display: block; font-size: var(--font-body); font-weight: 800; color: var(--color-primary); white-space: nowrap; }
 .chip-tekst { font-size: var(--font-label); color: var(--color-text-muted); align-self: center; }
 .chip.chip-uwaga { background: var(--color-danger-bg); border-color: var(--color-danger); color: var(--color-danger); }
+/* chip rezerwacji (kontekst zrodla na kroku celu) - zolty, tylko gdy rez > 0 */
+.chip.chip-rez { background: var(--color-warning-bg); border-color: var(--color-warning); color: var(--color-warning); font-weight: 700; }
 
 /* pole tekstowe (operator) */
 .pole-text {
@@ -351,6 +353,17 @@ html, body {
   font-size: var(--font-label);
   color: var(--color-text-muted);
 }
+/* nazwa towaru na karcie wyszukiwania - pod SKU, przygaszona, max 2 linie */
+.lista-poz .poz-nazwa {
+  font-size: var(--font-label);
+  color: var(--color-text);
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.lista-poz .poz-lok { word-break: break-word; }
 .lista-poz .poz-prawa {
   flex: 0 0 auto;
   text-align: right;

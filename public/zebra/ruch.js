@@ -31,6 +31,10 @@ let ostatniaListaArtykulow = null;
 // 'szukaj' - kazdy skan/wpis przechodzi ponownie przez wykonajSkan (lista z wyszukiwania po nazwie)
 let trybWyboru = 'wybor';
 
+// czy biezacy rozklad produktu zostal otwarty z listy wynikow wyszukiwania -
+// jesli tak, Wstecz z rozkladu/celu wraca do wynikow, a nie do czystego skanu.
+let powrotDoWyszukiwania = false;
+
 // lista magazynow (z /api/magazyny), do wyboru celu w kroku 3
 let magazynyLista = [];
 const magazynyMapa = {}; // kod -> {kod, nazwa, typ}
@@ -50,6 +54,18 @@ function celMagazynKod() {
 // czy biezacy cel to zmiana lokalizacji w obrebie magazynu (LOK) a nie przesuniecie (MM)
 function czyZmiana() {
   return el('select-cel-magazyn').value === SAME;
+}
+
+// czy zrodlo to magazyn zewnetrzny (MAG/LS) bez lokalizacji WMS - wtedy ruch to
+// przyjecie (cel WMS) albo MM miedzy zewnetrznymi (cel zewnetrzny), nie LOK/MM z lokalizacji.
+function czyZrodloZewn() {
+  return !!(stan.zrodlo && stan.zrodlo.typ === 'zew');
+}
+
+// czytelna etykieta zrodla: kod lokalizacji (WMS) albo nazwa magazynu (zewnetrzny)
+function zrodloEtykieta() {
+  if (!stan.zrodlo) return '';
+  return stan.zrodlo.kod || stan.zrodlo.nazwa || stan.zrodlo.magazyn;
 }
 
 // fragment "wg GT" dla danego magazynu z lokalizacja_gt.tekst
@@ -76,9 +92,16 @@ function naglowekHtml() {
   const a = stan.artykul;
   if (!a) return ''; // start: bez duzego naglowka - tytul "Skanuj..." jest w tresci
 
-  const kontekst = stan.zrodlo
-    ? `<span class="chip chip-magazyn">${stan.zrodlo.magazyn}</span><span class="chip">Z: <b>${stan.zrodlo.kod}</b></span>`
-    : '<span class="chip chip-uwaga">Brak lokalizacji w WMS</span>';
+  let kontekst;
+  if (!stan.zrodlo) {
+    kontekst = '<span class="chip chip-uwaga">Brak lokalizacji w WMS</span>';
+  } else {
+    // rezerwacja jest per-magazyn (GT) - pokazujemy ja jako chip ostrzegawczy, tylko gdy > 0
+    const rez = a.stany_gt?.[stan.zrodlo.magazyn]?.rezerwacja ?? 0;
+    kontekst = `<span class="chip chip-magazyn">${stan.zrodlo.magazyn}</span>`
+      + `<span class="chip">Z: <b>${zrodloEtykieta()}</b></span>`
+      + (rez > 0 ? `<span class="chip chip-rez">rez ${rez}</span>` : '');
+  }
 
   return `<div class="naglowek-glowna"><h1>${a.artykul_symbol}</h1><p class="ekran-nazwa">${a.artykul_nazwa}</p></div>`
     + `<div class="rzad naglowek-kontekst">${kontekst}</div>`;
@@ -120,7 +143,13 @@ function wstecz() {
       reset(); // brak listy -> czysty skan (czysci stan i naglowek)
     }
   } else if (!kroki.wybor.classList.contains('hidden')) {
-    reset(); // z listy wyboru -> czysty skan
+    // z rozkladu produktu otwartego z wynikow wyszukiwania -> wroc do wynikow;
+    // z samej listy wynikow / zawartosci lokalizacji / rozkladu po skanie -> czysty skan
+    if (powrotDoWyszukiwania && ostatniaListaArtykulow) {
+      obsluzListaArtykulow(ostatniaListaArtykulow, false);
+    } else {
+      reset();
+    }
   } else {
     // na kroku startowym: Wstecz wraca do widoku menu (bez przeladowania -> pelny ekran trzyma)
     history.back();
@@ -138,6 +167,7 @@ function reset() {
   opcjeWyboru = [];
   ostatniaListaArtykulow = null;
   trybWyboru = 'wybor';
+  powrotDoWyszukiwania = false;
 
   el('input-start').value = '';
   el('input-wybor-skan').value = '';
@@ -181,6 +211,7 @@ onScan(el('input-start'), wykonajSkan);
 
 // zeskanowano kod lokalizacji -> wybierz produkt do przeniesienia
 function obsluzLokalizacje({ lokalizacja, zawartosc }) {
+  powrotDoWyszukiwania = false; // zawartosc lokalizacji to nie rozklad z wyszukiwania
   if (zawartosc.length === 0) {
     pokazKomunikat(`Lokalizacja ${lokalizacja.kod} jest pusta`, 'blad');
     return;
@@ -233,7 +264,11 @@ function przygotujKrokWybor() {
 function obsluzArtykul(dane) {
   const artykul = { artykul_gt_id: dane.artykul_gt_id, artykul_symbol: dane.artykul_symbol, artykul_nazwa: dane.artykul_nazwa, stany_gt: dane.stany_gt, lokalizacja_gt: dane.lokalizacja_gt, zgodnosc: dane.zgodnosc };
 
-  if (dane.lokalizacje.length === 0) {
+  // czy towar ma stan w magazynie zewnetrznym (MAG/LS) - wtedy ZAWSZE pokazujemy
+  // rozklad (zeby zewnetrzny byl osiagalny jako zrodlo przyjecia), nawet gdy 0/1 lok WMS.
+  const maStanZewn = magazynyLista.some((m) => m.typ === 'zewnetrzny' && (dane.stany_gt?.[m.kod]?.ilosc ?? 0) > 0);
+
+  if (dane.lokalizacje.length === 0 && !maStanZewn) {
     // produkt ma stan w GT, ale nie ma jeszcze zadnej lokalizacji w WMS - przypisz pierwsza
     stan.artykul = artykul;
     stan.zrodlo = null;
@@ -243,7 +278,7 @@ function obsluzArtykul(dane) {
     return;
   }
 
-  if (dane.lokalizacje.length === 1 && !(dane.deficyt_k4g > 0)) {
+  if (dane.lokalizacje.length === 1 && !(dane.deficyt_k4g > 0) && !maStanZewn) {
     stan.artykul = artykul;
     stan.zrodlo = dane.lokalizacje[0];
     stan.iloscSugestia = null;
@@ -264,6 +299,10 @@ function obsluzArtykul(dane) {
 function pokazRozkladZrodel(dane, artykul) {
   stan.artykul = artykul; // ustaw przed budowa opcji - gtLokDlaMagazynu czyta stan.artykul
 
+  // czy weszlismy w rozklad z listy wynikow wyszukiwania (trybWyboru jeszcze 'szukaj')
+  // -> Wstecz z rozkladu/celu ma wrocic do wynikow, nie do czystego skanu
+  powrotDoWyszukiwania = trybWyboru === 'szukaj' && !!ostatniaListaArtykulow;
+
   // rezerwacja jest na poziomie magazynu - pokazujemy ja raz, przy pierwszym
   // wierszu danego magazynu (jak w rozkladzie desktopu).
   const rezPokazana = {};
@@ -283,17 +322,44 @@ function pokazRozkladZrodel(dane, artykul) {
     };
   });
 
-  if (dane.deficyt_k4g > 0) {
+  // Nieprzypisany stan WMS per magazyn (GT - suma lokalizacji WMS) -> wiersz "BRAK
+  // LOKALIZACJI" do przypisania. K4G: zawsze gdy deficyt (1 SKU = N lokalizacji - mozna
+  // dolozyc kolejna). K4: tylko gdy NIE ma jeszcze zadnej lokalizacji K4 (1 SKU = 1
+  // lokalizacja; gdy juz jest, deficyt to rozjazd - nie tworzymy stad drugiej lokalizacji K4).
+  for (const mag of magazynyLista.filter((m) => m.typ === 'wms').map((m) => m.kod)) {
+    const gtStan = artykul.stany_gt?.[mag]?.ilosc ?? 0;
+    const wmsLok = dane.lokalizacje.filter((l) => l.magazyn === mag);
+    const niezlok = Math.max(gtStan - wmsLok.reduce((s, l) => s + l.ilosc, 0), 0);
+    if (niezlok <= 0) continue;
+    if (mag === 'K4' && wmsLok.length > 0) continue;
     opcjeWyboru.push({
-      klucz: '__NOWA_LOKALIZACJA__',
+      klucz: '__BRAK_' + mag + '__',
       artykul,
       zrodlo: null,
-      iloscSugestia: dane.deficyt_k4g,
-      celMagazyn: 'K4G',
+      iloscSugestia: niezlok,
+      celMagazyn: mag,
       brak: true,
-      mag: 'K4G',
-      ilosc: dane.deficyt_k4g,
-      plan: gtLokDlaMagazynu('K4G') || '', // sciaga "wg GT" gdzie dolozyc reszte
+      mag,
+      ilosc: niezlok,
+      plan: gtLokDlaMagazynu(mag) || '', // sciaga "wg GT" gdzie dolozyc
+    });
+  }
+
+  // magazyny zewnetrzne (MAG/LS) ze stanem GT - jako zrodlo bez konkretnej lokalizacji.
+  // Tap -> przyjecie (cel WMS) albo MM miedzy zewnetrznymi (cel zewnetrzny).
+  for (const m of magazynyLista.filter((mg) => mg.typ === 'zewnetrzny')) {
+    const w = artykul.stany_gt?.[m.kod];
+    if (!w || w.ilosc <= 0) continue;
+    opcjeWyboru.push({
+      klucz: '__ZEW_' + m.kod + '__',
+      artykul,
+      zrodlo: { typ: 'zew', magazyn: m.kod, nazwa: m.nazwa, ilosc: w.ilosc },
+      iloscSugestia: null,
+      mag: m.kod,
+      kod: m.nazwa,
+      podpis: 'magazyn zewnętrzny',
+      ilosc: w.ilosc,
+      rez: w.rezerwacja || 0,
     });
   }
 
@@ -335,7 +401,8 @@ function renderujRozklad(opcje, onWybierz) {
     const glowna = o.brak
       ? `<span class="poz-kod">BRAK LOKALIZACJI</span><span class="poz-podpis">(nieprzypisano)</span>`
         + (o.plan ? `<span class="poz-plan">wg GT: ${o.plan}</span>` : '')
-      : `<span class="poz-kod">${o.kod}</span>`;
+      : `<span class="poz-kod">${o.kod}</span>`
+        + (o.podpis ? `<span class="poz-podpis">${o.podpis}</span>` : '');
     btn.innerHTML = `<span class="poz-mag">${o.mag}</span>`
       + `<span class="poz-glowna">${glowna}</span>`
       + `<span class="poz-prawa"><span class="poz-ilosc">${o.ilosc} szt.</span>${rez}</span>`
@@ -348,27 +415,76 @@ function renderujRozklad(opcje, onWybierz) {
 // znaleziono kilka artykulow po (czesci) nazwy -> wybierz konkretny artykul
 function obsluzListaArtykulow(artykuly, obciete) {
   ostatniaListaArtykulow = artykuly;
+  powrotDoWyszukiwania = false; // jestesmy NA liscie wynikow - Wstecz stad = czysty skan
 
-  naglowekWyborHtml = '';
+  naglowekWyborHtml = ''; // brak SKU w gornym pasku - towar jeszcze nie wybrany
   przygotujKrokWybor();
-  el('wybor-naglowek').classList.remove('hidden');
-  el('wybor-naglowek').innerHTML = `<span>Znaleziono ${liczbaArtykulow(artykuly.length)} — wybierz</span>`;
-  el('wybor-hint').textContent = '...lub zeskanuj SKU / EAN towaru';
+  el('wybor-tytul').textContent = `Znaleziono ${liczbaArtykulow(artykuly.length)} — wybierz`;
+  el('wybor-tytul').classList.remove('hidden');
+  el('wybor-hint').textContent = '';
   el('input-wybor-skan').placeholder = 'Skanuj SKU lub EAN';
   el('checkbox-ukryj-zero-wrap').classList.remove('hidden');
 
   trybWyboru = 'szukaj';
   renderujListaArtykulow();
   pokazKrok('wybor');
-  el('input-wybor-skan').focus();
+  el('input-wybor-skan').focus({ preventScroll: true });
 
   if (obciete) {
     pokazKomunikat(`Pokazano pierwsze ${artykuly.length} wyników — zawęź wyszukiwanie`, 'info');
   }
 }
 
+// lewy pasek statusu zgodnosci karty (te same stany co badge: OK/OF, t_GT, NZ, BD)
+const ZGODNOSC_BAR = { OK: 'st-ok', OF: 'st-ok', t_GT: 'st-info', NZ: 'st-err', BD: 'st-neutral' };
+function statusBarKlasa(zgodnosc) {
+  return (zgodnosc && zgodnosc.ogolna && ZGODNOSC_BAR[zgodnosc.ogolna]) || 'st-neutral';
+}
+
+// skrot stanow GT do podpisu karty: "Razem 58 · K4 28 · K4G 30" (magazyny z 0 pomijane)
+function stanSkrotKarty(stanyGt) {
+  const razem = sumaStanowGt(stanyGt);
+  if (!razem) return 'brak stanu w GT';
+  const perMag = Object.entries(stanyGt || {})
+    .filter(([, w]) => w.ilosc)
+    .map(([m, w]) => `${m} ${w.ilosc}${w.rezerwacja ? ` (rez ${w.rezerwacja})` : ''}`)
+    .join(' · ');
+  return `Razem ${razem} · ${perMag}`;
+}
+
+// karta artykulu na liscie wyszukiwania (.lista-poz): SKU+badge / nazwa / stany / lokalizacje.
+// Status zgodnosci = lewy pasek koloru + badge (zamiast emoji). Lokalizacje z pola GT
+// (kopia WMS) - kandydat do usuniecia, bo rozklad i tak pokaze zywe lokalizacje.
 function renderujListaArtykulow() {
-  renderujListeProduktow(el('lista-wyboru'), ostatniaListaArtykulow, el('checkbox-ukryj-zero'), (a) => wykonajSkan(a.artykul_symbol));
+  const kont = el('lista-wyboru');
+  kont.innerHTML = '';
+  const ukryj = el('checkbox-ukryj-zero');
+  const widoczne = (ukryj && ukryj.checked)
+    ? ostatniaListaArtykulow.filter((p) => sumaStanowGt(p.stany_gt) > 0)
+    : ostatniaListaArtykulow;
+
+  if (!widoczne || widoczne.length === 0) {
+    kont.innerHTML = '<p class="hint">Brak produktów ze stanem w GT.</p>';
+    return;
+  }
+
+  widoczne.forEach((p) => {
+    const symbol = p.artykul_symbol ?? p.symbol;
+    const nazwa = p.artykul_nazwa ?? p.nazwa;
+    const lok = p.lokalizacja_gt && p.lokalizacja_gt.tekst ? p.lokalizacja_gt.tekst.replace(/ \| /g, ' · ') : '';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'lista-poz ' + statusBarKlasa(p.zgodnosc);
+    btn.innerHTML = `<span class="poz-glowna">`
+      + `<span class="poz-kod">${symbol} ${statusZgodnosciBadge(p)}</span>`
+      + `<span class="poz-nazwa">${nazwa}</span>`
+      + `<span class="poz-podpis">${stanSkrotKarty(p.stany_gt)}</span>`
+      + (lok ? `<span class="poz-podpis poz-lok">${lok}</span>` : '')
+      + `</span>`
+      + `<span class="poz-strzalka">›</span>`;
+    btn.addEventListener('click', () => wykonajSkan(symbol));
+    kont.appendChild(btn);
+  });
 }
 
 el('checkbox-ukryj-zero').addEventListener('change', () => {
@@ -446,6 +562,20 @@ function przejdzDoCelu() {
     inputIlosc.readOnly = false;
     pokazKrok('cel');
     aktualizujKrokCelPrzypisanie();
+    return;
+  }
+
+  // ZRODLO ZEWNETRZNE (MAG/LS): cel = dowolny INNY magazyn (brak opcji "ta sama" -
+  // zewnetrzny nie ma lokalizacji). Cel WMS -> przyjecie; cel zewnetrzny -> MM zewn.
+  // Domyslnie K4G (jak desktop). Nie zapamietujemy - zawsze proponujemy WMS.
+  if (czyZrodloZewn()) {
+    el('cel-magazyn-pole').classList.remove('hidden');
+    const select = el('select-cel-magazyn');
+    const inne = magazynyLista.filter((m) => m.kod !== stan.zrodlo.magazyn);
+    select.innerHTML = inne.map((m) => `<option value="${m.kod}">${m.nazwa}</option>`).join('');
+    select.value = inne.some((m) => m.kod === 'K4G') ? 'K4G' : inne[0].kod;
+    pokazKrok('cel');
+    aktualizujKrokCel();
     return;
   }
 
@@ -551,6 +681,8 @@ function aktualizujKrokCelPrzypisanie() {
     : (stan.artykul.stany_gt?.[mag]?.ilosc ?? 0);
   const inputIlosc = el('input-ilosc');
   inputIlosc.removeAttribute('max'); // backend kapuje do deficytu magazynu
+  // K4 = 1 SKU = 1 lokalizacja -> cala ilosc, bez edycji (jak przy zmianie lokalizacji K4)
+  inputIlosc.readOnly = (mag === 'K4');
   inputIlosc.value = ile > 0 ? String(ile) : '';
 
   el('input-cel').value = '';
@@ -579,7 +711,7 @@ function aktualizujPozostanie() {
   }
   const ile = Number(el('input-ilosc').value);
   const poz = stan.zrodlo.ilosc - (Number.isFinite(ile) ? ile : 0);
-  span.textContent = `Pozostanie w ${stan.zrodlo.kod}: ${poz} szt.`;
+  span.textContent = `Pozostanie w ${zrodloEtykieta()}: ${poz} szt.`;
   span.classList.toggle('blad', poz < 0);
   span.classList.remove('hidden');
 }
@@ -620,7 +752,7 @@ el('input-cel').addEventListener('focus', () => el('input-cel').select());
 async function przetworzLokalizacjeCelu(kod) {
   ukryjKomunikat();
   ukryjPotwierdzenie();
-  if (stan.zrodlo && kod.toUpperCase() === stan.zrodlo.kod.toUpperCase()) {
+  if (stan.zrodlo && stan.zrodlo.kod && kod.toUpperCase() === stan.zrodlo.kod.toUpperCase()) {
     pokazKomunikat('Lokalizacja docelowa jest taka sama jak zrodlowa', 'blad');
     return false;
   }
@@ -665,12 +797,15 @@ async function przetworzLokalizacjeCelu(kod) {
       : '';
     stan.cel = { typ: 'wms', id: dane.id, kod: dane.kod, magazyn: dane.magazyn };
     el('input-cel').value = dane.kod;
-    // Przypisanie (brak zrodla): podpowiedz CALY stan do rozlozenia w tym magazynie.
-    // K4G z deficytem -> deficyt_k4g; czyste przypisanie -> pelny stan GT magazynu (WMS=0).
+    // Przypisanie (brak zrodla): podpowiedz pelna nieprzypisana ilosc W MAGAZYNIE
+    // SKANOWANEJ lokalizacji - NIE mieszac magazynow. K4G: deficyt (iloscSugestia dotyczy
+    // K4gora); K4: caly stan GT (WMS=0, bo 1 SKU = 1 lokalizacja). K4 -> ilosc zablokowana.
     if (!stan.zrodlo) {
-      const pelny = stan.celMagazynNowejLokalizacji != null
+      const mag = dane.magazyn;
+      const pelny = (mag === 'K4G' && stan.iloscSugestia != null)
         ? stan.iloscSugestia
-        : (stan.artykul.stany_gt?.[dane.magazyn]?.ilosc ?? null);
+        : (stan.artykul.stany_gt?.[mag]?.ilosc ?? null);
+      el('input-ilosc').readOnly = (mag === 'K4');
       if (pelny != null && pelny > 0) {
         el('input-ilosc').value = String(pelny);
         aktualizujPozostanie();
@@ -788,6 +923,32 @@ async function zatwierdz() {
       operator: operator(),
     };
     podsumowanie = () => `Zapisano lokalizację ${symbol} (${ilo} szt.): ${stan.cel.kod}`;
+  } else if (czyZrodloZewn()) {
+    // zrodlo zewnetrzne (MAG/LS): cel WMS -> przyjecie; cel zewnetrzny -> MM zewn.
+    if (stan.cel.typ === 'wms') {
+      url = '/api/ruchy/przyjecie';
+      body = {
+        artykul_gt_id: stan.artykul.artykul_gt_id,
+        mag_zrodlo_zewnetrzny: stan.zrodlo.magazyn,
+        lok_cel_id: stan.cel.id,
+        artykul_symbol: stan.artykul.artykul_symbol,
+        artykul_nazwa: stan.artykul.artykul_nazwa,
+        ilosc: ilo,
+        operator: operator(),
+      };
+      podsumowanie = () => `Przyjęto ${ilo} szt. ${symbol}: ${stan.zrodlo.nazwa} → ${stan.cel.kod}`;
+    } else {
+      url = '/api/ruchy/mm-zewnetrzny';
+      body = {
+        artykul_gt_id: stan.artykul.artykul_gt_id,
+        mag_zrodlo: stan.zrodlo.magazyn,
+        mag_cel: stan.cel.magazyn,
+        artykul_symbol: stan.artykul.artykul_symbol,
+        ilosc: ilo,
+        operator: operator(),
+      };
+      podsumowanie = () => `Przeniesiono ${ilo} szt. ${symbol}: ${stan.zrodlo.nazwa} → ${stan.cel.nazwa || stan.cel.magazyn}`;
+    }
   } else if (czyZmiana()) {
     // zmiana lokalizacji w obrebie magazynu (LOK)
     url = '/api/ruchy/lok';

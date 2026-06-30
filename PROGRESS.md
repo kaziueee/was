@@ -670,11 +670,40 @@ Sesja testów MM/lokalizacji na żywym moście + UX panelu Produkty:
   (symbol z przodu). **Domyślny cel = przeciwny magazyn WMS** (źródło K4→K4G, K4G→K4; najczęstszy
   ruch pick-floor↔bulk) zamiast zapamiętanego — usunięty `localStorage` `wms_cel`.
 
+### 2026-06-30 — Zebra: ekran wyszukiwania, magazyny zewnętrzne, rezerwacje, fixy K4/statusy
+
+- **Ekran wyszukiwania (lista artykułów po nazwie) na nowy styl**: tytuł „Znaleziono N — wybierz"
+  (h2, nie box), checkbox skrócony „Ukryj stan: 0", karty `.lista-poz` (SKU + badge statusu,
+  nazwa, `Razem · K4 · K4G`, linia lokalizacji z GT, lewy pasek koloru wg zgodności — bez emoji).
+  Dedykowany `renderujListaArtykulow` w `ruch.js` (test page `produkty.html` zostaje na starym).
+- **Magazyny zewnętrzne (MAG/LS) jako źródło w rozkładzie**: wiersze bez konkretnej lokalizacji
+  (mag-badge + nazwa + „magazyn zewnętrzny" + ilość/rez), pojawiają się zawsze gdy jest stan
+  zewnętrzny. Tap → krok „Dokąd i ile?": cel WMS → `POST /ruchy/przyjecie`, cel zewn → `POST
+  /ruchy/mm-zewnetrzny`. Pełna parytetowość z desktopem. `czyZrodloZewn`/`zrodloEtykieta`.
+- **Rezerwacja na ekranach**: krok celu — żółty chip `rez N` w nagłówku (rezerwacja magazynu
+  źródła, tylko gdy >0); karty wyszukiwania — `(rez N)` za stanem magazynu.
+- **Fix: przypisanie nieprzypisanego stanu K4 z rozkładu** — wiersz „BRAK LOKALIZACJI" w rozkładzie
+  uogólniony na K4 i K4G (liczony klient-side `GT − Σ WMS`). K4 tylko gdy brak lokalizacji K4
+  (1 SKU = 1 lok). Wcześniej towar ze stanem zewn. wpadał w rozkład bez możliwości przypisania K4.
+- **Fix: blokada częściowego przypisania K4** (źródło prawdy + UX) — `routes/ruchy.js` wymaga
+  `ilo === deficyt` dla przypisania K4 (`400` przy częściowej); front: pole ilości readonly dla K4
+  w przypisaniu. Bez tego dało się zapisać część stanu K4 i utknąć (kolejne przypisanie blokowane).
+- **Fix: mieszanie stanów K4/K4G przy przypisaniu** — `przetworzLokalizacjeCelu` brało ilość ślepo
+  z `iloscSugestia` (deficyt K4G) gdy `celMagazynNowejLokalizacji` ustawione → deficyt K4G (np. 360)
+  wpadał do przypisania K4 (powinno 4). Teraz ilość liczona wg magazynu SKANOWANEJ lokalizacji.
+- **Powrót do wyników wyszukiwania**: Wstecz z rozkładu/celu otwartego z listy wyników wraca do
+  wyników (nie do czystego skanu). Flaga `powrotDoWyszukiwania`.
+- **Status zgodności: częściowo zlokalizowane → NZ** (`gt-fields.js` `obliczOgolna`). `t_GT` tylko
+  gdy NIC nie zlokalizowane; gdy część zrobiona (OK/OF) a reszta w GT bez WMS → `NZ` (spójnie z
+  częściowym K4G). Kubełki: t_GT=od zera · NZ=do dokończenia/poprawy · OK=zrobione. Logika
+  zweryfikowana tabelą prawdy (11 przypadków); liczy się przez most GT (restart + skan).
+
 #### Do zrobienia (kolejka)
 
 - **Audyt** pozostałych `focus()` (start/wybór — `blur()` po sukcesie) + autofill (wyłączenie
   w ustawieniach Chrome/EHS — atrybuty HTML już są).
-- **Redesign kart listy** na `.lista-poz` (pasek statusu z lewej, mag-badge).
+- **Redesign kart listy 3.1** (zawartość lokalizacji) na `.lista-poz` (wyszukiwanie i rozkład już są).
+- Decyzja: przycinać linię lokalizacji na kartach wyszukiwania (`K4: A2 · K4G: …`) czy zostaje.
 - **Inwentaryzacja od nowa**.
 - Opcjonalnie: wybór operatora przy starcie apki; HTTPS + ikony PNG (prawdziwe PWA);
   sprzątnięcie wzmianek o inwentaryzacji w README/CONTEXT/moście C#.

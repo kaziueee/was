@@ -231,6 +231,19 @@ function klasyfikujZgodnosc(wms, gt) {
   return wms === gt ? ZGODNOSC.ZGODNE : ZGODNOSC.NIEZGODNE;
 }
 
+// Status "ogolny" z dwoch magazynow (K4, K4G). Zwykle najgorszy wg PRIORYTET_ZGODNOSCI,
+// ale z wyjatkiem: gdy CZESC jest zlokalizowana (OK/OF) a drugi magazyn ma stan w GT bez
+// WMS (t_GT), to NIE jest "tylko GT" - to czesciowa/niespojna lokalizacja => NZ (spojnie
+// z czesciowym K4G, ktore juz jest NZ). t_GT zostaje tylko gdy NIC nie jest zlokalizowane.
+function obliczOgolna(k4stan, k4gstan) {
+  const stany = [k4stan, k4gstan];
+  if (stany.includes(ZGODNOSC.NIEZGODNE)) return ZGODNOSC.NIEZGODNE;
+  const maZlokalizowane = stany.some((s) => s === ZGODNOSC.ZGODNE || s === ZGODNOSC.OBCIETE);
+  const maTylkoGt = stany.includes(ZGODNOSC.TYLKO_GT);
+  if (maZlokalizowane && maTylkoGt) return ZGODNOSC.NIEZGODNE; // czesciowo zlokalizowany
+  return PRIORYTET_ZGODNOSCI.find((s) => s === k4stan || s === k4gstan);
+}
+
 // Dla listy artykulow porownuje oczekiwane przez WMS pola lokalizacyjne z
 // aktualnymi polami GT, osobno dla K4 i K4G, i klasyfikuje kazdy do jednego
 // z 4 stanow ZGODNOSC. Zwraca Map<artykul_gt_id jako string,
@@ -300,7 +313,7 @@ async function pobierzPrzegladLokalizacji(artykulGtIds) {
     }
 
     const k4g = { gt_tekst: gtK4gTekst, stan: stanK4g };
-    const ogolna = PRIORYTET_ZGODNOSCI.find((s) => s === k4.stan || s === k4g.stan);
+    const ogolna = obliczOgolna(k4.stan, k4g.stan);
     wynik.set(id, { k4, k4g, ogolna });
   }
   return wynik;

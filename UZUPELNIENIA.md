@@ -87,9 +87,10 @@ WMS czyta **`Z_KAJTEK_IdeaERP`** (host 192.168.0.200) — to odwzorowanie bazy d
 Towary, które mają lokalizację wyłącznie w polach GT (`tw_Pole1`/`tw_Pole8`), a nie w bazie WMS (brak per-lokalizacyjnego stanu), to częsty przypadek na liście uzupełnień. Karta Zebry ma **dwa tryby** (auto-wykrywane w `otworzKarte`):
 
 - **Tryb WMS** (towar ma `wms_k4` ORAZ `wms_k4g`): precyzyjna ścieżka — wybór/skan lokalizacji źródłowej K4G z id + stanem, ruch przez `POST /api/ruchy/mm` (pełny bookkeeping WMS, cap ilości = stan źródła).
-- **Tryb GT** (brak którejkolwiek lokalizacji WMS = t_GT): źródło i cel **wg tekstu z GT**, skan K4G opcjonalny (potwierdzenie/audyt), cap ilości = stan góry. Ruch przez **`POST /api/ruchy/uzupelnienie`** — „czyste GT": most wystawia MM K4G→K4 (mag 8→4), rejestrujemy `ruchy`, ale **nie tworzymy lokalizacji ani stanu w WMS** (sync pól GT to no-op — pusty zbiór magazynów w `wykonajRuchGT`, więc kody w GT nie są nadpisywane). Towar zostaje t_GT; onboarding do WMS = osobno (lokalizowanie / rozjazdy). Reguła rezerwacji (zasada 6) egzekwowana przez GT na K4G.
+- **Tryb GT** (brak WMS **źródła** K4G): źródło wg GT (z bloku info, bez wyboru/skanu), cap ilości = stan góry. Ruch przez **`POST /api/ruchy/uzupelnienie`**: most wystawia MM K4G→K4 (mag 8→4), rejestrujemy `ruchy`. Źródło K4G zostaje GT-managed (nie znamy stanu per-lokalizacja). Reguła rezerwacji (zasada 6) egzekwowana przez GT na K4G.
+  - **Cel K4 — ważne:** jeśli lokalizacja K4 **JUŻ ISTNIEJE** w WMS, przekazujemy `lok_cel_id` i backend **aktualizuje jej stan** (+ilość). Inaczej powstałby rozjazd: GT K4 rośnie, a WMS K4 zostaje stary → „X nieprzypisane" na K4 (status NZ). Gdy K4 nie ma w WMS — „czyste GT", bez zmian WMS (nie tworzymy lokalizacji z „brudnego" tekstu GT; onboarding K4 = osobny krok lokalizowania). **Zasada: nie *tworzymy* lokalizacji WMS, ale *aktualizujemy* te, które istnieją.**
 
-Implementacja `/uzupelnienie`: ruch `typ='MM'`, `lok_zrodlo_id`/`lok_cel_id` = NULL, `mag_zrodlo_zewnetrzny='K4G'`, `mag_cel_zewnetrzny='K4'` (kolumna już istnieje, używa jej `/mm-zewnetrzny`). Dzięki temu `wykonajRuchGT` (i job ponawiania) działają bez zmian.
+Implementacja `/uzupelnienie`: ruch `typ='MM'`, `lok_zrodlo_id=NULL`, `mag_zrodlo_zewnetrzny='K4G'`; cel — albo `lok_cel_id` (gdy K4 w WMS; wtedy increment stanu K4 w transakcji + `wykonajRuchGT` synca `tw_Pole1`), albo `mag_cel_zewnetrzny='K4'` (czyste GT, sync pól GT = no-op). `wykonajRuchGT` i job ponawiania działają bez zmian.
 
 ## Otwarte punkty
 

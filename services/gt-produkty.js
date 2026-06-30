@@ -146,6 +146,15 @@ function sumaStanow(stanyGt) {
   return Object.values(stanyGt).reduce((suma, w) => suma + w.ilosc, 0);
 }
 
+// Ile sztuk artykulu mozna wyprowadzic z magazynu wg GT: stan minus rezerwacje
+// (st_StanRez). Rezerwacje blokuja MM - patrz CLAUDE.md zasada 6. Zwraca
+// { stan, rezerwacja, dostepne }. Rzuca, gdy baza GT jest niedostepna.
+async function dostepneWGt(artykul_gt_id, magazyn) {
+  const stany = await pobierzStanyGt([artykul_gt_id]);
+  const w = stany.get(String(artykul_gt_id))?.[magazyn] ?? { ilosc: 0, rezerwacja: 0 };
+  return { stan: w.ilosc, rezerwacja: w.rezerwacja, dostepne: w.ilosc - w.rezerwacja };
+}
+
 // === Sortowanie/agregacja dla listujProdukty i pobierzProduktyZUniwersum ===
 
 // Wyrazenie SQL sumujace stan (st_Stan) dla danego magazynu w obrebie GROUP BY
@@ -430,6 +439,7 @@ module.exports = {
   listujProdukty,
   pobierzProduktyZUniwersum,
   pobierzStanyGt,
+  dostepneWGt,
   LIMIT_WYSZUKIWANIA,
   SORT_KLUCZE,
 };

@@ -76,6 +76,7 @@ Format atomowy w WMS: `M2-J14-P2`. Format skrócony do GT: `M2-J14-P2/3; M2-J15-
 3. **Inwariant:** suma sztuk na lokalizacjach WMS = stan GT dla każdej pary (artykuł, magazyn)
 4. **Kolejka:** każdy ruch zapisuje się do tabeli `ruchy` ze statusem `pending` zanim wywoła most C#. Przy błędzie Sfery ruch zostaje `pending` — nie ginie
 5. **Backend = jedyne źródło prawdy dla inwariantów** — każda reguła biznesowa MUSI być wymuszona w `routes/` (serwer). Walidacja we froncie (desktop/Zebra) jest tylko dla UX (szybki feedback) i NIE jest autorytatywna. Nigdy nie zostawiamy reguły wyłącznie we froncie — drugi klient albo bezpośrednie wywołanie API ją ominie. Tak powstał rozjazd na HKV50: limit przypisania był tylko w desktopie, Zebra go omijała.
+6. **Rezerwacje GT blokują MM** — zarezerwowanych sztuk nie wolno przesuwać. Z magazynu źródłowego można wyprowadzić najwyżej `stan GT − rezerwacja (st_StanRez)` dla danej pary (artykuł, magazyn). Inaczej Sfera odrzuca dokument MM ("brak towaru na magazynie źródłowym"), a ruch wisi `pending` bez szans na retry. Egzekwowane w backendzie dla każdego MM (`/ruchy/mm`, `/ruchy/przyjecie`, `/ruchy/mm-zewnetrzny`).
 
 ### Inwarianty — gdzie egzekwowane (audyt 2026-06-25)
 
@@ -89,6 +90,7 @@ Format atomowy w WMS: `M2-J14-P2`. Format skrócony do GT: `M2-J14-P2/3; M2-J15-
 | Lokalizacja: kod unikalny globalnie, magazyn ∈ {K4, K4G} | ✅ backend | `/lokalizacje` |
 | Przyjęcie z zewn.: ilość ≤ stan GT magazynu MAG/LS | ✅ backend | `/ruchy/przyjecie` |
 | K4 LOK = cała ilość (nie częściowa) | ✅ backend | `/ruchy/lok` |
+| MM: ilość ≤ stan GT − rezerwacja (rezerwacje blokują MM) | ✅ backend | `/ruchy/mm`, `/przyjecie`, `/mm-zewnetrzny` |
 
 Wszystkie inwarianty są egzekwowane w backendzie. Dodając nową regułę: najpierw `routes/`, front tylko jako UX.
 

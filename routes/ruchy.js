@@ -2,7 +2,8 @@ const express = require('express');
 const db = require('../db/database');
 const { MAGAZYNY_ZEWNETRZNE } = require('../config/magazyny');
 const { wykonajRuchGT } = require('../services/ruchy-gt');
-const { pobierzStanyGt } = require('../services/gt-produkty');
+const gtFields = require('../services/gt-fields');
+const { pobierzStanyGt, dostepneWGt } = require('../services/gt-produkty');
 
 const router = express.Router();
 
@@ -39,6 +40,22 @@ router.post('/mm', async (req, res, next) => {
   if (!stanZrodlo || stanZrodlo.ilosc < ilo) {
     return res.status(409).json({
       blad: `Niewystarczajaca ilosc na lokalizacji zrodlowej (dostepne: ${stanZrodlo ? stanZrodlo.ilosc : 0})`
+    });
+  }
+
+  // Zasada 6: rezerwacje GT blokuja MM. Z magazynu zrodlowego mozna wyprowadzic
+  // najwyzej (stan GT - rezerwacja). Inaczej Sfera odrzuca MM ("brak towaru na
+  // magazynie zrodlowym") i ruch wisi 'pending' bez szans na retry. Egzekwujemy
+  // w backendzie - chroni jednakowo Zebre i desktop.
+  let dostZrodlo;
+  try {
+    dostZrodlo = await dostepneWGt(artykul_gt_id, zrodlo.magazyn);
+  } catch (err) {
+    return res.status(503).json({ blad: 'Nie mozna zweryfikowac rezerwacji w GT (baza niedostepna) - MM wstrzymane. Sprobuj ponownie.' });
+  }
+  if (dostZrodlo.rezerwacja > 0 && ilo > dostZrodlo.dostepne) {
+    return res.status(409).json({
+      blad: `Towar zarezerwowany w ${zrodlo.magazyn}: mozna przesunac najwyzej ${Math.max(dostZrodlo.dostepne, 0)} szt. (stan GT ${dostZrodlo.stan}, rezerwacja ${dostZrodlo.rezerwacja}). Rezerwacje blokuja MM.`
     });
   }
 
@@ -360,15 +377,17 @@ router.post('/przyjecie', async (req, res, next) => {
 
   // Inwariant WMS<=GT: nie wolno przyjac do WMS wiecej niz GT ma w magazynie zrodlowym (MAG/LS).
   // Inaczej WMS K4/K4G rosnie ponad stan GT (rozjazd). Walidacja w backendzie chroni oba klienty.
-  let gtStanZrodla;
+  // Inwariant uwzglednia tez zasade 6: rezerwacje GT blokuja MM, wiec przyjac mozna
+  // najwyzej (stan - rezerwacja) z magazynu zrodlowego.
+  let gtZrodla;
   try {
-    const stany = await pobierzStanyGt([artykul_gt_id]);
-    gtStanZrodla = stany.get(String(artykul_gt_id))?.[zrodloMag]?.ilosc ?? 0;
+    gtZrodla = await dostepneWGt(artykul_gt_id, zrodloMag);
   } catch (err) {
     return res.status(503).json({ blad: 'Nie mozna zweryfikowac stanu GT (most niedostepny) - przyjecie wstrzymane. Sprobuj ponownie.' });
   }
-  if (ilo > gtStanZrodla) {
-    return res.status(409).json({ blad: `W magazynie ${zrodloMag} jest tylko ${gtStanZrodla} szt. wg GT - nie mozna przyjac ${ilo}.` });
+  if (ilo > gtZrodla.dostepne) {
+    const dodatek = gtZrodla.rezerwacja > 0 ? ` (stan ${gtZrodla.stan}, rezerwacja ${gtZrodla.rezerwacja} blokuje MM)` : '';
+    return res.status(409).json({ blad: `W magazynie ${zrodloMag} mozna przyjac najwyzej ${Math.max(gtZrodla.dostepne, 0)} szt. wg GT${dodatek} - nie mozna przyjac ${ilo}.` });
   }
 
   // potrzebujemy symbolu/nazwy do wpisania w stany_lokalizacji
@@ -432,6 +451,19 @@ router.post('/mm-zewnetrzny', async (req, res, next) => {
   const ilo = Number(ilosc);
   if (!Number.isFinite(ilo) || ilo <= 0) return res.status(400).json({ blad: 'Pole "ilosc" musi byc liczba > 0' });
 
+  const zrodloMag = String(mag_zrodlo).trim().toUpperCase();
+
+  // Zasada 6: rezerwacje GT blokuja MM takze miedzy magazynami zewnetrznymi.
+  let dostZrodlo;
+  try {
+    dostZrodlo = await dostepneWGt(artykul_gt_id, zrodloMag);
+  } catch (err) {
+    return res.status(503).json({ blad: 'Nie mozna zweryfikowac rezerwacji w GT (baza niedostepna) - MM wstrzymane. Sprobuj ponownie.' });
+  }
+  if (dostZrodlo.rezerwacja > 0 && ilo > dostZrodlo.dostepne) {
+    return res.status(409).json({ blad: `Towar zarezerwowany w ${zrodloMag}: mozna przesunac najwyzej ${Math.max(dostZrodlo.dostepne, 0)} szt. (stan GT ${dostZrodlo.stan}, rezerwacja ${dostZrodlo.rezerwacja}). Rezerwacje blokuja MM.` });
+  }
+
   const symbolDoWpisu = artykul_symbol
     ?? db.prepare("SELECT artykul_symbol FROM stany_lokalizacji WHERE artykul_gt_id = ? LIMIT 1").get(artykul_gt_id)?.artykul_symbol
     ?? String(artykul_gt_id);
@@ -484,6 +516,91 @@ router.post('/:id/retry', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// DELETE /api/ruchy/:id - usuwa bledny ruch z kolejki i COFA zmiane stanow WMS.
+// Dozwolone tylko dla 'pending' bez dok_gt_numer: dokument MM nie zostal wystawiony
+// w GT, wiec WMS przesunal stan, a GT nie - usuniecie przywraca stan WMS sprzed ruchu
+// (inwariant: suma WMS = stan GT). Ruch z dok_gt_numer jest juz zaksiegowany w GT -
+// nie kasujemy go (trzeba odwrotnego MM), zwracamy 409. Alternatywa dla 'retry', gdy
+// ruch nie ma szans przejsc (np. towar zarezerwowany - retry zawsze odbije sie od Sfery).
+router.delete('/:id', async (req, res, next) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ blad: 'Niepoprawne id ruchu' });
+
+  const ruch = db.prepare('SELECT * FROM ruchy WHERE id = ?').get(id);
+  if (!ruch) return res.status(404).json({ blad: 'Ruch nie istnieje' });
+  if (ruch.status !== 'pending') {
+    return res.status(409).json({ blad: `Usunac mozna tylko ruch 'pending' (ten ma status '${ruch.status}')` });
+  }
+  if (ruch.dok_gt_numer) {
+    return res.status(409).json({ blad: `Ruch ma dokument GT ${ruch.dok_gt_numer} - jest zaksiegowany w GT. Cofnij go odwrotnym MM, nie usuwaniem.` });
+  }
+
+  // Magazyny dotkniete ruchem - po cofnieciu stanow trzeba dla nich przeliczyc pola
+  // lokalizacyjne GT (tw_Pole1/tw_Pole8). Tworzenie ruchu zsynchronizowalo je do stanu
+  // PO ruchu (czesto pustego), wiec samo cofniecie ilosci zostawiloby GT z nieaktualna
+  // lokalizacja => NZ. Resolwujemy magazyny zanim ruszymy stany.
+  const magazyny = new Set();
+  if (ruch.lok_zrodlo_id) {
+    const z = db.prepare('SELECT magazyn FROM lokalizacje WHERE id = ?').get(ruch.lok_zrodlo_id);
+    if (z) magazyny.add(z.magazyn);
+  }
+  if (ruch.lok_cel_id) {
+    const c = db.prepare('SELECT magazyn FROM lokalizacje WHERE id = ?').get(ruch.lok_cel_id);
+    if (c) magazyny.add(c.magazyn);
+  }
+
+  db.exec('BEGIN');
+  try {
+    // Cofamy dokladnie odwrotnie do tworzenia ruchu: zrodlo dostaje ilosc z powrotem,
+    // cel ja oddaje. Dla magazynow zewnetrznych (brak lok_*_id) nie ma stanu WMS do cofania.
+    if (ruch.lok_zrodlo_id) {
+      const stanZ = db.prepare('SELECT * FROM stany_lokalizacji WHERE lokalizacja_id = ? AND artykul_gt_id = ?')
+        .get(ruch.lok_zrodlo_id, ruch.artykul_gt_id);
+      if (stanZ) {
+        db.prepare('UPDATE stany_lokalizacji SET ilosc = ilosc + ?, ostatnia_zmiana = CURRENT_TIMESTAMP WHERE id = ?')
+          .run(ruch.ilosc, stanZ.id);
+      } else {
+        const wzor = db.prepare('SELECT artykul_nazwa, artykul_ean FROM stany_lokalizacji WHERE artykul_gt_id = ? LIMIT 1').get(ruch.artykul_gt_id);
+        db.prepare(`INSERT INTO stany_lokalizacji (lokalizacja_id, artykul_gt_id, artykul_symbol, artykul_nazwa, artykul_ean, ilosc)
+                    VALUES (?, ?, ?, ?, ?, ?)`)
+          .run(ruch.lok_zrodlo_id, ruch.artykul_gt_id, ruch.artykul_symbol, wzor?.artykul_nazwa ?? '', wzor?.artykul_ean ?? null, ruch.ilosc);
+      }
+    }
+    if (ruch.lok_cel_id) {
+      const stanC = db.prepare('SELECT * FROM stany_lokalizacji WHERE lokalizacja_id = ? AND artykul_gt_id = ?')
+        .get(ruch.lok_cel_id, ruch.artykul_gt_id);
+      if (stanC) {
+        const poCofnieciu = stanC.ilosc - ruch.ilosc;
+        if (poCofnieciu > 0) {
+          db.prepare('UPDATE stany_lokalizacji SET ilosc = ?, ostatnia_zmiana = CURRENT_TIMESTAMP WHERE id = ?')
+            .run(poCofnieciu, stanC.id);
+        } else {
+          db.prepare('DELETE FROM stany_lokalizacji WHERE id = ?').run(stanC.id);
+        }
+      }
+    }
+    db.prepare('DELETE FROM ruchy WHERE id = ?').run(id);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    return next(err);
+  }
+
+  // Po cofnieciu stanow WMS dosylamy poprawne pola lokalizacyjne do GT (zapis prosto do
+  // GT SQL, bez Sfery). Bez tego GT trzyma lokalizacje sprzed cofniecia => artykul widnieje
+  // jako NZ mimo zgodnych ilosci. Blad GT-SQL nie cofa usuniecia - lokalizacja dosynchronizuje
+  // sie przy kolejnym ruchu/jobie; sygnalizujemy to w odpowiedzi.
+  let lokSync = true;
+  try {
+    const wynik = await gtFields.synchronizujLokalizacje(ruch.artykul_gt_id, magazyny);
+    if (wynik && !(wynik.ok && wynik.dane?.sukces)) lokSync = false;
+  } catch (err) {
+    lokSync = false;
+  }
+
+  res.json({ usuniety: id, lokalizacje_gt_zsync: lokSync });
 });
 
 module.exports = router;

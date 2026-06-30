@@ -506,6 +506,26 @@ function renderujRuchy(lista) {
         }
       });
       tr.lastElementChild.appendChild(btn);
+
+      const btnUsun = document.createElement('button');
+      btnUsun.type = 'button';
+      btnUsun.className = 'btn btn-small btn-danger';
+      btnUsun.style.marginLeft = '4px';
+      btnUsun.textContent = 'Usuń';
+      btnUsun.title = 'Usuń ruch z kolejki i cofnij zmianę stanu WMS (tylko gdy GT nie wystawił dokumentu)';
+      btnUsun.addEventListener('click', async () => {
+        if (!confirm(`Usunąć ruch #${r.id}? Stan WMS zostanie cofnięty do stanu sprzed ruchu.`)) return;
+        btnUsun.disabled = true;
+        try {
+          await api(`/api/ruchy/${r.id}`, { method: 'DELETE' });
+          pokazKomunikat(`Ruch #${r.id} usunięty, stan WMS cofnięty.`, 'ok');
+          odswiezRuchy();
+        } catch (err) {
+          pokazKomunikat(err.message, 'blad');
+          btnUsun.disabled = false;
+        }
+      });
+      tr.lastElementChild.appendChild(btnUsun);
     }
     tbody.appendChild(tr);
   }

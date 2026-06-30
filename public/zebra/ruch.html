@@ -86,6 +86,17 @@
           <p id="pozostanie" class="pozostanie hidden"></p>
         </div>
 
+        <!-- Zapas K4: dodatkowe miejsce K4 dla SKU (tylko gdy cel = K4); zapis po udanym ruchu.
+             Maly przycisk otwiera pole - pole nie zajmuje miejsca, dopoki nie potrzebne. -->
+        <button type="button" id="btn-zapas-toggle" class="btn-zapas hidden"></button>
+        <div id="cel-zapas-pole" class="pole-blok hidden">
+          <label class="pole-etykieta" for="input-zapas">Zapas K4 — dodatkowe miejsce (opcjonalnie)</label>
+          <div class="pole-skan">
+            <input type="text" id="input-zapas" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj lub wpisz kod zapasu">
+          </div>
+          <p class="pole-hint">Drugi adres K4 tego SKU — w GT zapis jako „miejsce/zapas". Puste = bez zapasu.</p>
+        </div>
+
         <div id="cel-potwierdzenie" class="potwierdzenie hidden">
           <p id="cel-potwierdzenie-tekst" class="hint"></p>
           <button type="button" id="btn-cel-utworz-tak" class="btn-akcja">Tak, utwórz lokalizację</button>

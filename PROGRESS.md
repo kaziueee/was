@@ -704,6 +704,15 @@ Sesja testów MM/lokalizacji na żywym moście + UX panelu Produkty:
 - **Klawiatura chowa się po Enterze przy ręcznym wpisaniu** (`kreator.js` `onScan`): pole w trybie
   `inputmode="text"` (klawiatura) → po Enterze `blur()` ją chowa; skan (`inputmode="none"`)
   zostawiamy z fokusem na kolejny skan.
+- **Zapas K4 w Zebrze** (`ruch.html`/`ruch.js`): dodatkowy adres K4 dla SKU (adnotacja `zapas_kod`,
+  GT `tw_Pole1` = „miejsce/zapas"; backend `PUT /api/lokalizacje/k4-zapas/:id`). Mały przycisk
+  „+ Dodaj zapas K4" / „Zapas K4: <kod> — zmień" pojawia się **gdy cel = K4** (zmiana K4→K4, MM
+  K4G/MAG/LS→K4, przypisanie K4); tap rozwija pole (skan/wpis). Zapis **po** udanym ruchu (lokalizacja
+  K4 już istnieje) — jedno „Zatwierdź" robi ruch + zapas; tylko gdy wartość się zmieniła.
+  **Tryb tylko-zapas:** w K4→K4 bez nowej lokalizacji etykieta → „ZAPISZ ZAPAS K4" i `PUT /k4-zapas`
+  bez ruchu (`tylkoZapasK4`/`zapiszTylkoZapas`). Rozkład: wiersz K4 pokazuje obecny zapas.
+- **Typografia Zebry zmniejszona** (`app.css`): tokeny `--font-*` (label 16→14, body 18→16, title
+  24→20, sku 32→24, quantity 28→22) + wagi 800→700 / 700→600 — lżejszy, mniej „bulky" wygląd.
 
 #### Do zrobienia (kolejka)
 

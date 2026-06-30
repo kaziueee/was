@@ -32,11 +32,11 @@
   --color-info: #1f5f99;
   --color-info-bg: #eaf3fb;
 
-  --font-label: 16px;
-  --font-body: 18px;
-  --font-title: 24px;
-  --font-sku: 32px;
-  --font-quantity: 28px;
+  --font-label: 14px;
+  --font-body: 16px;
+  --font-title: 20px;
+  --font-sku: 24px;
+  --font-quantity: 22px;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -123,7 +123,7 @@ html, body {
 .ekran-sku h1 {
   margin: 0;
   font-size: var(--font-sku);
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.1;
 }
 
@@ -137,14 +137,14 @@ html, body {
 .ekran-tytul {
   margin: 0 0 var(--space-1);
   font-size: var(--font-title);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--color-primary);
 }
 
 /* naglowek produktu: SKU+nazwa po lewej, box "Stan w <lok>" po prawej */
 .naglowek-rzad { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .naglowek-glowna { flex: 1 1 auto; min-width: 0; }
-.naglowek-glowna h1 { margin: 0; font-size: var(--font-title); font-weight: 800; line-height: 1.05; }
+.naglowek-glowna h1 { margin: 0; font-size: var(--font-sku); font-weight: 700; line-height: 1.05; }
 .naglowek-kontekst { margin-top: var(--space-1); }
 .stan-box {
   flex: 0 0 auto;
@@ -155,11 +155,11 @@ html, body {
   background: var(--color-background);
 }
 .stan-box .sb-label { display: block; font-size: var(--font-label); color: var(--color-text-muted); }
-.stan-box .sb-ilosc { display: block; font-size: var(--font-body); font-weight: 800; color: var(--color-primary); white-space: nowrap; }
+.stan-box .sb-ilosc { display: block; font-size: var(--font-body); font-weight: 700; color: var(--color-primary); white-space: nowrap; }
 .chip-tekst { font-size: var(--font-label); color: var(--color-text-muted); align-self: center; }
 .chip.chip-uwaga { background: var(--color-danger-bg); border-color: var(--color-danger); color: var(--color-danger); }
 /* chip rezerwacji (kontekst zrodla na kroku celu) - zolty, tylko gdy rez > 0 */
-.chip.chip-rez { background: var(--color-warning-bg); border-color: var(--color-warning); color: var(--color-warning); font-weight: 700; }
+.chip.chip-rez { background: var(--color-warning-bg); border-color: var(--color-warning); color: var(--color-warning); font-weight: 600; }
 
 /* pole tekstowe (operator) */
 .pole-text {
@@ -184,13 +184,13 @@ html, body {
   border: 1px solid var(--color-border);
   font-size: var(--font-label);
 }
-.chip b { font-weight: 700; }
+.chip b { font-weight: 600; }
 /* chip magazynu - mocniejsze (wypelnione) tlo, zeby od razu bylo widac z jakiego magazynu */
 .chip.chip-magazyn {
   background: var(--color-primary);
   border-color: var(--color-primary);
   color: #fff;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 /* --- Menu (widok startowy SPA) --- */
@@ -206,7 +206,7 @@ html, body {
   background: var(--color-surface);
   color: var(--color-primary);
   font-size: var(--font-title);
-  font-weight: 700;
+  font-weight: 600;
   text-align: left;
   text-decoration: none;
   cursor: pointer;
@@ -237,7 +237,7 @@ html, body {
   background: var(--color-primary);
   color: #fff;
   font-size: var(--font-body);
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 .btn-akcja:active { background: var(--color-primary-hover); }
@@ -251,7 +251,7 @@ html, body {
   background: var(--color-surface);
   color: var(--color-primary);
   font-size: var(--font-body);
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -328,7 +328,7 @@ html, body {
 .lista-poz .poz-mag {
   flex: 0 0 auto;
   font-size: var(--font-label);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--color-text-muted);
   background: var(--color-background);
   border: 1px solid var(--color-border);
@@ -346,7 +346,7 @@ html, body {
 }
 .lista-poz .poz-kod {
   font-size: var(--font-title);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.15;
 }
 .lista-poz .poz-podpis {
@@ -371,7 +371,7 @@ html, body {
   flex-direction: column;
   align-items: flex-end;
 }
-.lista-poz .poz-ilosc { font-size: var(--font-title); font-weight: 700; color: var(--color-primary); }
+.lista-poz .poz-ilosc { font-size: var(--font-title); font-weight: 600; color: var(--color-primary); }
 .lista-poz .poz-rez { font-size: var(--font-label); color: var(--color-warning); }
 .lista-poz .poz-strzalka { flex: 0 0 auto; color: var(--color-text-muted); font-size: 22px; }
 
@@ -411,7 +411,7 @@ html, body {
   font-size: var(--font-label);
   color: var(--color-text-muted);
 }
-.podsumowanie-stanu b { color: var(--color-primary); font-weight: 800; }
+.podsumowanie-stanu b { color: var(--color-primary); font-weight: 700; }
 .podsumowanie-sep { width: 1px; height: 1.2em; background: var(--color-border); }
 
 /* --- Karty listy (renderowane przez ruch.js: lista-wyboru) - tymczasowy
@@ -435,7 +435,7 @@ html, body {
 .lista button .etykieta-glowna { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .lista button .nazwa-produktu { font-size: var(--font-label); }
 .lista button .stany-magazynowe { font-size: var(--font-label); color: var(--color-text-muted); }
-.lista button .kod { font-weight: 700; }
+.lista button .kod { font-weight: 600; }
 .lista button .magazyn {
   font-size: var(--font-label);
   color: #fff;
@@ -444,14 +444,14 @@ html, body {
   padding: 1px var(--space-2);
   margin-left: var(--space-2);
 }
-.lista button .ilosc { font-size: var(--font-title); font-weight: 700; color: var(--color-primary); white-space: nowrap; }
+.lista button .ilosc { font-size: var(--font-title); font-weight: 600; color: var(--color-primary); white-space: nowrap; }
 .lista button .ilosc .rez { font-size: var(--font-label); color: var(--color-warning); }
 
 /* badge statusu zgodnosci na kartach (zg-badge z karta-produktu.js) */
 .zg-badge {
   display: inline-block;
   font-size: var(--font-label);
-  font-weight: 700;
+  font-weight: 600;
   padding: 1px var(--space-2);
   border-radius: var(--radius-small);
   border: 1px solid transparent;
@@ -465,7 +465,7 @@ html, body {
 .badge {
   display: inline-block;
   font-size: var(--font-label);
-  font-weight: 700;
+  font-weight: 600;
   padding: 2px var(--space-2);
   border-radius: var(--radius-small);
   border: 1px solid transparent;
@@ -489,7 +489,7 @@ html, body {
   border-radius: var(--radius-medium);
   background: var(--color-surface);
   font-size: var(--font-sku);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--color-primary);
   cursor: pointer;
 }
@@ -502,7 +502,7 @@ html, body {
   border-radius: var(--radius-medium);
   text-align: center;
   font-size: var(--font-quantity);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--color-text);
   background: var(--color-surface);
   -moz-appearance: textfield;
@@ -519,7 +519,7 @@ html, body {
   font-size: var(--font-label);
   color: var(--color-success); /* 0 i dodatnie = neutralne/poprawne, NIE czerwone */
 }
-.pozostanie.blad { color: var(--color-danger); font-weight: 700; }
+.pozostanie.blad { color: var(--color-danger); font-weight: 600; }
 
 /* --- Komunikat bledu (blisko pola, nie kasuje wartosci) --- */
 .komunikat {
@@ -541,13 +541,28 @@ html, body {
   padding: var(--space-3);
   overflow-wrap: anywhere;
 }
-.karta-info strong { font-size: var(--font-title); font-weight: 800; display: block; }
+.karta-info strong { font-size: var(--font-title); font-weight: 700; display: block; }
 .karta-info span { font-size: var(--font-label); color: var(--color-text-muted); }
 
 /* krok "wybor": odstepy miedzy blokami w obrebie kroku (gap .ekran-tresc dziala
    tylko miedzy sekcjami) - rozdziela tytul/podsumowanie/pole skanu/liste.
    :not(.hidden) - bez tego id-selektor wygrywa z .hidden i sekcja sie nie chowa. */
 #krok-wybor:not(.hidden) { display: flex; flex-direction: column; gap: var(--space-4); }
+
+/* maly przycisk otwierajacy pole "Zapas K4" (lewy, content-sized; bez display->.hidden dziala) */
+.btn-zapas {
+  align-self: flex-start;
+  min-height: 40px;
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-size: var(--font-label);
+  font-weight: 600;
+  cursor: pointer;
+}
 
 /* --- Blok pola (etykieta + kontrolka) --- */
 .pole-blok { display: flex; flex-direction: column; }
@@ -604,5 +619,5 @@ html, body {
   border-radius: 50%; background: rgba(255,255,255,0.18);
   display: flex; align-items: center; justify-content: center; font-size: 3rem;
 }
-.sukces-box p { margin: 0; font-size: var(--font-title); font-weight: 700; line-height: 1.4; }
+.sukces-box p { margin: 0; font-size: var(--font-title); font-weight: 600; line-height: 1.4; }
 .sukces-hint { margin-top: var(--space-4) !important; font-size: var(--font-label) !important; font-weight: 400 !important; opacity: 0.9; }

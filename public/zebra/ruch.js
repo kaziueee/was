@@ -16,6 +16,7 @@ const stan = {
   celMagazynNowejLokalizacji: null, // magazyn wymagany dla nowej lokalizacji przy braku zrodla
                                      // (np. 'K4G' z opcji "+ Nowa lokalizacja K4G") - gdy null,
                                      // magazyn jest zgadywany na podstawie stanow GT
+  zapasK4Pierwotny: '', // obecny zapas K4 (zapas_kod) - do wykrycia zmiany pola w kroku celu
 };
 
 // krok 3 - kod lokalizacji oczekujacy na potwierdzenie utworzenia (gdy skan nie pasuje do istniejacej)
@@ -182,6 +183,10 @@ function reset() {
   el('input-cel').value = '';
   el('input-ilosc').value = '';
   el('input-ilosc').readOnly = false;
+  el('input-zapas').value = '';
+  el('cel-zapas-pole').classList.add('hidden');
+  el('btn-zapas-toggle').classList.add('hidden');
+  stan.zapasK4Pierwotny = '';
   el('lista-wyboru').innerHTML = '';
   el('checkbox-ukryj-zero-wrap').classList.add('hidden');
   el('checkbox-ukryj-zero').checked = false;
@@ -330,6 +335,7 @@ function pokazRozkladZrodel(dane, artykul) {
       kod: lok.kod,
       ilosc: lok.ilosc,
       rez,
+      podpis: lok.zapas_kod ? `zapas: ${lok.zapas_kod}` : '', // dodatkowe miejsce K4
     };
   });
 
@@ -638,6 +644,9 @@ async function aktualizujKrokCel() {
   const docelowy = celMagazynKod();
   const magInfo = magazynyMapa[docelowy];
 
+  // Zapas K4 (dodatkowe miejsce) - przycisk tylko gdy cel = K4
+  ustawZapasUI(docelowy === 'K4');
+
   // magazyn zewnetrzny -> bez lokalizacji
   if (magInfo && magInfo.typ === 'zewnetrzny') {
     el('cel-lokalizacja-pole').classList.add('hidden');
@@ -658,18 +667,24 @@ async function aktualizujKrokCel() {
     ? 'K4: 1 SKU = 1 lokalizacja — przenoszona jest cała ilość'
     : '';
 
-  // K4 jako cel przesuniecia -> podpowiedz stalego miejsca SKU
-  if (!zmiana && docelowy === 'K4') {
+  // K4 jako cel -> pobierz stale miejsce (podpowiedz lokalizacji przy MM) + obecny zapas K4
+  if (docelowy === 'K4') {
     try {
       const res = await fetch(`/api/lokalizacje/k4-dom/${encodeURIComponent(stan.artykul.artykul_gt_id)}`);
-      const dane = await res.json();
+      const dom = await res.json();
       if (celMagazynKod() !== 'K4') return; // uzytkownik zmienil wybor w trakcie zapytania
-      if (dane) {
-        el('input-cel').value = dane.kod;
-        el('cel-lokalizacja-hint').textContent = `Stałe miejsce w K4 (obecnie: ${dane.ilosc} szt.) — zeskanuj inną, by zmienić`;
-        stan.cel = { typ: 'wms', id: dane.lokalizacja_id, kod: dane.kod, magazyn: 'K4' };
-      } else {
-        el('cel-lokalizacja-hint').textContent = 'Nowe miejsce w K4 — zeskanuj lokalizację';
+      stan.zapasK4Pierwotny = dom?.zapas_kod ?? '';
+      el('input-zapas').value = stan.zapasK4Pierwotny;
+      aktualizujPrzyciskZapasu(); // pokaz obecny zapas na przycisku
+      // podpowiedz stalego miejsca tylko przy MM do K4 (przy zmianie K4->K4 cel skanuje magazynier)
+      if (!zmiana) {
+        if (dom) {
+          el('input-cel').value = dom.kod;
+          el('cel-lokalizacja-hint').textContent = `Stałe miejsce w K4 (obecnie: ${dom.ilosc} szt.) — zeskanuj inną, by zmienić`;
+          stan.cel = { typ: 'wms', id: dom.lokalizacja_id, kod: dom.kod, magazyn: 'K4' };
+        } else {
+          el('cel-lokalizacja-hint').textContent = 'Nowe miejsce w K4 — zeskanuj lokalizację';
+        }
       }
     } catch (err) {
       // brak podpowiedzi - magazynier skanuje recznie
@@ -678,6 +693,32 @@ async function aktualizujKrokCel() {
 
   skupSieNaIlosciLubLokalizacji();
 }
+
+// Zapas K4: gdy cel=K4 pokazujemy maly PRZYCISK (pole rozwija sie po tapnieciu), inaczej
+// chowamy wszystko i czyscimy. Etykieta przycisku odzwierciedla obecny zapas.
+function ustawZapasUI(pokaz) {
+  el('cel-zapas-pole').classList.add('hidden'); // pole zawsze schowane na starcie kroku
+  if (!pokaz) {
+    el('btn-zapas-toggle').classList.add('hidden');
+    el('input-zapas').value = '';
+    stan.zapasK4Pierwotny = '';
+    return;
+  }
+  el('btn-zapas-toggle').classList.remove('hidden');
+  aktualizujPrzyciskZapasu();
+}
+
+function aktualizujPrzyciskZapasu() {
+  const v = (el('input-zapas').value || '').trim();
+  el('btn-zapas-toggle').textContent = v ? `Zapas K4: ${v} — zmień` : '+ Dodaj zapas K4';
+}
+
+// tap w przycisk -> rozwin pole zapasu i ustaw na nim fokus (skan/wpis)
+el('btn-zapas-toggle').addEventListener('click', () => {
+  el('btn-zapas-toggle').classList.add('hidden');
+  el('cel-zapas-pole').classList.remove('hidden');
+  el('input-zapas').focus();
+});
 
 // Krok cel dla PRZYPISANIA (brak zrodla): wybrany magazyn WMS narzuca ilosc (stan GT
 // tego magazynu; dla K4G z czesciowym deficytem - deficyt) i magazyn lokalizacji docelowej.
@@ -704,6 +745,8 @@ function aktualizujKrokCelPrzypisanie() {
   const gtLok = gtLokDlaMagazynu(mag);
   const regulaK4 = mag === 'K4' ? 'K4: 1 SKU = 1 lokalizacja — cała ilość' : '';
   el('cel-lokalizacja-hint').textContent = [gtLok && `wg GT: ${gtLok}`, regulaK4].filter(Boolean).join(' · ');
+  // Zapas K4 dostepny tez przy przypisaniu do K4 (po LOK lokalizacja K4 istnieje, k4-zapas zadziala)
+  ustawZapasUI(mag === 'K4');
   aktualizujPozostanie();   // brak zrodla -> ukryje sie
   aktualizujAkcjeLabel();
   el('input-cel').focus();
@@ -729,12 +772,28 @@ function aktualizujPozostanie() {
   span.classList.remove('hidden');
 }
 
-// etykieta glownej akcji opisuje skutek: PRZENIES / ZMIEN LOKALIZACJE / ZAPISZ
+// czy pole zapasu K4 jest aktywne (cel=K4) i jego wartosc rozni sie od zapisanej
+function zapasK4Zmieniony() {
+  if (el('btn-zapas-toggle').classList.contains('hidden') && el('cel-zapas-pole').classList.contains('hidden')) return false;
+  const v = el('input-zapas').value.replace(/[\r\n]+/g, '').trim().toUpperCase();
+  return v !== (stan.zapasK4Pierwotny || '').toUpperCase();
+}
+
+// czy biezacy "Zatwierdz" to TYLKO zapis zapasu K4 (zmiana K4->K4 bez nowej lokalizacji,
+// ale zmieniony zapas) - wtedy nie robimy ruchu, tylko k4-zapas
+function tylkoZapasK4() {
+  return czyZmiana() && stan.zrodlo?.magazyn === 'K4'
+    && !stan.cel && !el('input-cel').value.trim() && zapasK4Zmieniony();
+}
+
+// etykieta glownej akcji opisuje skutek: PRZENIES / ZMIEN LOKALIZACJE / ZAPISZ / ZAPISZ ZAPAS
 function aktualizujAkcjeLabel() {
   const btn = el('btn-zatwierdz');
   const ilo = Number(el('input-ilosc').value) || 0;
   if (!stan.zrodlo) {
     btn.textContent = `ZAPISZ ${ilo} SZT.`;
+  } else if (tylkoZapasK4()) {
+    btn.textContent = 'ZAPISZ ZAPAS K4';
   } else if (czyZmiana()) {
     btn.textContent = 'ZMIEŃ LOKALIZACJĘ';
   } else {
@@ -759,6 +818,8 @@ el('btn-ilosc-plus').addEventListener('click', () => zmienIlosc(1));
 
 // select-all przy wejsciu w pole, zeby skan lokalizacji nadpisal podpowiedz
 el('input-cel').addEventListener('focus', () => el('input-cel').select());
+// wpisanie/skan nowej lokalizacji -> etykieta wraca do "ZMIEN LOKALIZACJE" (juz nie tylko-zapas)
+el('input-cel').addEventListener('input', aktualizujAkcjeLabel);
 
 // Pole wyszukiwania: zapamietany tekst zostaje do edycji (kursor normalnie, bez zaznaczenia,
 // zeby latwo dopisac/poprawic). Reczne pisanie wymaga DOTKNIECIA pola (klawiatura schowana) -
@@ -899,8 +960,37 @@ el('btn-cel-utworz-nie').addEventListener('click', () => {
   el('input-cel').focus();
 });
 
+// Zapis SAMEGO zapasu K4 (bez ruchu) - gdy w K4->K4 nie zmieniamy lokalizacji podstawowej,
+// a tylko dokladamy/zmieniamy/czyscimy zapas. Wymaga istniejacej lokalizacji K4 (zrodlo K4).
+async function zapiszTylkoZapas() {
+  const zapasNowy = el('input-zapas').value.replace(/[\r\n]+/g, '').trim().toUpperCase();
+  const btn = el('btn-zatwierdz');
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/lokalizacje/k4-zapas/${encodeURIComponent(stan.artykul.artykul_gt_id)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ zapas_kod: zapasNowy }),
+    });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      pokazKomunikat(e.blad || 'Nie zapisano zapasu K4', 'blad');
+      return;
+    }
+    const sym = stan.artykul.artykul_symbol;
+    pokazSukces(zapasNowy ? `Zapas K4 ${sym}: ${zapasNowy}` : `Zapas K4 ${sym} wyczyszczony`);
+  } catch {
+    pokazKomunikat('Blad polaczenia z serwerem', 'blad');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // --- zatwierdzenie ruchu (LOK albo MM, zaleznie od celu) ---
 async function zatwierdz() {
+  // TYLKO ZAPAS: zmiana w K4 bez nowej lokalizacji, ale zmieniony zapas -> sam zapis zapasu
+  if (tylkoZapasK4()) {
+    return zapiszTylkoZapas();
+  }
+
   // upewnij sie, ze cel WMS jest ustawiony (gdy wpisano kod bez Enter); cel zewnetrzny ma stan.cel z aktualizujKrokCel
   if (!stan.cel) {
     const wpisany = el('input-cel').value.trim().toUpperCase();
@@ -1015,6 +1105,22 @@ async function zatwierdz() {
   }
   let tekst = podsumowanie();
   if (dane && dane.status && dane.status !== 'ok') tekst += ' · GT: oczekuje';
+
+  // Zapas K4: po udanym ruchu DO K4 (lokalizacja K4 juz istnieje) zapisz/wyczysc adnotacje,
+  // jesli pole sie zmienilo. To osobny ruch (k4-zapas) - blad nie cofa zapisanego ruchu.
+  if (stan.cel && stan.cel.typ === 'wms' && stan.cel.magazyn === 'K4') {
+    const zapasNowy = el('input-zapas').value.replace(/[\r\n]+/g, '').trim().toUpperCase();
+    if (zapasNowy !== (stan.zapasK4Pierwotny || '').toUpperCase()) {
+      try {
+        const r = await fetch(`/api/lokalizacje/k4-zapas/${encodeURIComponent(stan.artykul.artykul_gt_id)}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ zapas_kod: zapasNowy }),
+        });
+        if (r.ok) tekst += zapasNowy ? ` · zapas K4: ${zapasNowy}` : ' · zapas K4 wyczyszczony';
+        else { const e = await r.json().catch(() => ({})); tekst += ` · zapas K4 NIE zapisany (${e.blad || 'błąd'})`; }
+      } catch { tekst += ' · zapas K4 NIE zapisany (błąd połączenia)'; }
+    }
+  }
+
   pokazSukces(tekst);
 }
 
@@ -1077,7 +1183,12 @@ el('input-ilosc').addEventListener('keydown', (e) => {
 });
 
 // pola skanu bez automatycznej klawiatury ekranowej (dotkniecie = reczne wpisanie)
-polaSkanuBezKlawiatury(el('input-start'), el('input-wybor-skan'), el('input-cel'));
+polaSkanuBezKlawiatury(el('input-start'), el('input-wybor-skan'), el('input-cel'), el('input-zapas'));
+// skan kodu zapasu zaznacza tekst przy fokusie (nadpisuje obecny); Enter chowa klawiature
+el('input-zapas').addEventListener('focus', () => el('input-zapas').select());
+el('input-zapas').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el('input-zapas').blur(); } });
+// zmiana zapasu -> odswiez etykiete akcji (np. "ZAPISZ ZAPAS K4" gdy bez nowej lokalizacji)
+el('input-zapas').addEventListener('input', aktualizujAkcjeLabel);
 
 // --- router widokow (SPA: menu <-> ruch bez przeladowania, pelny ekran sie trzyma) ---
 function pokazWidok(nazwa) {

@@ -68,9 +68,10 @@ function badge(status) {
 const panele = {
   produkty: { sekcja: 'panel-produkty', zaladowano: false, odswiez: odswiezProdukty },
   rozjazdy: { sekcja: 'panel-rozjazdy', zaladowano: false, odswiez: odswiezRozjazdy },
-  ruchy: { sekcja: 'panel-ruchy', zaladowano: false, odswiez: odswiezRuchy },
   lokalizacje: { sekcja: 'panel-lokalizacje', zaladowano: false, odswiez: odswiezLokalizacje },
   mm: { sekcja: 'panel-mm', zaladowano: false, odswiez: () => {} },
+  uzupelnienia: { sekcja: 'panel-uzupelnienia', zaladowano: false, odswiez: odswiezUzupelnienia },
+  log: { sekcja: 'panel-log', zaladowano: false, odswiez: odswiezLog },
 };
 
 function pokazPanel(nazwa) {
@@ -436,103 +437,142 @@ el('btn-rozjazdy-detekcja').addEventListener('click', async () => {
   }
 });
 
-// === RUCHY ===
+// === LOG biznesowy (audyt: kto/co/gdzie/kiedy) ===
 
-let lokalizacjeMap = new Map();
+const AKCJA_ETYKIETA = {
+  MM: 'MM', LOK: 'Zmiana lok.', przypisanie: 'Przypisanie', przyjecie: 'Przyjęcie',
+  'MM-zewn': 'MM zewn.', Uzupelnienie: 'Uzupełnienie', usuniecie_ruchu: 'Usunięcie ruchu',
+  lokalizacja_nowa: 'Nowa lok.', lokalizacja_edycja: 'Edycja lok.', lokalizacja_usuniecie: 'Usunięcie lok.',
+  zapas_k4: 'Zapas K4', plan_lok: 'Plan lok.',
+};
 
-async function odswiezRuchy() {
-  const status = el('ruchy-status').value;
+// "przed"/"po" sa JSON-em (lub null) - kompaktowy zapis "k:v, k:v"
+function jsonKomp(s) {
+  if (!s) return null;
+  try { return Object.entries(JSON.parse(s)).map(([k, v]) => `${k}:${v}`).join(', '); }
+  catch { return s; }
+}
+function zmianaTekst(przed, po) {
+  const p = jsonKomp(przed), q = jsonKomp(po);
+  if (p && q) return `${p} → ${q}`;
+  return q || p || '–';
+}
+
+// Przycisk "Ponów" dla ruchu pending (przeniesione z dawnej zakladki Ruchy).
+function przyciskPonowRuch(ruchId) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-small';
+  btn.textContent = 'Ponów';
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const wynik = await api(`/api/ruchy/${ruchId}/retry`, { method: 'POST' });
+      pokazKomunikat(
+        wynik.status === 'ok' ? `Ruch #${ruchId} zrealizowany.` : `Ruch #${ruchId}: ${wynik.blad_opis ?? 'wciąż oczekuje'}`,
+        wynik.status === 'ok' ? 'ok' : 'info'
+      );
+      odswiezLog();
+    } catch (err) {
+      pokazKomunikat(err.message, 'blad');
+      btn.disabled = false;
+    }
+  });
+  return btn;
+}
+
+// Przycisk "Usuń" dla ruchu pending (cofa zmiane stanu WMS; tylko bez dokumentu GT).
+function przyciskUsunRuch(ruchId) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-small btn-danger';
+  btn.style.marginLeft = '4px';
+  btn.textContent = 'Usuń';
+  btn.title = 'Usuń ruch z kolejki i cofnij zmianę stanu WMS (tylko gdy GT nie wystawił dokumentu)';
+  btn.addEventListener('click', async () => {
+    if (!confirm(`Usunąć ruch #${ruchId}? Stan WMS zostanie cofnięty do stanu sprzed ruchu.`)) return;
+    btn.disabled = true;
+    try {
+      await api(`/api/ruchy/${ruchId}`, { method: 'DELETE' });
+      pokazKomunikat(`Ruch #${ruchId} usunięty, stan WMS cofnięty.`, 'ok');
+      odswiezLog();
+    } catch (err) {
+      pokazKomunikat(err.message, 'blad');
+      btn.disabled = false;
+    }
+  });
+  return btn;
+}
+
+function wierszLog(r, { zKolumnamiSku }) {
+  const tr = document.createElement('tr');
+  const sku = zKolumnamiSku ? `<td>${r.artykul_symbol ? `<strong>${r.artykul_symbol}</strong>` : '–'}</td>` : '';
+  const dok = zKolumnamiSku ? `<td>${r.dok_gt_numer ?? '–'}</td>` : '';
+  // zywy status ruchu (z LEFT JOIN ruchy) ma pierwszenstwo nad zapisanym w chwili akcji
+  const wynik = r.ruch_status ?? r.wynik;
+  tr.innerHTML = `
+    <td>${formatDatetime(r.czas)}</td>
+    <td>${AKCJA_ETYKIETA[r.akcja] ?? r.akcja}</td>
+    ${sku}
+    <td>${r.magazyn ?? '–'}</td>
+    <td>${r.lokalizacja ?? '–'}</td>
+    <td>${r.ilosc ?? ''}</td>
+    <td class="opis">${zmianaTekst(r.przed, r.po)}</td>
+    <td>${wynik ? badge(wynik) : '–'}</td>
+    ${dok}
+    <td>${r.uzytkownik ?? '–'}</td>`;
+  // kolumna Akcje tylko w glownym Logu (nie w modalu historii); przyciski gdy ruch wciaz pending
+  if (zKolumnamiSku) {
+    const tdAkcje = document.createElement('td');
+    if (r.ruch_id && r.ruch_status === 'pending') {
+      tdAkcje.appendChild(przyciskPonowRuch(r.ruch_id));
+      tdAkcje.appendChild(przyciskUsunRuch(r.ruch_id));
+    }
+    tr.appendChild(tdAkcje);
+  }
+  return tr;
+}
+
+async function odswiezLog() {
+  const params = new URLSearchParams();
+  const q = el('log-q').value.trim();
+  const akcja = el('log-akcja').value;
+  if (q) params.set('q', q);
+  if (akcja) params.set('akcja', akcja);
   try {
-    const [lista] = await Promise.all([
-      api(status ? `/api/ruchy?status=${status}` : '/api/ruchy'),
-      lokalizacjeMap.size === 0 ? pobierzMapeLokalizacji() : Promise.resolve(),
-    ]);
-    renderujRuchy(lista);
+    const { wiersze, total } = await api(`/api/audyt?${params.toString()}`);
+    const tbody = el('log-tbody');
+    tbody.innerHTML = '';
+    el('log-brak').classList.toggle('hidden', wiersze.length > 0);
+    el('log-licznik').textContent = total != null ? `${wiersze.length} z ${total}` : '';
+    for (const r of wiersze) tbody.appendChild(wierszLog(r, { zKolumnamiSku: true }));
   } catch (err) {
     pokazKomunikat(err.message, 'blad');
   }
 }
 
-async function pobierzMapeLokalizacji() {
-  const lista = await api('/api/lokalizacje');
-  lokalizacjeMap = new Map(lista.map((l) => [l.id, l.kod]));
-}
+el('btn-log-odswiez').addEventListener('click', odswiezLog);
+el('log-akcja').addEventListener('change', odswiezLog);
+el('log-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') odswiezLog(); });
 
-function kodLokalizacji(id) {
-  if (id === null || id === undefined) return null;
-  return lokalizacjeMap.get(id) ?? `#${id}`;
-}
-
-function renderujRuchy(lista) {
-  const tbody = el('ruchy-tbody');
+// historia pojedynczego SKU (ikona "H" w modalu produktu)
+async function otworzHistorie(artykulGtId, symbol) {
+  el('modal-hist-sku').textContent = symbol ?? '';
+  el('modal-historia').classList.remove('hidden');
+  const tbody = el('modal-hist-tbody');
   tbody.innerHTML = '';
-  el('ruchy-brak').classList.toggle('hidden', lista.length > 0);
-
-  for (const r of lista) {
-    const zrodlo = kodLokalizacji(r.lok_zrodlo_id) ?? '–';
-    const cel = r.lok_cel_id ? kodLokalizacji(r.lok_cel_id) : (r.mag_cel_zewnetrzny ?? '–');
-
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${formatDatetime(r.data_ruchu)}</td>
-      <td>${r.typ}</td>
-      <td><strong>${r.artykul_symbol}</strong></td>
-      <td>${r.ilosc}</td>
-      <td>${zrodlo}</td>
-      <td>${cel}</td>
-      <td>${badge(r.status)}</td>
-      <td>${r.dok_gt_numer ?? '–'}</td>
-      <td class="opis">${r.blad_opis ?? ''}</td>
-      <td>${r.operator ?? '–'}</td>
-      <td></td>
-    `;
-    if (r.status === 'pending') {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'btn btn-small';
-      btn.textContent = 'Ponów';
-      btn.addEventListener('click', async () => {
-        btn.disabled = true;
-        try {
-          const wynik = await api(`/api/ruchy/${r.id}/retry`, { method: 'POST' });
-          pokazKomunikat(
-            wynik.status === 'ok' ? `Ruch #${r.id} zrealizowany.` : `Ruch #${r.id}: ${wynik.blad_opis ?? 'wciąż oczekuje'}`,
-            wynik.status === 'ok' ? 'ok' : 'info'
-          );
-          odswiezRuchy();
-        } catch (err) {
-          pokazKomunikat(err.message, 'blad');
-          btn.disabled = false;
-        }
-      });
-      tr.lastElementChild.appendChild(btn);
-
-      const btnUsun = document.createElement('button');
-      btnUsun.type = 'button';
-      btnUsun.className = 'btn btn-small btn-danger';
-      btnUsun.style.marginLeft = '4px';
-      btnUsun.textContent = 'Usuń';
-      btnUsun.title = 'Usuń ruch z kolejki i cofnij zmianę stanu WMS (tylko gdy GT nie wystawił dokumentu)';
-      btnUsun.addEventListener('click', async () => {
-        if (!confirm(`Usunąć ruch #${r.id}? Stan WMS zostanie cofnięty do stanu sprzed ruchu.`)) return;
-        btnUsun.disabled = true;
-        try {
-          await api(`/api/ruchy/${r.id}`, { method: 'DELETE' });
-          pokazKomunikat(`Ruch #${r.id} usunięty, stan WMS cofnięty.`, 'ok');
-          odswiezRuchy();
-        } catch (err) {
-          pokazKomunikat(err.message, 'blad');
-          btnUsun.disabled = false;
-        }
-      });
-      tr.lastElementChild.appendChild(btnUsun);
-    }
-    tbody.appendChild(tr);
+  try {
+    const { wiersze } = await api(`/api/audyt?artykul_gt_id=${encodeURIComponent(artykulGtId)}&limit=500`);
+    el('modal-hist-brak').classList.toggle('hidden', wiersze.length > 0);
+    for (const r of wiersze) tbody.appendChild(wierszLog(r, { zKolumnamiSku: false }));
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
   }
 }
+function zamknijHistorie() { el('modal-historia').classList.add('hidden'); }
 
-el('btn-ruchy-odswiez').addEventListener('click', odswiezRuchy);
-el('ruchy-status').addEventListener('change', odswiezRuchy);
+el('btn-modal-hist-zamknij').addEventListener('click', zamknijHistorie);
+el('modal-historia').addEventListener('click', (e) => { if (e.target === el('modal-historia')) zamknijHistorie(); });
 
 // === LOKALIZACJE ===
 
@@ -1016,6 +1056,9 @@ function zamknijModal() {
 }
 
 el('btn-modal-zamknij').addEventListener('click', zamknijModal);
+el('btn-modal-historia').addEventListener('click', () => {
+  if (modalProdukt) otworzHistorie(modalProdukt.artykul_gt_id, modalProdukt.symbol);
+});
 el('modal-produkt').addEventListener('click', (e) => {
   if (e.target === el('modal-produkt')) zamknijModal();
 });
@@ -1457,6 +1500,91 @@ el('btn-modal-akcja-wykonaj').addEventListener('click', async () => {
     btn.disabled = false;
   }
 });
+
+// === UZUPELNIENIA K4 ===
+
+// Kolejnosc kanalow spojna z serwerem (services/kanaly.js).
+const UZUP_KANALY = [
+  'DHL Connect', 'InPost', 'DPD', 'DHL', 'UPS', 'One',
+  'Orlen Paczka', 'Poczta Polska', 'Packeta', 'Emag', 'nieklasyfikowane',
+];
+
+let uzupDane = []; // ostatnio pobrana lista (filtr kanalu dziala bez ponownego fetcha)
+
+// Wypelnia select kanalu raz (opcje poza domyslnym "Wszystkie").
+function uzupWypelnijKanaly() {
+  const sel = el('uzup-kanal');
+  if (sel.options.length > 1) return;
+  for (const k of UZUP_KANALY) {
+    const opt = document.createElement('option');
+    opt.value = k;
+    opt.textContent = k;
+    sel.appendChild(opt);
+  }
+}
+
+async function odswiezUzupelnienia() {
+  uzupWypelnijKanaly();
+  try {
+    const { pozycje } = await api('/api/uzupelnienia');
+    uzupDane = pozycje;
+    renderujUzupelnienia();
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+  }
+}
+
+// Renderuje liste z biezacym filtrem kanalu (klient-side na uzupDane).
+function renderujUzupelnienia() {
+  const kanal = el('uzup-kanal').value;
+  let lista = uzupDane;
+  if (kanal) {
+    // tylko towary z rezerwacja w wybranym kanale; najpilniejsze (najwiecej w kanale) na gorze
+    lista = uzupDane.filter((p) => (p.kanaly[kanal] || 0) > 0)
+      .sort((a, b) => (b.kanaly[kanal] || 0) - (a.kanaly[kanal] || 0));
+  }
+
+  const tbody = el('uzup-tbody');
+  tbody.innerHTML = '';
+  el('uzup-brak').classList.toggle('hidden', lista.length > 0);
+  el('uzup-licznik').textContent = kanal
+    ? `${lista.length} towarów w kanale „${kanal}"`
+    : `${lista.length} towarów do uzupełnienia`;
+
+  for (const p of lista) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${p.symbol}</strong></td>
+      <td class="opis">${p.nazwa ?? ''}</td>
+      <td>${p.lokalizacja_gora ?? '–'}</td>
+      <td>${p.lokalizacja_k4 ?? '–'}</td>
+      <td>${p.stan_gora}</td>
+      <td>${p.stan_k4}</td>
+      <td><strong>${p.rezerwacje}</strong></td>
+      <td>${p.dostepnosc}</td>
+      <td>${uzupChipsKanalow(p.kanaly, kanal)}</td>
+      <td class="td-akcja"><button class="btn btn-small uzup-edytuj" type="button">Edytuj</button></td>
+    `;
+    // ten sam modal co w Produktach (rozklad lokalizacji + akcje); modal sam dociaga
+    // pelny produkt (stany_gt/zgodnosc) przez odswiezModalProdukt po artykul_gt_id
+    tr.querySelector('.uzup-edytuj').addEventListener('click', () => otworzModalProdukt(p));
+    tbody.appendChild(tr);
+  }
+}
+
+// Chipy "kanal: ilosc" posortowane malejaco; wybrany kanal wyrozniony, reszta przygaszona.
+function uzupChipsKanalow(kanaly, wybrany) {
+  const wpisy = Object.entries(kanaly).sort((a, b) => b[1] - a[1]);
+  if (wpisy.length === 0) return '<span class="opis">–</span>';
+  return wpisy.map(([k, ilosc]) => {
+    let klasa = k === 'nieklasyfikowane' ? 'badge-neutral' : 'badge-info';
+    if (wybrany && k === wybrany) klasa = 'badge-ok';
+    return `<span class="badge ${klasa}" style="margin:0 .2rem .2rem 0">${k}: ${ilosc}</span>`;
+  }).join('');
+}
+
+el('btn-uzup-odswiez').addEventListener('click', odswiezUzupelnienia);
+el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
 
 // --- init ---
 

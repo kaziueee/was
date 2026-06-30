@@ -59,4 +59,28 @@ db.exec(`CREATE TABLE IF NOT EXISTS plan_lokalizacji (
   PRIMARY KEY (artykul_gt_id, magazyn)
 )`);
 
+// audyt biznesowy "kto/co/gdzie/kiedy" (Faza A#2) - jeden strumien: ruchy + zmiany
+// lokalizacji/planu/zapasu. OSOBNY od logu awarii (services/awarie.js, pliki) i od tabeli
+// ruchy (operacyjna/kolejka). Append-only. Patrz PROGRESS.md "Specyfikacja: logi + backup".
+db.exec(`CREATE TABLE IF NOT EXISTS audyt (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  czas DATETIME DEFAULT CURRENT_TIMESTAMP,
+  uzytkownik TEXT,
+  akcja TEXT NOT NULL,
+  artykul_gt_id TEXT,
+  artykul_symbol TEXT,
+  magazyn TEXT,
+  lokalizacja TEXT,
+  przed TEXT,
+  po TEXT,
+  ilosc DECIMAL,
+  wynik TEXT,
+  ruch_id INTEGER,
+  dok_gt_numer TEXT,
+  szczegoly TEXT
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_audyt_czas ON audyt(czas)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_audyt_artykul ON audyt(artykul_gt_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_audyt_uzytkownik ON audyt(uzytkownik)');
+
 module.exports = db;

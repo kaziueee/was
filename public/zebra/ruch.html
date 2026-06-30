@@ -19,6 +19,7 @@
     <header class="ekran-naglowek"><div class="ekran-sku"><h1>WMS</h1></div></header>
     <main class="ekran-tresc">
       <button type="button" id="btn-go-ruch" class="btn-menu">Ruch towaru<span>MM / zmiana lokalizacji</span></button>
+      <button type="button" id="btn-go-uzup" class="btn-menu">Uzupełnienia K4<span>K4G → K4 wg rezerwacji</span></button>
       <a class="btn-menu" href="produkty.html">Test wyszukiwania (GT)<span>podgląd karty produktu</span></a>
       <button type="button" id="btn-pelny-ekran" class="btn-menu btn-menu-2">⛶ Tryb pełnoekranowy</button>
     </main>
@@ -120,9 +121,74 @@
   </div>
   </div><!-- /widok-ruch -->
 
+  <!-- WIDOK UZUPELNIENIA (K4G -> K4 wg rezerwacji, z rozbiciem na kanaly) -->
+  <div id="widok-uzupelnienia" class="hidden">
+  <div class="ekran">
+    <header class="ekran-naglowek" id="uzup-naglowek">
+      <div class="ekran-sku"><h1>Uzupełnienia K4</h1></div>
+    </header>
+
+    <main class="ekran-tresc">
+      <div id="uzup-komunikat" class="komunikat hidden"></div>
+
+      <!-- podekran: lista zbiorcza + filtr kanalu -->
+      <section id="uzup-lista-sekcja">
+        <div class="pole-blok">
+          <label class="pole-etykieta" for="uzup-filtr-kanal">Kanał</label>
+          <select id="uzup-filtr-kanal" class="pole-select"></select>
+        </div>
+        <div id="uzup-lista" class="lista"></div>
+        <p id="uzup-pusto" class="hint hidden">Brak towarów do uzupełnienia.</p>
+      </section>
+
+      <!-- podekran: karta produktu (info o stanach/lokalizacjach -> ilosc -> przesun) -->
+      <section id="uzup-karta-sekcja" class="hidden">
+        <div id="uzup-karta-info" class="karta-info"></div>
+
+        <!-- stany + lokalizacje K4 / K4G (wg GT; rezerwacje na K4) -->
+        <div id="uzup-stany" class="uzup-stany"></div>
+
+        <!-- zrodlo K4G: TYLKO gdy lokalizacje sa w WMS (wybor/skan); dla t_GT ukryte -->
+        <div class="pole-blok hidden" id="uzup-zrodlo-pole">
+          <label class="pole-etykieta">Źródło — lokalizacja K4G (WMS)</label>
+          <p id="uzup-zrodlo-auto" class="pole-hint hidden"></p>
+          <div class="pole-skan hidden" id="uzup-zrodlo-skan-pole">
+            <input type="text" id="uzup-zrodlo-skan" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj lokalizację K4G">
+          </div>
+          <div id="uzup-zrodlo-lista" class="lista"></div>
+        </div>
+
+        <div class="pole-blok">
+          <label class="pole-etykieta" for="uzup-ilosc">Ilość do przesunięcia</label>
+          <div class="stepper">
+            <button type="button" id="uzup-ilosc-minus" aria-label="Mniej">−</button>
+            <input type="number" id="uzup-ilosc" class="stepper-wartosc" inputmode="numeric" min="0" step="any">
+            <button type="button" id="uzup-ilosc-plus" aria-label="Więcej">+</button>
+          </div>
+          <p id="uzup-ilosc-hint" class="pole-hint"></p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="ekran-stopka">
+      <button type="button" id="uzup-wstecz" class="btn-wstecz">← Wstecz</button>
+      <button type="button" id="uzup-przesun" class="btn-akcja hidden">Przesuń K4G→K4</button>
+    </footer>
+
+    <div id="uzup-sukces" class="sukces-overlay hidden">
+      <div class="sukces-box">
+        <div class="sukces-ikona">✓</div>
+        <p id="uzup-sukces-tekst"></p>
+        <p class="sukces-hint">Dotknij, aby kontynuować</p>
+      </div>
+    </div>
+  </div>
+  </div><!-- /widok-uzupelnienia -->
+
   <script src="fullscreen.js"></script>
   <script src="karta-produktu.js"></script>
   <script src="kreator.js"></script>
   <script src="ruch.js"></script>
+  <script src="uzupelnienia.js"></script>
 </body>
 </html>

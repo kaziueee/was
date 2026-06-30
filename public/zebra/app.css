@@ -621,3 +621,44 @@ html, body {
 }
 .sukces-box p { margin: 0; font-size: var(--font-title); font-weight: 600; line-height: 1.4; }
 .sukces-hint { margin-top: var(--space-4) !important; font-size: var(--font-label) !important; font-weight: 400 !important; opacity: 0.9; }
+
+/* --- Uzupelnienia K4 --- */
+.uzup-chip {
+  display: inline-block; font-size: var(--font-label);
+  background: var(--color-info-bg); color: var(--color-info);
+  border-radius: 4px; padding: 1px 5px; margin: 1px 2px 1px 0;
+}
+.uzup-chip.akt { background: var(--color-success-bg); color: var(--color-success); font-weight: 600; }
+
+.karta-podpis { font-size: var(--font-label); color: var(--color-text-muted); margin-top: 2px; }
+
+.uzup-kanaly { display: flex; flex-direction: column; gap: 6px; }
+.uzup-kanal-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--color-border);
+  border-radius: 8px; background: var(--color-surface);
+}
+.uzup-kanal-row input[type="checkbox"] { width: 22px; height: 22px; flex: 0 0 auto; }
+.uzup-kanal-row .uzup-kanal-nazwa { flex: 1; font-size: var(--font-body); }
+.uzup-kanal-row b { font-size: var(--font-title); color: var(--color-primary); }
+
+.lista-poz.wybrana { border-color: var(--color-primary); box-shadow: inset 0 0 0 2px var(--color-primary); }
+.uzup-blad { color: var(--color-danger); }
+
+/* blok info: stany + lokalizacje K4 / K4G na karcie uzupelnienia */
+.uzup-stany { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+.uzup-stan-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 8px 12px; border: 1px solid var(--color-border);
+  border-radius: 8px; background: var(--color-surface);
+}
+.uzup-stan-mag {
+  flex: 0 0 auto; min-width: 38px; font-weight: 700;
+  color: var(--color-primary); font-size: var(--font-body);
+}
+.uzup-stan-dane { flex: 0 0 auto; font-size: var(--font-body); }
+.uzup-stan-dane b { color: var(--color-primary); }
+.uzup-stan-lok {
+  flex: 1; text-align: right; font-size: var(--font-label);
+  color: var(--color-text-muted); word-break: break-word;
+}

@@ -2,6 +2,8 @@ node_modules/
 db/wms.db
 db/wms.db-*
 db/wms.db.bak*
+db/backups/
+logs/
 .env
 server.log
 *.log

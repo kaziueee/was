@@ -545,6 +545,12 @@ main {
   margin-bottom: 0.75rem;
 }
 
+.modal-naglowek-akcje {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
 .modal-stany {
   font-size: 0.85rem;
   color: #555;
@@ -615,6 +621,8 @@ main {
 /* --- okno akcji (przenies / zmien lok / przypisz) - overlay na wierzchu modalu --- */
 
 #modal-akcja-overlay { z-index: 1100; }
+/* historia ("H") otwierana z modalu produktu - musi byc nad nim (modal produktu = 1000) */
+#modal-historia { z-index: 1100; }
 
 .modal-akcja-box { min-width: 520px; max-width: 700px; width: 100%; }
 

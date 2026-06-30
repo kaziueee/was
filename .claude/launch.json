@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "wms",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "WMS_BACKUP_DISABLED=1 GT_BRIDGE_URL=http://localhost:9999 node app.js"],
+      "port": 3000,
+      "autoPort": true
+    }
+  ]
+}

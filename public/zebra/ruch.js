@@ -1194,8 +1194,12 @@ el('input-zapas').addEventListener('input', aktualizujAkcjeLabel);
 function pokazWidok(nazwa) {
   el('widok-menu').classList.toggle('hidden', nazwa !== 'menu');
   el('widok-ruch').classList.toggle('hidden', nazwa !== 'ruch');
+  const uzup = el('widok-uzupelnienia');
+  if (uzup) uzup.classList.toggle('hidden', nazwa !== 'uzupelnienia');
   if (nazwa === 'ruch') reset();
+  if (nazwa === 'uzupelnienia' && window.uzupOtworz) window.uzupOtworz();
 }
+window.pokazWidok = pokazWidok;
 el('btn-go-ruch').addEventListener('click', () => {
   pokazWidok('ruch');
   history.pushState({ v: 'ruch' }, '');

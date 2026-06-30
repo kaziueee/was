@@ -8,8 +8,15 @@ const ruchyRouter = require('./routes/ruchy');
 const magazynyRouter = require('./routes/magazyny');
 const produktyRouter = require('./routes/produkty');
 const rozjazdyRouter = require('./routes/rozjazdy');
+const uzupelnieniaRouter = require('./routes/uzupelnienia');
+const audytRouter = require('./routes/audyt');
 const ruchyRetry = require('./services/ruchy-retry');
 const rozjazdyJob = require('./services/rozjazdy');
+const backupJob = require('./services/backup');
+const awarie = require('./services/awarie');
+
+// globalne lapanie wyjatkow/odrzuconych obietnic + rotacja logu awarii - jak najwczesniej
+awarie.start();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,6 +39,11 @@ app.use('/api/ruchy', ruchyRouter);
 app.use('/api/magazyny', magazynyRouter);
 app.use('/api/produkty', produktyRouter);
 app.use('/api/rozjazdy', rozjazdyRouter);
+app.use('/api/uzupelnienia', uzupelnieniaRouter);
+app.use('/api/audyt', audytRouter);
+
+// error-handling middleware MUSI byc po trasach (Express: 4 argumenty = handler bledow)
+app.use(awarie.middleware);
 
 app.listen(PORT, () => {
   console.log(`WMS nasluchuje na porcie ${PORT}`);
@@ -39,3 +51,4 @@ app.listen(PORT, () => {
 
 ruchyRetry.start();
 rozjazdyJob.start();
+backupJob.start();

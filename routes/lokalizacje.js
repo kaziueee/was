@@ -4,6 +4,7 @@ const { MAGAZYNY_WMS } = require('../config/magazyny');
 const { podzielNaSlowa, LIMIT_WYSZUKIWANIA } = require('../services/wyszukiwanie');
 const { pobierzProdukt, szukajProdukty, pobierzStanyGt } = require('../services/gt-produkty');
 const { pobierzStatusLokalizacjiGt, synchronizujLokalizacje, pobierzPrzegladLokalizacji } = require('../services/gt-fields');
+const audyt = require('../services/audyt');
 
 const router = express.Router();
 
@@ -311,6 +312,10 @@ router.put('/k4-zapas/:artykul_gt_id', async (req, res, next) => {
   try {
     const wynik = await synchronizujLokalizacje(artykulGtId, new Set(['K4']));
     const ok = wynik && wynik.ok;
+    audyt.zapisz({
+      uzytkownik: req.body?.operator ?? null, akcja: 'zapas_k4', artykul_gt_id: artykulGtId,
+      magazyn: 'K4', po: { zapas_kod: zapas }, wynik: ok ? 'ok' : 'sync_blad',
+    });
     res.json({ zapas_kod: zapas, sync_ok: !!ok, blad: ok ? null : (wynik?.blad ?? null) });
   } catch (err) {
     next(err);
@@ -329,6 +334,9 @@ router.put('/plan/:artykul_gt_id', (req, res) => {
   const id = req.params.artykul_gt_id;
   const mag = (req.body?.magazyn ?? 'K4G').toUpperCase();
   const tekst = (req.body?.tekst ?? '').trim();
+  // UWAGA: NIE audytujemy planu - to automatyczna sciaga z GT (cache planowanych
+  // lokalizacji), zapisywana przy kazdym otwarciu produktu, a nie akcja magazyniera.
+  // Audyt biznesowy zasmiecaloby to setkami wpisow "Plan lok." bez wartosci.
   if (!tekst) {
     db.prepare('DELETE FROM plan_lokalizacji WHERE artykul_gt_id = ? AND magazyn = ?').run(id, mag);
     return res.json({ tekst: null });
@@ -369,6 +377,7 @@ router.post('/', (req, res) => {
 
   try {
     const result = db.prepare('INSERT INTO lokalizacje (kod, magazyn) VALUES (?, ?)').run(kod.trim(), magazyn);
+    audyt.zapisz({ uzytkownik: req.body?.operator ?? null, akcja: 'lokalizacja_nowa', magazyn, lokalizacja: kod.trim(), po: { kod: kod.trim(), magazyn }, wynik: 'ok' });
     res.status(201).json(db.prepare('SELECT * FROM lokalizacje WHERE id = ?').get(result.lastInsertRowid));
   } catch (err) {
     if (err.errcode === SQLITE_CONSTRAINT_UNIQUE) {
@@ -407,6 +416,11 @@ router.put('/:id', (req, res) => {
     throw err;
   }
 
+  audyt.zapisz({
+    uzytkownik: req.body?.operator ?? null, akcja: 'lokalizacja_edycja', magazyn: nowyMagazyn, lokalizacja: nowyKod,
+    przed: { kod: lokalizacja.kod, magazyn: lokalizacja.magazyn, aktywna: lokalizacja.aktywna },
+    po: { kod: nowyKod, magazyn: nowyMagazyn, aktywna: nowaAktywna }, wynik: 'ok',
+  });
   res.json(db.prepare('SELECT * FROM lokalizacje WHERE id = ?').get(id));
 });
 
@@ -424,6 +438,10 @@ router.delete('/:id', (req, res) => {
   }
 
   db.prepare('DELETE FROM lokalizacje WHERE id = ?').run(id);
+  audyt.zapisz({
+    uzytkownik: req.body?.operator ?? null, akcja: 'lokalizacja_usuniecie', magazyn: lokalizacja.magazyn, lokalizacja: lokalizacja.kod,
+    przed: { kod: lokalizacja.kod, magazyn: lokalizacja.magazyn }, wynik: 'ok',
+  });
   res.status(204).send();
 });
 

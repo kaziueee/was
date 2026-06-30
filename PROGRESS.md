@@ -723,3 +723,166 @@ Sesja testów MM/lokalizacji na żywym moście + UX panelu Produkty:
 - **Inwentaryzacja od nowa**.
 - Opcjonalnie: wybór operatora przy starcie apki; HTTPS + ikony PNG (prawdziwe PWA);
   sprzątnięcie wzmianek o inwentaryzacji w README/CONTEXT/moście C#.
+
+## Plan wejścia na PRODUKCJĘ (ustalone z userem 2026-07-01)
+
+Cel: „ruszyć z testami i już na główną bazę". Most MM zweryfikowany dziś na żywym GT
+(14/14 ruchów WMS = dokumenty w Subiekcie, co do towaru i sztuki — patrz Dziennik 2026-07-01).
+
+**Kontekst kluczowy:**
+- **Baza produkcyjna = osobna baza na TYM SAMYM serwerze (192.168.0.200)** — kontynuacja
+  testowej. `Z_KAJTEK_IdeaERP` zamrożona w lutym; produkcyjna to druga baza w tym samym
+  Subiekcie. Trzeba przepiąć GT_SQL + most i ZWERYFIKOWAĆ tam `mag_Id` (K4/K4G/MAG/LS/braki)
+  — mogą się różnić. (Próba listingu baz 2026-07-01 nieudana — GT chwilowo nieosiągalny.)
+- **Topologia docelowa: Node WMS + most RAZEM na Windows** z GT/Sferą (most `localhost`,
+  Node port 3000 na LAN dla Zebr/desktopów). Node przeprowadza się z Maca na pecet.
+- **Wymóg usera: numer MM zawsze ten sam w WMS i Subiekcie.**
+
+### Faza A — Bezpieczeństwo i poprawność (czysty Node, robić teraz; działa tak samo na Win)
+1. ~~**Backup `wms.db`**~~ — ✅ ZROBIONE 2026-07-01 (`services/backup.js`, patrz Dziennik niżej).
+2. ~~**Log błędów + audyt zmian**~~ — ✅ ZROBIONE 2026-07-01 (rozdzielone: `services/awarie.js`
+   = log awarii do plików; `services/audyt.js` + tabela `audyt` = audyt biznesowy). Patrz Dziennik.
+3. **Gwarancja numeru MM** — zapisywać `dok_Id` (PK GT) obok numeru; „sukces bez numeru" =
+   błąd, NIGDY `ok` (dziś `ruchy-gt.js:49` dopuszcza numer=null+ok); tag `ruch.id` w
+   dokumencie GT + sprawdzenie przy retry (brak duplikatów przy zgubionej odpowiedzi HTTP —
+   inaczej drugi MM i rozjazd numerów); job reconciliacji WMS↔GT (po numerze+tw_Id, bo
+   `dok_NrPelny` NIE jest unikalny) z alarmem. + „brak cichych porażek" w UI Zebry.
+4. **Logowanie + użytkownicy** — PIN na Zebrze, login+hasło na desktopie, operator z sesji
+   (nie z wolnego tekstu), tabela `uzytkownicy` + middleware.
+
+### Faza B — Dane startowe
+5. **Import lokalizacji** — user zrzuca z GT (Pole1/Pole8) i porządkuje → import masowy
+   (CSV → `lokalizacje`) + walidacja (kod unikalny, magazyn ∈ {K4,K4G}).
+6. **Magazyn „braki"** — jak ZEW (tylko cel MM, stan w GT, bez lokalizacji WMS); 1 linia
+   w `config/magazyny.js` + dopuszczenie jako cel. Potrzebny `mag_Id` z produkcji.
+
+### Faza C — Przepięcie na produkcję (Windows)
+7. **Przepięcie GT_SQL + most na bazę produkcyjną** + weryfikacja `mag_Id` + **env-guard**
+   (apka odmawia startu na nieoczekiwanej bazie).
+8. **Login SQL least-privilege** zamiast `sa` (PILNE) — `db_datareader` + `VIEW SERVER STATE`.
+9. **Node + most na Windows**; most z **ikoną w trayu / restart jednym klikiem** (NIE ukryta
+   usługa — user chce widoczny, sterowalny proces), nasłuch zawężony z `0.0.0.0` do `localhost`.
+10. **deploy.ps1 / rollback.ps1** (poprawki z Maca: backup→build→health-check→auto-rollback)
+    + opcjonalnie Tailscale (VPN, zdalny dostęp bez wystawiania portów).
+
+### Faza D — Dashboard i reszta
+11. **Dashboard magazyniera** — ruchy `error`/`pending`, rozjazdy, uzupełnienia na dziś,
+    „do zlokalizowania".
+12. *Później:* inwentaryzacja od nowa (RW/PW w moście), analityka magazynowa, polish Zebry
+    (karty 3.1, audyt `focus()`, HTTPS+PWA), rewrite na C# (świadomie odłożony).
+
+**Start:** Faza A #1+#2 (backup + log) — siatka bezpieczeństwa zanim cokolwiek dotknie produkcji.
+
+### Specyfikacja: logi + backup (ustalone z userem 2026-07-01)
+
+Trzy ROZDZIELNE mechanizmy (user wyraźnie chciał osobno):
+
+**A) Audyt biznesowy — „kto/co/gdzie/kiedy ruszył"**
+- Cel: rozliczalność, trwały zapis każdej zmiany stanu/lokalizacji.
+- Gdzie: tabela `audyt` w `wms.db` (przeszukiwalna, wchodzi do backupu), append-only.
+- Pola: czas, użytkownik, akcja (MM/LOK/przyjęcie/przypisanie/edycja lokalizacji/korekta
+  stanu/zapas K4/usunięcie ruchu), artykuł, magazyn, lokalizacja, przed→po (ilość/kod),
+  wynik, `ruch.id`, `dok_gt_numer`. `ruchy` zostaje operacyjne; audyt łapie też nie-ruchy
+  (edycje lokalizacji, korekty, usunięcia, akcje admina).
+- Zależność: prawdziwe „kto" dopiero po logowaniu (Faza A#4); do tego czasu tyle ile mamy.
+- Retencja: długa (12–24 mies. lub bez kasowania — wiersze małe).
+
+**B) Log awarii — techniczny**
+- Gdzie: PLIKI na dysku `logs/error-YYYY-MM-DD.log`, rotacja dzienna. CELOWO poza bazą
+  (przetrwa awarię bazy, nie puchnie w `wms.db`).
+- Co: wyjątki, `uncaughtException`, nieudane wywołania mostu/GT, ruchy `pending`, błędy SQL,
+  nieudane backupy, nieudany `integrity_check`.
+- + UI „brak cichych porażek": ekran Zebry nie kończy się sukcesem, gdy zapis nie przeszedł.
+- Retencja: 60–90 dni plików.
+
+**C) Backup `wms.db`**
+- Częstotliwość: **co godzinę w godz. pracy (np. 7:00–20:00) + 1 nocny.** (strata ≤ 1h)
+- Jak: **nowy plik z datą** `wms_YYYY-MM-DD_HHMM.db` przez `VACUUM INTO` (spójna kopia bez
+  `-wal/-shm`). NIGDY nie nadpisujemy.
+- Integrity-guard: przed backupem `PRAGMA integrity_check`; jeśli baza uszkodzona → alarm +
+  **NIE kasujemy starych** kopii (zepsuty stan nie wyprze dobrej historii).
+- Rotacja warstwowa (dziadek-ojciec-syn), kasujemy tylko stare w warstwie: godzinowe ~48
+  (2 dni) · dzienne ~30 (miesiąc) · miesięczne ~12 (rok). → przywrócenie: dowolna godzina
+  z 2 dni / dzień z miesiąca / miesiąc z roku.
+- **Drugie miejsce:** kopie lokalnie (`db/backups/`) + mirror dziennych/miesięcznych poza
+  pecet (drugi dysk / chmura / Mac przez Tailscale — konkret do ustalenia przy wdrożeniu).
+- **Pre-deploy:** przed deployem/migracją/zmianą bazy wymuszony backup `wms_pre-deploy_...db`,
+  WYŁĄCZONY z rotacji.
+
+### 2026-07-01 — scalenie Ruchy → Log (zakładka Ruchy usunięta) ZROBIONE
+- Decyzja usera: zakładki Ruchy i Log pokrywały się; **zostaje Log**, Ruchy skasowana,
+  a przyciski **Ponów/Usuń** przeniesione do Logu (nie tracimy zarządzania kolejką).
+- `routes/audyt.js`: LEFT JOIN ruchy → `ruch_status`/`ruch_blad` (żywy status). Kolumna
+  „Wynik" w Logu pokazuje żywy status ruchu (fallback na zapisany `wynik`).
+- `app.js`: usunięty cały blok Ruchów (panele.ruchy, odswiezRuchy, renderujRuchy,
+  pobierzMapeLokalizacji, kodLokalizacji, lokalizacjeMap — nic nie było współdzielone).
+  `wierszLog` ma kolumnę „Akcje": dla wpisu o żywym `ruch_status==='pending'` przyciski
+  Ponów (`/api/ruchy/:id/retry`) i Usuń (`DELETE /api/ruchy/:id`) → odświeżają Log.
+  Modal historii „H" bez kolumny Akcje (read-only).
+- `index.html`: usunięty link nav „Ruchy" + sekcja `panel-ruchy`; dodana kolumna „Akcje".
+- Zweryfikowane w preview: brak zakładki Ruchy; wiersz pending pokazuje Ponów/Usuń,
+  zrealizowane i nie-ruchowe bez przycisków; zero błędów w konsoli. **Audyt potwierdzony
+  na żywo** — user zrestartował serwer, w `audyt` realne wpisy (Plan lok., Przypisanie itd.).
+
+### 2026-07-01 — Log biznesowy w desktopie (zakładka + ikona „H") ZROBIONE
+- Endpoint `GET /api/audyt` (`routes/audyt.js`, mount w `app.js`): najnowsze pierwsze,
+  filtry `artykul_gt_id`/`uzytkownik`/`akcja`/`q`, limit/offset, zwraca `{wiersze,total}`.
+- **Zakładka „Log"** (desktop, `index.html`+`app.js`): tabela Kiedy/Akcja/SKU/Magazyn/
+  Lokalizacja(kierunek)/Ilość/Zmiana(przed→po)/Wynik/Dok.GT/Kto, filtr tekstowy + select akcji.
+- **Ikona „H"** w nagłówku modala produktu → `otworzHistorie(artykul_gt_id)` = modal z
+  historią ruchów/zmian tego SKU (`/api/audyt?artykul_gt_id=`). Wspólny `wierszLog()`.
+- Zweryfikowane w preview (port 3020): 5 przykładowych wpisów renderuje się poprawnie
+  (kierunki →, przed→po, badge wyniku, kto); modal „H" filtruje po SKU (2/5 dla NERE0011);
+  brak błędów w konsoli. Wpisy testowe posprzątane.
+
+### 2026-07-01 — logi: awarie + audyt biznesowy (Faza A#2) ZROBIONE
+Rozdzielone na DWA osobne mechanizmy (decyzja usera) + checkpoint WAL.
+- **Log AWARII (techniczny)** — `services/awarie.js`: pliki `logs/error-YYYY-MM-DD.log`,
+  rotacja dzienna, retencja 90 dni. Podpięte w `app.js`: `awarie.start()` (łapie
+  `uncaughtException`/`unhandledRejection`) + `awarie.middleware` jako Express
+  error-handler PO trasach (loguje + zwraca 500 bez wycieku stacka). Błędy backupu też
+  tu trafiają. CELOWO poza bazą (przetrwa awarię bazy).
+- **AUDYT BIZNESOWY (kto/co/gdzie/kiedy)** — tabela `audyt` w `wms.db` (migracja w
+  `db/database.js`, append-only, indeksy czas/artykul/uzytkownik) + `services/audyt.js`
+  (`zapisz()` — nigdy nie rzuca; błąd audytu → log awarii). Pola: czas, uzytkownik,
+  akcja, artykul, magazyn, lokalizacja, przed→po, ilosc, wynik, ruch_id, dok_gt_numer,
+  szczegoly. Jeden wspólny strumień.
+- **Zinstrumentowane endpointy:** `routes/ruchy.js` — MM, LOK, przypisanie, przyjecie,
+  MM-zewn, usuniecie_ruchu; `routes/lokalizacje.js` — lokalizacja_nowa/edycja/usuniecie,
+  zapas_k4, plan_lok. Test e2e (serwer na :3010): POST/PUT/DELETE lokalizacji → 3 wpisy
+  audytu z przed→po. `ruchy` zostaje tabelą operacyjną/kolejką; audyt to równoległy trail.
+- **"kto":** dziś `operator` z requestu; po logowaniu (Faza A#4) z sesji.
+- **Checkpoint WAL:** po udanym backupie `PRAGMA wal_checkpoint(TRUNCATE)` — WAL z 4 MB → 0.
+- **Do dokończenia:** (a) audyt nie łapie sukcesu z retry/joba `ruchy-retry` (wpis ma
+  status z chwili utworzenia = pending; finalny status jest w `ruchy`); (b) UI "brak
+  cichych porażek" na Zebrze (ekran nie kończy sukcesem, gdy zapis nie przeszedł) — front,
+  osobny punkt. (c) Logowania/usery dodadzą prawdziwe "kto".
+
+### 2026-07-01 — backup `wms.db` (Faza A#1) ZROBIONE
+- `services/backup.js`: `VACUUM INTO` → nowy plik z datą `wms_YYYY-MM-DD_HHMM.db` (spójny,
+  bez `-wal/-shm`), nigdy nie nadpisujemy. Integrity-guard: przed backupem `PRAGMA
+  integrity_check` zywej bazy + weryfikacja powstalego pliku; jeśli baza uszkodzona →
+  alarm w logu i **brak rotacji** (zepsuty stan nie wyprze dobrej historii).
+- Rotacja warstwowa: godzinowe 48 + dzienne 30 + miesięczne 12 → ~84–90 plików na stałe
+  (~9 MB). Przetestowane: 5110 sztucznych plików/rok → 84 + pre-deploy nienaruszone;
+  pokrycie godzina/2dni · dzień/miesiąc · miesiąc/rok.
+- Harmonogram: co godzinę 7–20 + nocny 2:00; backup też od razu przy starcie (restart =
+  świeża migawka). Podpięte w `app.js` (`backupJob.start()`).
+- Drugie miejsce: `WMS_BACKUP_MIRROR` (env) — kopia poza pecet; do ustawienia przy
+  przeprowadzce na Windows. Inne env: `WMS_BACKUP_DIR`, `WMS_BACKUP_DISABLED=1`.
+- CLI: `node scripts/backup.js` (zwykły) / `node scripts/backup.js pre-deploy` (etykieta,
+  WYŁĄCZONA z rotacji — wołać z deploy.ps1 przed deployem/migracją).
+- Logi backupu: `logs/backup-YYYY-MM-DD.log`. `.gitignore`: `db/backups/`, `logs/`.
+- TODO przy okazji logu awarii (Faza A#2): błędy backupu kierować też do wspólnego logu
+  awarii + alarm w UI; checkpoint WAL (urósł do 4 MB) — `PRAGMA wal_checkpoint(TRUNCATE)`.
+
+### 2026-07-01 — weryfikacja mostu MM na żywym GT
+- Sprawdzono zgodność WMS↔Subiekt dla wszystkich realnych ruchów MM (`ruchy` typ=MM,
+  status=ok, bez sufiksu `/MOCK`): 14 dokumentów (MM 181–188, 317–322 /2026) — **14/14
+  zgodne** co do towaru (tw_Id) i ilości. Most działa poprawnie na żywej bazie.
+- **Odkrycie: `dok__Dokument.dok_NrPelny` NIE jest unikalny** — numeracja MM resetuje się
+  per magazyn/seria (np. „MM 181/2026" istnieje 2×: styczeń mag 8 + czerwiec mag 4, różne
+  towary). Reconciliacja po samym numerze daje fałszywe rozjazdy; dopasowywać po numerze +
+  tw_Id. Stąd rekomendacja zapisu `dok_Id` w WMS (Faza A #3).
+- Schemat GT: nagłówki `dok__Dokument` (dok_Id, dok_NrPelny, dok_MagId, dok_DataWyst,
+  dok_Typ=9=MM), pozycje `dok_Pozycja` (klucz `ob_DokMagId`=dok_Id, `ob_TowId`, `ob_Ilosc`).

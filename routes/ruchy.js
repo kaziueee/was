@@ -4,6 +4,7 @@ const { MAGAZYNY_ZEWNETRZNE } = require('../config/magazyny');
 const { wykonajRuchGT } = require('../services/ruchy-gt');
 const gtFields = require('../services/gt-fields');
 const { pobierzStanyGt, dostepneWGt } = require('../services/gt-produkty');
+const audyt = require('../services/audyt');
 
 const router = express.Router();
 
@@ -161,7 +162,13 @@ router.post('/mm', async (req, res, next) => {
   // + pola lokalizacyjne). Blad Sfery nie cofa ruchu w WMS - ruch zostaje 'pending'
   // z opisem bledu (do retry przez POST /:id/retry lub job ponawiania).
   try {
-    res.status(201).json(await wykonajRuchGT(ruchId));
+    const wynikRuch = await wykonajRuchGT(ruchId);
+    audyt.zapisz({
+      uzytkownik: operator, akcja: 'MM', artykul_gt_id, artykul_symbol: stanZrodlo.artykul_symbol,
+      magazyn: zrodlo.magazyn, lokalizacja: `${zrodlo.kod} → ${cel ? cel.kod : magazynDocelowy}`,
+      ilosc: ilo, wynik: wynikRuch.status, ruch_id: ruchId, dok_gt_numer: wynikRuch.dok_gt_numer,
+    });
+    res.status(201).json(wynikRuch);
   } catch (err) {
     next(err);
   }
@@ -334,7 +341,13 @@ router.post('/lok', async (req, res, next) => {
 
   // LOK nie generuje dokumentu GT - status 'ok'/'pending' zalezy wylacznie od synchronizacji pol lokalizacyjnych
   try {
-    res.status(201).json(await wykonajRuchGT(ruchId));
+    const wynikRuch = await wykonajRuchGT(ruchId);
+    audyt.zapisz({
+      uzytkownik: operator, akcja: zrodlo ? 'LOK' : 'przypisanie', artykul_gt_id, artykul_symbol: symbol,
+      magazyn: cel.magazyn, lokalizacja: `${zrodlo ? zrodlo.kod : '(nieprzypisane)'} → ${cel.kod}`,
+      ilosc: ilo, wynik: wynikRuch.status, ruch_id: ruchId,
+    });
+    res.status(201).json(wynikRuch);
   } catch (err) {
     next(err);
   }
@@ -428,7 +441,13 @@ router.post('/przyjecie', async (req, res, next) => {
   }
 
   try {
-    res.status(201).json(await wykonajRuchGT(ruchId));
+    const wynikRuch = await wykonajRuchGT(ruchId);
+    audyt.zapisz({
+      uzytkownik: operator, akcja: 'przyjecie', artykul_gt_id, artykul_symbol: symbolDoWpisu,
+      magazyn: cel.magazyn, lokalizacja: `${zrodloMag} → ${cel.kod}`,
+      ilosc: ilo, wynik: wynikRuch.status, ruch_id: ruchId, dok_gt_numer: wynikRuch.dok_gt_numer,
+    });
+    res.status(201).json(wynikRuch);
   } catch (err) {
     next(err);
   }
@@ -481,7 +500,100 @@ router.post('/mm-zewnetrzny', async (req, res, next) => {
   }
 
   try {
-    res.status(201).json(await wykonajRuchGT(ruchId));
+    const wynikRuch = await wykonajRuchGT(ruchId);
+    audyt.zapisz({
+      uzytkownik: operator, akcja: 'MM-zewn', artykul_gt_id, artykul_symbol: symbolDoWpisu,
+      magazyn: zrodloMag, lokalizacja: `${String(mag_zrodlo).toUpperCase()} → ${String(mag_cel).toUpperCase()}`,
+      ilosc: ilo, wynik: wynikRuch.status, ruch_id: ruchId, dok_gt_numer: wynikRuch.dok_gt_numer,
+    });
+    res.status(201).json(wynikRuch);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/ruchy/uzupelnienie - uzupelnienie K4 z K4 Gora dla towaru ze zrodlem
+// K4G tylko w GT (brak per-lokalizacyjnego stanu K4G w WMS). Wystawiamy MM K4G->K4
+// (mag 8 -> 4) przez most i rejestrujemy ruch. Zrodlo K4G zostaje GT-managed (nie
+// tworzymy stanu WMS - nie znamy rozbicia per-lokalizacja).
+//
+// CEL K4: jesli lokalizacja K4 JUZ ISTNIEJE w WMS (lok_cel_id), aktualizujemy jej
+// stan (+ilosc), zeby nie powstal rozjazd (GT > WMS na K4). Gdy K4 nie ma w WMS -
+// "czyste GT" (bez zmian WMS, towar zostaje t_GT). NIE tworzymy nowej lokalizacji K4
+// z tekstu GT (kod bywa "brudny") - onboarding K4 to osobny krok (lokalizowanie).
+//
+// Zasada 6 (rezerwacje blokuja MM) egzekwowana przez GT na K4G. lok_*_kod - do audytu.
+router.post('/uzupelnienie', async (req, res, next) => {
+  const { artykul_gt_id, ilosc, operator, artykul_symbol, lok_cel_id, lok_zrodlo_kod, lok_cel_kod } = req.body ?? {};
+
+  if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });
+  const ilo = Number(ilosc);
+  if (!Number.isFinite(ilo) || ilo <= 0) return res.status(400).json({ blad: 'Pole "ilosc" musi byc liczba > 0' });
+
+  // Opcjonalny cel WMS K4 (gdy lokalizacja K4 juz istnieje) - zaktualizujemy jego stan.
+  let cel = null;
+  if (lok_cel_id !== undefined && lok_cel_id !== null) {
+    cel = db.prepare('SELECT * FROM lokalizacje WHERE id = ?').get(lok_cel_id);
+    if (!cel) return res.status(404).json({ blad: 'Lokalizacja docelowa nie istnieje' });
+    if (cel.magazyn !== 'K4') return res.status(400).json({ blad: 'Lokalizacja docelowa uzupelnienia musi byc w magazynie K4' });
+  }
+
+  // Zasada 6: rezerwacje GT blokuja MM. Zrodlo = K4G; mozna wyprowadzic najwyzej
+  // (stan GT gora - rezerwacja).
+  let dostZrodlo;
+  try {
+    dostZrodlo = await dostepneWGt(artykul_gt_id, 'K4G');
+  } catch (err) {
+    return res.status(503).json({ blad: 'Nie mozna zweryfikowac stanu/rezerwacji w GT (baza niedostepna) - uzupelnienie wstrzymane. Sprobuj ponownie.' });
+  }
+  if (ilo > dostZrodlo.dostepne) {
+    return res.status(409).json({ blad: `Na K4 Gora dostepne najwyzej ${Math.max(dostZrodlo.dostepne, 0)} szt. (stan GT ${dostZrodlo.stan}, rezerwacja ${dostZrodlo.rezerwacja}).` });
+  }
+
+  const symbolDoWpisu = artykul_symbol
+    ?? db.prepare('SELECT artykul_symbol FROM stany_lokalizacji WHERE artykul_gt_id = ? LIMIT 1').get(artykul_gt_id)?.artykul_symbol
+    ?? String(artykul_gt_id);
+
+  let ruchId;
+  db.exec('BEGIN');
+  try {
+    // gdy cel WMS: lok_cel_id ustawione, magazyn docelowy z lokalizacji (mag_cel_zewnetrzny NULL);
+    // gdy czyste GT: mag_cel_zewnetrzny = 'K4' (most i tak wystawi MM 8->4).
+    const ruch = db.prepare(`
+      INSERT INTO ruchy (typ, artykul_gt_id, artykul_symbol, lok_zrodlo_id, lok_cel_id,
+                         mag_zrodlo_zewnetrzny, mag_cel_zewnetrzny, ilosc, status, operator)
+      VALUES ('MM', ?, ?, NULL, ?, 'K4G', ?, ?, 'pending', ?)
+    `).run(artykul_gt_id, symbolDoWpisu, cel ? cel.id : null, cel ? null : 'K4', ilo, operator ?? null);
+    ruchId = ruch.lastInsertRowid;
+
+    if (cel) {
+      // aktualizuj istniejacy stan K4 (1 SKU = 1 lokalizacja - dokladamy do tej samej)
+      const stanCel = db.prepare('SELECT * FROM stany_lokalizacji WHERE lokalizacja_id = ? AND artykul_gt_id = ?')
+        .get(cel.id, artykul_gt_id);
+      if (stanCel) {
+        db.prepare('UPDATE stany_lokalizacji SET ilosc = ilosc + ?, ostatnia_zmiana = CURRENT_TIMESTAMP, operator = ? WHERE id = ?')
+          .run(ilo, operator ?? null, stanCel.id);
+      } else {
+        db.prepare(`
+          INSERT INTO stany_lokalizacji (lokalizacja_id, artykul_gt_id, artykul_symbol, artykul_nazwa, ilosc, operator)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(cel.id, artykul_gt_id, symbolDoWpisu, symbolDoWpisu, ilo, operator ?? null);
+      }
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    return next(err);
+  }
+
+  try {
+    const wynikRuch = await wykonajRuchGT(ruchId);
+    audyt.zapisz({
+      uzytkownik: operator, akcja: 'Uzupelnienie', artykul_gt_id, artykul_symbol: symbolDoWpisu,
+      magazyn: 'K4G', lokalizacja: `${lok_zrodlo_kod || 'K4G'} → ${cel ? cel.kod : (lok_cel_kod || 'K4')}`,
+      ilosc: ilo, wynik: wynikRuch.status, ruch_id: ruchId, dok_gt_numer: wynikRuch.dok_gt_numer,
+    });
+    res.status(201).json(wynikRuch);
   } catch (err) {
     next(err);
   }
@@ -600,6 +712,12 @@ router.delete('/:id', async (req, res, next) => {
     lokSync = false;
   }
 
+  audyt.zapisz({
+    uzytkownik: req.body?.operator ?? null, akcja: 'usuniecie_ruchu',
+    artykul_gt_id: ruch.artykul_gt_id, artykul_symbol: ruch.artykul_symbol, ilosc: ruch.ilosc,
+    przed: { typ: ruch.typ, lok_zrodlo_id: ruch.lok_zrodlo_id, lok_cel_id: ruch.lok_cel_id, status: ruch.status },
+    wynik: 'ok', ruch_id: id, szczegoly: { lokalizacje_gt_zsync: lokSync },
+  });
   res.json({ usuniety: id, lokalizacje_gt_zsync: lokSync });
 });
 

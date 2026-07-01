@@ -11,8 +11,25 @@
     'DHL Connect', 'InPost', 'DPD', 'DHL', 'UPS', 'One',
     'Orlen Paczka', 'Poczta Polska', 'Packeta', 'Emag', 'nieklasyfikowane',
   ];
+  // Kolory kanalow (kafle + etykiety pod SKU). fg dobrany pod kontrast tla.
+  const KANAL_KOLORY = {
+    'InPost': { bg: '#FFCD00', fg: '#111827' },
+    'DPD': { bg: '#DC0032', fg: '#ffffff' },
+    'DHL': { bg: '#D40511', fg: '#ffffff' },
+    'DHL Connect': { bg: '#E8730C', fg: '#ffffff' },
+    'One': { bg: '#FF5A00', fg: '#ffffff' },
+    'Orlen Paczka': { bg: '#B4121B', fg: '#ffffff' },
+    'Poczta Polska': { bg: '#004B87', fg: '#ffffff' },
+    'Packeta': { bg: '#9B1C31', fg: '#ffffff' },
+    'Emag': { bg: '#2E8B9E', fg: '#ffffff' },
+    'UPS': { bg: '#5A3A22', fg: '#ffffff' },
+    'nieklasyfikowane': { bg: '#6b7280', fg: '#ffffff' },
+  };
+  const KOLOR_WSZYSTKIE = { bg: '#0d2f5b', fg: '#ffffff' };
+  function kolorKanalu(k) { return KANAL_KOLORY[k] || { bg: '#6b7280', fg: '#ffffff' }; }
 
   let pozycje = [];     // ostatnio pobrana lista
+  let filtrKanal = '';  // wybrany kanal ('' = Wszystkie) - z ekranu kafli
   let wybrany = null;   // produkt otwarty w karcie
   let zrodlo = null;    // wybrane zrodlo: WMS { lokalizacja_id, kod, ilosc } albo GT { tryb:'gt', kod, ilosc }
   let gtMode = false;   // true gdy towar t_GT (brak lokalizacji WMS) -> czyste GT (/api/ruchy/uzupelnienie)
@@ -24,17 +41,16 @@
     k.className = `komunikat ${typ || 'info'}`;
   }
 
-  // --- wejscie do widoku (wolane z pokazWidok) ---
+  // --- wejscie do widoku (wolane z pokazWidok) -> ekran kafli ---
   async function otworz() {
-    pokazPodekran('lista');
+    pokazPodekran('kafle');
     komunikat('');
-    wypelnijFiltr();
     try {
       const res = await fetch('/api/uzupelnienia');
       const dane = await res.json();
       if (!res.ok) throw new Error(dane?.blad || `Błąd ${res.status}`);
       pozycje = dane.pozycje || [];
-      renderujListe();
+      renderKafle();
     } catch (err) {
       komunikat(err.message, 'blad');
     }
@@ -42,27 +58,60 @@
   window.uzupOtworz = otworz;
 
   function pokazPodekran(nazwa) {
+    el('uzup-kafle-sekcja').classList.toggle('hidden', nazwa !== 'kafle');
     el('uzup-lista-sekcja').classList.toggle('hidden', nazwa !== 'lista');
     el('uzup-karta-sekcja').classList.toggle('hidden', nazwa !== 'karta');
     el('uzup-przesun').classList.toggle('hidden', nazwa !== 'karta');
   }
 
-  function wypelnijFiltr() {
-    const sel = el('uzup-filtr-kanal');
-    if (sel.options.length > 0) return;
-    const wszystkie = document.createElement('option');
-    wszystkie.value = ''; wszystkie.textContent = 'Wszystkie kanały';
-    sel.appendChild(wszystkie);
+  // --- ekran 1: kafle kanalow (kolor + liczba roznych SKU) ---
+  function renderKafle() {
+    const kont = el('uzup-kafle');
+    kont.innerHTML = '';
+    el('uzup-kafle-pusto').classList.toggle('hidden', pozycje.length > 0);
+    if (pozycje.length === 0) return;
+
+    // liczba roznych SKU per kanal (SKU liczy sie w kazdym swoim kanale)
+    const licz = {};
+    for (const p of pozycje) {
+      for (const [k, v] of Object.entries(p.kanaly)) {
+        if (v > 0) licz[k] = (licz[k] || 0) + 1;
+      }
+    }
+
+    kont.appendChild(kafel('', 'Wszystkie', pozycje.length, KOLOR_WSZYSTKIE));
     for (const k of KANALY) {
-      const o = document.createElement('option');
-      o.value = k; o.textContent = k;
-      sel.appendChild(o);
+      if (licz[k]) kont.appendChild(kafel(k, k, licz[k], kolorKanalu(k)));
     }
   }
 
-  // --- lista ---
+  function kafel(kanal, nazwa, liczbaSku, kolor) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'uzup-kafel';
+    btn.style.background = kolor.bg;
+    btn.style.color = kolor.fg;
+    btn.innerHTML = `<span class="uzup-kafel-liczba">${liczbaSku}</span>`
+      + `<span class="uzup-kafel-nazwa">${nazwa}</span>`
+      + `<span class="uzup-kafel-podpis">SKU</span>`;
+    btn.addEventListener('click', () => wybierzKanal(kanal));
+    return btn;
+  }
+
+  // --- ekran 2: lista SKU wybranego kanalu ---
+  function wybierzKanal(kanal) {
+    filtrKanal = kanal;
+    const kolor = kanal ? kolorKanalu(kanal) : KOLOR_WSZYSTKIE;
+    const nag = el('uzup-lista-naglowek');
+    nag.textContent = kanal || 'Wszystkie';
+    nag.style.background = kolor.bg;
+    nag.style.color = kolor.fg;
+    renderujListe();
+    pokazPodekran('lista');
+  }
+
   function renderujListe() {
-    const kanal = el('uzup-filtr-kanal').value;
+    const kanal = filtrKanal;
     let lista = pozycje;
     if (kanal) {
       lista = pozycje.filter((p) => (p.kanaly[kanal] || 0) > 0)
@@ -82,6 +131,7 @@
         + `<span class="poz-kod">${p.symbol}</span>`
         + `<span class="poz-nazwa">${p.nazwa || ''}</span>`
         + `<span class="poz-podpis">${chipyKanalow(p.kanaly, kanal)}</span>`
+        + `<span class="uzup-lok-k4g">K4G: ${p.lokalizacja_gora || '—'}</span>`
         + `</span>`
         + `<span class="poz-prawa"><span class="poz-ilosc">${liczba}</span><span class="poz-rez">${kanal || 'rez.'}</span></span>`
         + `<span class="poz-strzalka">›</span>`;
@@ -90,12 +140,13 @@
     }
   }
 
-  // chipy "kanal: ilosc" posortowane malejaco (tekstowo, do podpisu pozycji)
+  // kolorowe chipy "kanal: ilosc" (kolor kanalu jak na kaflu); wybrany kanal z obwodka
   function chipyKanalow(kanaly, wybranyKanal) {
     return Object.entries(kanaly).sort((a, b) => b[1] - a[1])
       .map(([k, v]) => {
-        const akt = wybranyKanal && k === wybranyKanal ? ' akt' : '';
-        return `<span class="uzup-chip${akt}">${k}: ${v}</span>`;
+        const c = kolorKanalu(k);
+        const ramka = wybranyKanal && k === wybranyKanal ? ';outline:2px solid #111827;outline-offset:-1px' : '';
+        return `<span class="uzup-chip" style="background:${c.bg};color:${c.fg}${ramka}">${k}: ${v}</span>`;
       }).join(' ');
   }
 
@@ -284,15 +335,17 @@
   function wstecz() {
     if (window.BlokadaEdycji) BlokadaEdycji.zwolnij(); // zwolnij lock edycji produktu
     if (!el('uzup-karta-sekcja').classList.contains('hidden')) {
-      pokazPodekran('lista');
+      pokazPodekran('lista');           // karta -> lista SKU
       wybrany = null; zrodlo = null;
       komunikat('');
+    } else if (!el('uzup-lista-sekcja').classList.contains('hidden')) {
+      pokazPodekran('kafle');           // lista SKU -> kafle kanalow
+      komunikat('');
     } else {
-      pokazWidok('menu');
+      pokazWidok('menu');               // kafle -> menu
     }
   }
 
-  el('uzup-filtr-kanal').addEventListener('change', renderujListe);
   el('uzup-wstecz').addEventListener('click', wstecz);
   el('uzup-przesun').addEventListener('click', przesun);
   el('uzup-ilosc-minus').addEventListener('click', () => aktualizujIlosc(-1));

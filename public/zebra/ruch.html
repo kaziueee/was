@@ -131,12 +131,15 @@
     <main class="ekran-tresc">
       <div id="uzup-komunikat" class="komunikat hidden"></div>
 
-      <!-- podekran: lista zbiorcza + filtr kanalu -->
-      <section id="uzup-lista-sekcja">
-        <div class="pole-blok">
-          <label class="pole-etykieta" for="uzup-filtr-kanal">Kanał</label>
-          <select id="uzup-filtr-kanal" class="pole-select"></select>
-        </div>
+      <!-- podekran 1: kafle kanalow (kolor + liczba roznych SKU) -->
+      <section id="uzup-kafle-sekcja">
+        <div id="uzup-kafle" class="uzup-kafle"></div>
+        <p id="uzup-kafle-pusto" class="hint hidden">Brak towarów do uzupełnienia.</p>
+      </section>
+
+      <!-- podekran 2: lista SKU wybranego kanalu -->
+      <section id="uzup-lista-sekcja" class="hidden">
+        <div id="uzup-lista-naglowek" class="uzup-lista-naglowek"></div>
         <div id="uzup-lista" class="lista"></div>
         <p id="uzup-pusto" class="hint hidden">Brak towarów do uzupełnienia.</p>
       </section>

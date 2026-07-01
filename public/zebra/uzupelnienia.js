@@ -57,6 +57,27 @@
   }
   window.uzupOtworz = otworz;
 
+  // Po udanym uzupelnieniu: odswiez dane i ZOSTAN w biezacym kanale, jesli ma jeszcze
+  // pozycje (magazynier robi kolejne SKU tego samego kanalu). Kanal pusty -> wracamy na kafle.
+  async function poSukcesie() {
+    komunikat('');
+    try {
+      const res = await fetch('/api/uzupelnienia');
+      const dane = await res.json();
+      pozycje = res.ok ? (dane.pozycje || []) : [];
+    } catch { pozycje = []; }
+    renderKafle();
+    const zostajemy = filtrKanal
+      ? pozycje.some((p) => (p.kanaly[filtrKanal] || 0) > 0)
+      : pozycje.length > 0;
+    if (zostajemy) {
+      renderujListe();
+      pokazPodekran('lista');
+    } else {
+      pokazPodekran('kafle');
+    }
+  }
+
   function pokazPodekran(nazwa) {
     el('uzup-kafle-sekcja').classList.toggle('hidden', nazwa !== 'kafle');
     el('uzup-lista-sekcja').classList.toggle('hidden', nazwa !== 'lista');
@@ -362,7 +383,7 @@
   el('uzup-sukces').addEventListener('click', () => {
     if (window.BlokadaEdycji) BlokadaEdycji.zwolnij(); // koniec edycji -> zwolnij lock
     el('uzup-sukces').classList.add('hidden');
-    otworz();
+    poSukcesie(); // zostań w kanale, jeśli ma jeszcze pozycje; inaczej wróć na kafle
   });
 
   // skan lokalizacji zrodlowej K4G (gdy wiele): dopasuj po kodzie do listy K4G towaru

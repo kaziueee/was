@@ -696,9 +696,15 @@ async function aktualizujKrokCel() {
   el('input-cel').placeholder = zmiana
     ? `Skanuj nową lokalizację (${stan.zrodlo.magazyn})`
     : `Skanuj lokalizację docelową (${magInfo ? magInfo.nazwa : docelowy})`;
-  el('cel-lokalizacja-hint').textContent = calaIlosc
-    ? 'K4: 1 SKU = 1 lokalizacja — przenoszona jest cała ilość'
-    : '';
+  if (calaIlosc) {
+    el('cel-lokalizacja-hint').textContent = 'K4: 1 SKU = 1 lokalizacja — przenoszona jest cała ilość';
+  } else if (docelowy === 'K4') {
+    el('cel-lokalizacja-hint').textContent = ''; // hint dla K4 ustawi blok nizej (dom/GT)
+  } else {
+    // K4G / inny magazyn WMS: podpowiedz z GT gdzie sa lokalizacje (K4G: 1 SKU = N lokalizacji)
+    const gtLok = gtLokDlaMagazynu(docelowy);
+    el('cel-lokalizacja-hint').textContent = gtLok ? `wg GT: ${gtLok}` : '';
+  }
 
   // K4 jako cel -> pobierz stale miejsce (podpowiedz lokalizacji przy MM) + obecny zapas K4
   if (docelowy === 'K4') {

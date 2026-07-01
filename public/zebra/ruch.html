@@ -16,7 +16,7 @@
 
   <!-- WIDOK MENU (SPA: bez przeladowania - pelny ekran sie trzyma) -->
   <div id="widok-menu" class="ekran">
-    <header class="ekran-naglowek"><div class="ekran-sku"><h1>WMS</h1></div></header>
+    <header class="ekran-naglowek"><div class="ekran-sku"><h1>WMS</h1></div><div id="wms-badge-slot" style="margin-left:auto"></div></header>
     <main class="ekran-tresc">
       <button type="button" id="btn-go-ruch" class="btn-menu">Ruch towaru<span>MM / zmiana lokalizacji</span></button>
       <button type="button" id="btn-go-uzup" class="btn-menu">Uzupełnienia K4<span>K4G → K4 wg rezerwacji</span></button>
@@ -185,6 +185,8 @@
   </div>
   </div><!-- /widok-uzupelnienia -->
 
+  <script src="/shared/auth.js"></script>
+  <script src="blokada-edycji.js"></script>
   <script src="fullscreen.js"></script>
   <script src="karta-produktu.js"></script>
   <script src="kreator.js"></script>

@@ -100,7 +100,13 @@
   }
 
   // --- karta produktu ---
-  function otworzKarte(p) {
+  async function otworzKarte(p) {
+    // TWARDA BLOKADA edycji: uzupelnienie to tez edycja produktu. Zajmij lock; gdy edytuje
+    // kto inny -> tylko komunikat, zostajemy na liscie (nie otwieramy karty).
+    if (window.BlokadaEdycji) {
+      const b = await BlokadaEdycji.zajmij(p.artykul_gt_id);
+      if (!b.ok) { komunikat(b.przez ? `Produkt edytuje ${b.przez} — spróbuj później` : (b.blad || 'Nie można otworzyć produktu'), 'blad'); return; }
+    }
     wybrany = p;
     zrodlo = null;
     // gtMode = brak WMS zrodla K4G -> chowamy wybor/skan zrodla (zrodlo wg GT).
@@ -183,21 +189,22 @@
     aktualizujPrzycisk();
   }
 
-  // ilosc domyslna = potrzebne (rezerwacje na K4), ograniczone stanem zrodla.
-  // Magazynier bierze cale potrzebne SKU + zapas - moze podbic stepperem do max.
+  // ilosc domyslna = BRAKUJE na K4 = rezerwacje - stan K4 (nie cala rezerwacja!).
+  // Gdy K4 juz pokrywa rezerwacje (brakuje 0) - domyslnie 0, magazynier bierze sam zapas.
+  // Ograniczona stanem zrodla; stepperem mozna podbic o zapas do max.
   function przeliczIlosc() {
-    const potrzebne = wybrany.rezerwacje > 0 ? wybrany.rezerwacje : 0;
+    const brakuje = Math.max(0, wybrany.rezerwacje - wybrany.stan_k4);
     const maxZrodlo = zrodlo ? zrodlo.ilosc : Infinity;
-    const ile = Math.max(0, Math.min(potrzebne, maxZrodlo));
+    const ile = Math.max(0, Math.min(brakuje, maxZrodlo));
     el('uzup-ilosc').value = ile > 0 ? ile : '';
 
     const hint = el('uzup-ilosc-hint');
-    if (zrodlo && potrzebne > zrodlo.ilosc) {
-      hint.textContent = `Źródło ma ${zrodlo.ilosc} szt. — resztę (${potrzebne - zrodlo.ilosc}) z innej lokalizacji.`;
-    } else if (potrzebne > 0) {
-      hint.textContent = `Potrzebne (rez.): ${potrzebne}. Weź całość + zapas${zrodlo ? ` (max ${zrodlo.ilosc})` : ''}.`;
+    if (zrodlo && brakuje > zrodlo.ilosc) {
+      hint.textContent = `Brakuje ${brakuje} — źródło ma ${zrodlo.ilosc}; resztę z innej lokalizacji.`;
+    } else if (brakuje > 0) {
+      hint.textContent = `Brakuje na K4: ${brakuje}. Weź co najmniej tyle + zapas${zrodlo ? ` (max ${zrodlo.ilosc})` : ''}.`;
     } else {
-      hint.textContent = zrodlo ? `Weź ile potrzeba (max ${zrodlo.ilosc}).` : '';
+      hint.textContent = `K4 pokrywa rezerwacje — weź zapas${zrodlo ? ` (max ${zrodlo.ilosc})` : ''}.`;
     }
     aktualizujPrzycisk();
   }
@@ -275,6 +282,7 @@
 
   // --- nawigacja / zdarzenia ---
   function wstecz() {
+    if (window.BlokadaEdycji) BlokadaEdycji.zwolnij(); // zwolnij lock edycji produktu
     if (!el('uzup-karta-sekcja').classList.contains('hidden')) {
       pokazPodekran('lista');
       wybrany = null; zrodlo = null;
@@ -297,6 +305,7 @@
 
   // sukces znika po dotknieciu -> wroc na liste i odswiez (pozycja schodzi po MM)
   el('uzup-sukces').addEventListener('click', () => {
+    if (window.BlokadaEdycji) BlokadaEdycji.zwolnij(); // koniec edycji -> zwolnij lock
     el('uzup-sukces').classList.add('hidden');
     otworz();
   });

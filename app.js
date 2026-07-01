@@ -10,6 +10,10 @@ const produktyRouter = require('./routes/produkty');
 const rozjazdyRouter = require('./routes/rozjazdy');
 const uzupelnieniaRouter = require('./routes/uzupelnienia');
 const audytRouter = require('./routes/audyt');
+const uzytkownicyRouter = require('./routes/uzytkownicy');
+const blokadyRouter = require('./routes/blokady');
+const blokady = require('./services/blokady');
+const auth = require('./services/auth');
 const ruchyRetry = require('./services/ruchy-retry');
 const rozjazdyJob = require('./services/rozjazdy');
 const backupJob = require('./services/backup');
@@ -35,12 +39,18 @@ app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
 }));
 
-app.use('/api/lokalizacje', lokalizacjeRouter);
-app.use('/api/ruchy', ruchyRouter);
+// logowanie/uzytkownicy (obsluguje wlasny auth) + blokady edycji (wymagaja sesji w routerze)
+app.use('/api/uzytkownicy', uzytkownicyRouter);
+app.use('/api/blokady', blokadyRouter);
+
+// Na zapisach (POST/PUT/DELETE) wymagamy sesji i WSTRZYKUJEMY operatora z tokenu do req.body
+// (backend = zrodlo prawdy dla "kto"; handlery w routes/* nie musza byc zmieniane). GET otwarte.
+app.use('/api/lokalizacje', auth.wymagajSesjiNaZapisie, lokalizacjeRouter);
+app.use('/api/ruchy', auth.wymagajSesjiNaZapisie, blokady.middlewareRuch, ruchyRouter);
+app.use('/api/uzupelnienia', auth.wymagajSesjiNaZapisie, uzupelnieniaRouter);
 app.use('/api/magazyny', magazynyRouter);
 app.use('/api/produkty', produktyRouter);
 app.use('/api/rozjazdy', rozjazdyRouter);
-app.use('/api/uzupelnienia', uzupelnieniaRouter);
 app.use('/api/audyt', audytRouter);
 
 // error-handling middleware MUSI byc po trasach (Express: 4 argumenty = handler bledow)

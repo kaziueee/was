@@ -18,16 +18,14 @@ function pokazKomunikat(tekst, typ = 'info') {
   }
 }
 
-// --- operator (localStorage, jak na ekranach Zebry) ---
+// --- operator: teraz z zalogowanego profilu (Faza A#4). Stare wolne pole ukryte;
+// backend i tak wymusza operatora z tokenu, wiec ta wartosc jest tylko pomocnicza (UI). ---
 
 const inputOperator = el('input-operator');
-inputOperator.value = localStorage.getItem('wms_operator') ?? '';
-inputOperator.addEventListener('change', () => {
-  localStorage.setItem('wms_operator', inputOperator.value.trim());
-});
+if (inputOperator) inputOperator.style.display = 'none';
 
 function operator() {
-  return inputOperator.value.trim() || null;
+  return (window.WMS && WMS.user() && WMS.user().imie) || null;
 }
 
 // --- fetch helper ---
@@ -41,7 +39,7 @@ async function api(url, opts) {
     // brak body (np. 204 No Content)
   }
   if (!r.ok) {
-    throw new Error(dane?.blad ?? `Błąd ${r.status}`);
+    throw Object.assign(new Error(dane?.blad ?? `Błąd ${r.status}`), { status: r.status, dane });
   }
   return dane;
 }
@@ -72,6 +70,7 @@ const panele = {
   mm: { sekcja: 'panel-mm', zaladowano: false, odswiez: () => {} },
   uzupelnienia: { sekcja: 'panel-uzupelnienia', zaladowano: false, odswiez: odswiezUzupelnienia },
   log: { sekcja: 'panel-log', zaladowano: false, odswiez: odswiezLog },
+  uzytkownicy: { sekcja: 'panel-uzytkownicy', zaladowano: false, odswiez: odswiezUzytkownicy },
 };
 
 function pokazPanel(nazwa) {
@@ -576,6 +575,69 @@ function zamknijHistorie() { el('modal-historia').classList.add('hidden'); }
 el('btn-modal-hist-zamknij').addEventListener('click', zamknijHistorie);
 el('modal-historia').addEventListener('click', (e) => { if (e.target === el('modal-historia')) zamknijHistorie(); });
 
+// === UZYTKOWNICY (zakladka tylko dla admina) ===
+
+function pokazZakladkeAdmina() {
+  const tab = el('tab-uzytkownicy');
+  if (tab) tab.style.display = (window.WMS && WMS.jestAdmin()) ? '' : 'none';
+}
+if (window.WMS) WMS.gotowe.then(pokazZakladkeAdmina);
+window.addEventListener('wms-zalogowano', pokazZakladkeAdmina);
+
+async function odswiezUzytkownicy() {
+  try { renderujUzytkownicy(await api('/api/uzytkownicy')); }
+  catch (err) { pokazKomunikat(err.message, 'blad'); }
+}
+
+function przyciskUser(tekst, kl, fn) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'btn ' + kl; b.style.marginLeft = '4px'; b.textContent = tekst;
+  b.addEventListener('click', fn);
+  return b;
+}
+
+async function zapiszUser(id, patch) {
+  try {
+    await api(`/api/uzytkownicy/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+    odswiezUzytkownicy();
+  } catch (err) { pokazKomunikat(err.message, 'blad'); }
+}
+
+function renderujUzytkownicy(lista) {
+  const tbody = el('user-tbody'); tbody.innerHTML = '';
+  el('user-brak').classList.toggle('hidden', lista.length > 0);
+  for (const u of lista) {
+    const tr = document.createElement('tr');
+    if (!u.aktywny) tr.style.opacity = '0.5';
+    tr.innerHTML = `<td><strong>${u.imie}</strong></td><td>${u.rola}</td><td>${u.maPin ? 'tak' : '–'}</td><td>${u.aktywny ? 'aktywny' : 'nieaktywny'}</td><td></td>`;
+    const akc = tr.lastElementChild;
+    akc.appendChild(przyciskUser('Ustaw PIN', 'btn-small', async () => {
+      const pin = prompt(`Nowy PIN dla ${u.imie} (4-8 cyfr):`);
+      if (pin) await zapiszUser(u.id, { pin });
+    }));
+    if (u.maPin) akc.appendChild(przyciskUser('Bez PIN', 'btn-small', () => zapiszUser(u.id, { usunPin: true })));
+    akc.appendChild(przyciskUser(u.rola === 'admin' ? '→ Magazynier' : '→ Admin', 'btn-small', () => zapiszUser(u.id, { rola: u.rola === 'admin' ? 'magazynier' : 'admin' })));
+    akc.appendChild(przyciskUser(u.aktywny ? 'Dezaktywuj' : 'Aktywuj', u.aktywny ? 'btn-small btn-danger' : 'btn-small', () => {
+      if (u.aktywny && !confirm(`Dezaktywować ${u.imie}?`)) return;
+      zapiszUser(u.id, { aktywny: u.aktywny ? 0 : 1 });
+    }));
+    tbody.appendChild(tr);
+  }
+}
+
+el('form-nowy-user').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const imie = el('nowy-user-imie').value.trim();
+  const pin = el('nowy-user-pin').value.trim();
+  if (!imie) return;
+  try {
+    await api('/api/uzytkownicy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ imie, pin: pin || undefined, rola: el('nowy-user-rola').value }) });
+    el('nowy-user-imie').value = ''; el('nowy-user-pin').value = '';
+    pokazKomunikat(`Dodano ${imie}`, 'ok');
+    odswiezUzytkownicy();
+  } catch (err) { pokazKomunikat(err.message, 'blad'); }
+});
+
 // === LOKALIZACJE ===
 
 async function odswiezLokalizacje() {
@@ -1042,7 +1104,21 @@ const MAG_EXT = ['MAG', 'LS'];
 let modalProdukt = null;
 let modalAkcjaCtx = null;
 
-function otworzModalProdukt(p) {
+let modalHeartbeat = null;
+
+async function otworzModalProdukt(p) {
+  // TWARDA BLOKADA: zajmij lock edycji produktu. 409 = edytuje kto inny -> nie otwieramy.
+  try {
+    await api(`/api/blokady/${encodeURIComponent(p.artykul_gt_id)}/zajmij`, { method: 'POST' });
+  } catch (err) {
+    if (err.status === 409) {
+      pokazKomunikat(`Produkt ${p.symbol} edytuje ${err.dane?.przez ?? 'ktoś inny'} — spróbuj później.`, 'blad');
+      return;
+    }
+    // inny blad (np. sesja wygasla) - pokaz i nie otwieraj
+    pokazKomunikat(err.message, 'blad');
+    return;
+  }
   modalProdukt = p;
   el('modal-produkt').classList.remove('hidden');
   el('modal-prod-sku').textContent = p.symbol;
@@ -1050,9 +1126,17 @@ function otworzModalProdukt(p) {
   zamknijAkcje();
   el('modal-komunikat').className = 'komunikat hidden';
   renderModalRozklad();
+  // odswiezaj lock co 30s, dopoki modal otwarty
+  modalHeartbeat = setInterval(() => {
+    api(`/api/blokady/${encodeURIComponent(p.artykul_gt_id)}/heartbeat`, { method: 'POST' }).catch(() => {});
+  }, 30000);
 }
 
 function zamknijModal() {
+  if (modalHeartbeat) { clearInterval(modalHeartbeat); modalHeartbeat = null; }
+  if (modalProdukt) {
+    api(`/api/blokady/${encodeURIComponent(modalProdukt.artykul_gt_id)}/zwolnij`, { method: 'POST' }).catch(() => {});
+  }
   el('modal-produkt').classList.add('hidden');
   modalProdukt = null;
 }

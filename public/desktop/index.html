@@ -20,8 +20,10 @@
       <a href="#mm" class="tab-link" data-panel="mm">MM</a>
       <a href="#uzupelnienia" class="tab-link" data-panel="uzupelnienia">Uzupełnienia</a>
       <a href="#log" class="tab-link" data-panel="log">Log</a>
+      <a href="#uzytkownicy" class="tab-link" data-panel="uzytkownicy" id="tab-uzytkownicy" style="display:none">Użytkownicy</a>
     </nav>
     <input type="text" id="input-operator" placeholder="Operator">
+    <div id="wms-badge-slot"></div>
   </header>
 
   <main>
@@ -300,6 +302,31 @@
       <p id="log-brak" class="hint hidden">Brak wpisów w logu.</p>
     </section>
 
+    <!-- Panel Uzytkownicy (tylko admin) -->
+    <section id="panel-uzytkownicy" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Użytkownicy</h2>
+      </div>
+      <form id="form-nowy-user" class="formularz-inline">
+        <input type="text" id="nowy-user-imie" placeholder="Imię / nazwa" required>
+        <input type="text" id="nowy-user-pin" inputmode="numeric" maxlength="8" placeholder="PIN (opcjonalny)">
+        <select id="nowy-user-rola">
+          <option value="magazynier">Magazynier</option>
+          <option value="admin">Admin</option>
+        </select>
+        <button type="submit" class="btn btn-primary">+ Dodaj użytkownika</button>
+      </form>
+      <div class="tabela-wrapper">
+        <table class="tabela">
+          <thead>
+            <tr><th>Imię</th><th>Rola</th><th>PIN</th><th>Status</th><th>Akcje</th></tr>
+          </thead>
+          <tbody id="user-tbody"></tbody>
+        </table>
+      </div>
+      <p id="user-brak" class="hint hidden">Brak użytkowników.</p>
+    </section>
+
     <!-- Modal: historia ruchow/zmian jednego SKU (ikona "H" w modalu produktu) -->
     <div id="modal-historia" class="modal-overlay hidden">
       <div class="modal-box">
@@ -386,6 +413,7 @@
 
   </main>
 
+  <script src="/shared/auth.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

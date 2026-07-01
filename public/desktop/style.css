@@ -60,6 +60,13 @@ nav {
   border: none;
 }
 
+/* slot zalogowanego uzytkownika - po prawej, wyrownany w rzedzie nawigacji */
+#wms-badge-slot {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
 main {
   padding: 1.5rem;
   max-width: min(1600px, 96vw);

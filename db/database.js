@@ -91,4 +91,45 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_audyt_czas ON audyt(czas)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_audyt_artykul ON audyt(artykul_gt_id)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_audyt_uzytkownik ON audyt(uzytkownik)');
 
+// Uzytkownicy + logowanie (Faza A#4). PIN opcjonalny (pin_hash/pin_salt NULL = bez PIN).
+// Rola: 'admin' (zarzadza userami) | 'magazynier'. Dezaktywacja (aktywny=0) zamiast
+// usuwania - zachowuje slad "kto" w audycie/ruchach.
+db.exec(`CREATE TABLE IF NOT EXISTS uzytkownicy (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  imie TEXT NOT NULL UNIQUE,
+  pin_hash TEXT,
+  pin_salt TEXT,
+  rola TEXT NOT NULL DEFAULT 'magazynier',
+  aktywny INTEGER NOT NULL DEFAULT 1,
+  utworzono DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Sesje: token -> uzytkownik. "Kto" wyprowadzany z tokenu (backend = zrodlo prawdy),
+// nie z pola tekstowego. ostatnia_aktywnosc do wygaszania nieaktywnych sesji.
+db.exec(`CREATE TABLE IF NOT EXISTS sesje (
+  token TEXT PRIMARY KEY,
+  uzytkownik_id INTEGER NOT NULL REFERENCES uzytkownicy(id),
+  imie TEXT NOT NULL,
+  rola TEXT NOT NULL,
+  utworzono DATETIME DEFAULT CURRENT_TIMESTAMP,
+  ostatnia_aktywnosc DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Blokady edycji produktu (twarda blokada): 1 wiersz = 1 produkt aktualnie edytowany.
+// heartbeat odswiezany przez klienta; lock wygasa po bezczynnosci (patrz services/blokady).
+db.exec(`CREATE TABLE IF NOT EXISTS blokady_edycji (
+  artykul_gt_id TEXT PRIMARY KEY,
+  uzytkownik_id INTEGER,
+  imie TEXT,
+  token TEXT,
+  czas_start DATETIME DEFAULT CURRENT_TIMESTAMP,
+  heartbeat DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Seed: pierwszy admin, gdy brak uzytkownikow (bez PIN - mozna od razu wejsc i zalozyc reszte).
+if (db.prepare('SELECT COUNT(*) AS c FROM uzytkownicy').get().c === 0) {
+  db.prepare("INSERT INTO uzytkownicy (imie, rola) VALUES ('Admin', 'admin')").run();
+  console.log("Seed: utworzono uzytkownika 'Admin' (rola admin, bez PIN)");
+}
+
 module.exports = db;

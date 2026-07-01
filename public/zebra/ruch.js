@@ -139,6 +139,9 @@ function pokazKrok(nazwa) {
 
 // krok o jeden wstecz w kreatorze (cel -> wybor/start, wybor -> start)
 function wstecz() {
+  // Wstecz = wyjscie z edycji -> zwolnij lock (ponowne wejscie w "Dokad i ile?" zajmie go
+  // od nowa). Bez tego heartbeat trzymalby lock po cofnieciu i blokowal innych.
+  if (window.BlokadaEdycji) BlokadaEdycji.zwolnij();
   ukryjKomunikat();
   ukryjPotwierdzenie();
   if (!kroki.cel.classList.contains('hidden')) {
@@ -166,6 +169,7 @@ function wstecz() {
 btnWstecz.addEventListener('click', wstecz);
 
 function reset() {
+  if (window.BlokadaEdycji) BlokadaEdycji.zwolnij(); // zwolnij lock edycji produktu
   stan.artykul = null;
   stan.zrodlo = null;
   stan.cel = null;
@@ -314,6 +318,8 @@ function obsluzArtykul(dane) {
 // nieprzypisanej czesci K4gora. Tap w wiersz -> wybierzOpcje -> krok "Dokad i ile?".
 function pokazRozkladZrodel(dane, artykul) {
   stan.artykul = artykul; // ustaw przed budowa opcji - gtLokDlaMagazynu czyta stan.artykul
+  // Rozklad to tylko PODGLAD - lock zakladamy dopiero przy wejsciu w "Dokad i ile?"
+  // (przejdzDoCelu). Dwoch ludzi moze ogladac ten sam rozklad; edytowac - tylko jeden.
 
   // czy weszlismy w rozklad z listy wynikow wyszukiwania (trybWyboru jeszcze 'szukaj')
   // -> Wstecz z rozkladu/celu ma wrocic do wynikow, nie do czystego skanu
@@ -550,7 +556,16 @@ onScan(el('input-wybor-skan'), (kod) => {
 });
 
 // --- krok 3: cel (magazyn + lokalizacja) i ilosc ---
-function przejdzDoCelu() {
+async function przejdzDoCelu() {
+  // TWARDA BLOKADA edycji: zajmij lock produktu; gdy edytuje kto inny -> wroc do skanu
+  if (window.BlokadaEdycji && stan.artykul) {
+    const b = await BlokadaEdycji.zajmij(stan.artykul.artykul_gt_id);
+    if (!b.ok) {
+      // tylko komunikat - zostajemy na biezacym ekranie (rozklad/lista), NIE czyscimy danych
+      pokazKomunikat(b.przez ? `Produkt edytuje ${b.przez} — spróbuj później` : (b.blad || 'Nie można otworzyć — spróbuj później'), 'blad');
+      return;
+    }
+  }
   ukryjKomunikat();
   ukryjPotwierdzenie();
   stan.cel = null;

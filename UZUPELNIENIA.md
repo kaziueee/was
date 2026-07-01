@@ -81,6 +81,10 @@ WMS czyta **`Z_KAJTEK_IdeaERP`** (host 192.168.0.200) — to odwzorowanie bazy d
   - **Karta (ostatni krok) — bez wyboru kanałów.** Magazynier bierze **całe potrzebne SKU + zapas** (żeby nie latać co 5 min), więc kanały zostają tylko na liście (priorytet), a na karcie ich nie ma. Karta pokazuje **blok info**: stany i lokalizacje (wg GT) K4 i K4G + rezerwacje na K4. Ilość domyślna = **rezerwacje (potrzebne)**, stepper do podbicia o zapas (max = stan źródła). Rozbicie na kanały odłożone do listy/desktopu; ewentualny wariant B (worklista per-batch kuriera) — gdyby był potrzebny.
   - **Źródło K4G:** w trybie **GT** (t_GT) pole wyboru/skanu **ukryte** — źródło wg GT z bloku info. W trybie **WMS** (lokalizacje w WMS) pokazujemy wybór/skan lokalizacji K4G (auto przy 1, skan/lista przy N).
   - **Lokalizacje WMS:** endpoint dokłada `wms_k4` (cel, **niezależnie od stanu — cel jest pusty**) i `wms_k4g` (źródła ze stanem >0, malejąco) z SQLite. Brak którejkolwiek → karta blokuje ruch z komunikatem „zlokalizuj w Ruchu".
+- ✅ **Faza 4 — iteracje UX Zebry (feedback z urządzenia):**
+  - **Kafle kanałów (ekran 1)** zamiast dropdown-filtra: kafel per kurier (kolor brandowy + liczba różnych SKU) + „Wszystkie". Klik → **lista SKU kanału (ekran 2)** — kolorowe etykiety kanałów + lokalizacja K4G pod SKU → **karta (ekran 3)**. Wstecz: karta→lista→kafle→menu. Po sukcesie **zostajemy w kanale**, na kafle wracamy dopiero gdy kanał pusty.
+  - **Historia ruchów** (`public/zebra/historia.js` + `widok-historia` + menu): ostatnie operacje z `GET /api/audyt` (kiedy · SKU · kierunek · ilość + operator/akcja). Bezpiecznik, gdy magazynier zapomni gdzie zanieść towar.
+  - **Fixy:** #1 „do ściągnięcia" = **całość potrzebna** (rez − stan K4), nie porcja kanału. #4 (`ruch.js`) hint „wg GT: `<kod>`" dla pustego celu **K4 i K4G**. #5 (`ruch.js`) lista **„Zrobione w tej sesji"** na kroku start (indeks zostaje po sukcesie, czyszczone przy wejściu w Ruch).
 
 ## Lokalizacja tylko w GT (status t_GT)
 
@@ -97,3 +101,4 @@ Implementacja `/uzupelnienie`: ruch `typ='MM'`, `lok_zrodlo_id=NULL`, `mag_zrodl
 1. **Status ZK 6** (bufor, 23 dok w bazie) — czy wliczać do otwartych obok 7. Na razie tylko 7 (rekonsyliacja wyszła co do sztuki).
 2. **Rotacja 7 dni** — implementacja (parking).
 3. **Produkcja** — wskazanie żywej instancji Kajtek Idea w `.env`.
+4. **Onboarding lokalizacji w uzupełnieniu (#6) — ODRZUCONE (2026-07-02).** Liczenie fizyczne + obsługa rozbieżności = inwentaryzacja (WMS nie zmienia stanu GT, tylko dokument przez Sferę), nie szybka pętla uzupełnień. Uzupełnienia zostają szybkie. Braki/rozbieżności → magazyn **BRK „Braki" (mag 10)** przez zwykłe MM w ruchu. **Enabler do dodania:** BRK w `config/magazyny.js` (zewnętrzny, gtId 10) + kierunki MM na desktopie — bez tego BRK nie jest celem MM.

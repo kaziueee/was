@@ -238,12 +238,14 @@ router.post('/lok', async (req, res, next) => {
   }
 
   if (!zrodlo && cel.magazyn === 'K4') {
-    // pierwsza lokalizacja w K4: artykul nie moze juz miec innej lokalizacji w K4 (1 SKU = 1 lokalizacja)
+    // 1 SKU = 1 lokalizacja: blokujemy tylko gdy SKU ma INNA lokalizacje K4 niz cel.
+    // Dokladanie nieprzypisanego stanu do TEJ SAMEJ istniejacej lokalizacji K4 (cel)
+    // jest OK - zostaje jedna lokalizacja (rekoncyliacja np. po uzupelnieniu GT).
     const inna = db.prepare(
       `SELECT l.kod FROM stany_lokalizacji s
        JOIN lokalizacje l ON l.id = s.lokalizacja_id
-       WHERE s.artykul_gt_id = ? AND l.magazyn = 'K4' AND s.ilosc > 0`
-    ).get(artykul_gt_id);
+       WHERE s.artykul_gt_id = ? AND l.magazyn = 'K4' AND s.ilosc > 0 AND l.id != ?`
+    ).get(artykul_gt_id, cel.id);
     if (inna) {
       return res.status(409).json({ blad: `Artykul ma juz lokalizacje w K4 (${inna.kod}) - 1 SKU = 1 lokalizacja` });
     }
@@ -310,11 +312,14 @@ router.post('/lok', async (req, res, next) => {
       `).run(artykul_gt_id);
     }
 
-    // Dla K4: nadpisz ilosc aktualnym stanem (reconcylacja z GT); dla K4G: dodaj
+    // K4 ZE ZRODLEM (przenies): nadpisz ilo - SKU ma jedno stale miejsce = cala ilosc.
+    // K4 BEZ zrodla (przypisanie z puli nieprzypisanych): DODAJ do istniejacego stanu
+    // celu - inaczej dokladanie deficytu do lokalizacji, ktora juz cos ma, gubiloby
+    // obecny stan (np. B11 2 + przypisane 22 = 24, nie 22). Dla K4G zawsze dodaj.
     const stanCel = db.prepare('SELECT * FROM stany_lokalizacji WHERE lokalizacja_id = ? AND artykul_gt_id = ?')
       .get(lok_cel_id, artykul_gt_id);
     if (stanCel) {
-      const nowaIlosc = cel.magazyn === 'K4' ? ilo : stanCel.ilosc + ilo;
+      const nowaIlosc = (cel.magazyn === 'K4' && zrodlo) ? ilo : stanCel.ilosc + ilo;
       db.prepare('UPDATE stany_lokalizacji SET ilosc = ?, ostatnia_zmiana = CURRENT_TIMESTAMP, operator = ? WHERE id = ?')
         .run(nowaIlosc, operator ?? null, stanCel.id);
     } else {

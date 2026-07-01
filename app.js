@@ -13,6 +13,7 @@ const audytRouter = require('./routes/audyt');
 const ruchyRetry = require('./services/ruchy-retry');
 const rozjazdyJob = require('./services/rozjazdy');
 const backupJob = require('./services/backup');
+const reconciliacjaMM = require('./services/reconciliacja-mm');
 const awarie = require('./services/awarie');
 
 // globalne lapanie wyjatkow/odrzuconych obietnic + rotacja logu awarii - jak najwczesniej
@@ -52,3 +53,4 @@ app.listen(PORT, () => {
 ruchyRetry.start();
 rozjazdyJob.start();
 backupJob.start();
+reconciliacjaMM.start();

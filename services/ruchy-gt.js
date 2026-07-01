@@ -8,6 +8,8 @@
 const db = require('../db/database');
 const gtBridge = require('./gt-bridge');
 const gtFields = require('./gt-fields');
+const gtDokumenty = require('./gt-dokumenty');
+const awarie = require('./awarie');
 const { MAGAZYN_GT_ID } = require('../config/magazyny');
 
 // Probuje dokonczyc ruch po stronie GT: dla MM bez dok_gt_numer wystawia dokument MM,
@@ -46,7 +48,23 @@ async function wykonajRuchGT(ruchId) {
       });
 
       if (odpowiedz.ok && odpowiedz.dane?.sukces) {
-        db.prepare('UPDATE ruchy SET dok_gt_numer = ? WHERE id = ?').run(odpowiedz.dane.numer_dokumentu ?? null, ruchId);
+        const numer = odpowiedz.dane.numer_dokumentu;
+        if (!numer) {
+          // Sfera potwierdzila sukces, ale nie zwrocila numeru - NIE oznaczamy 'ok'
+          // (gwarancja: numer WMS == numer GT). Dokument moze istniec w GT bez numeru po
+          // stronie WMS -> ruch zostaje pending z alarmem, do recznego wyjasnienia.
+          dokOk = false;
+          bladDok = 'Sfera zwrocila sukces bez numeru dokumentu MM - ruch wstrzymany (mozliwy dokument w GT bez numeru w WMS; sprawdz recznie zanim ponowisz)';
+          awarie.blad('most-gt', bladDok, { ruchId, artykul: ruch.artykul_gt_id });
+        } else {
+          // Ustal dok_Id (PK GT) - dok_NrPelny nie jest unikalny. Brak GT SQL nie blokuje
+          // ruchu (numer wystarcza), tylko logujemy, ze nie domknelismy dok_Id.
+          let dokGtId = null;
+          const znal = await gtDokumenty.znajdzMM(numer, ruch.artykul_gt_id);
+          if (znal && znal.dok_Id) dokGtId = znal.dok_Id;
+          else awarie.blad('most-gt', `Nie ustalono dok_Id dla ${numer} (tw ${ruch.artykul_gt_id})`, { ruchId, powod: (znal && znal.blad) ? znal.blad : 'brak dokumentu w GT' });
+          db.prepare('UPDATE ruchy SET dok_gt_numer = ?, dok_gt_id = ? WHERE id = ?').run(numer, dokGtId, ruchId);
+        }
       } else {
         dokOk = false;
         bladDok = odpowiedz.blad ?? odpowiedz.dane?.blad ?? `Most GT zwrocil status ${odpowiedz.status}`;

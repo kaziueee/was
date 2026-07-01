@@ -508,8 +508,10 @@ function wierszLog(r, { zKolumnamiSku }) {
   const tr = document.createElement('tr');
   const sku = zKolumnamiSku ? `<td>${r.artykul_symbol ? `<strong>${r.artykul_symbol}</strong>` : '–'}</td>` : '';
   const dok = zKolumnamiSku ? `<td>${r.dok_gt_numer ?? '–'}</td>` : '';
-  // zywy status ruchu (z LEFT JOIN ruchy) ma pierwszenstwo nad zapisanym w chwili akcji
-  const wynik = r.ruch_status ?? r.wynik;
+  // Status: dla wpisow RUCHOWYCH (ruch_id ustawione) bierzemy ZYWY status z tabeli ruchy;
+  // gdy ruch znikl z kolejki (usuniety) join daje null -> "anulowany" zamiast mylacego,
+  // zamrozonego "pending" z chwili utworzenia. Dla akcji nie-ruchowych - zapisany wynik.
+  const wynik = r.ruch_id != null ? (r.ruch_status ?? 'anulowany') : r.wynik;
   tr.innerHTML = `
     <td>${formatDatetime(r.czas)}</td>
     <td>${AKCJA_ETYKIETA[r.akcja] ?? r.akcja}</td>

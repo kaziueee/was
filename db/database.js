@@ -34,6 +34,14 @@ if (!kolumnyRuchow.some((k) => k.name === 'mag_zrodlo_zewnetrzny')) {
   console.log('Migracja: dodano kolumne mag_zrodlo_zewnetrzny do ruchy');
 }
 
+// migracja: dodaj dok_gt_id (PK dokumentu GT) do ruchy. dok_NrPelny NIE jest unikalny
+// (numeracja MM resetuje sie per magazyn/rok), wiec sam numer nie identyfikuje dokumentu
+// jednoznacznie - dok_Id (PK sl. dok__Dokument) domyka gwarancje zgodnosci numeru WMS<->GT.
+if (!kolumnyRuchow.some((k) => k.name === 'dok_gt_id')) {
+  db.exec('ALTER TABLE ruchy ADD COLUMN dok_gt_id INTEGER');
+  console.log('Migracja: dodano kolumne dok_gt_id do ruchy');
+}
+
 // migracja: dodaj zapas_kod do stany_lokalizacji - adnotacja "zapas" dla K4
 // (wyjatek: towar w 2 miejscach, np. zbior A1 + nadmiar P5 -> GT tw_Pole1 "A1/P5").
 // Decyzja A z PROGRESS.md - nie dzielimy ilosci, to tylko wskaznik.

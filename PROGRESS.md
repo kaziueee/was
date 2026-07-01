@@ -742,11 +742,11 @@ Cel: „ruszyć z testami i już na główną bazę". Most MM zweryfikowany dzi�
 1. ~~**Backup `wms.db`**~~ — ✅ ZROBIONE 2026-07-01 (`services/backup.js`, patrz Dziennik niżej).
 2. ~~**Log błędów + audyt zmian**~~ — ✅ ZROBIONE 2026-07-01 (rozdzielone: `services/awarie.js`
    = log awarii do plików; `services/audyt.js` + tabela `audyt` = audyt biznesowy). Patrz Dziennik.
-3. **Gwarancja numeru MM** — zapisywać `dok_Id` (PK GT) obok numeru; „sukces bez numeru" =
-   błąd, NIGDY `ok` (dziś `ruchy-gt.js:49` dopuszcza numer=null+ok); tag `ruch.id` w
-   dokumencie GT + sprawdzenie przy retry (brak duplikatów przy zgubionej odpowiedzi HTTP —
-   inaczej drugi MM i rozjazd numerów); job reconciliacji WMS↔GT (po numerze+tw_Id, bo
-   `dok_NrPelny` NIE jest unikalny) z alarmem. + „brak cichych porażek" w UI Zebry.
+3. **Gwarancja numeru MM** — ✅ CZĘŚĆ NODE ZROBIONA 2026-07-01 (patrz Dziennik): `dok_gt_id`
+   (PK GT) zapisywany obok numeru; „sukces bez numeru" NIE oznacza `ok`; job reconciliacji
+   WMS↔GT z alarmem. ⏳ ZOSTAJE (most C#): klucz idempotencji (`ruch.id` w dokumencie GT) +
+   sprawdzenie przy retry = *prewencja* duplikatów przy zgubionej odpowiedzi HTTP (dziś mamy
+   *wykrywanie* przez reconciliację, nie prewencję). + „brak cichych porażek" w UI Zebry.
 4. **Logowanie + użytkownicy** — PIN na Zebrze, login+hasło na desktopie, operator z sesji
    (nie z wolnego tekstu), tabela `uzytkownicy` + middleware.
 
@@ -808,6 +808,25 @@ Trzy ROZDZIELNE mechanizmy (user wyraźnie chciał osobno):
   pecet (drugi dysk / chmura / Mac przez Tailscale — konkret do ustalenia przy wdrożeniu).
 - **Pre-deploy:** przed deployem/migracją/zmianą bazy wymuszony backup `wms_pre-deploy_...db`,
   WYŁĄCZONY z rotacji.
+
+### 2026-07-01 — gwarancja numeru MM (Faza A#3, część Node) ZROBIONE
+- Migracja: kolumna `dok_gt_id` (PK GT) w `ruchy` — `dok_NrPelny` NIE jest unikalny, więc
+  sam numer nie identyfikuje dokumentu; PK domyka jednoznaczność.
+- `services/gt-dokumenty.js` `znajdzMM(nrPelny, twId)` — namierza dokument MM w GT po
+  numerze + tw_Id (bo numer się powtarza), zwraca `{dok_Id, ilosc}`; nie rzuca (GT SQL
+  może być chwilowo down).
+- `services/ruchy-gt.js`: (a) „sukces bez numeru" NIE oznacza `ok` — ruch zostaje pending
+  + alarm (dawniej `numer=null` szło na `ok`); (b) po udanym MM ustala i zapisuje `dok_gt_id`
+  (brak GT SQL nie blokuje — numer wystarcza, logujemy brak).
+- `services/reconciliacja-mm.js` (job co godzinę, +2 min po starcie): dla każdego MM
+  `ok` z numerem sprawdza w GT numer+tw_Id i ilość; rozjazd/brak/inna ilość → ALARM do
+  logu awarii; domyka brakujące `dok_gt_id`. Wpięte w `app.js` (`reconciliacjaMM.start()`).
+  `WMS_RECON_DISABLED=1` wyłącza.
+- Zweryfikowane na żywym GT: **15/15 MM zgodne, 0 rozjazdów**; wszystkie realne MM mają
+  teraz `dok_gt_id`.
+- ⏳ ZOSTAJE (most C#): prewencja duplikatów przy zgubionej odpowiedzi HTTP = klucz
+  idempotencji (`ruch.id` → `dok_Opis` w GT) + sprawdzenie przy retry. Dziś: reconciliacja
+  WYKRYWA duplikat/rozjazd (alarm), ale go nie zapobiega.
 
 ### 2026-07-01 — scalenie Ruchy → Log (zakładka Ruchy usunięta) ZROBIONE
 - Decyzja usera: zakładki Ruchy i Log pokrywały się; **zostaje Log**, Ruchy skasowana,

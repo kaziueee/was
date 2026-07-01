@@ -168,6 +168,23 @@ function wstecz() {
 
 btnWstecz.addEventListener('click', wstecz);
 
+// #5: ruchy zrobione w tej sesji - zostaja na kroku start po sukcesie (nie czyscimy
+// do zera), czyszczone dopiero przy ponownym wejsciu w Ruch. Najnowszy na gorze.
+let zrobione = [];
+function renderujZrobione() {
+  const blok = el('zrobione-blok');
+  const lista = el('zrobione-lista');
+  if (!blok || !lista) return;
+  blok.classList.toggle('hidden', zrobione.length === 0);
+  lista.innerHTML = '';
+  for (const tekst of zrobione) {
+    const div = document.createElement('div');
+    div.className = 'zrobione-poz';
+    div.textContent = tekst;
+    lista.appendChild(div);
+  }
+}
+
 function reset() {
   if (window.BlokadaEdycji) BlokadaEdycji.zwolnij(); // zwolnij lock edycji produktu
   stan.artykul = null;
@@ -200,6 +217,7 @@ function reset() {
   ukryjPotwierdzenie();
   pokazKrok('start');
   el('input-start').focus();
+  renderujZrobione(); // pokaz liste zrobionych (jesli sa w tej sesji)
 }
 
 // --- krok 1: skan SKU, EAN, lokalizacji albo (czesci) nazwy artykulu ---
@@ -698,7 +716,11 @@ async function aktualizujKrokCel() {
           el('cel-lokalizacja-hint').textContent = `Stałe miejsce w K4 (obecnie: ${dom.ilosc} szt.) — zeskanuj inną, by zmienić`;
           stan.cel = { typ: 'wms', id: dom.lokalizacja_id, kod: dom.kod, magazyn: 'K4' };
         } else {
-          el('cel-lokalizacja-hint').textContent = 'Nowe miejsce w K4 — zeskanuj lokalizację';
+          // brak lokalizacji K4 w WMS, ale GT moze znac miejsce (tw_Pole1) - pokaz podpowiedz
+          const gtLok = gtLokDlaMagazynu('K4');
+          el('cel-lokalizacja-hint').textContent = gtLok
+            ? `wg GT: ${gtLok} · K4: 1 SKU = 1 lokalizacja — cała ilość`
+            : 'Nowe miejsce w K4 — zeskanuj lokalizację';
         }
       }
     } catch (err) {
@@ -1136,6 +1158,7 @@ async function zatwierdz() {
     }
   }
 
+  zrobione.unshift(tekst); // #5: dopisz do listy zrobionych (widoczna po powrocie na start)
   pokazSukces(tekst);
 }
 
@@ -1211,8 +1234,11 @@ function pokazWidok(nazwa) {
   el('widok-ruch').classList.toggle('hidden', nazwa !== 'ruch');
   const uzup = el('widok-uzupelnienia');
   if (uzup) uzup.classList.toggle('hidden', nazwa !== 'uzupelnienia');
-  if (nazwa === 'ruch') reset();
+  const hist = el('widok-historia');
+  if (hist) hist.classList.toggle('hidden', nazwa !== 'historia');
+  if (nazwa === 'ruch') { zrobione = []; reset(); } // #5: swieze wejscie czysci liste zrobionych
   if (nazwa === 'uzupelnienia' && window.uzupOtworz) window.uzupOtworz();
+  if (nazwa === 'historia' && window.historiaOtworz) window.historiaOtworz();
 }
 window.pokazWidok = pokazWidok;
 el('btn-go-ruch').addEventListener('click', () => {

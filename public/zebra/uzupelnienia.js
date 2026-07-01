@@ -126,14 +126,16 @@
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'lista-poz st-warn';
-      const liczba = kanal ? (p.kanaly[kanal] || 0) : p.rezerwacje;
+      // ZAWSZE calosc potrzebna do pokrycia rezerwacji (rezerwacje - stan K4), nie ilosc
+      // wybranego kanalu - sciagniecie samej porcji kanalu nie pokrywa reszty rezerwacji.
+      const potrzebne = Math.max(0, p.rezerwacje - p.stan_k4);
       btn.innerHTML = `<span class="poz-glowna">`
         + `<span class="poz-kod">${p.symbol}</span>`
         + `<span class="poz-nazwa">${p.nazwa || ''}</span>`
         + `<span class="poz-podpis">${chipyKanalow(p.kanaly, kanal)}</span>`
         + `<span class="uzup-lok-k4g">K4G: ${p.lokalizacja_gora || '—'}</span>`
         + `</span>`
-        + `<span class="poz-prawa"><span class="poz-ilosc">${liczba}</span><span class="poz-rez">${kanal || 'rez.'}</span></span>`
+        + `<span class="poz-prawa"><span class="poz-ilosc">${potrzebne}</span><span class="poz-rez">do ściągn.</span></span>`
         + `<span class="poz-strzalka">›</span>`;
       btn.addEventListener('click', () => otworzKarte(p));
       kont.appendChild(btn);

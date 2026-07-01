@@ -20,6 +20,7 @@
     <main class="ekran-tresc">
       <button type="button" id="btn-go-ruch" class="btn-menu">Ruch towaru<span>MM / zmiana lokalizacji</span></button>
       <button type="button" id="btn-go-uzup" class="btn-menu">Uzupełnienia K4<span>K4G → K4 wg rezerwacji</span></button>
+      <button type="button" id="btn-go-historia" class="btn-menu">Historia ruchów<span>ostatnie operacje na Zebrze</span></button>
       <a class="btn-menu" href="produkty.html">Test wyszukiwania (GT)<span>podgląd karty produktu</span></a>
       <button type="button" id="btn-pelny-ekran" class="btn-menu btn-menu-2">⛶ Tryb pełnoekranowy</button>
     </main>
@@ -40,6 +41,11 @@
         <h2 class="ekran-tytul">Skanuj SKU lub lokalizację</h2>
         <div class="pole-skan">
           <input type="text" id="input-start" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj lub wpisz kod" autofocus>
+        </div>
+        <!-- lista ruchow zrobionych w tej sesji (zostaje po sukcesie, czysci sie przy wejsciu w Ruch) -->
+        <div id="zrobione-blok" class="zrobione-blok hidden">
+          <p class="zrobione-naglowek">Zrobione w tej sesji:</p>
+          <div id="zrobione-lista"></div>
         </div>
       </section>
 
@@ -188,6 +194,22 @@
   </div>
   </div><!-- /widok-uzupelnienia -->
 
+  <!-- WIDOK HISTORIA (ostatnie ruchy na Zebrze: kiedy · SKU · kierunek · ilosc) -->
+  <div id="widok-historia" class="hidden">
+  <div class="ekran">
+    <header class="ekran-naglowek"><div class="ekran-sku"><h1>Historia ruchów</h1></div></header>
+    <main class="ekran-tresc">
+      <div id="hist-komunikat" class="komunikat hidden"></div>
+      <div id="hist-lista" class="lista"></div>
+      <p id="hist-pusto" class="hint hidden">Brak ruchów.</p>
+    </main>
+    <footer class="ekran-stopka">
+      <button type="button" id="hist-wstecz" class="btn-wstecz">← Wstecz</button>
+      <button type="button" id="hist-odswiez" class="btn-akcja">Odśwież</button>
+    </footer>
+  </div>
+  </div><!-- /widok-historia -->
+
   <script src="/shared/auth.js"></script>
   <script src="blokada-edycji.js"></script>
   <script src="fullscreen.js"></script>
@@ -195,5 +217,6 @@
   <script src="kreator.js"></script>
   <script src="ruch.js"></script>
   <script src="uzupelnienia.js"></script>
+  <script src="historia.js"></script>
 </body>
 </html>

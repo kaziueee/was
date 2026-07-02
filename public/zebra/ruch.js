@@ -254,6 +254,9 @@ function obsluzLokalizacje({ lokalizacja, zawartosc }) {
   }
   if (zawartosc.length === 1) {
     const poz = zawartosc[0];
+    // t_GT: towar stoi tu wg GT, ale nie ma stanu WMS na tej lokalizacji - kierujemy do
+    // rozkladu produktu (obsluga "wg GT"), nie robimy MM wprost z pustej lokalizacji WMS.
+    if (poz.tylko_gt) { wykonajSkan(poz.artykul_symbol); return; }
     stan.artykul = { artykul_gt_id: poz.artykul_gt_id, artykul_symbol: poz.artykul_symbol, artykul_nazwa: poz.artykul_nazwa, stany_gt: poz.stany_gt, lokalizacja_gt: poz.lokalizacja_gt };
     stan.zrodlo = { lokalizacja_id: lokalizacja.id, kod: lokalizacja.kod, magazyn: lokalizacja.magazyn, ilosc: poz.ilosc };
     przejdzDoCelu();
@@ -264,6 +267,7 @@ function obsluzLokalizacje({ lokalizacja, zawartosc }) {
     klucz: poz.artykul_symbol,
     artykul: { artykul_gt_id: poz.artykul_gt_id, artykul_symbol: poz.artykul_symbol, artykul_nazwa: poz.artykul_nazwa, stany_gt: poz.stany_gt, lokalizacja_gt: poz.lokalizacja_gt },
     zrodlo: { lokalizacja_id: lokalizacja.id, kod: lokalizacja.kod, magazyn: lokalizacja.magazyn, ilosc: poz.ilosc },
+    tylkoGt: poz.tylko_gt, // t_GT: przy wyborze idziemy w rozklad produktu, nie w MM z lokalizacji
     etykieta: `${poz.artykul_symbol} — ${poz.artykul_nazwa}`,
     statusBadge: statusZgodnosciBadge(poz), // tylko status; opisy GT (stany/lokalizacja) pomijamy
     rez: sumaRezerwacji(poz.stany_gt),
@@ -553,6 +557,8 @@ function renderujWybor(opcje, onWybierz) {
 }
 
 function wybierzOpcje(opcja) {
+  // t_GT z listy zawartosci lokalizacji: nie ma stanu WMS tutaj -> idz przez rozklad produktu
+  if (opcja.tylkoGt) { wykonajSkan(opcja.artykul.artykul_symbol); return; }
   stan.artykul = opcja.artykul;
   stan.zrodlo = opcja.zrodlo;
   stan.iloscSugestia = opcja.iloscSugestia ?? null;

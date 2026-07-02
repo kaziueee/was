@@ -142,6 +142,40 @@ async function szukajProdukty(fraza, limit = LIMIT_WYSZUKIWANIA) {
   return wyniki;
 }
 
+// Szuka towarow po KODZIE LOKALIZACJI w polach wlasnych GT (tw_Pole1 = miejsce K4,
+// tw_Pole8 = lokalizacja K4G). Uzywane, gdy skanujemy/wpisujemy kod lokalizacji towaru,
+// ktory jest tylko w GT (t_GT) i nie ma wiersza w WMS `lokalizacje`. Dopasowanie
+// podciagiem (pola sa skompresowane: "M2-B3-P3 / M2-B4-P3"). Ograniczone do towarow ze
+// stanem K4/K4G > 0 - inaczej zlapaloby inne kategorie, gdzie tw_Pole1/8 = autor/pomieszczenie.
+async function szukajPoLokalizacjiGt(fraza, limit = LIMIT_WYSZUKIWANIA) {
+  const kod = String(fraza || '').trim();
+  if (kod.length < 2) return [];
+
+  const parametry = { limit, lok: `%${escapeLike(kod)}%` };
+  const towary = await query(`
+    SELECT TOP (@limit) t.tw_Id, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk
+    FROM tw__Towar t
+    WHERE (t.tw_Pole1 LIKE @lok ESCAPE '\\' OR t.tw_Pole8 LIKE @lok ESCAPE '\\')
+      AND EXISTS (
+        SELECT 1 FROM tw_Stan s JOIN sl_Magazyn m ON m.mag_Id = s.st_MagId
+        WHERE s.st_TowId = t.tw_Id AND m.mag_Symbol IN ('K4', 'K4G') AND s.st_Stan > 0
+      )
+    ORDER BY t.tw_Symbol
+  `, parametry);
+
+  const lista = towary.recordset;
+  if (lista.length === 0) return [];
+
+  const stanyMap = await pobierzStanyGt(lista.map((t) => t.tw_Id));
+  return lista.map((t) => ({
+    artykul_gt_id: String(t.tw_Id),
+    symbol: t.tw_Symbol,
+    nazwa: t.tw_Nazwa,
+    ean: t.tw_PodstKodKresk || null,
+    stany_gt: stanyMap.get(String(t.tw_Id)),
+  }));
+}
+
 function sumaStanow(stanyGt) {
   return Object.values(stanyGt).reduce((suma, w) => suma + w.ilosc, 0);
 }
@@ -238,7 +272,13 @@ async function listujProdukty({ q, limit = 50, offset = 0, sort = 'sku', dir = '
     }).join(' AND ');
     parametry.symbolFraza = `${escapeLike(fraza)}%`;
     parametry.eanFraza = `${escapeLike(fraza)}%`;
-    where = `(t.tw_Symbol LIKE @symbolFraza ESCAPE '\\' OR t.tw_PodstKodKresk LIKE @eanFraza ESCAPE '\\' OR (${warunkiSlow}))`;
+    parametry.lokFraza = `%${escapeLike(fraza)}%`; // kod lokalizacji w polach GT (tw_Pole1/Pole8)
+    // Match po lokalizacji GT tylko dla towarow ze stanem K4/K4G - inaczej zlapaloby inne
+    // kategorie, gdzie tw_Pole1/8 = autor/pomieszczenie.
+    const lokWarunek = `((t.tw_Pole1 LIKE @lokFraza ESCAPE '\\' OR t.tw_Pole8 LIKE @lokFraza ESCAPE '\\')`
+      + ` AND EXISTS (SELECT 1 FROM tw_Stan sl JOIN sl_Magazyn ml ON ml.mag_Id = sl.st_MagId`
+      + `   WHERE sl.st_TowId = t.tw_Id AND ml.mag_Symbol IN ('K4', 'K4G') AND sl.st_Stan > 0))`;
+    where = `(t.tw_Symbol LIKE @symbolFraza ESCAPE '\\' OR t.tw_PodstKodKresk LIKE @eanFraza ESCAPE '\\' OR ${lokWarunek} OR (${warunkiSlow}))`;
   }
 
   if (!pokazZablokowane) {
@@ -436,6 +476,7 @@ async function pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny
 module.exports = {
   pobierzProdukt,
   szukajProdukty,
+  szukajPoLokalizacjiGt,
   listujProdukty,
   pobierzProduktyZUniwersum,
   pobierzStanyGt,

@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../db/database');
 const { MAGAZYNY_WMS } = require('../config/magazyny');
 const { podzielNaSlowa, LIMIT_WYSZUKIWANIA } = require('../services/wyszukiwanie');
-const { pobierzProdukt, szukajProdukty, pobierzStanyGt } = require('../services/gt-produkty');
+const { pobierzProdukt, szukajProdukty, szukajPoLokalizacjiGt, pobierzStanyGt } = require('../services/gt-produkty');
 const { pobierzStatusLokalizacjiGt, synchronizujLokalizacje, pobierzPrzegladLokalizacji } = require('../services/gt-fields');
 const audyt = require('../services/audyt');
 const { rozbierzKod, TYPY } = require('../services/lokalizacje-model');
@@ -224,6 +224,20 @@ router.get('/skan/:kod', async (req, res, next) => {
          FROM stany_lokalizacji WHERE lokalizacja_id = ? AND ilosc > 0
          ORDER BY artykul_symbol`
       ).all(lokalizacja.id);
+      // t_GT: dolacz towary, ktore wg pol GT (tw_Pole1/Pole8) stoja na tej lokalizacji, a
+      // nie maja stanu WMS na niej - skan lokalizacji pokazuje tez towary "tylko GT".
+      // Pomijamy juz obecne (po symbolu i po id) - importowany wiersz WMS moze byc pusty.
+      try {
+        const zGt = await szukajPoLokalizacjiGt(kod);
+        const widziane = new Set(zawartosc.map((z) => String(z.artykul_gt_id)));
+        for (const p of zGt) {
+          if (widziane.has(String(p.artykul_gt_id))) continue;
+          zawartosc.push({
+            artykul_gt_id: p.artykul_gt_id, artykul_symbol: p.symbol, artykul_nazwa: p.nazwa,
+            ilosc: p.stany_gt?.[lokalizacja.magazyn]?.ilosc ?? 0, tylko_gt: true,
+          });
+        }
+      } catch (err) { /* GT niedostepne - pokaz sam stan WMS */ }
       return res.json(await dolaczDaneGt({ typ: 'lokalizacja', lokalizacja, zawartosc }));
     }
 
@@ -251,9 +265,17 @@ router.get('/skan/:kod', async (req, res, next) => {
     if (kod.length >= 2) {
       const artykulyLokalne = szukajArtykulowPoNazwie(kod);
 
+      // GT: po nazwie/symbolu ORAZ po kodzie lokalizacji z pol wlasnych (tw_Pole1/Pole8) -
+      // to drugie znajduje towary t_GT po zeskanowanym/wpisanym kodzie lokalizacji.
       let artykulyGt = [];
       try {
-        artykulyGt = await szukajProdukty(kod);
+        const [poNazwie, poLok] = await Promise.all([
+          szukajProdukty(kod).catch(() => []),
+          szukajPoLokalizacjiGt(kod).catch(() => []),
+        ]);
+        const mapa = new Map();
+        for (const p of [...poNazwie, ...poLok]) mapa.set(String(p.artykul_gt_id), p);
+        artykulyGt = [...mapa.values()];
       } catch (err) {
         artykulyGt = []; // niedostepnosc GT nie blokuje wynikow lokalnych
       }

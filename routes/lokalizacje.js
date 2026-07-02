@@ -5,7 +5,7 @@ const { podzielNaSlowa, LIMIT_WYSZUKIWANIA } = require('../services/wyszukiwanie
 const { pobierzProdukt, szukajProdukty, szukajPoLokalizacjiGt, pobierzStanyGt } = require('../services/gt-produkty');
 const { pobierzStatusLokalizacjiGt, synchronizujLokalizacje, pobierzPrzegladLokalizacji } = require('../services/gt-fields');
 const audyt = require('../services/audyt');
-const { rozbierzKod, TYPY } = require('../services/lokalizacje-model');
+const { rozbierzKod, normalizujKodLokalizacji, TYPY } = require('../services/lokalizacje-model');
 
 const router = express.Router();
 
@@ -216,8 +216,11 @@ async function dolaczDaneGt(payload) {
 router.get('/skan/:kod', async (req, res, next) => {
   try {
     const kod = req.params.kod;
+    // Kody lokalizacji: dopasuj tez formy bez myslnika (A8P2 == A8-P2) - stare naklejki.
+    // Dla SKU/EAN/nazwy normalizacja zwraca kod bez zmian, wiec dalsze lookupy dzialaja jak dotad.
+    const kodLok = normalizujKodLokalizacji(kod);
 
-    const lokalizacja = db.prepare('SELECT * FROM lokalizacje WHERE kod = ?').get(kod);
+    const lokalizacja = db.prepare('SELECT * FROM lokalizacje WHERE kod = ?').get(kodLok);
     if (lokalizacja) {
       const zawartosc = db.prepare(
         `SELECT artykul_gt_id, artykul_symbol, artykul_nazwa, ilosc
@@ -228,7 +231,7 @@ router.get('/skan/:kod', async (req, res, next) => {
       // nie maja stanu WMS na niej - skan lokalizacji pokazuje tez towary "tylko GT".
       // Pomijamy juz obecne (po symbolu i po id) - importowany wiersz WMS moze byc pusty.
       try {
-        const zGt = await szukajPoLokalizacjiGt(kod);
+        const zGt = await szukajPoLokalizacjiGt(lokalizacja.kod); // kanoniczny kod (GT trzyma z myslnikiem)
         const widziane = new Set(zawartosc.map((z) => String(z.artykul_gt_id)));
         for (const p of zGt) {
           if (widziane.has(String(p.artykul_gt_id))) continue;
@@ -271,7 +274,7 @@ router.get('/skan/:kod', async (req, res, next) => {
       try {
         const [poNazwie, poLok] = await Promise.all([
           szukajProdukty(kod).catch(() => []),
-          szukajPoLokalizacjiGt(kod).catch(() => []),
+          szukajPoLokalizacjiGt(kodLok).catch(() => []), // znormalizowany kod lokalizacji (bez myslnika tez)
         ]);
         const mapa = new Map();
         for (const p of [...poNazwie, ...poLok]) mapa.set(String(p.artykul_gt_id), p);
@@ -300,9 +303,10 @@ router.get('/skan/:kod', async (req, res, next) => {
   }
 });
 
-// GET /api/lokalizacje/kod/:kod - lookup po kodzie (np. po skanie etykiety)
+// GET /api/lokalizacje/kod/:kod - lookup po kodzie (np. po skanie etykiety).
+// Normalizuje myslniki (A8P2 == A8-P2) - obsluga starych naklejek bez myslnika.
 router.get('/kod/:kod', (req, res) => {
-  const lokalizacja = db.prepare('SELECT * FROM lokalizacje WHERE kod = ?').get(req.params.kod);
+  const lokalizacja = db.prepare('SELECT * FROM lokalizacje WHERE kod = ?').get(normalizujKodLokalizacji(req.params.kod));
   if (!lokalizacja) return res.status(404).json({ blad: 'Lokalizacja nie znaleziona' });
   res.json(lokalizacja);
 });

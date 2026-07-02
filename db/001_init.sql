@@ -42,6 +42,8 @@ CREATE TABLE ruchy (
   mag_cel_zewnetrzny TEXT,          -- np. ZEW1 gdy cel to mag. zewnętrzny
   ilosc DECIMAL NOT NULL,
   dok_gt_numer TEXT,                -- numer MM w GT, NULL przy LOK
+  dok_gt_id INTEGER,                -- PK dokumentu GT (dok__Dokument.dok_Id), domyka gwarancje numeru
+  mm_proby INTEGER NOT NULL DEFAULT 0, -- licznik prob wystawienia MM (prewencja duplikatow, Faza A#3)
   status TEXT NOT NULL DEFAULT 'pending',  -- pending / ok / error
   blad_opis TEXT,
   data_ruchu DATETIME DEFAULT CURRENT_TIMESTAMP,

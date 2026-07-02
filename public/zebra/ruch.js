@@ -1171,8 +1171,15 @@ async function zatwierdz() {
     pokazKomunikat(dane.blad || 'Blad zapisu ruchu', 'blad');
     return;
   }
+  // MM (przesuniecie miedzy magazynami) wymaga dokumentu w GT - dopiero to faktycznie
+  // przesuwa stan. LOK (zmiana lokalizacji w obrebie magazynu / przypisanie) NIE tworzy
+  // dokumentu; jego 'pending' oznacza tylko zalegajacy sync pol lokalizacyjnych GT, a sama
+  // zmiana w WMS jest juz zapisana i autorytatywna.
+  const wymagaDokumentuGt = url === '/api/ruchy/mm' || url === '/api/ruchy/przyjecie' || url === '/api/ruchy/mm-zewnetrzny';
+  const gtOczekuje = dane && dane.status && dane.status !== 'ok';
+  const niepotwierdzoneMM = wymagaDokumentuGt && gtOczekuje;
   let tekst = podsumowanie();
-  if (dane && dane.status && dane.status !== 'ok') tekst += ' · GT: oczekuje';
+  if (gtOczekuje && !wymagaDokumentuGt) tekst += ' · GT: oczekuje';
 
   // Zapas K4: po udanym ruchu DO K4 (lokalizacja K4 juz istnieje) zapisz/wyczysc adnotacje,
   // jesli pole sie zmienilo. To osobny ruch (k4-zapas) - blad nie cofa zapisanego ruchu.
@@ -1189,6 +1196,14 @@ async function zatwierdz() {
     }
   }
 
+  // "brak cichych porazek" (Faza A#3): gdy MM nie potwierdzil sie w GT (most/Sfera
+  // niedostepne), NIE pokazujemy zielonego sukcesu - inaczej magazynier uzna, ze stan
+  // sie przesunal. Ruch zostaje 'pending' w WMS i job ponawiania go dogoni.
+  if (niepotwierdzoneMM) {
+    zrobione.unshift(`⏳ niepotwierdzone w GT: ${tekst}`); // #5: uczciwy slad w liscie sesji
+    pokazSukces(`${tekst}\n\n⏳ NIE potwierdzone w GT — oczekuje. Zapisane w WMS, zostanie ponowione. Sprawdź połączenie z GT.`, 'ostrzezenie');
+    return;
+  }
   zrobione.unshift(tekst); // #5: dopisz do listy zrobionych (widoczna po powrocie na start)
   pokazSukces(tekst);
 }
@@ -1231,10 +1246,37 @@ function beep() {
   }
 }
 
-function pokazSukces(tekst) {
+// dwa opadajace, niskie tony = wyrazny sygnal "UWAGA" (inny niz wznoszacy beep sukcesu)
+function beepOstrzezenie() {
+  try {
+    odblokujAudio();
+    if (!audioCtx) return;
+    const t0 = audioCtx.currentTime;
+    for (const [freq, dt] of [[440, 0], [311, 0.2]]) {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.connect(g);
+      g.connect(audioCtx.destination);
+      o.type = 'square';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t0 + dt);
+      g.gain.exponentialRampToValueAtTime(0.5, t0 + dt + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.22);
+      o.start(t0 + dt);
+      o.stop(t0 + dt + 0.23);
+    }
+  } catch (e) { /* dzwiek opcjonalny */ }
+}
+
+// wariant 'ostrzezenie' = operacja NIE potwierdzona w GT (MM oczekuje) - inny kolor/ikona/
+// dzwiek, zeby magazynier nie odczytal ekranu jako zielony sukces ("brak cichych porazek").
+function pokazSukces(tekst, wariant) {
+  const ostrzezenie = wariant === 'ostrzezenie';
   el('sukces-tekst').textContent = tekst;
+  el('sukces-ikona').textContent = ostrzezenie ? '⏳' : '✓';
+  el('sukces-overlay').classList.toggle('ostrzezenie', ostrzezenie);
   el('sukces-overlay').classList.remove('hidden');
-  beep();
+  if (ostrzezenie) beepOstrzezenie(); else beep();
 }
 
 // ekran sukcesu znika po dotknieciu i resetuje kreator do nowego ruchu

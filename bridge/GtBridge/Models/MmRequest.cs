@@ -29,5 +29,12 @@ namespace GtBridge.Models
 
         [JsonPropertyName("operator")]
         public string? Operator { get; set; }
+
+        // Gotowa tresc Uwag dokumentu (Faza A#3), budowana po stronie Node:
+        // "WMS-RUCH:<id> | kto | kiedy". Most tylko wpisuje ja do dok_Uwagi. Zawiera klucz
+        // idempotencji (Node odnajduje po nim dokument przy ponowieniu, zamiast wystawic drugi
+        // MM po zgubionej odpowiedzi HTTP) oraz slad kto/kiedy zrobil przesuniecie.
+        [JsonPropertyName("uwagi")]
+        public string? Uwagi { get; set; }
     }
 }

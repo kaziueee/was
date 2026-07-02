@@ -22,8 +22,8 @@ namespace GtBridge.Services
         public Task<DokumentResponse> WystawMmAsync(MmRequest request)
         {
             _logger.LogInformation(
-                "MOCK MM: artykul={ArtykulGtId} ilosc={Ilosc} {Zrodlo} -> {Cel} (operator={Operator})",
-                request.ArtykulGtId, request.Ilosc, request.MagazynZrodlowy, request.MagazynDocelowy, request.Operator);
+                "MOCK MM: artykul={ArtykulGtId} ilosc={Ilosc} {Zrodlo} -> {Cel} (operator={Operator}, uwagi={Uwagi})",
+                request.ArtykulGtId, request.Ilosc, request.MagazynZrodlowy, request.MagazynDocelowy, request.Operator, request.Uwagi);
 
             var numer = $"MM {_licznikDokumentow++}/{DateTime.Now:yyyy}/MOCK";
             return Task.FromResult(new DokumentResponse { Sukces = true, NumerDokumentu = numer });

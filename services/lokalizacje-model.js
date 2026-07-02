@@ -56,6 +56,21 @@ function rozbierzKod(kodSurowy, magazyn) {
   return { hala, regal, alejka, strona, kolumna, typ: typLokalizacji(magazyn, hala, regal) };
 }
 
+// Kod bez myslnikow/spacji -> postac kanoniczna z myslnikami (A8P2 -> A8-P2,
+// M2A8P2 -> M2-A8-P2, a8-p2 -> A8-P2). Czesc etykiet na magazynie ma stare kody
+// bez myslnika - dzieki temu skan/wpis czyta obie formy do czasu wymiany naklejek.
+// Kody spoza wzorca lokalizacji (RB, BIURO, SKU, EAN) zwracane bez zmian (uppercase/trim).
+const WZORZEC_LUZNY = /^(M2)?([A-L])(\d{1,2})(?:P([1-6]))?$/;
+function normalizujKodLokalizacji(kodSurowy) {
+  const kod = String(kodSurowy ?? '').trim().toUpperCase();
+  const bez = kod.replace(/[\s-]/g, '');
+  const m = bez.match(WZORZEC_LUZNY);
+  if (!m) return kod; // nie wyglada na kod lokalizacji - nie ruszamy (SKU/EAN/nazwane)
+  const hala = m[1] ? 'M2-' : '';
+  const poziom = m[4] ? `-P${m[4]}` : '';
+  return `${hala}${m[2]}${m[3]}${poziom}`;
+}
+
 const TYPY = ['paleta', 'trawers', 'polka', 'inny'];
 
-module.exports = { rozbierzKod, TYPY };
+module.exports = { rozbierzKod, normalizujKodLokalizacji, TYPY };

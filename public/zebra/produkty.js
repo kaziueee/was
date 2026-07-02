@@ -75,7 +75,10 @@ inputSzukaj.addEventListener('keydown', async (e) => {
     const dane = await res.json();
 
     if (!res.ok) {
-      pokazKomunikat(dane.blad || `Blad ${res.status}`, 'blad');
+      // zostaw slad czego szukano: wpisany/zeskanowany kod wraca do pola (zaznaczony) + w komunikacie
+      inputSzukaj.value = wartosc;
+      try { inputSzukaj.select(); } catch { /* pole moze nie wspierac select() */ }
+      pokazKomunikat(res.status === 404 ? `Nie znaleziono: „${wartosc}”` : (dane.blad || `Blad ${res.status}`), 'blad');
       return;
     }
 

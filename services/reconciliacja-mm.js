@@ -3,8 +3,9 @@
 // Reconciliacja MM: WMS <-> GT (Faza A#3, gwarancja numeru MM).
 // Dla kazdego ruchu MM ze statusem 'ok' i numerem dokumentu sprawdza, czy w GT istnieje
 // dokument o tym numerze + tw_Id, z ta sama iloscia. Rozjazdy (brak w GT / inna ilosc /
-// mozliwy duplikat) -> ALARM do logu awarii. To siatka WYKRYWANIA - prewencja duplikatow
-// (klucz idempotencji w dokumencie GT) wymaga zmiany w moscie C# (patrz PROGRESS.md Faza A#5/B).
+// mozliwy duplikat) -> ALARM do logu awarii. To siatka WYKRYWANIA (druga linia obrony).
+// PREWENCJA duplikatow dziala juz wczesniej: klucz "WMS-RUCH:<id>" w dok_Uwagi + sprawdzenie
+// przy ponowieniu (services/ruchy-gt.js + gt-dokumenty.js znajdzMMpoKluczu).
 
 const db = require('../db/database');
 const gtDokumenty = require('./gt-dokumenty');

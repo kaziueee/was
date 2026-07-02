@@ -144,6 +144,17 @@ namespace GtBridge.Services
                     dynamic pozycja = dok.Pozycje.Dodaj(towarId);
                     pozycja.IloscJm = request.Ilosc;
 
+                    // Uwagi dokumentu (Faza A#3): gotowy tekst z Node ("WMS-RUCH:<id> | kto | kiedy").
+                    // Zawiera klucz idempotencji (jesli odpowiedz HTTP zaginie, ponowienie odnajdzie
+                    // ten dokument po kluczu - services/gt-dokumenty.js znajdzMMpoKluczu - zamiast
+                    // wystawic drugi MM) oraz slad kto/kiedy zrobil przesuniecie.
+                    // UWAGA: nazwa wlasciwosci Uwagi wg gta.chm > SuDokument - zweryfikowac na
+                    // serwerze przy pierwszym tescie MM (gdyby COM rzucil "brak skladowej Uwagi").
+                    if (!string.IsNullOrEmpty(request.Uwagi))
+                    {
+                        dok.Uwagi = request.Uwagi;
+                    }
+
                     dok.StatusDokumentu = DokumentStatusWywolany;
                     dok.Zapisz();
 

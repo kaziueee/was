@@ -613,13 +613,17 @@ html, body {
   z-index: 1000;
 }
 .sukces-overlay.hidden { display: none; }
+/* Wariant OSTRZEZENIE: MM zapisane w WMS, ale NIE potwierdzone w GT (oczekuje). Inny kolor
+   + ikona => magazynier nie odczyta ekranu jako zielony sukces ("brak cichych porazek", Faza A#3). */
+.sukces-overlay.ostrzezenie { background: rgba(146, 64, 14, 0.97); }
+.sukces-overlay.ostrzezenie .sukces-ikona { background: rgba(255,255,255,0.22); }
 .sukces-box { text-align: center; color: #fff; max-width: 420px; }
 .sukces-ikona {
   width: 5rem; height: 5rem; margin: 0 auto var(--space-4);
   border-radius: 50%; background: rgba(255,255,255,0.18);
   display: flex; align-items: center; justify-content: center; font-size: 3rem;
 }
-.sukces-box p { margin: 0; font-size: var(--font-title); font-weight: 600; line-height: 1.4; }
+.sukces-box p { margin: 0; font-size: var(--font-title); font-weight: 600; line-height: 1.4; white-space: pre-line; }
 .sukces-hint { margin-top: var(--space-4) !important; font-size: var(--font-label) !important; font-weight: 400 !important; opacity: 0.9; }
 
 /* --- Uzupelnienia K4 --- */

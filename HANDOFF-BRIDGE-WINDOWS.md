@@ -84,8 +84,27 @@ Sekcja `Sfera` (hasła jawne — most je szyfruje w runtime przez `InsERT.Dodatk
   → `Uruchom(2 /*DopasujOperatora*/, gtaUruchomNowy|gtaUruchomWTle = 6)` → zwraca `Subiekt`.
   Hasła szyfruje `InsERT.Dodatki.Szyfruj(jawne)`.
 - **MM:** `Subiekt.Dokumenty.DodajMM()` → `MagazynNadawczyId`/`MagazynOdbiorczyId`
-  (mag_Id GT) → `Pozycje.Dodaj(tw_Id)` → `IloscJm` → `StatusDokumentu=1` (Wywolany,
-  realny skutek magazynowy) → `Zapisz()` → odczyt `NumerPelny`.
+  (mag_Id GT) → `Pozycje.Dodaj(tw_Id)` → `IloscJm` → **`dok.Uwagi = request.Uwagi`**
+  (Faza A#3, patrz niżej) → `StatusDokumentu=1` (Wywolany, realny skutek magazynowy) →
+  `Zapisz()` → odczyt `NumerPelny`.
+
+## Faza A#3 — Uwagi dokumentu MM (✅ POTWIERDZONE NA ŻYWO 2026-07-02)
+
+Most wpisuje do **Uwag** wystawianego MM gotowy tekst z Node (`request.Uwagi`), np.
+`WMS-RUCH:121 | Mateusz | 02.07.2026 16:58`. To (a) **klucz idempotencji** — Node przy
+ponowieniu szuka dokumentu po `dok_Uwagi LIKE 'WMS-RUCH:<id> |%'` i adoptuje go zamiast
+wystawić drugi MM (gdy odpowiedź HTTP zaginęła); (b) ślad **kto/kiedy** zrobił przesunięcie.
+
+`SferaGtService.WystawMmAsync` ustawia `dok.Uwagi = request.Uwagi`. **Właściwość `Uwagi`
+działa** — zweryfikowane na żywym GT (ruch 121 = MM 334/2026, `znajdzMMpoKluczu` znalazł
+dokument po kluczu). `MmRequest` ma pole `uwagi` (string), już nie `ruch_id`.
+
+### Deploy zmian C# na Windows (most = ręczna kopia plików, NIE git)
+1. Podmień zmienione pliki `.cs` na Windowsie (kopia/wklej z Maca).
+2. Zamknij działający most: Ctrl+C w jego oknie albo `taskkill /IM GtBridge.exe /F`.
+3. W folderze projektu (z `GtBridge.csproj`): `dotnet publish -c Release -r win-x86 --self-contained`.
+4. Odpal nowy: `.\bin\Release\net8.0-windows\win-x86\publish\GtBridge.exe` (czeka na
+   `Now listening on: http://0.0.0.0:5000`, `Hosting environment: Production`).
 - **Id magazynów GT** (z `sl_Magazyn`): **K4=4, K4G=8, MAG=1, LS=6**.
 - Plik z modelem: `gta.chm` (InsERT GT dla aplikacji). Rozpakowanie na nie-Windows:
   `extract_chmLib gta.chm <katalog>` (chmlib) — strony HTML w `htm/`.

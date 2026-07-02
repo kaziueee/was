@@ -402,6 +402,26 @@ dla pola "zapas".
 
 ## Dziennik zmian
 
+### 2026-07-02 — most z ikoną w trayu + git na Windows + jedno-klik aktualizacja (Faza C#9)
+
+Most przestał być „oknem konsoli, którego trzeba szukać" — jest aplikacją z ikoną przy zegarze,
+a jego aktualizacja to jeden klik zamiast kopiuj-wklej plików.
+
+- **Ikona w trayu** (`bridge/GtBridge/Tray/TrayIkona.cs`, `Services/StanMostu.cs`): kolor = stan
+  ostatniej operacji GT (szary start / zielony OK / czerwony błąd), dymek = „Most WMS :5000 …".
+  Menu: Testuj połączenie z GT (`TestPolaczeniaAsync` — Polacz bez wystawiania dok.), Restart
+  mostu (zwalnia :5000 przed startem nowej instancji), Pokaż log (konsola na wierzch), Zamknij.
+  `Program.Main` [STAThread]: `host.Start()` nieblokująco + `Application.Run(tray)`.
+  csproj: `UseWindowsForms=true` (konsola zostaje). Zbudowane i uruchomione na Windows — ikona OK.
+- **Git na pececie** (koniec kopiuj-wklej): sklonowano repo do `C:\Users\Mateusz\Desktop\was`
+  (git 2.38, login przez przeglądarkę). `appsettings.json` z hasłami: `skip-worktree` (pull go
+  nie rusza; w repo pusty szablon). Most budowany/uruchamiany z klona `...\was\bridge\GtBridge`.
+- **Jedno-klik aktualizacja** (`bridge/aktualizuj-most.cmd` → `aktualizuj-most.ps1`): dwuklik →
+  taskkill → `git pull --ff-only` → `dotnet publish -r win-x86` → start nowego exe. Ścieżki
+  względem pliku (`$PSScriptRoot`), więc działa niezależnie od miejsca klona.
+- **Do zrobienia (szlif):** tryb bez okna konsoli (żeby nie dało się przypadkiem zamknąć —
+  dziś zamknięcie konsoli ubija most); ew. autostart. Tailscale (dostęp zdalny) — osobny krok.
+
 ### 2026-07-02 — prewencja duplikatów MM + Uwagi kto/kiedy + brak cichych porażek (Faza A#3 domknięta)
 
 Domknięcie gwarancji numeru MM: do tej pory mieliśmy WYKRYWANIE duplikatów (reconciliacja),

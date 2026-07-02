@@ -26,7 +26,13 @@
   };
 
   // --- API pomocnicze (bez patcha tokenu tam gdzie niepotrzebny) ---
-  async function jGet(url) { const r = await origFetch(url); return r.ok ? r.json() : Promise.reject(r); }
+  // origFetch omija monkey-patch, wiec token dokladamy tu recznie - inaczej walidacja
+  // sesji na starcie (/api/uzytkownicy/ja) leci bez tokenu -> 401 -> odswiezenie wylogowuje.
+  async function jGet(url) {
+    const h = token() ? { 'x-wms-token': token() } : {};
+    const r = await origFetch(url, { headers: h });
+    return r.ok ? r.json() : Promise.reject(r);
+  }
   async function jPost(url, body, withToken) {
     const h = { 'Content-Type': 'application/json' };
     if (withToken && token()) h['x-wms-token'] = token();

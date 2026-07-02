@@ -50,6 +50,34 @@ if (!kolumnyStanow.some((k) => k.name === 'zapas_kod')) {
   console.log('Migracja: dodano kolumne zapas_kod do stany_lokalizacji');
 }
 
+// migracja: cechy strukturalne lokalizacji (hala/regal/alejka/strona/kolumna/poziom/typ).
+// Wyliczane z kodu deterministycznie (services/lokalizacje-model) - do filtrowania/
+// raportowania na przyszlosc. Istniejace wiersze backfillowane z ich kodu.
+const kolumnyLok = db.prepare("PRAGMA table_info(lokalizacje)").all();
+if (!kolumnyLok.some((k) => k.name === 'typ')) {
+  for (const kol of ['hala TEXT', 'regal TEXT', 'alejka INTEGER', 'strona TEXT', 'kolumna INTEGER', 'typ TEXT']) {
+    db.exec(`ALTER TABLE lokalizacje ADD COLUMN ${kol}`);
+  }
+  const { rozbierzKod } = require('../services/lokalizacje-model');
+  const wiersze = db.prepare('SELECT id, kod, magazyn FROM lokalizacje').all();
+  const upd = db.prepare('UPDATE lokalizacje SET hala=?, regal=?, alejka=?, strona=?, kolumna=?, typ=? WHERE id=?');
+  db.exec('BEGIN');
+  for (const w of wiersze) {
+    const c = rozbierzKod(w.kod, w.magazyn);
+    upd.run(c.hala, c.regal, c.alejka, c.strona, c.kolumna, c.typ, w.id);
+  }
+  db.exec('COMMIT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_lok_typ ON lokalizacje(typ)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_lok_alejka ON lokalizacje(alejka)');
+  console.log(`Migracja: dodano cechy strukturalne lokalizacji (backfill ${wiersze.length} wierszy)`);
+}
+
+// migracja: usun kolumne poziom - wynika wprost z kodu lokalizacji, nie trzymamy osobno
+if (kolumnyLok.some((k) => k.name === 'poziom')) {
+  db.exec('ALTER TABLE lokalizacje DROP COLUMN poziom');
+  console.log('Migracja: usunieto kolumne poziom z lokalizacje (wynika z kodu)');
+}
+
 // plan lokalizacji z GT (K4 i K4G) - zachowany do pelnego przypisania. GT trzyma
 // planowane lokalizacje (np. 3), ale pierwszy zapis WMS nadpisuje pole GT i reszta
 // planu by przepadla. Tu trzymamy oryginalny tekst GT jako sciage, per magazyn,

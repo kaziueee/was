@@ -5,8 +5,17 @@ CREATE TABLE lokalizacje (
   kod TEXT NOT NULL UNIQUE,         -- np. M2-J14-P2
   magazyn TEXT NOT NULL,            -- K4 lub K4G
   aktywna INTEGER NOT NULL DEFAULT 1,
+  -- cechy strukturalne wyliczane z kodu (services/lokalizacje-model), do filtrow/raportow
+  hala TEXT,                        -- '1' | 'M2' | NULL (nazwana)
+  regal TEXT,                       -- A..L | NULL
+  alejka INTEGER,                   -- 1..6 (para regalow) | NULL
+  strona TEXT,                      -- 'a' | 'b' | NULL
+  kolumna INTEGER,                  -- numer po literze regalu | NULL
+  typ TEXT,                         -- 'paleta' | 'trawers' | 'polka' | 'nazwana'
   utworzona DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX idx_lok_typ ON lokalizacje(typ);
+CREATE INDEX idx_lok_alejka ON lokalizacje(alejka);
 
 -- Tabela 2: stany lokalizacji
 CREATE TABLE stany_lokalizacji (

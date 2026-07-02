@@ -9,3 +9,6 @@ server.log
 *.log
 settings.local.json
 .DS_Store
+
+# backupy bazy (np. wms-przed-resetem-*.db) - dane, nie do repo
+db/*.db

@@ -402,6 +402,97 @@ dla pola "zapas".
 
 ## Dziennik zmian
 
+### 2026-07-02 — RESET mapy lokalizacji + import na świeżo z pliku (Faza B#5 wykonana)
+
+Wyczyszczenie testowej mapy i wgranie realnej mapy z `~/Documents/lokalizacje-do-importu.xlsx`
+(arkusze K4 + K4G). Produkty wróciły do statusu „tylko GT" — magazynier przypisze skanem.
+
+- **Backup przed operacją**: `db/wms-przed-resetem-20260702-022150.db` (zachowany).
+- **Usunięto**: 95 lokalizacji, 36 `stany_lokalizacji` (przypisania → produkty `t_GT`),
+  23 `plan_lokalizacji`, 5 `rozjazdy`. **Historia zachowana**: `ruchy` (107) + `audyt`
+  zostają — odpięto tylko `ruchy.lok_zrodlo_id/lok_cel_id` (FK do kasowanych lokalizacji;
+  `stany_lokalizacji` i `ruchy` referują `lokalizacje(id)`, `foreign_keys=ON`).
+- **Zaimportowano 1948 lokalizacji**: K4 = 855, K4G = 1093. Typy: paleta 1218 · polka 396 ·
+  trawers 332 · inny 2 (RB, BIURO). Cechy strukturalne wyliczone `rozbierzKod` przy insercie.
+- **⚠️ Błąd w źródle**: 10 kodów `E2-P4`…`E11-P4` było w OBU arkuszach (K4 i K4G). Kod jest
+  globalnie unikalny; wg reguły E–J=półki na K4 → przypisane do K4, duplikaty K4G odrzucone
+  (stąd K4G=1093, nie 1103). Do ewentualnej poprawki w arkuszu.
+- Jeden wpis audytu `reset_import_lokalizacji` (liczby). Operacja jednorazowym skryptem
+  (usunięty po wykonaniu — destrukcyjny, nie zostaje w repo).
+- **Nie zaimportowano** arkuszy „Luki" (67, do weryfikacji przejść) i „Do ręki" (21, do
+  ujednolicenia) — to nadal otwarte (zob. mapa-lokalizacji: pozostaje weryfikacja luk + długości regałów).
+
+### 2026-07-02 — kolejność listy lokalizacji jak w pliku mapy
+
+- `GET /api/lokalizacje` sortuje `ORDER BY magazyn, (hala IS NULL), hala, regal, kolumna, kod`
+  zamiast tekstowego `ORDER BY kod` (który dawał A1, A10, A11, A2…). Teraz: A1, A2, … A10,
+  A11 … B…, C…, a **M2 po hali 1**; grupy K4→K4G jak arkusze w xlsx; „inny" (bez struktury)
+  na końcu magazynu. Kolumna liczbowa `kolumna` daje sort numeryczny, `kod` domyka poziom
+  (A1, A1-P2, A1-P3). Front renderuje w kolejności z endpointu (bez własnego sortu).
+
+### 2026-07-02 — poprawka reguły typów + ręczna edycja typu
+
+User skorygował reguły `typ` (moja poprzednia wersja z xlsx była błędna):
+- **K4G = zawsze paleta** (to lokalizacje paletowe od poziomu P2 — cały magazyn).
+- **trawers = paleta dzielona na pół wysokości** (podstawa + P1) → regały **C,D,K** na K4.
+- **półka = tylko K4 hala 1, regały E–J**; **M2 nie ma półek** → E–J na M2 = trawers.
+- Reguła: `typ = f(magazyn, hala, regał)` (poziom nie wchodzi). `services/lokalizacje-model.js`:
+  `rozbierzKod(kod, magazyn)` — magazyn wpływa TYLKO na typ.
+- Rozkład na realnych 1958 kodach: K4 = 125 paleta / 332 trawers / 396 polka / 2 inny;
+  K4G = 1103 paleta. Kolumna „Typ" w xlsx (stara reguła) — nieużywana.
+- **Ręczna edycja typu** (`PUT /api/lokalizacje/:id {typ}` — nadpisanie reguły; walidacja
+  ∈ {paleta,trawers,polka,inny}; audyt przed/po). Desktop: dropdown w kolumnie „Typ" →
+  dropdown → zapis. Edycja kodu bez `typ` = przeliczenie regułowe.
+- Zweryfikowano: parser na 1958 kodach (rozkład wyżej), re-derive 45 wierszy testowych,
+  override typ + walidacja + audyt + przeliczenie przy edycji kodu (przez serwer).
+
+### 2026-07-01 — import zbiorczy lokalizacji (desktop, Faza B#5)
+
+Przygotowanie desktopu pod wgranie mapy lokalizacji (~855 K4 + ~1103 K4G z
+`~/Documents/lokalizacje-do-importu.xlsx`, zob. [[mapa-lokalizacji]]).
+
+- **Backend `POST /api/lokalizacje/import`** (`routes/lokalizacje.js`) — body
+  `{ lokalizacje: [{kod, magazyn}], podglad?, operator? }`. Idempotentny: istniejący
+  `kod` pomijany (bez nadpisania); walidacja `magazyn ∈ {K4,K4G}`, trim/uppercase,
+  dedupe w paczce, puste linie ignorowane. `podglad:true` tylko liczy (nic nie
+  zapisuje). Zapis w jednej transakcji (`db.exec('BEGIN'/'COMMIT'/'ROLLBACK')` —
+  `node:sqlite` nie ma `db.transaction()`) + **jeden** wpis audytu `import_lokalizacji`.
+  Zwraca `{dodane, pominiete, bledy:[{kod,powod}]}`. Reguły w backendzie (CLAUDE.md #5).
+- **UI desktop** (panel Lokalizacje) — `<details>` „Import zbiorczy": textarea (kod
+  na linię, wklejasz kolumnę z arkusza K4/K4G), wybór magazynu, „Podgląd" (ile
+  nowych/pominiętych/błędnych zanim cokolwiek zapisze) → „Importuj" (aktywne dopiero
+  po udanym podglądzie; zmiana tekstu/magazynu wymusza ponowny podgląd).
+- **Zweryfikowano end-to-end** (żywy serwer + token sesji): podgląd (dedupe/lowercase/
+  zły magazyn/puste linie), realny import 2 szt., idempotencja (ponowny → pominięte),
+  audyt. Testowe kody i sesje sprzątnięte, baza z powrotem na 45 lok. testowych.
+- **NIE ruszono danych.** Faktyczny wipe testu (29/45 lok. ma powiązane
+  `stany_lokalizacji` — trzeba czyścić oba poziomy) + import realnej mapy = osobny,
+  świadomy krok, gdy mapa będzie finalna (wg [[mapa-lokalizacji]]: 67 luk + 21 „do ręki").
+
+**Cechy strukturalne lokalizacji (ten sam dzień, cd.):** tabela `lokalizacje`
+rozszerzona o `hala`/`regal`/`alejka`/`strona`/`kolumna`/`typ` — do
+filtrowania/raportów „na przyszłość". Poziom (`-P<n>`) NIE jest osobną kolumną
+(wynika z kodu) — usunięty po uwadze usera; parser nadal rozpoznaje kody z poziomem.
+
+- **Parser `services/lokalizacje-model.js`** (`rozbierzKod`) — deterministyczny,
+  wylicza cechy z samego kodu (`[M2-]<REGAL><KOL>[-P<n>]`). Reguły potwierdzone na
+  danych (arkusz `lokalizacje-do-importu.xlsx` ma te kolumny policzone): regał→alejka/
+  strona (A,B→1 · C,D→2 … K,L→6; nieparzysta='a', parzysta='b'); **typ = f(hala,regał)**:
+  hala 1: A,B,L=paleta · C,D,K=trawers · E–J=polka; M2: A,B,C,D=paleta · E–J=polka
+  (w M2 C,D to paleta, nie trawers!); RB/BIURO/śmieci=`nazwana`. **Zwalidowano parser
+  na wszystkich 1958 kodach z xlsx → 1958/1958 zgodne** z policzonymi kolumnami.
+- **Migracja + backfill** (`db/database.js`) — ALTER TABLE + przeliczenie istniejących
+  45 wierszy z ich kodu; indeksy `idx_lok_typ`, `idx_lok_alejka`. `001_init.sql`
+  zaktualizowany dla świeżych instalacji.
+- **Endpointy** — import, `POST /` (dodaj 1) i `PUT /:id` (edycja kodu) wypełniają/
+  przeliczają cechy przez `rozbierzKod`. Podgląd importu zwraca rozbicie `typy` (ile
+  paleta/trawers/polka/nazwana wejdzie).
+- **Desktop** — tabela Lokalizacje pokazuje kolumny Typ (kolorowa plakietka)/Hala/
+  Alejka·strona; podgląd importu pokazuje rozbicie typów.
+- **Zweryfikowano** — parser 1958/1958, migracja+backfill 45 wierszy, import przez
+  serwer (typy: C5→trawers, E7-P3→polka, BIURO→nazwana, istniejące pominięte), GET
+  zwraca nowe pola, tabela desktop renderuje kolumny. Dane testowe sprzątnięte (45 lok.).
+
 ### 2026-06-20 (cd. 2 — okno akcji, inline edycja, dopracowania)
 
 - **Akcja w osobnym oknie** — „Przenieś"/„Przypisz" otwiera overlay na wierzchu modalu
@@ -752,8 +843,9 @@ Cel: „ruszyć z testami i już na główną bazę". Most MM zweryfikowany dzi�
    blokada edycji produktu (desktop + Zebra). Follow-up: job sprzątania sesji (dziś leniwe).
 
 ### Faza B — Dane startowe
-5. **Import lokalizacji** — user zrzuca z GT (Pole1/Pole8) i porządkuje → import masowy
-   (CSV → `lokalizacje`) + walidacja (kod unikalny, magazyn ∈ {K4,K4G}).
+5. **Import lokalizacji** — 🔄 W TOKU 2026-07-01: mapa z pól GT rozpisana i wyczyszczona
+   (patrz Dziennik + pamięć [[mapa-lokalizacji]]). Zostaje: weryfikacja luk/„do ręki" przez
+   usera → potem endpoint/skrypt importu masowego do tabeli `lokalizacje`.
 6. **Magazyn „braki"** — jak ZEW (tylko cel MM, stan w GT, bez lokalizacji WMS); 1 linia
    w `config/magazyny.js` + dopuszczenie jako cel. Potrzebny `mag_Id` z produkcji.
 
@@ -809,6 +901,21 @@ Trzy ROZDZIELNE mechanizmy (user wyraźnie chciał osobno):
   pecet (drugi dysk / chmura / Mac przez Tailscale — konkret do ustalenia przy wdrożeniu).
 - **Pre-deploy:** przed deployem/migracją/zmianą bazy wymuszony backup `wms_pre-deploy_...db`,
   WYŁĄCZONY z rotacji.
+
+### 2026-07-01 — mapa lokalizacji K4/K4G (Faza B#5, w toku)
+Analiza pól lokalizacyjnych z ŻYWEGO Subiekta (eksport usera, bo GT-SQL zamrożony w lutym).
+Pełne reguły i stan → pamięć [[mapa-lokalizacji]]. Skrót:
+- Reguły poziomów K4 hala 1 (od usera): A,B=podstawa · C,D,K=podstawa+P1 (typ TRAWERS) ·
+  E–J=P1–P6 (półka) · L=podstawa. Hala 1 GENEROWANA z reguł (czysta). K4 M2=podstawa+P1
+  (P2+ na paletach = to górna K4G). K4G=tylko z poziomem (bez podstawy). RB, BIURO=nazwane K4.
+- Parser rozbija bałagan (separatory / ; \ spacje, brak myślników, ilość w nawiasie,
+  ZAKRESY M2-A20-23-P4→pojedyncze, cap kolumny>50). NIE przypisujemy towarów — sama mapa.
+- Stan: K4=855, K4G=1103. Pliki analityczne w ~/Documents/lokalizacje-do-importu.xlsx
+  (K4, K4G, Luki(weryfikacja)=67 kodów, Do ręki=21, Autor-wymiary=303 — złe pola książek/mebli).
+- Uwaga: eksport niefiltrowany → autorzy/wymiary w polach; do per-SKU trzeba eksportu
+  filtrowanego po stanie K4/K4G + SKU. GT: BRK(braki)=mag 10.
+- ZOSTAJE: user weryfikuje 67 luk (przejście vs brak) i 21 „do ręki", potem skrypt importu
+  masowego do tabeli `lokalizacje`.
 
 ### 2026-07-01 — logowanie + użytkownicy + blokada edycji (Faza A#4) ZROBIONE
 Decyzje usera: PIN opcjonalny, twarda blokada edycji, zarządzanie tylko admin.

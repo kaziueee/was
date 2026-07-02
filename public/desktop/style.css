@@ -297,6 +297,59 @@ main {
   font-size: 0.9rem;
 }
 
+.lok-typ {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.lok-typ-paleta  { background: #e3f2fd; color: #1565c0; }
+.lok-typ-trawers { background: #fff8e1; color: #b7791f; }
+.lok-typ-polka   { background: #e8f5e9; color: #2e7d32; }
+.lok-typ-inny    { background: #f3e5f5; color: #7b1fa2; }
+.lok-typ-select { padding: 0.15rem 0.35rem; font-size: 0.82rem; font-weight: 600; border: 1px solid #bbb; border-radius: 10px; cursor: pointer; }
+.lok-typ-select:disabled { opacity: 0.5; }
+
+.import-blok {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.import-blok summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.import-blok .import-sterowanie {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0.5rem;
+  flex-wrap: wrap;
+}
+
+.import-blok select {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.import-blok textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
 .wiersz-rozwiazanie td,
 .wiersz-zawartosc td,
 .wiersz-szczegoly td {

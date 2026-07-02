@@ -144,9 +144,24 @@
         <button type="submit" class="btn btn-primary">+ Dodaj lokalizację</button>
       </form>
 
+      <details class="import-blok">
+        <summary>Import zbiorczy (wklej kody)</summary>
+        <p class="hint">Wklej kody lokalizacji — jeden na linię (skopiuj kolumnę z arkusza K4 lub K4G). Istniejące kody zostaną pominięte, puste linie zignorowane.</p>
+        <div class="import-sterowanie">
+          <select id="import-magazyn">
+            <option value="K4">K4</option>
+            <option value="K4G">K4 Góra</option>
+          </select>
+          <button type="button" id="btn-import-podglad" class="btn">Podgląd</button>
+          <button type="button" id="btn-import-wykonaj" class="btn btn-primary" disabled>Importuj</button>
+        </div>
+        <textarea id="import-tekst" rows="6" placeholder="M2-J14-P2&#10;M2-J15-P1&#10;..."></textarea>
+        <div id="import-wynik" class="komunikat hidden"></div>
+      </details>
+
       <table class="tabela">
         <thead>
-          <tr><th>Kod</th><th>Magazyn</th><th>Aktywna</th><th>Utworzona</th><th></th></tr>
+          <tr><th>Kod</th><th>Magazyn</th><th>Typ</th><th>Hala</th><th>Alejka / str.</th><th>Aktywna</th><th></th></tr>
         </thead>
         <tbody id="lok-tbody"></tbody>
       </table>

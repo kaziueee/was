@@ -5,6 +5,7 @@ const { podzielNaSlowa, LIMIT_WYSZUKIWANIA } = require('../services/wyszukiwanie
 const { pobierzProdukt, szukajProdukty, pobierzStanyGt } = require('../services/gt-produkty');
 const { pobierzStatusLokalizacjiGt, synchronizujLokalizacje, pobierzPrzegladLokalizacji } = require('../services/gt-fields');
 const audyt = require('../services/audyt');
+const { rozbierzKod, TYPY } = require('../services/lokalizacje-model');
 
 const router = express.Router();
 
@@ -28,7 +29,10 @@ router.get('/', (req, res) => {
     sql += ' AND kod LIKE ?';
     params.push(`%${q}%`);
   }
-  sql += ' ORDER BY kod';
+  // Kolejnosc jak w pliku mapy: magazyn, hala (1 przed M2), regal (A..L), kolumna
+  // NUMERYCZNIE (A1, A2, ... A10, A11 - nie tekstowo), na koncu kod (tiebreak poziomu:
+  // A1, A1-P2, A1-P3). Lokalizacje "inny" (bez struktury) na koniec danego magazynu.
+  sql += ' ORDER BY magazyn, (hala IS NULL), hala, regal, kolumna, kod';
 
   res.json(db.prepare(sql).all(...params));
 });
@@ -376,7 +380,11 @@ router.post('/', (req, res) => {
   }
 
   try {
-    const result = db.prepare('INSERT INTO lokalizacje (kod, magazyn) VALUES (?, ?)').run(kod.trim(), magazyn);
+    const c = rozbierzKod(kod, magazyn);
+    const result = db.prepare(
+      `INSERT INTO lokalizacje (kod, magazyn, hala, regal, alejka, strona, kolumna, typ)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(kod.trim(), magazyn, c.hala, c.regal, c.alejka, c.strona, c.kolumna, c.typ);
     audyt.zapisz({ uzytkownik: req.body?.operator ?? null, akcja: 'lokalizacja_nowa', magazyn, lokalizacja: kod.trim(), po: { kod: kod.trim(), magazyn }, wynik: 'ok' });
     res.status(201).json(db.prepare('SELECT * FROM lokalizacje WHERE id = ?').get(result.lastInsertRowid));
   } catch (err) {
@@ -387,6 +395,89 @@ router.post('/', (req, res) => {
   }
 });
 
+// POST /api/lokalizacje/import - import zbiorczy (wklejona kolumna kodow per magazyn).
+// body: { lokalizacje: [{kod, magazyn}], podglad?: bool, operator? }
+// Idempotentny: kod juz istniejacy -> pominiety (bez nadpisywania). Walidacja magazyn,
+// trim/uppercase, dedupe w obrebie paczki, puste linie ignorowane cicho.
+// podglad=true -> tylko policz (nic nie zapisuje). Inaczej -> jedna transakcja + 1 wpis audytu.
+router.post('/import', (req, res) => {
+  const wejscie = Array.isArray(req.body?.lokalizacje) ? req.body.lokalizacje : null;
+  const podglad = req.body?.podglad === true;
+  if (!wejscie) {
+    return res.status(400).json({ blad: 'Pole "lokalizacje" musi byc tablica {kod, magazyn}' });
+  }
+
+  const bledy = [];
+  const kandydaci = [];
+  const widziane = new Set();
+
+  for (const wpis of wejscie) {
+    const kod = String(wpis?.kod ?? '').trim().toUpperCase();
+    const magazyn = wpis?.magazyn;
+    if (!kod) continue; // puste linie ignorujemy cicho
+    if (!MAGAZYNY_WMS.includes(magazyn)) {
+      bledy.push({ kod, powod: `magazyn spoza {${MAGAZYNY_WMS.join(', ')}}` });
+      continue;
+    }
+    if (widziane.has(kod)) {
+      bledy.push({ kod, powod: 'duplikat w paczce' });
+      continue;
+    }
+    widziane.add(kod);
+    kandydaci.push({ kod, magazyn });
+  }
+
+  const czyIstnieje = db.prepare('SELECT 1 FROM lokalizacje WHERE kod = ?');
+  const nowe = [];
+  const pominiete = [];
+  for (const l of kandydaci) {
+    if (czyIstnieje.get(l.kod)) pominiete.push(l.kod);
+    else nowe.push(l);
+  }
+
+  if (podglad) {
+    // rozbicie nowych kodow wg wyliczonego typu - podglad "co realnie wjedzie"
+    const typy = {};
+    for (const l of nowe) {
+      const t = rozbierzKod(l.kod, l.magazyn).typ ?? 'brak';
+      typy[t] = (typy[t] ?? 0) + 1;
+    }
+    return res.json({
+      podglad: true,
+      do_dodania: nowe.length,
+      pominiete: pominiete.length,
+      bledy,
+      typy,
+      przyklady_nowych: nowe.slice(0, 8).map((l) => l.kod),
+      przyklady_pominietych: pominiete.slice(0, 8),
+    });
+  }
+
+  const wstaw = db.prepare(
+    `INSERT INTO lokalizacje (kod, magazyn, hala, regal, alejka, strona, kolumna, typ)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  db.exec('BEGIN');
+  try {
+    for (const l of nowe) {
+      const c = rozbierzKod(l.kod, l.magazyn);
+      wstaw.run(l.kod, l.magazyn, c.hala, c.regal, c.alejka, c.strona, c.kolumna, c.typ);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  audyt.zapisz({
+    uzytkownik: req.body?.operator ?? null, akcja: 'import_lokalizacji',
+    po: { dodane: nowe.length, pominiete: pominiete.length, bledy: bledy.length },
+    wynik: 'ok',
+  });
+
+  res.status(201).json({ dodane: nowe.length, pominiete: pominiete.length, bledy });
+});
+
 // PUT /api/lokalizacje/:id - edycja (kod, magazyn, aktywna)
 router.put('/:id', (req, res) => {
   const id = Number(req.params.id);
@@ -395,7 +486,7 @@ router.put('/:id', (req, res) => {
   const lokalizacja = db.prepare('SELECT * FROM lokalizacje WHERE id = ?').get(id);
   if (!lokalizacja) return res.status(404).json({ blad: 'Lokalizacja nie znaleziona' });
 
-  const { kod, magazyn, aktywna } = req.body ?? {};
+  const { kod, magazyn, aktywna, typ } = req.body ?? {};
 
   const nowyKod = kod !== undefined ? String(kod).trim() : lokalizacja.kod;
   const nowyMagazyn = magazyn !== undefined ? magazyn : lokalizacja.magazyn;
@@ -405,10 +496,19 @@ router.put('/:id', (req, res) => {
   if (!MAGAZYNY_WMS.includes(nowyMagazyn)) {
     return res.status(400).json({ blad: `Pole "magazyn" musi byc jednym z: ${MAGAZYNY_WMS.join(', ')}` });
   }
+  if (typ !== undefined && !TYPY.includes(typ)) {
+    return res.status(400).json({ blad: `Pole "typ" musi byc jednym z: ${TYPY.join(', ')}` });
+  }
+
+  const c = rozbierzKod(nowyKod, nowyMagazyn);
+  // typ: jesli podany jawnie -> nadpisanie reczne (wyjatek); inaczej wyliczony z reguly
+  const nowyTyp = typ !== undefined ? typ : c.typ;
 
   try {
-    db.prepare('UPDATE lokalizacje SET kod = ?, magazyn = ?, aktywna = ? WHERE id = ?')
-      .run(nowyKod, nowyMagazyn, nowaAktywna, id);
+    db.prepare(
+      `UPDATE lokalizacje SET kod = ?, magazyn = ?, aktywna = ?,
+         hala = ?, regal = ?, alejka = ?, strona = ?, kolumna = ?, typ = ? WHERE id = ?`
+    ).run(nowyKod, nowyMagazyn, nowaAktywna, c.hala, c.regal, c.alejka, c.strona, c.kolumna, nowyTyp, id);
   } catch (err) {
     if (err.errcode === SQLITE_CONSTRAINT_UNIQUE) {
       return res.status(409).json({ blad: `Lokalizacja o kodzie "${nowyKod}" juz istnieje` });
@@ -418,8 +518,8 @@ router.put('/:id', (req, res) => {
 
   audyt.zapisz({
     uzytkownik: req.body?.operator ?? null, akcja: 'lokalizacja_edycja', magazyn: nowyMagazyn, lokalizacja: nowyKod,
-    przed: { kod: lokalizacja.kod, magazyn: lokalizacja.magazyn, aktywna: lokalizacja.aktywna },
-    po: { kod: nowyKod, magazyn: nowyMagazyn, aktywna: nowaAktywna }, wynik: 'ok',
+    przed: { kod: lokalizacja.kod, magazyn: lokalizacja.magazyn, aktywna: lokalizacja.aktywna, typ: lokalizacja.typ },
+    po: { kod: nowyKod, magazyn: nowyMagazyn, aktywna: nowaAktywna, typ: nowyTyp }, wynik: 'ok',
   });
   res.json(db.prepare('SELECT * FROM lokalizacje WHERE id = ?').get(id));
 });

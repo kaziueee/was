@@ -442,7 +442,7 @@ const AKCJA_ETYKIETA = {
   MM: 'MM', LOK: 'Zmiana lok.', przypisanie: 'Przypisanie', przyjecie: 'Przyjęcie',
   'MM-zewn': 'MM zewn.', Uzupelnienie: 'Uzupełnienie', usuniecie_ruchu: 'Usunięcie ruchu',
   lokalizacja_nowa: 'Nowa lok.', lokalizacja_edycja: 'Edycja lok.', lokalizacja_usuniecie: 'Usunięcie lok.',
-  zapas_k4: 'Zapas K4', plan_lok: 'Plan lok.',
+  zapas_k4: 'Zapas K4', plan_lok: 'Plan lok.', import_lokalizacji: 'Import lok.',
 };
 
 // "przed"/"po" sa JSON-em (lub null) - kompaktowy zapis "k:v, k:v"
@@ -654,6 +654,45 @@ async function odswiezLokalizacje() {
   }
 }
 
+const TYPY_LOK = ['paleta', 'trawers', 'polka', 'inny'];
+
+// Staly, widoczny dropdown typu w kolumnie Typ - zmiana = PUT {typ} (reczne nadpisanie
+// reguly). Kolor selecta odzwierciedla wybrany typ. Zapis w miejscu (bez przeladowania
+// calej listy), z revertem przy bledzie.
+function budujSelectTypu(l) {
+  const sel = document.createElement('select');
+  const koloruj = () => { sel.className = `lok-typ-select${sel.value ? ` lok-typ-${sel.value}` : ''}`; };
+  for (const t of TYPY_LOK) {
+    const o = document.createElement('option');
+    o.value = t; o.textContent = t;
+    if (t === l.typ) o.selected = true;
+    sel.appendChild(o);
+  }
+  koloruj();
+  sel.title = 'Zmień typ lokalizacji';
+
+  let obecny = l.typ;
+  sel.addEventListener('change', async () => {
+    if (sel.value === obecny) return;
+    sel.disabled = true;
+    try {
+      await api(`/api/lokalizacje/${l.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ typ: sel.value }),
+      });
+      obecny = sel.value; l.typ = sel.value;
+      koloruj();
+      pokazKomunikat(`Typ ${l.kod} zmieniony na „${sel.value}".`, 'ok');
+    } catch (err) {
+      sel.value = obecny; koloruj();
+      pokazKomunikat(err.message, 'blad');
+    } finally {
+      sel.disabled = false;
+    }
+  });
+  return sel;
+}
+
 function renderujLokalizacje(lista) {
   const tbody = el('lok-tbody');
   tbody.innerHTML = '';
@@ -661,14 +700,20 @@ function renderujLokalizacje(lista) {
 
   for (const l of lista) {
     const tr = document.createElement('tr');
+    const alejkaStr = l.alejka ? `${l.alejka}${l.strona ?? ''}` : '–';
     tr.innerHTML = `
       <td><strong>${l.kod}</strong></td>
       <td>${l.magazyn}</td>
+      <td></td>
+      <td>${l.hala ?? '–'}</td>
+      <td>${alejkaStr}</td>
       <td>${l.aktywna ? 'tak' : 'nie'}</td>
-      <td>${formatDatetime(l.utworzona)}</td>
       <td></td>
     `;
     const akcje = tr.lastElementChild;
+
+    // Typ = staly, widoczny dropdown (edycja typu, ktory czasem sie zmienia)
+    tr.children[2].appendChild(budujSelectTypu(l));
 
     const btnZawartosc = document.createElement('button');
     btnZawartosc.type = 'button';
@@ -775,6 +820,78 @@ el('form-nowa-lokalizacja').addEventListener('submit', async (e) => {
     odswiezLokalizacje();
   } catch (err) {
     pokazKomunikat(err.message, 'blad');
+  }
+});
+
+// --- import zbiorczy lokalizacji (wklejona kolumna kodow) ---
+
+// Buduje payload {lokalizacje:[{kod,magazyn}]} z tekstu (jedna linia = jeden kod)
+function importBudujPayload() {
+  const magazyn = el('import-magazyn').value;
+  const kody = el('import-tekst').value
+    .split('\n')
+    .map((w) => w.trim())
+    .filter((w) => w.length > 0);
+  return { lokalizacje: kody.map((kod) => ({ kod, magazyn })) };
+}
+
+// Importuj aktywne dopiero po udanym podgladzie; kazda zmiana tekstu/magazynu
+// wymusza ponowny podglad (zeby nie zapisac czegos innego niz zobaczyl user)
+function importResetuj() {
+  el('btn-import-wykonaj').disabled = true;
+  el('import-wynik').classList.add('hidden');
+}
+el('import-tekst').addEventListener('input', importResetuj);
+el('import-magazyn').addEventListener('change', importResetuj);
+
+el('btn-import-podglad').addEventListener('click', async () => {
+  const payload = importBudujPayload();
+  if (payload.lokalizacje.length === 0) {
+    pokazKomunikatEl('import-wynik', 'Wklej najpierw kody lokalizacji.', 'blad');
+    el('import-wynik').classList.remove('hidden');
+    return;
+  }
+  try {
+    const w = await api('/api/lokalizacje/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload, podglad: true }),
+    });
+    const czesci = [`Do dodania: ${w.do_dodania}`, `pominięte (już są): ${w.pominiete}`];
+    if (w.bledy.length) czesci.push(`błędne: ${w.bledy.length}`);
+    let tekst = czesci.join(' · ');
+    if (w.typy && Object.keys(w.typy).length) {
+      tekst += '\ntypy: ' + Object.entries(w.typy).map(([t, n]) => `${t} ${n}`).join(', ');
+    }
+    if (w.bledy.length) {
+      tekst += '\n' + w.bledy.slice(0, 8).map((b) => `• ${b.kod || '(pusty)'} — ${b.powod}`).join('\n');
+    }
+    pokazKomunikatEl('import-wynik', tekst, w.do_dodania > 0 ? 'ok' : 'info');
+    el('import-wynik').style.whiteSpace = 'pre-line';
+    el('import-wynik').classList.remove('hidden');
+    el('btn-import-wykonaj').disabled = w.do_dodania === 0;
+  } catch (err) {
+    pokazKomunikatEl('import-wynik', err.message, 'blad');
+    el('import-wynik').classList.remove('hidden');
+  }
+});
+
+el('btn-import-wykonaj').addEventListener('click', async () => {
+  const payload = importBudujPayload();
+  el('btn-import-wykonaj').disabled = true;
+  try {
+    const w = await api('/api/lokalizacje/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    pokazKomunikat(`Import: dodano ${w.dodane}, pominięto ${w.pominiete}${w.bledy.length ? `, błędnych ${w.bledy.length}` : ''}.`, 'ok');
+    el('import-tekst').value = '';
+    el('import-wynik').classList.add('hidden');
+    odswiezLokalizacje();
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+    el('btn-import-wykonaj').disabled = false;
   }
 });
 
@@ -1279,9 +1396,25 @@ function dataEdycji(s) {
   return s ? s.slice(0, 10) : '';
 }
 
+// Klucz naturalnej kolejnosci kodu lokalizacji (jak w pliku mapy): hala (1 przed M2),
+// regal A..L, kolumna NUMERYCZNIE, poziom. Kody spoza wzorca (RB, BIURO) na koniec.
+function kluczKoduLok(kod) {
+  const m = String(kod ?? '').toUpperCase().match(/^(M2-)?([A-L])(\d{1,2})(?:-P([1-6]))?$/);
+  if (!m) return [2, '', 0, 0, String(kod ?? '')]; // "inny" (RB, BIURO) na koniec
+  return [m[1] ? 1 : 0, m[2], Number(m[3]), m[4] ? Number(m[4]) : 0, ''];
+}
+function porownajKodLok(a, b) {
+  const ka = kluczKoduLok(a), kb = kluczKoduLok(b);
+  for (let i = 0; i < ka.length; i++) {
+    if (ka[i] < kb[i]) return -1;
+    if (ka[i] > kb[i]) return 1;
+  }
+  return 0;
+}
+
 function dodajMagWms(tbody, mag, loki, k4Zapas, planTekst) {
   const gt = modalProdukt.stany_gt?.[mag] ?? { ilosc: 0, rezerwacja: 0 };
-  const wmsLoki = loki.filter((l) => l.magazyn === mag).sort((a, b) => a.kod.localeCompare(b.kod, 'pl'));
+  const wmsLoki = loki.filter((l) => l.magazyn === mag).sort((a, b) => porownajKodLok(a.kod, b.kod));
   const wmsSum = wmsLoki.reduce((s, l) => s + l.ilosc, 0);
   const niezlok = Math.max(gt.ilosc - wmsSum, 0);
   let rezPokazana = false;

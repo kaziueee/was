@@ -10,8 +10,9 @@ namespace GtBridge.Tray
 {
     // Ikona mostu przy zegarze (Faza C#9). Kolor = stan ostatniej operacji GT:
     //   szary = nieznany/start, zielony = ostatnie MM/test OK, czerwony = blad.
-    // Menu (prawy klik): Testuj polaczenie / Restart / Pokaz log / Zamknij.
-    // Konsola z logami zostaje - "Pokaz log" wywoluje ja na wierzch.
+    // Menu (prawy klik): Testuj polaczenie / Restart / Pokaz log / Ukryj log / Zamknij.
+    // Konsola startuje UKRYTA (X wylaczony, by jej zamkniecie nie ubilo procesu) - jest tylko
+    // podgladem logow na zadanie ("Pokaz log" / "Ukryj log"). Wyjscie z mostu = "Zamknij most".
     public sealed class TrayIkona : ApplicationContext
     {
         private readonly StanMostu _stan;
@@ -30,7 +31,13 @@ namespace GtBridge.Tray
         [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
         [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
         [DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr handle);
+        [DllImport("user32.dll")] private static extern IntPtr GetSystemMenu(IntPtr hWnd, bool bRevert);
+        [DllImport("user32.dll")] private static extern int DeleteMenu(IntPtr hMenu, int nPosition, int wFlags);
+        [DllImport("user32.dll")] private static extern bool DrawMenuBar(IntPtr hWnd);
+        private const int SW_HIDE = 0;
         private const int SW_RESTORE = 9;
+        private const int SC_CLOSE = 0xF060;
+        private const int MF_BYCOMMAND = 0x0;
 
         public TrayIkona(StanMostu stan, ISferaGtService sfera)
         {
@@ -45,8 +52,14 @@ namespace GtBridge.Tray
             menu.Items.Add("Testuj polaczenie z GT", null, (_, _) => TestujPolaczenie());
             menu.Items.Add("Restart mostu", null, (_, _) => Restart());
             menu.Items.Add("Pokaz log (konsola)", null, (_, _) => PokazKonsole());
+            menu.Items.Add("Ukryj log (konsola)", null, (_, _) => UkryjKonsole());
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Zamknij most", null, (_, _) => Zamknij());
+
+            // Most ma zyc jako ikona - konsola startuje UKRYTA (jest tylko do podgladu logow
+            // przez "Pokaz log"). Wylaczamy tez jej krzyzyk (X), zeby pokazana konsola nie dala
+            // sie przypadkiem zamknac (zamkniecie konsoli ubija proces). Wyjscie tylko z menu ikony.
+            UstawKonsole();
 
             _ikona = new NotifyIcon
             {
@@ -96,6 +109,20 @@ namespace GtBridge.Tray
             Zamknij();
         }
 
+        // Startowe ustawienie konsoli: wylacz krzyzyk (X) i schowaj okno - most zyje jako ikona.
+        private void UstawKonsole()
+        {
+            var h = GetConsoleWindow();
+            if (h == IntPtr.Zero) return;
+            var sysMenu = GetSystemMenu(h, false);
+            if (sysMenu != IntPtr.Zero)
+            {
+                DeleteMenu(sysMenu, SC_CLOSE, MF_BYCOMMAND); // X i Alt+F4 -> nieaktywne
+                DrawMenuBar(h);
+            }
+            ShowWindow(h, SW_HIDE);
+        }
+
         private void PokazKonsole()
         {
             var h = GetConsoleWindow();
@@ -104,6 +131,12 @@ namespace GtBridge.Tray
                 ShowWindow(h, SW_RESTORE);
                 SetForegroundWindow(h);
             }
+        }
+
+        private void UkryjKonsole()
+        {
+            var h = GetConsoleWindow();
+            if (h != IntPtr.Zero) ShowWindow(h, SW_HIDE);
         }
 
         private void Zamknij()

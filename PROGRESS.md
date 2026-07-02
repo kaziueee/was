@@ -419,8 +419,12 @@ a jego aktualizacja to jeden klik zamiast kopiuj-wklej plików.
 - **Jedno-klik aktualizacja** (`bridge/aktualizuj-most.cmd` → `aktualizuj-most.ps1`): dwuklik →
   taskkill → `git pull --ff-only` → `dotnet publish -r win-x86` → start nowego exe. Ścieżki
   względem pliku (`$PSScriptRoot`), więc działa niezależnie od miejsca klona.
-- **Do zrobienia (szlif):** tryb bez okna konsoli (żeby nie dało się przypadkiem zamknąć —
-  dziś zamknięcie konsoli ubija most); ew. autostart. Tailscale (dostęp zdalny) — osobny krok.
+- **Konsola w tle** (dokończone tego samego dnia): most startuje jako sama ikona — konsola
+  UKRYTA na starcie, a jej krzyżyk (X) wyłączony (`GetSystemMenu`+`DeleteMenu` SC_CLOSE), żeby
+  pokazana konsola nie dała się przypadkiem zamknąć i ubić proces. Menu: „Pokaż log" / „Ukryj
+  log" steruje jej widocznością; wyjście tylko przez „Zamknij most". Rozwiązuje wpadkę „zamknąłem
+  okno i most padł".
+- **Do zrobienia (szlif):** autostart mostu po zalogowaniu peceta. Tailscale (dostęp zdalny) — osobny krok.
 
 ### 2026-07-02 — prewencja duplikatów MM + Uwagi kto/kiedy + brak cichych porażek (Faza A#3 domknięta)
 

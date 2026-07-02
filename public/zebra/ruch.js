@@ -440,7 +440,15 @@ function pokazRozkladZrodel(dane, artykul) {
   el('wybor-podsumowanie').classList.remove('hidden');
 
   el('input-wybor-skan').placeholder = 'Skanuj kod lokalizacji';
-  el('wybor-hint').textContent = ''; // bez etykiety/hintu - pole skanu mówi samo za siebie
+  if (opcjeWyboru.length === 0) {
+    // brak jakiegokolwiek zrodla (stan GT = 0 we wszystkich magazynach) - jasny komunikat
+    // zamiast pustej listy; pokazujemy miejsce wg GT (gdzie SKU stoi, gdy bedzie stan).
+    const lokGt = gtLokDlaMagazynu('K4') || gtLokDlaMagazynu('K4G');
+    el('wybor-hint').textContent = 'Brak stanu — nie ma czego przenosić (0 szt.).'
+      + (lokGt ? ` Miejsce wg GT: ${lokGt}.` : '');
+  } else {
+    el('wybor-hint').textContent = ''; // pole skanu mówi samo za siebie
+  }
 
   trybWyboru = 'wybor';
   renderujRozklad(opcjeWyboru, wybierzOpcje);

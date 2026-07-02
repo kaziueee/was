@@ -41,6 +41,11 @@ let trybWyboru = 'wybor';
 // czy biezacy rozklad produktu zostal otwarty z listy wynikow wyszukiwania -
 // jesli tak, Wstecz z rozkladu/celu wraca do wynikow, a nie do czystego skanu.
 let powrotDoWyszukiwania = false;
+// zawartosc ostatnio zeskanowanej lokalizacji + flaga powrotu do niej. Gdy z zawartosci
+// lokalizacji wchodzimy w produkt t_GT (przez wykonajSkan -> rozklad), Wstecz ma wrocic do
+// tej listy, a nie do czystego skanu. { lokalizacja, zawartosc } albo null.
+let ostatniaZawartoscLok = null;
+let powrotDoLokalizacji = false;
 
 // lista magazynow (z /api/magazyny), do wyboru celu w kroku 3
 let magazynyLista = [];
@@ -153,9 +158,12 @@ function wstecz() {
       reset(); // brak listy -> czysty skan (czysci stan i naglowek)
     }
   } else if (!kroki.wybor.classList.contains('hidden')) {
-    // z rozkladu produktu otwartego z wynikow wyszukiwania -> wroc do wynikow;
-    // z samej listy wynikow / zawartosci lokalizacji / rozkladu po skanie -> czysty skan
-    if (powrotDoWyszukiwania && ostatniaListaArtykulow) {
+    // z rozkladu produktu otwartego z zawartosci lokalizacji (t_GT) -> wroc do tej zawartosci;
+    // z rozkladu otwartego z wynikow wyszukiwania -> wroc do wynikow;
+    // z samej listy / rozkladu po skanie -> czysty skan
+    if (powrotDoLokalizacji && ostatniaZawartoscLok) {
+      obsluzLokalizacje(ostatniaZawartoscLok);
+    } else if (powrotDoWyszukiwania && ostatniaListaArtykulow) {
       obsluzListaArtykulow(ostatniaListaArtykulow, false);
     } else {
       reset();
@@ -198,6 +206,8 @@ function reset() {
   prefillWyszukiwaniaStale = false;
   trybWyboru = 'wybor';
   powrotDoWyszukiwania = false;
+  ostatniaZawartoscLok = null;
+  powrotDoLokalizacji = false;
 
   el('input-start').value = '';
   el('input-wybor-skan').value = '';
@@ -221,13 +231,19 @@ function reset() {
 }
 
 // --- krok 1: skan SKU, EAN, lokalizacji albo (czesci) nazwy artykulu ---
-async function wykonajSkan(kod) {
+async function wykonajSkan(kod, zrodloInput = el('input-start')) {
   ukryjKomunikat();
   try {
     const res = await fetch(`/api/lokalizacje/skan/${encodeURIComponent(kod)}`);
     const dane = await res.json();
     if (!res.ok) {
-      pokazKomunikat(dane.blad || 'Nie znaleziono', 'blad');
+      // zostaw slad czego szukano: zeskanowany/wpisany kod wraca do pola (zaznaczony,
+      // by kolejny skan go zastapil) + widoczny w komunikacie
+      if (zrodloInput) {
+        zrodloInput.value = kod;
+        try { zrodloInput.select(); } catch { /* pole moze nie wspierac select() */ }
+      }
+      pokazKomunikat(`Nie znaleziono: „${kod}”`, 'blad');
       return;
     }
     if (dane.typ === 'lokalizacja') {
@@ -248,6 +264,8 @@ onScan(el('input-start'), wykonajSkan);
 // zeskanowano kod lokalizacji -> wybierz produkt do przeniesienia
 function obsluzLokalizacje({ lokalizacja, zawartosc }) {
   powrotDoWyszukiwania = false; // zawartosc lokalizacji to nie rozklad z wyszukiwania
+  ostatniaZawartoscLok = { lokalizacja, zawartosc }; // do powrotu Wstecz z produktu t_GT
+  powrotDoLokalizacji = false;  // jestesmy NA liscie zawartosci, nie wracamy do niej
   if (zawartosc.length === 0) {
     pokazKomunikat(`Lokalizacja ${lokalizacja.kod} jest pusta`, 'blad');
     return;
@@ -557,8 +575,9 @@ function renderujWybor(opcje, onWybierz) {
 }
 
 function wybierzOpcje(opcja) {
-  // t_GT z listy zawartosci lokalizacji: nie ma stanu WMS tutaj -> idz przez rozklad produktu
-  if (opcja.tylkoGt) { wykonajSkan(opcja.artykul.artykul_symbol); return; }
+  // t_GT z listy zawartosci lokalizacji: nie ma stanu WMS tutaj -> idz przez rozklad produktu.
+  // Zapamietaj, ze Wstecz ma wrocic do zawartosci lokalizacji (a nie do czystego skanu).
+  if (opcja.tylkoGt) { powrotDoLokalizacji = true; wykonajSkan(opcja.artykul.artykul_symbol); return; }
   stan.artykul = opcja.artykul;
   stan.zrodlo = opcja.zrodlo;
   stan.iloscSugestia = opcja.iloscSugestia ?? null;
@@ -568,7 +587,7 @@ function wybierzOpcje(opcja) {
 
 onScan(el('input-wybor-skan'), (kod) => {
   if (trybWyboru === 'szukaj') {
-    wykonajSkan(kod);
+    wykonajSkan(kod, el('input-wybor-skan'));
     return;
   }
   const opcja = opcjeWyboru.find((o) => o.klucz.toUpperCase() === kod.toUpperCase());

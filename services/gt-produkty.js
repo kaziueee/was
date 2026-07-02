@@ -142,18 +142,29 @@ async function szukajProdukty(fraza, limit = LIMIT_WYSZUKIWANIA) {
   return wyniki;
 }
 
+// Czy kod jest PELNYM czlonem lokalizacji w polu GT - pola sa skompresowane, np.
+// "M2-B3-P3 / M2-B4-P3", "C14P1 /L19P3 /", a czlony rozdziela '/', spacja, ',' lub ';'.
+// Dzieki temu skan "C16" NIE lapie "M2-C16-P2" (podciag), tylko lokalizacje faktycznie "C16".
+function kodJestTokenemLokalizacji(pole, kodUp) {
+  if (!pole) return false;
+  return String(pole).toUpperCase().split(/[\s/,;]+/).some((token) => token === kodUp);
+}
+
 // Szuka towarow po KODZIE LOKALIZACJI w polach wlasnych GT (tw_Pole1 = miejsce K4,
 // tw_Pole8 = lokalizacja K4G). Uzywane, gdy skanujemy/wpisujemy kod lokalizacji towaru,
 // ktory jest tylko w GT (t_GT) i nie ma wiersza w WMS `lokalizacje`. Dopasowanie
-// podciagiem (pola sa skompresowane: "M2-B3-P3 / M2-B4-P3"). Ograniczone do towarow ze
-// stanem K4/K4G > 0 - inaczej zlapaloby inne kategorie, gdzie tw_Pole1/8 = autor/pomieszczenie.
+// TOKENOWE (kod = pelny czlon lokalizacji, nie dowolny podciag). Ograniczone do towarow
+// ze stanem K4/K4G > 0 - inaczej zlapaloby inne kategorie (tw_Pole1/8 = autor/pomieszczenie).
 async function szukajPoLokalizacjiGt(fraza, limit = LIMIT_WYSZUKIWANIA) {
   const kod = String(fraza || '').trim();
   if (kod.length < 2) return [];
+  const kodUp = kod.toUpperCase();
 
-  const parametry = { limit, lok: `%${escapeLike(kod)}%` };
+  // Prefiltr SQL podciagiem (LIKE), potem doklandny filtr tokenowy w Node (LIKE nie
+  // odroznia czlonu od podciagu). Over-fetch, bo czesc trafien podciagu odpadnie.
+  const parametry = { cap: 500, lok: `%${escapeLike(kod)}%` };
   const towary = await query(`
-    SELECT TOP (@limit) t.tw_Id, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk
+    SELECT TOP (@cap) t.tw_Id, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk, t.tw_Pole1, t.tw_Pole8
     FROM tw__Towar t
     WHERE (t.tw_Pole1 LIKE @lok ESCAPE '\\' OR t.tw_Pole8 LIKE @lok ESCAPE '\\')
       AND EXISTS (
@@ -163,7 +174,9 @@ async function szukajPoLokalizacjiGt(fraza, limit = LIMIT_WYSZUKIWANIA) {
     ORDER BY t.tw_Symbol
   `, parametry);
 
-  const lista = towary.recordset;
+  const lista = towary.recordset
+    .filter((t) => kodJestTokenemLokalizacji(t.tw_Pole1, kodUp) || kodJestTokenemLokalizacji(t.tw_Pole8, kodUp))
+    .slice(0, limit);
   if (lista.length === 0) return [];
 
   const stanyMap = await pobierzStanyGt(lista.map((t) => t.tw_Id));

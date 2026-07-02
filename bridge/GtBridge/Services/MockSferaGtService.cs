@@ -12,11 +12,13 @@ namespace GtBridge.Services
     public class MockSferaGtService : ISferaGtService
     {
         private readonly ILogger<MockSferaGtService> _logger;
+        private readonly StanMostu _stan;
         private int _licznikDokumentow = 1;
 
-        public MockSferaGtService(ILogger<MockSferaGtService> logger)
+        public MockSferaGtService(ILogger<MockSferaGtService> logger, StanMostu stan)
         {
             _logger = logger;
+            _stan = stan;
         }
 
         public Task<DokumentResponse> WystawMmAsync(MmRequest request)
@@ -26,7 +28,15 @@ namespace GtBridge.Services
                 request.ArtykulGtId, request.Ilosc, request.MagazynZrodlowy, request.MagazynDocelowy, request.Operator, request.Uwagi);
 
             var numer = $"MM {_licznikDokumentow++}/{DateTime.Now:yyyy}/MOCK";
+            _stan.ZapiszOk($"MM {numer}");
             return Task.FromResult(new DokumentResponse { Sukces = true, NumerDokumentu = numer });
+        }
+
+        public Task<DokumentResponse> TestPolaczeniaAsync()
+        {
+            _logger.LogInformation("MOCK test polaczenia");
+            _stan.ZapiszOk("Test polaczenia OK (mock)");
+            return Task.FromResult(new DokumentResponse { Sukces = true });
         }
 
         public Task<DokumentResponse> ZapiszLokalizacjeAsync(LokRequest request)

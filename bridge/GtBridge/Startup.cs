@@ -22,6 +22,9 @@ namespace GtBridge
         {
             services.Configure<SferaOptions>(Configuration.GetSection(SferaOptions.Sekcja));
 
+            // Wspoldzielony stan mostu dla ikony w trayu (aktualizowany przez SferaGtService).
+            services.AddSingleton<StanMostu>();
+
             // Mock w developmencie (Mac, bez Sfery) lub gdy wymuszony przez
             // konfiguracje (Sfera:UzyjMock=true). Na serwerze Windows z GT+Sfera
             // (Production - domyslne srodowisko) wchodzi prawdziwy SferaGtService.

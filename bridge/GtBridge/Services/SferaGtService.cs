@@ -22,6 +22,7 @@ namespace GtBridge.Services
     public sealed class SferaGtService : ISferaGtService, IDisposable
     {
         private readonly SferaOptions _opcje;
+        private readonly StanMostu _stan;
         private dynamic? _subiekt;
 
         // Sfera (COM automation InsERT GT) wymaga apartamentu STA. Watki ASP.NET Core
@@ -32,9 +33,10 @@ namespace GtBridge.Services
         private readonly BlockingCollection<Action> _zadania = new();
         private readonly Thread _watekSta;
 
-        public SferaGtService(IOptions<SferaOptions> opcje)
+        public SferaGtService(IOptions<SferaOptions> opcje, StanMostu stan)
         {
             _opcje = opcje.Value;
+            _stan = stan;
             _watekSta = new Thread(PetlaSta) { IsBackground = true, Name = "SferaSTA" };
             _watekSta.SetApartmentState(ApartmentState.STA);
             _watekSta.Start();
@@ -161,11 +163,32 @@ namespace GtBridge.Services
                     string numer = dok.NumerPelny;
                     return new DokumentResponse { Sukces = true, NumerDokumentu = numer };
                 });
+                _stan.ZapiszOk($"MM {odpowiedz.NumerDokumentu}");
                 return Task.FromResult(odpowiedz);
             }
             catch (Exception ex)
             {
-                return Task.FromResult(new DokumentResponse { Sukces = false, Blad = OpisBledu(ex) });
+                var blad = OpisBledu(ex);
+                _stan.ZapiszBlad($"MM: {blad}");
+                return Task.FromResult(new DokumentResponse { Sukces = false, Blad = blad });
+            }
+        }
+
+        // Lekki test polaczenia: loguje sie do Sfery (Polacz na watku STA) i nic nie wystawia.
+        // Aktualizuje StanMostu, zeby ikona od razu pokazala wynik. Nie rzuca.
+        public Task<DokumentResponse> TestPolaczeniaAsync()
+        {
+            try
+            {
+                NaWatkuSta<object?>(() => { Polacz(); return null; });
+                _stan.ZapiszOk("Test polaczenia OK");
+                return Task.FromResult(new DokumentResponse { Sukces = true });
+            }
+            catch (Exception ex)
+            {
+                var blad = OpisBledu(ex);
+                _stan.ZapiszBlad($"Test: {blad}");
+                return Task.FromResult(new DokumentResponse { Sukces = false, Blad = blad });
             }
         }
 

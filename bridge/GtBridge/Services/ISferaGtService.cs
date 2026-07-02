@@ -19,5 +19,9 @@ namespace GtBridge.Services
         Task<DokumentResponse> WystawRwAsync(InwentaryzacjaDokumentRequest request);
 
         Task<DokumentResponse> WystawPwAsync(InwentaryzacjaDokumentRequest request);
+
+        // Lekki test polaczenia z GT (dla przycisku "Testuj polaczenie" w ikonie trayu):
+        // loguje sie do Sfery (Polacz) i nic nie wystawia. Nie rzuca - zwraca Sukces/Blad.
+        Task<DokumentResponse> TestPolaczeniaAsync();
     }
 }

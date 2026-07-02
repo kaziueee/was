@@ -9,6 +9,10 @@
     <PlatformTarget>x86</PlatformTarget>
     <Nullable>enable</Nullable>
     <RootNamespace>GtBridge</RootNamespace>
+    <!-- WinForms: ikona w trayu (NotifyIcon) - status/restart/log bez szukania konsoli.
+         Aplikacja pozostaje konsolowa (logi widoczne, "Pokaz log" je wywoluje na wierzch);
+         tray to warstwa dla uzytkownika na wierzchu web-hosta. -->
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
 </Project>

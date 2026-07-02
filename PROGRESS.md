@@ -424,7 +424,12 @@ a jego aktualizacja to jeden klik zamiast kopiuj-wklej plików.
   pokazana konsola nie dała się przypadkiem zamknąć i ubić proces. Menu: „Pokaż log" / „Ukryj
   log" steruje jej widocznością; wyjście tylko przez „Zamknij most". Rozwiązuje wpadkę „zamknąłem
   okno i most padł".
-- **Do zrobienia (szlif):** autostart mostu po zalogowaniu peceta. Tailscale (dostęp zdalny) — osobny krok.
+- **Autostart** (w toku): most czyta `appsettings.json` też z katalogu `.exe`
+  (`AppContext.BaseDirectory`, nie tylko CWD) — żeby start z Autostartu/Harmonogramu nie zgubił
+  haseł. Metoda: skrót do `publish\GtBridge.exe` w folderze `shell:startup` (sesja użytkownika —
+  Sfera COM tego wymaga, NIE usługa Windows). Wstaje jako sama ikona.
+- **Do zrobienia (szlif):** Tailscale (dostęp zdalny) — osobny krok. **Gdy Node przejdzie na
+  Windows (Faza C):** autostart obejmie też Node, a Tailscale da zdalny dostęp do całości.
 
 ### 2026-07-02 — prewencja duplikatów MM + Uwagi kto/kiedy + brak cichych porażek (Faza A#3 domknięta)
 

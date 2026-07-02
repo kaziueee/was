@@ -1,9 +1,11 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Windows.Forms;
 using GtBridge.Services;
 using GtBridge.Tray;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -54,6 +56,15 @@ namespace GtBridge
 
         public static IHostBuilder CreateHostBuilder(string[] args) =>
             Host.CreateDefaultBuilder(args)
+                .ConfigureAppConfiguration((ctx, cfg) =>
+                {
+                    // Wczytaj appsettings.json TAKZE z katalogu .exe (publish), nie tylko z CWD.
+                    // Dzieki temu most znajduje haslo/konfiguracje niezaleznie od sposobu startu
+                    // (dwuklik, skrot w Autostarcie, Harmonogram zadan) - kluczowe dla autostartu,
+                    // bo tam katalog roboczy bywa inny niz folder exe. Zrodlo dodane pozniej => wygrywa.
+                    cfg.AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
+                        optional: true, reloadOnChange: false);
+                })
                 .ConfigureWebHostDefaults(webBuilder =>
                 {
                     // 0.0.0.0 - dostepny tez z sieci lokalnej (Mac dev); na prod localhost wystarczy

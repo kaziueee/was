@@ -6,6 +6,7 @@ const MAGAZYNY = [
   { kod: 'K4G', nazwa: 'K4 Góra', typ: 'wms', gtId: 8 },
   { kod: 'MAG', nazwa: 'Kajtek', typ: 'zewnetrzny', gtId: 1 },
   { kod: 'LS', nazwa: 'Leszno', typ: 'zewnetrzny', gtId: 6 },
+  { kod: 'BRK', nazwa: 'Braki', typ: 'zewnetrzny', gtId: 10 },
 ];
 
 // Mapa symbol -> mag_Id GT, do rozwiazywania magazynu przy wystawianiu MM.

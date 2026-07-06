@@ -44,6 +44,7 @@
             <label><input type="checkbox" class="prod-magazyn" value="K4G"> K4G</label>
             <label><input type="checkbox" class="prod-magazyn" value="MAG"> MAG</label>
             <label><input type="checkbox" class="prod-magazyn" value="LS"> LS</label>
+            <label><input type="checkbox" class="prod-magazyn" value="BRK"> BRK</label>
           </span>
           <span class="filtr-grupa">
             <span class="filtr-etykieta">Zgodność:</span>
@@ -61,6 +62,7 @@
             <option value="k4g">K4G</option>
             <option value="mag">MAG</option>
             <option value="ls">LS</option>
+            <option value="brk">BRK</option>
           </select>
           <select id="prod-dir">
             <option value="asc">↑</option>
@@ -73,7 +75,7 @@
           <thead>
             <tr>
               <th>SKU</th><th>Nazwa</th><th>EAN</th>
-              <th>K4</th><th>K4G</th><th>MAG</th><th>LS</th><th>Razem</th>
+              <th>K4</th><th>K4G</th><th>MAG</th><th>LS</th><th>BRK</th><th>Razem</th>
               <th>WMS K4</th><th>WMS K4G</th><th>K4G razem</th>
               <th>Zgodność</th>
               <th>Lokalizacja K4 z GT</th><th>Lokalizacja K4G z GT</th>
@@ -186,6 +188,14 @@
             <option value="LS:K4">Leszno → K4</option>
             <option value="LS:K4G">Leszno → K4G</option>
             <option value="LS:MAG">Leszno → Kajtek</option>
+            <option value="K4:BRK">K4 → Braki</option>
+            <option value="K4G:BRK">K4G → Braki</option>
+            <option value="MAG:BRK">Kajtek → Braki</option>
+            <option value="LS:BRK">Leszno → Braki</option>
+            <option value="BRK:K4">Braki → K4</option>
+            <option value="BRK:K4G">Braki → K4G</option>
+            <option value="BRK:MAG">Braki → Kajtek</option>
+            <option value="BRK:LS">Braki → Leszno</option>
           </select>
           <input type="text" id="mm-q" placeholder="SKU / EAN / nazwa...">
           <button type="button" id="btn-mm-szukaj" class="btn">Szukaj</button>
@@ -404,6 +414,7 @@
               <option value="K4G">K4 Góra</option>
               <option value="MAG">Kajtek (MAG)</option>
               <option value="LS">Leszno (LS)</option>
+              <option value="BRK">Braki (BRK)</option>
             </select>
           </div>
           <div class="mm-pole mm-pole-ilosc">

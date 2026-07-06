@@ -188,6 +188,7 @@ function renderujProdukty({ produkty, total, limit, offset, tryb }) {
       <td>${komorkaStan(p.stany_gt, 'K4G')}</td>
       <td>${komorkaStan(p.stany_gt, 'MAG')}</td>
       <td>${komorkaStan(p.stany_gt, 'LS')}</td>
+      <td>${komorkaStan(p.stany_gt, 'BRK')}</td>
       <td>${p.razem}</td>
       <td class="kol-lok">${wmsK4}</td>
       <td class="kol-lok">${wmsK4g}</td>

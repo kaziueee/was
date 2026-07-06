@@ -227,9 +227,10 @@ const SORT_WYRAZENIA = {
   k4g: wyrazenieStanu('K4G'),
   mag: wyrazenieStanu('MAG'),
   ls: wyrazenieStanu('LS'),
+  brk: wyrazenieStanu('BRK'),
 };
 const SORT_KLUCZE = Object.keys(SORT_WYRAZENIA);
-const MAGAZYNY_WYRAZENIA = { K4: SORT_WYRAZENIA.k4, K4G: SORT_WYRAZENIA.k4g, MAG: SORT_WYRAZENIA.mag, LS: SORT_WYRAZENIA.ls };
+const MAGAZYNY_WYRAZENIA = { K4: SORT_WYRAZENIA.k4, K4G: SORT_WYRAZENIA.k4g, MAG: SORT_WYRAZENIA.mag, LS: SORT_WYRAZENIA.ls, BRK: SORT_WYRAZENIA.brk };
 const REZ_WYRAZENIA = Object.fromEntries(MAGAZYNY.map((m) => [m.kod, wyrazenieRez(m.kod)]));
 
 // Wartosc danego "klucza sortowania" dla produktu zlozonego w JS - uzywane w
@@ -245,6 +246,7 @@ function wartoscSortowania(p, klucz) {
     case 'k4g': return p.stany_gt.K4G.ilosc;
     case 'mag': return p.stany_gt.MAG.ilosc;
     case 'ls': return p.stany_gt.LS.ilosc;
+    case 'brk': return p.stany_gt.BRK.ilosc;
     default: return p.symbol;
   }
 }
@@ -338,7 +340,9 @@ async function listujProdukty({ q, limit = 50, offset = 0, sort = 'sku', dir = '
       COALESCE(SUM(CASE WHEN m.mag_Symbol = 'MAG' THEN s.st_Stan    END), 0) AS stan_mag,
       COALESCE(SUM(CASE WHEN m.mag_Symbol = 'MAG' THEN s.st_StanRez END), 0) AS rez_mag,
       COALESCE(SUM(CASE WHEN m.mag_Symbol = 'LS'  THEN s.st_Stan    END), 0) AS stan_ls,
-      COALESCE(SUM(CASE WHEN m.mag_Symbol = 'LS'  THEN s.st_StanRez END), 0) AS rez_ls
+      COALESCE(SUM(CASE WHEN m.mag_Symbol = 'LS'  THEN s.st_StanRez END), 0) AS rez_ls,
+      COALESCE(SUM(CASE WHEN m.mag_Symbol = 'BRK' THEN s.st_Stan    END), 0) AS stan_brk,
+      COALESCE(SUM(CASE WHEN m.mag_Symbol = 'BRK' THEN s.st_StanRez END), 0) AS rez_brk
     ${polaczenie}
     GROUP BY t.tw_Id, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk
     ${having}

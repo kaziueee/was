@@ -34,6 +34,10 @@ router.get('/', (req, res) => {
   // A1, A1-P2, A1-P3). Lokalizacje "inny" (bez struktury) na koniec danego magazynu.
   sql += ' ORDER BY magazyn, (hala IS NULL), hala, regal, kolumna, kod';
 
+  // limit (do podpowiedzi typeahead - nie zwracamy setek lokalizacji na raz)
+  const limit = Math.min(Number(req.query.limit) || 0, 100);
+  if (limit > 0) { sql += ' LIMIT ?'; params.push(limit); }
+
   res.json(db.prepare(sql).all(...params));
 });
 

@@ -913,8 +913,9 @@ const lokMapy = {};
 // Mapa kod->stan (ilosc na lokalizacji zrodlowej) per pole - do "pozostanie na lokalizacji"
 const lokStany = {};
 
-function ustawDatalist(inputEl, opcje) {
-  // opcje: [{id, kod, hint?, stan?}]
+function ustawDatalist(inputEl, opcje, czyscWartosc = true) {
+  // opcje: [{id, kod, hint?, stan?}]. czyscWartosc=false przy typeahead (nie kasujemy
+  // tego, co user wpisuje) - tylko odswiezamy podpowiedzi i mape kod->id.
   const dl = el(`${inputEl.id}-list`);
   dl.innerHTML = '';
   const mapa = new Map();
@@ -929,7 +930,41 @@ function ustawDatalist(inputEl, opcje) {
   }
   lokMapy[inputEl.id] = mapa;
   lokStany[inputEl.id] = stany;
-  inputEl.value = '';
+  if (czyscWartosc) inputEl.value = '';
+}
+
+// Podpowiedzi lokalizacji po 3 znakach (debounce) - pobiera dopasowania z magazynu
+// zapisanego w inputEl.dataset.mag, zamiast ladowac wszystkie (855/1093 po imporcie mapy,
+// czego natywny <datalist> juz nie ogarnia). Skan/wpis dalej dziala; podpowiedzi to dodatek.
+function podlaczTypeaheadLok(inputEl) {
+  let timer = null;
+  inputEl.addEventListener('input', () => {
+    const mag = inputEl.dataset.mag;
+    const val = inputEl.value.trim();
+    clearTimeout(timer);
+    if (!mag || val.length < 3) { ustawDatalist(inputEl, [], false); return; }
+    timer = setTimeout(async () => {
+      if (inputEl.value.trim() !== val) return; // wartosc zmieniona w miedzyczasie
+      try {
+        const lista = await api(`/api/lokalizacje?magazyn=${encodeURIComponent(mag)}&aktywna=1&q=${encodeURIComponent(val)}&limit=30`);
+        ustawDatalist(inputEl, lista.map((l) => ({ id: l.id, kod: l.kod })), false);
+      } catch { /* podpowiedzi opcjonalne */ }
+    }, 250);
+  });
+}
+
+// Rozwiazuje kod lokalizacji -> id: najpierw z lokalnej mapy podpowiedzi, a gdy nie ma
+// (typeahead trzyma tylko ostatnie dopasowania) - zapytaniem do bazy po dokladnym kodzie.
+async function lokComboIdRozwiaz(inputEl, mag) {
+  const id = lokComboId(inputEl);
+  if (id) return id;
+  const kod = inputEl.value.trim();
+  if (!kod) return null;
+  try {
+    const lok = await api(`/api/lokalizacje/kod/${encodeURIComponent(kod)}`);
+    if (lok && lok.magazyn === mag && lok.aktywna === 1) return lok.id;
+  } catch { /* 404 - kod nie istnieje */ }
+  return null;
 }
 
 // Pokazuje "pozostanie na lokalizacji" = stan zrodla - wpisana ilosc. Dynamicznie
@@ -995,15 +1030,16 @@ async function mmZaladujLokCel(inputEl, brakEl, mag) {
   if (!mmCzyWms(mag)) {
     inputEl.classList.add('hidden');
     if (brakEl) brakEl.classList.remove('hidden');
+    inputEl.dataset.mag = '';
     ustawDatalist(inputEl, []);
     return;
   }
   inputEl.classList.remove('hidden');
   if (brakEl) brakEl.classList.add('hidden');
-  try {
-    const lista = await api(`/api/lokalizacje?magazyn=${mag}&aktywna=1`);
-    ustawDatalist(inputEl, lista.map((l) => ({ id: l.id, kod: l.kod })));
-  } catch { ustawDatalist(inputEl, []); }
+  // Zamiast ladowac wszystkie lokalizacje magazynu (855/1093 - natywny datalist tego nie
+  // ogarnia), zapamietujemy magazyn - podpowiedzi doladuja sie po 3 znakach (typeahead).
+  inputEl.dataset.mag = mag;
+  ustawDatalist(inputEl, []);
 }
 
 function mmBudujPayload({ artykul_gt_id, symbol, nazwa, ean, zrodloMag, celMag, lokZrodloId, lokCelId, ilosc }) {
@@ -1117,13 +1153,14 @@ async function mmOdswiezLokFormularz() {
 el('mm-kierunek').addEventListener('change', mmOdswiezLokFormularz);
 el('mm-f-zrodlo').addEventListener('input', () => aktualizujPozostanie('mm-f-zrodlo', 'mm-f-ilosc', 'mm-f-pozostanie'));
 el('mm-f-ilosc').addEventListener('input', () => aktualizujPozostanie('mm-f-zrodlo', 'mm-f-ilosc', 'mm-f-pozostanie'));
+podlaczTypeaheadLok(el('mm-f-cel')); // podpowiedzi lokalizacji celu po 3 znakach
 
 el('btn-mm-anuluj').addEventListener('click', () => {
   el('mm-formularz').classList.add('hidden');
   mmWybranyProdukt = null;
 });
 
-el('btn-mm-dodaj').addEventListener('click', () => {
+el('btn-mm-dodaj').addEventListener('click', async () => {
   if (!mmWybranyProdukt) return;
   const { zrodlo, cel } = mmParsujKierunek(el('mm-kierunek').value);
   const ilosc = Number(el('mm-f-ilosc').value);
@@ -1139,7 +1176,7 @@ el('btn-mm-dodaj').addEventListener('click', () => {
     lokZrodloKod = el('mm-f-zrodlo').value.trim();
   }
   if (mmCzyWms(cel)) {
-    const id = lokComboId(el('mm-f-cel'));
+    const id = await lokComboIdRozwiaz(el('mm-f-cel'), cel);
     if (!id) { alert('Wybierz prawidłową lokalizację docelową z listy.'); return; }
     lokCelId = id;
     lokCelKod = el('mm-f-cel').value.trim();
@@ -1542,6 +1579,7 @@ function edytujLokalizacjeInline(td, l, mag) {
   inp.setAttribute('list', 'inline-lok-list');
   inp.autocomplete = 'off';
   td.appendChild(inp);
+  podlaczTypeaheadLok(inp); // podpowiedzi po 3 znakach (jak w MM / modalu akcji)
 
   mmZaladujLokCel(inp, null, mag).then(() => { inp.value = l.kod; inp.focus(); });
 
@@ -1550,7 +1588,7 @@ function edytujLokalizacjeInline(td, l, mag) {
     if (zakonczone) return;
     if (zatwierdz) {
       const wpisane = inp.value.trim();
-      const nowyId = lokComboId(inp);
+      const nowyId = await lokComboIdRozwiaz(inp, mag);
       if (nowyId && nowyId !== l.lokalizacja_id) {
         zakonczone = true;
         await wykonajZmianeLok(l, nowyId);
@@ -1667,6 +1705,7 @@ function akcjaPozostanie() {
 
 el('modal-akcja-magazyn').addEventListener('change', akcjaOdswiezCel);
 el('modal-akcja-ile').addEventListener('input', akcjaPozostanie);
+podlaczTypeaheadLok(el('modal-akcja-lok')); // podpowiedzi lokalizacji celu po 3 znakach
 el('btn-modal-akcja-anuluj').addEventListener('click', zamknijAkcje);
 
 el('btn-modal-akcja-wykonaj').addEventListener('click', async () => {
@@ -1681,7 +1720,7 @@ el('btn-modal-akcja-wykonaj').addEventListener('click', async () => {
   // lokalizacja docelowa (gdy cel jest magazynem WMS)
   let lokCelId = null;
   if (mmCzyWms(celMag)) {
-    lokCelId = lokComboId(el('modal-akcja-lok'));
+    lokCelId = await lokComboIdRozwiaz(el('modal-akcja-lok'), celMag);
     if (!lokCelId) { pokazKomunikatEl('modal-akcja-komunikat', 'Wybierz prawidłową lokalizację docelową z listy.', 'blad'); return; }
   }
   if (ctx.typ === 'wms' && celMag === ctx.zrodloMag && lokCelId === ctx.zrodloLokId) {

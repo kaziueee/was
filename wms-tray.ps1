@@ -1,13 +1,12 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-function New-WIcon {
+function New-WIcon([System.Drawing.Color]$kolor) {
   $bmp = New-Object System.Drawing.Bitmap 32,32
   $g = [System.Drawing.Graphics]::FromImage($bmp)
   $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
   $g.Clear([System.Drawing.Color]::Transparent)
-  $blue = [System.Drawing.Color]::FromArgb(255,30,90,200)
-  $brush = New-Object System.Drawing.SolidBrush $blue
+  $brush = New-Object System.Drawing.SolidBrush $kolor
   $g.FillEllipse($brush,1,1,29,29)
   $font = New-Object System.Drawing.Font('Segoe UI',15,[System.Drawing.FontStyle]::Bold)
   $sf = New-Object System.Drawing.StringFormat
@@ -18,8 +17,11 @@ function New-WIcon {
   return [System.Drawing.Icon]::FromHandle($bmp.GetHicon())
 }
 
+# niebieski = serwer dziala, szary = zatrzymany (przelaczane w timerze co 5s)
+$script:iconOn  = New-WIcon ([System.Drawing.Color]::FromArgb(255,30,90,200))
+$script:iconOff = New-WIcon ([System.Drawing.Color]::FromArgb(255,140,140,140))
 $script:ni = New-Object System.Windows.Forms.NotifyIcon
-$script:ni.Icon = New-WIcon
+$script:ni.Icon = $script:iconOn
 $script:ni.Text = 'WMS'
 $script:ni.Visible = $true
 
@@ -49,6 +51,7 @@ $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 5000
 $timer.add_Tick({
   $up = @(Get-NetTCPConnection -LocalPort 3000 -State Listen -EA SilentlyContinue).Count -gt 0
+  $script:ni.Icon = if ($up) { $script:iconOn } else { $script:iconOff }
   $script:ni.Text = if ($up) { 'WMS - dziala (:3000)' } else { 'WMS - ZATRZYMANY' }
 })
 $timer.Start()

@@ -54,8 +54,20 @@ namespace GtBridge
             }
         }
 
-        public static IHostBuilder CreateHostBuilder(string[] args) =>
-            Host.CreateDefaultBuilder(args)
+        public static IHostBuilder CreateHostBuilder(string[] args)
+        {
+            // Adres nasluchu Kestrela z appsettings ("Nasluch"). Domyslnie 0.0.0.0:5000 (dev,
+            // dostep z LAN). Na prod: "http://127.0.0.1:5000" - most wola TYLKO lokalny Node
+            // (ta sama maszyna), wiec nie musi byc widoczny w sieci. Czytamy z appsettings obok
+            // exe (publish) i z CWD - spojnie z reszta konfiguracji (zrodlo pozniejsze wygrywa).
+            var wstepnaCfg = new ConfigurationBuilder()
+                .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: true)
+                .AddJsonFile(Path.Combine(Directory.GetCurrentDirectory(), "appsettings.json"), optional: true)
+                .Build();
+            var nasluch = wstepnaCfg["Nasluch"];
+            if (string.IsNullOrWhiteSpace(nasluch)) nasluch = "http://0.0.0.0:5000";
+
+            return Host.CreateDefaultBuilder(args)
                 .ConfigureAppConfiguration((ctx, cfg) =>
                 {
                     // Wczytaj appsettings.json TAKZE z katalogu .exe (publish), nie tylko z CWD.
@@ -67,9 +79,9 @@ namespace GtBridge
                 })
                 .ConfigureWebHostDefaults(webBuilder =>
                 {
-                    // 0.0.0.0 - dostepny tez z sieci lokalnej (Mac dev); na prod localhost wystarczy
-                    webBuilder.UseUrls("http://0.0.0.0:5000");
+                    webBuilder.UseUrls(nasluch);
                     webBuilder.UseStartup<Startup>();
                 });
+        }
     }
 }

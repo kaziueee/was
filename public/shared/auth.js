@@ -62,6 +62,10 @@
         border-radius:10px;background:#2b6cb0;color:#fff;cursor:pointer;}
       .wms-btn.sek{background:#e2e8f0;color:#0e1b33;margin-top:.5rem;}
       .wms-auth-blad{color:#c53030;margin-top:.75rem;font-weight:600;min-height:1.2em;}
+      .wms-status{margin:0 0 1rem;padding:.5rem .7rem;border-radius:8px;background:#f1f5f9;
+        font-size:.82rem;color:#334155;line-height:1.5;}
+      .wms-status b{font-weight:700;color:#0e1b33;}
+      .wms-status .ok{color:#15803d;font-weight:700;} .wms-status .bad{color:#c53030;font-weight:700;}
       #wms-user-badge{position:fixed;top:8px;right:10px;z-index:9000;display:flex;gap:.5rem;align-items:center;
         background:rgba(255,255,255,.92);border:1px solid #d6dce6;border-radius:20px;padding:3px 6px 3px 12px;
         font-family:system-ui,sans-serif;font-size:.85rem;color:#0e1b33;box-shadow:0 2px 8px rgba(0,0,0,.12);}
@@ -91,6 +95,7 @@
     let ov = document.getElementById('wms-auth-overlay');
     if (!ov) { ov = document.createElement('div'); ov.id = 'wms-auth-overlay'; document.body.appendChild(ov); }
     ov.innerHTML = `<div id="wms-auth-box"><h2>Wybierz profil</h2>
+      <div class="wms-status" id="wms-auth-status">Sprawdzam środowisko…</div>
       <select id="wms-prof-select" class="wms-select"><option value="">Ladowanie…</option></select>
       <div class="wms-pin-box" id="wms-pin-box" style="display:none">
         <input id="wms-pin" type="password" inputmode="numeric" maxlength="4" placeholder="PIN (4 cyfry)" autocomplete="off">
@@ -103,6 +108,20 @@
     const pinIn = ov.querySelector('#wms-pin');
     const bladEl = ov.querySelector('#wms-auth-blad');
     const maPin = {};
+
+    // pasek statusu srodowiska (baza / GT / most) - nieblokujacy, aktualizuje sie po fetchu
+    (async () => {
+      const st = ov.querySelector('#wms-auth-status');
+      try {
+        const s = await jGet('/api/status');
+        st.innerHTML =
+          `Baza: <b>${s.baza || '—'}</b>`
+          + ` &nbsp;·&nbsp; GT: <span class="${s.gt ? 'ok' : 'bad'}">${s.gt ? '✓ połączono' : '✗ brak'}</span>`
+          + ` &nbsp;·&nbsp; Most: <span class="${s.most ? 'ok' : 'bad'}">${s.most ? '✓ działa' : '✗ nie działa'}</span>`;
+      } catch {
+        st.innerHTML = '<span class="bad">Status środowiska niedostępny</span>';
+      }
+    })();
 
     async function zaloguj(id, pin) {
       bladEl.textContent = '';

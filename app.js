@@ -12,6 +12,7 @@ const pulpitRouter = require('./routes/pulpit');
 const uzupelnieniaRouter = require('./routes/uzupelnienia');
 const sciezkiRouter = require('./routes/sciezki');
 const audytRouter = require('./routes/audyt');
+const statusRouter = require('./routes/status');
 const uzytkownicyRouter = require('./routes/uzytkownicy');
 const blokadyRouter = require('./routes/blokady');
 const blokady = require('./services/blokady');
@@ -53,6 +54,7 @@ app.use('/api/ruchy', auth.wymagajSesjiNaZapisie, auth.blokujUcznia, blokady.mid
 app.use('/api/uzupelnienia', auth.wymagajSesjiNaZapisie, auth.blokujUcznia, uzupelnieniaRouter);
 app.use('/api/sciezki', auth.wymagajSesjiNaZapisie, sciezkiRouter);
 app.use('/api/magazyny', magazynyRouter);
+app.use('/api/status', statusRouter); // publiczny - pasek stanu na ekranie logowania
 app.use('/api/produkty', produktyRouter);
 app.use('/api/rozjazdy', rozjazdyRouter);
 app.use('/api/pulpit', pulpitRouter);

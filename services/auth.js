@@ -88,6 +88,16 @@ function wymagajAdmin(req, res, next) {
   next();
 }
 
+// Rola 'uczen' = dostep tylko do Sciezek. Blokuje zapisy na innych trasach (403).
+// Dziala na uwierzytelnionych zadaniach - req.uzytkownik ustawia wymagajSesji* (przy zapisach).
+// GET sa otwarte dla wszystkich (read-only), wiec tu nie ma req.uzytkownika i nie blokujemy.
+function blokujUcznia(req, res, next) {
+  if (req.uzytkownik && req.uzytkownik.rola === 'uczen') {
+    return res.status(403).json({ blad: 'Rola „uczen" ma dostep tylko do Sciezek' });
+  }
+  next();
+}
+
 // sprzatanie wygaslych sesji (wolane z joba)
 function sprzatnijSesje() {
   try {
@@ -100,5 +110,5 @@ function sprzatnijSesje() {
 
 module.exports = {
   hashPin, sprawdzPin, utworzSesje, usunSesje, sesjaZTokenu, tokenZadania,
-  opcjonalnaSesja, wymagajSesji, wymagajSesjiNaZapisie, wymagajAdmin, sprzatnijSesje,
+  opcjonalnaSesja, wymagajSesji, wymagajSesjiNaZapisie, wymagajAdmin, blokujUcznia, sprzatnijSesje,
 };

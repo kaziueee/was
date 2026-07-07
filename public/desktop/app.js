@@ -784,7 +784,13 @@ function renderujUzytkownicy(lista) {
       if (pin) await zapiszUser(u.id, { pin });
     }));
     if (u.maPin) akc.appendChild(przyciskUser('Bez PIN', 'btn-small', () => zapiszUser(u.id, { usunPin: true })));
-    akc.appendChild(przyciskUser(u.rola === 'admin' ? '→ Magazynier' : '→ Admin', 'btn-small', () => zapiszUser(u.id, { rola: u.rola === 'admin' ? 'magazynier' : 'admin' })));
+    const selRola = document.createElement('select');
+    selRola.className = 'btn-small';
+    for (const [val, txt] of [['magazynier', 'Magazynier'], ['admin', 'Admin'], ['uczen', 'Uczeń']]) {
+      const o = document.createElement('option'); o.value = val; o.textContent = txt; if (u.rola === val) o.selected = true; selRola.appendChild(o);
+    }
+    selRola.addEventListener('change', () => zapiszUser(u.id, { rola: selRola.value }));
+    akc.appendChild(selRola);
     akc.appendChild(przyciskUser(u.aktywny ? 'Dezaktywuj' : 'Aktywuj', u.aktywny ? 'btn-small btn-danger' : 'btn-small', () => {
       if (u.aktywny && !confirm(`Dezaktywować ${u.imie}?`)) return;
       zapiszUser(u.id, { aktywny: u.aktywny ? 0 : 1 });

@@ -48,9 +48,9 @@ app.use('/api/blokady', blokadyRouter);
 
 // Na zapisach (POST/PUT/DELETE) wymagamy sesji i WSTRZYKUJEMY operatora z tokenu do req.body
 // (backend = zrodlo prawdy dla "kto"; handlery w routes/* nie musza byc zmieniane). GET otwarte.
-app.use('/api/lokalizacje', auth.wymagajSesjiNaZapisie, lokalizacjeRouter);
-app.use('/api/ruchy', auth.wymagajSesjiNaZapisie, blokady.middlewareRuch, ruchyRouter);
-app.use('/api/uzupelnienia', auth.wymagajSesjiNaZapisie, uzupelnieniaRouter);
+app.use('/api/lokalizacje', auth.wymagajSesjiNaZapisie, auth.blokujUcznia, lokalizacjeRouter);
+app.use('/api/ruchy', auth.wymagajSesjiNaZapisie, auth.blokujUcznia, blokady.middlewareRuch, ruchyRouter);
+app.use('/api/uzupelnienia', auth.wymagajSesjiNaZapisie, auth.blokujUcznia, uzupelnieniaRouter);
 app.use('/api/sciezki', auth.wymagajSesjiNaZapisie, sciezkiRouter);
 app.use('/api/magazyny', magazynyRouter);
 app.use('/api/produkty', produktyRouter);

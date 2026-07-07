@@ -1376,3 +1376,13 @@ window.addEventListener('popstate', () => pokazWidok('menu'));
 
 (async () => { await initMagazyny(); })();
 pokazWidok('menu');
+
+// Rola „uczen" = tylko Sciezki: po zalogowaniu chowamy pozostale kafle menu.
+if (window.WMS?.gotowe) {
+  window.WMS.gotowe.then(() => {
+    if ((window.WMS.user() || {}).rola === 'uczen') {
+      for (const id of ['btn-go-ruch', 'btn-go-uzup', 'btn-go-historia']) el(id)?.classList.add('hidden');
+      document.querySelector('a[href="produkty.html"]')?.classList.add('hidden');
+    }
+  });
+}

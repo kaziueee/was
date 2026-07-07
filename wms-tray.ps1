@@ -31,6 +31,12 @@ $menu = New-Object System.Windows.Forms.ContextMenuStrip
 [void]$menu.Items.Add('Otworz WMS (desktop)',$null,{ Start-Process 'http://localhost:3000/desktop/' })
 [void]$menu.Items.Add('Otworz menu Zebry',$null,{ Start-Process 'http://localhost:3000/' })
 [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+[void]$menu.Items.Add('Pokaz log serwera (bledy)',$null,{
+  $log = Get-ChildItem 'C:\was\logs\error-*.log' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  if ($log) { Start-Process notepad $log.FullName } else { Start-Process explorer 'C:\was\logs' }
+})
+[void]$menu.Items.Add('Pokaz folder logow',$null,{ Start-Process explorer 'C:\was\logs' })
+[void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 [void]$menu.Items.Add('Restart serwera',$null,{ Invoke-Restart })
 [void]$menu.Items.Add('Zatrzymaj serwer',$null,{ Invoke-Stop })
 [void]$menu.Items.Add('Uruchom serwer',$null,{ Invoke-Start })

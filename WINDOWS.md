@@ -7,11 +7,12 @@ Mac jest maszyną administracyjną (dostęp przez Tailscale + SSH).
 
 | Task | Co | Port | Uwagi |
 |---|---|---|---|
-| `WMS-Node` | serwer WMS (Node, `node app.js`) | 3000 | Node z `C:\Users\Adm\nodejs` (PATH usera) |
-| `WMS-Bridge` | most GT (`GtBridge.exe`, Sfera COM) | 5000 | ikona w zasobniku, „Testuj polaczenie z GT" |
-| `WMS-Tray` | ikona WMS (niebieskie „W") | — | menu: otwórz/restart/stop/start serwera |
+| `WMS-Node` | serwer WMS (Node, `node app.js`) | 3000 | **S4U = bezokienkowo** (brak zielonej konsoli na pasku); Node z `C:\Users\Adm\nodejs` |
+| `WMS-Bridge` | most GT (`GtBridge.exe`, Sfera COM) | 5000 | Interactive (ikona w zasobniku, „Testuj polaczenie z GT") |
+| `WMS-Tray` | ikona WMS (niebieskie „W") | — | Interactive; menu: otwórz/restart/stop/start + „Pokaz log serwera" |
 
-Wszystkie: LogonType Interactive, RunLevel Limited, restart po awarii, bez limitu czasu.
+RunLevel Limited, restart po awarii, bez limitu czasu. `WMS-Node` = LogonType **S4U** (w tle,
+bez okna). `WMS-Bridge`/`WMS-Tray` = **Interactive** (potrzebują pulpitu na ikonę/tray).
 **Warunek autostartu po reboocie: `Adm` musi się zalogować** (autologin albo ręcznie).
 
 ## Dostęp

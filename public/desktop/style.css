@@ -733,3 +733,71 @@ main {
   white-space: nowrap;
   width: 3rem;
 }
+
+/* --- Pulpit (Faza 5) --- */
+.pulpit-tytul {
+  margin: 18px 0 8px;
+  font-size: 0.95rem;
+  color: #1d3557;
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 4px;
+}
+.pulpit-kafle {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+}
+/* display:grid wygrywalo z .hidden (ta sama specyficznosc, .pulpit-kafle nizej) -
+   jak przy .brak-pola. Bez tego sekcje admina (.pulpit-admin.hidden) nie znikaly. */
+.pulpit-kafle.hidden { display: none; }
+.kafel {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #cfcfcf;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.kafel-wartosc {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #1d3557;
+}
+.kafel-etykieta {
+  font-size: 0.82rem;
+  color: #333;
+  margin-top: 2px;
+}
+.kafel-podpis {
+  font-size: 0.72rem;
+  color: #777;
+  margin-top: 3px;
+}
+.kafel-klik {
+  cursor: pointer;
+  transition: box-shadow 0.12s, transform 0.12s;
+}
+.kafel-klik:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  transform: translateY(-1px);
+}
+.kafel-red    { border-left-color: #9b2226; }
+.kafel-red    .kafel-wartosc { color: #9b2226; }
+.kafel-amber  { border-left-color: #e0a800; }
+.kafel-blue   { border-left-color: #457b9d; }
+.kafel-ok     { border-left-color: #2a9d8f; }
+.kafel-neutral{ border-left-color: #adb5bd; }
+.kafel-pasek {
+  margin-top: 8px;
+  height: 6px;
+  background: #eee;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.kafel-pasek span {
+  display: block;
+  height: 100%;
+  background: #2a9d8f;
+}
+.kafel-amber .kafel-pasek span { background: #e0a800; }
+.kafel-red   .kafel-pasek span { background: #9b2226; }

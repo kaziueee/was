@@ -163,6 +163,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS blokady_edycji (
   heartbeat DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// Pulpit (Faza 5): snapshot metryk drogich do policzenia na zywo (rozklad statusow
+// zgodnosci GT<->WMS - krzyzuje ~2300 SKU z GT). Klucz-wartosc: wartosc to JSON,
+// obliczono = kiedy job policzyl. Pulpit czyta gotowe liczby -> laduje sie natychmiast
+// i dziala nawet gdy most GT chwilowo padnie. Odswiezane godzinnym jobem (services/pulpit-snapshot).
+db.exec(`CREATE TABLE IF NOT EXISTS pulpit_snapshot (
+  klucz TEXT PRIMARY KEY,
+  wartosc TEXT,
+  obliczono DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // Seed: pierwszy admin, gdy brak uzytkownikow (bez PIN - mozna od razu wejsc i zalozyc reszte).
 if (db.prepare('SELECT COUNT(*) AS c FROM uzytkownicy').get().c === 0) {
   db.prepare("INSERT INTO uzytkownicy (imie, rola) VALUES ('Admin', 'admin')").run();

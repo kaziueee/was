@@ -8,7 +8,9 @@ const ruchyRouter = require('./routes/ruchy');
 const magazynyRouter = require('./routes/magazyny');
 const produktyRouter = require('./routes/produkty');
 const rozjazdyRouter = require('./routes/rozjazdy');
+const pulpitRouter = require('./routes/pulpit');
 const uzupelnieniaRouter = require('./routes/uzupelnienia');
+const sciezkiRouter = require('./routes/sciezki');
 const audytRouter = require('./routes/audyt');
 const uzytkownicyRouter = require('./routes/uzytkownicy');
 const blokadyRouter = require('./routes/blokady');
@@ -18,6 +20,7 @@ const ruchyRetry = require('./services/ruchy-retry');
 const rozjazdyJob = require('./services/rozjazdy');
 const backupJob = require('./services/backup');
 const reconciliacjaMM = require('./services/reconciliacja-mm');
+const pulpitSnapshot = require('./services/pulpit-snapshot');
 const awarie = require('./services/awarie');
 
 // globalne lapanie wyjatkow/odrzuconych obietnic + rotacja logu awarii - jak najwczesniej
@@ -48,9 +51,11 @@ app.use('/api/blokady', blokadyRouter);
 app.use('/api/lokalizacje', auth.wymagajSesjiNaZapisie, lokalizacjeRouter);
 app.use('/api/ruchy', auth.wymagajSesjiNaZapisie, blokady.middlewareRuch, ruchyRouter);
 app.use('/api/uzupelnienia', auth.wymagajSesjiNaZapisie, uzupelnieniaRouter);
+app.use('/api/sciezki', auth.wymagajSesjiNaZapisie, sciezkiRouter);
 app.use('/api/magazyny', magazynyRouter);
 app.use('/api/produkty', produktyRouter);
 app.use('/api/rozjazdy', rozjazdyRouter);
+app.use('/api/pulpit', pulpitRouter);
 app.use('/api/audyt', audytRouter);
 
 // error-handling middleware MUSI byc po trasach (Express: 4 argumenty = handler bledow)
@@ -64,3 +69,4 @@ ruchyRetry.start();
 rozjazdyJob.start();
 backupJob.start();
 reconciliacjaMM.start();
+pulpitSnapshot.start();

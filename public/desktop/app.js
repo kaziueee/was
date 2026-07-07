@@ -64,6 +64,7 @@ function badge(status) {
 // --- zakladki ---
 
 const panele = {
+  pulpit: { sekcja: 'panel-pulpit', zaladowano: false, odswiez: odswiezPulpit },
   produkty: { sekcja: 'panel-produkty', zaladowano: false, odswiez: odswiezProdukty },
   rozjazdy: { sekcja: 'panel-rozjazdy', zaladowano: false, odswiez: odswiezRozjazdy },
   lokalizacje: { sekcja: 'panel-lokalizacje', zaladowano: false, odswiez: odswiezLokalizacje },
@@ -74,7 +75,7 @@ const panele = {
 };
 
 function pokazPanel(nazwa) {
-  if (!panele[nazwa]) nazwa = 'produkty';
+  if (!panele[nazwa]) nazwa = 'pulpit';
   for (const [klucz, p] of Object.entries(panele)) {
     el(p.sekcja).classList.toggle('hidden', klucz !== nazwa);
   }
@@ -92,10 +93,176 @@ function pokazPanel(nazwa) {
 // Cmd-klik otwiera panel w nowej karcie; klik zmienia hash -> hashchange.
 function panelZHasha() {
   const h = decodeURIComponent(location.hash.replace(/^#/, ''));
-  return panele[h] ? h : 'produkty';
+  return panele[h] ? h : 'pulpit';
 }
 
 window.addEventListener('hashchange', () => pokazPanel(panelZHasha()));
+
+// === PULPIT (Faza 5) ===
+
+// Buduje kafel. wariant -> klasa koloru (red/amber/blue/neutral/ok).
+// onKlik opcjonalny: kafel klikalny (kursor + skok do panelu/filtra).
+function pulpitKafel({ etykieta, wartosc, podpis, wariant, onKlik }) {
+  const div = document.createElement('div');
+  div.className = 'kafel' + (wariant ? ' kafel-' + wariant : '') + (onKlik ? ' kafel-klik' : '');
+  div.innerHTML = `<div class="kafel-wartosc">${wartosc}</div>`
+    + `<div class="kafel-etykieta">${etykieta}</div>`
+    + (podpis ? `<div class="kafel-podpis">${podpis}</div>` : '');
+  if (onKlik) div.addEventListener('click', onKlik);
+  return div;
+}
+
+function pulpitWiek(dni) {
+  if (dni == null) return '';
+  return dni === 0 ? 'najstarszy: dziś' : `najstarszy: ${dni} dni`;
+}
+
+// przejscie do Produktow z ustawionym filtrem zgodnosci (BD/t_GT/NZ) i odswiezeniem
+function pulpitSkokZgodnosc(kod) {
+  document.querySelectorAll('.prod-zgodnosc').forEach((c) => { c.checked = c.value === kod; });
+  prodOffset = 0;
+  panele.produkty.zaladowano = true; // nie dubluj odswiezenia z pokazPanel
+  location.hash = '#produkty';
+  odswiezProdukty();
+}
+
+function pulpitSkokLog() {
+  panele.log.zaladowano = true;
+  location.hash = '#log';
+  odswiezLog();
+}
+
+function renderujPulpitKolejke(d) {
+  const cont = el('pulpit-kolejka');
+  cont.innerHTML = '';
+  const z = d.zaleglosci;
+  const kafle = [];
+
+  kafle.push(pulpitKafel({
+    etykieta: 'Ruchy z błędem', wartosc: z.ruchy_error,
+    podpis: z.ruchy_error ? pulpitWiek(z.ruchy_error_wiek_dni) : 'brak',
+    wariant: z.ruchy_error ? 'red' : 'ok', onKlik: pulpitSkokLog,
+  }));
+  kafle.push(pulpitKafel({
+    etykieta: 'Ruchy oczekujące', wartosc: z.ruchy_pending,
+    podpis: z.ruchy_pending ? pulpitWiek(z.ruchy_pending_wiek_dni) : 'brak',
+    wariant: z.ruchy_pending ? 'amber' : 'ok', onKlik: pulpitSkokLog,
+  }));
+  kafle.push(pulpitKafel({
+    etykieta: 'Rozjazdy do wyjaśnienia', wartosc: z.rozjazdy_nowe,
+    podpis: z.rozjazdy_nowe ? pulpitWiek(z.rozjazdy_wiek_dni) : 'brak',
+    wariant: z.rozjazdy_nowe ? 'amber' : 'ok', onKlik: () => { location.hash = '#rozjazdy'; },
+  }));
+
+  // statusy zgodnosci ze snapshotu (moga byc null, gdy job jeszcze nie policzyl / brak GT)
+  const s = d.statusy;
+  if (s && s.licznik) {
+    const L = s.licznik;
+    kafle.push(pulpitKafel({ etykieta: 'Do zlokalizowania (t_GT)', wartosc: L.t_GT,
+      wariant: L.t_GT ? 'blue' : 'ok', onKlik: () => pulpitSkokZgodnosc('t_GT') }));
+    kafle.push(pulpitKafel({ etykieta: 'Niezgodne (NZ)', wartosc: L.NZ,
+      wariant: L.NZ ? 'red' : 'ok', onKlik: () => pulpitSkokZgodnosc('NZ') }));
+    kafle.push(pulpitKafel({ etykieta: 'Brak danych (BD)', wartosc: L.BD,
+      wariant: 'neutral', onKlik: () => pulpitSkokZgodnosc('BD') }));
+  } else {
+    kafle.push(pulpitKafel({ etykieta: 'Statusy zgodności', wartosc: '…',
+      podpis: 'jeszcze nie policzone', wariant: 'neutral' }));
+  }
+
+  kafle.push(pulpitKafel({ etykieta: 'Uzupełnienia K4', wartosc: '→',
+    wariant: 'neutral', onKlik: () => { location.hash = '#uzupelnienia'; } }));
+
+  kafle.forEach((k) => cont.appendChild(k));
+}
+
+function renderujPulpitStan(zajetosc) {
+  const cont = el('pulpit-stan');
+  cont.innerHTML = '';
+  const NAZWY = { K4: 'K4 Hala', K4G: 'K4 Góra' };
+  for (const m of zajetosc || []) {
+    const pasek = `<div class="kafel-pasek"><span style="width:${m.procent}%"></span></div>`;
+    const kafel = pulpitKafel({
+      etykieta: `${NAZWY[m.magazyn] || m.magazyn} — zajętość`,
+      wartosc: `${m.procent}%`,
+      podpis: `${m.zajetych}/${m.aktywnych} · wolnych ${m.wolnych}`,
+      wariant: m.procent >= 90 ? 'red' : (m.procent >= 75 ? 'amber' : 'ok'),
+    });
+    kafel.insertAdjacentHTML('beforeend', pasek);
+    cont.appendChild(kafel);
+  }
+}
+
+function renderujPulpitTrendy(t) {
+  const cont = el('pulpit-trendy');
+  cont.innerHTML = '';
+  if (!t) return;
+  cont.appendChild(pulpitKafel({ etykieta: 'Przesunięcia MM', wartosc: t.d7.mm,
+    podpis: `dziś ${t.d1.mm} · 30d ${t.d30.mm}`, wariant: 'neutral' }));
+  cont.appendChild(pulpitKafel({ etykieta: 'Lokalizowania', wartosc: t.d7.lok,
+    podpis: `dziś ${t.d1.lok} · 30d ${t.d30.lok}`, wariant: 'neutral' }));
+  cont.appendChild(pulpitKafel({ etykieta: 'Nowe SKU na K4 (7d)', wartosc: t.d7.nowe_sku_k4,
+    podpis: `30d ${t.d30.nowe_sku_k4}`, wariant: 'blue' }));
+  cont.appendChild(pulpitKafel({ etykieta: 'Napływ do BRK (7d)', wartosc: `${t.d7.brk.szt} szt.`,
+    podpis: `30d ${t.d30.brk.szt} szt.`, wariant: t.d7.brk.szt > 0 ? 'amber' : 'ok' }));
+}
+
+function renderujPulpitLudzie(ludzie) {
+  const tbody = el('pulpit-ludzie-tbody');
+  tbody.innerHTML = '';
+  el('pulpit-ludzie-brak').classList.toggle('hidden', (ludzie || []).length > 0);
+  for (const u of ludzie || []) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><strong>${u.uzytkownik}</strong></td><td>${u.dzis}</td><td>${u.d7}</td>`
+      + `<td>${u.mm7}</td><td>${u.lok7}</td><td>${formatDatetime(u.ostatnia)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+// kafel "Twoja aktywnosc" dla zalogowanego uzytkownika (z listy ludzie)
+function renderujPulpitMoje(ludzie) {
+  const cont = el('pulpit-moje');
+  cont.innerHTML = '';
+  const imie = (window.WMS && WMS.user() && WMS.user().imie) || null;
+  if (!imie) return;
+  const moj = (ludzie || []).find((u) => u.uzytkownik === imie);
+  cont.appendChild(pulpitKafel({
+    etykieta: `Twoja aktywność — ${imie}`,
+    wartosc: moj ? moj.dzis : 0,
+    podpis: moj ? `operacji dziś · ${moj.d7} w 7 dni` : 'brak operacji dziś',
+    wariant: 'blue',
+  }));
+}
+
+async function odswiezPulpit() {
+  const admin = !(window.WMS) || WMS.jestAdmin();
+  document.querySelectorAll('.pulpit-admin').forEach((e) => e.classList.toggle('hidden', !admin));
+
+  let d;
+  try {
+    d = await api('/api/pulpit');
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+    return;
+  }
+
+  const czas = el('pulpit-czas');
+  const podpisy = [];
+  if (d.teraz) podpisy.push('odświeżono ' + new Date(d.teraz).toLocaleTimeString('pl'));
+  if (d.statusy && d.statusy.obliczono) {
+    podpisy.push('statusy: stan na ' + new Date(d.statusy.obliczono.replace(' ', 'T') + 'Z').toLocaleTimeString('pl'));
+  }
+  czas.textContent = podpisy.join(' · ');
+
+  renderujPulpitMoje(d.ludzie);
+  renderujPulpitKolejke(d);
+  renderujPulpitStan(d.zajetosc);
+  renderujPulpitTrendy(d.trendy);
+  renderujPulpitLudzie(d.ludzie);
+}
+
+el('btn-pulpit-odswiez').addEventListener('click', odswiezPulpit);
+// przeliczaj role/pulpit po zalogowaniu (badge admina moze przyjsc po pierwszym renderze)
+window.addEventListener('wms-zalogowano', () => { if (panele.pulpit.zaladowano) odswiezPulpit(); });
 
 // === PRODUKTY ===
 

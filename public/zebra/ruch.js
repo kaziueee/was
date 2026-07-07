@@ -897,6 +897,38 @@ el('input-cel').addEventListener('focus', () => el('input-cel').select());
 // wpisanie/skan nowej lokalizacji -> etykieta wraca do "ZMIEN LOKALIZACJE" (juz nie tylko-zapas)
 el('input-cel').addEventListener('input', aktualizujAkcjeLabel);
 
+// Podpowiedzi lokalizacji przy RECZNYM wpisywaniu (typeahead, jak na desktopie): po >=3 znakach
+// doladowuje dopasowania z danego magazynu do <datalist>. Skan dziala jak dotad - onScan/zatwierdz
+// i tak rozwiazuja kod dokladnym zapytaniem do bazy, wiec datalist jest czysto UX (mniej literowek),
+// nie zrodlem prawdy. magFn() zwraca magazyn na zywo (moze sie zmienic z wyborem celu) albo null.
+function podlaczTypeaheadLok(inputEl, datalistEl, magFn) {
+  let timer = null;
+  inputEl.addEventListener('input', () => {
+    const val = inputEl.value.trim();
+    clearTimeout(timer);
+    const mag = magFn();
+    // podpowiadamy tylko dla magazynow WMS (zewnetrzne nie maja lokalizacji) i od 3 znakow
+    if (!mag || magazynyMapa[mag]?.typ !== 'wms' || val.length < 3) {
+      datalistEl.innerHTML = '';
+      return;
+    }
+    timer = setTimeout(async () => {
+      if (inputEl.value.trim() !== val) return; // wartosc zmieniona/wyczyszczona w miedzyczasie (np. skan)
+      try {
+        const res = await fetch(`/api/lokalizacje?magazyn=${encodeURIComponent(mag)}&aktywna=1&q=${encodeURIComponent(val)}&limit=30`);
+        if (!res.ok) return;
+        const lista = await res.json();
+        datalistEl.innerHTML = lista.map((l) => `<option value="${l.kod}"></option>`).join('');
+      } catch { /* podpowiedzi opcjonalne - brak sieci nie blokuje skanu/wpisu */ }
+    }, 250);
+  });
+}
+
+// Lokalizacja docelowa: magazyn celu na zywo (celMagazynKod - zalezy od selecta / zrodla).
+podlaczTypeaheadLok(el('input-cel'), el('input-cel-list'), celMagazynKod);
+// Zapas K4 (dodatkowe miejsce K4 dla SKU) to zawsze adres w K4 - magazyn na sztywno.
+podlaczTypeaheadLok(el('input-zapas'), el('input-zapas-list'), () => 'K4');
+
 // Pole wyszukiwania: zapamietany tekst zostaje do edycji (kursor normalnie, bez zaznaczenia,
 // zeby latwo dopisac/poprawic). Reczne pisanie wymaga DOTKNIECIA pola (klawiatura schowana) -
 // dotkniecie = edycja, tekst zostaje. Skan wpada BEZ dotkniecia - wtedy pierwszy znak kasuje
@@ -1317,11 +1349,21 @@ function pokazWidok(nazwa) {
   if (uzup) uzup.classList.toggle('hidden', nazwa !== 'uzupelnienia');
   const hist = el('widok-historia');
   if (hist) hist.classList.toggle('hidden', nazwa !== 'historia');
+  const sciezki = el('widok-sciezki');
+  if (sciezki) sciezki.classList.toggle('hidden', nazwa !== 'sciezki');
   if (nazwa === 'ruch') { zrobione = []; reset(); } // #5: swieze wejscie czysci liste zrobionych
   if (nazwa === 'uzupelnienia' && window.uzupOtworz) window.uzupOtworz();
   if (nazwa === 'historia' && window.historiaOtworz) window.historiaOtworz();
+  if (nazwa === 'sciezki' && window.sciezkiOtworz) window.sciezkiOtworz();
 }
 window.pokazWidok = pokazWidok;
+
+// Otworz widok Ruch od razu dla danego SKU/lokalizacji (uzywane np. z raportu Sciezek).
+window.ruchOtworzArtykul = (kod) => {
+  pokazWidok('ruch');
+  history.pushState({ v: 'ruch' }, '');
+  if (kod) wykonajSkan(String(kod));
+};
 el('btn-go-ruch').addEventListener('click', () => {
   pokazWidok('ruch');
   history.pushState({ v: 'ruch' }, '');

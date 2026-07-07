@@ -20,6 +20,7 @@
     <main class="ekran-tresc">
       <button type="button" id="btn-go-ruch" class="btn-menu">Ruch towaru<span>MM / zmiana lokalizacji</span></button>
       <button type="button" id="btn-go-uzup" class="btn-menu">Uzupełnienia K4<span>K4G → K4 wg rezerwacji</span></button>
+      <button type="button" id="btn-go-sciezki" class="btn-menu">Ścieżki<span>zadania obchodu magazynu</span></button>
       <button type="button" id="btn-go-historia" class="btn-menu">Historia ruchów<span>ostatnie operacje na Zebrze</span></button>
       <a class="btn-menu" href="produkty.html">Test wyszukiwania (GT)<span>podgląd karty produktu</span></a>
       <button type="button" id="btn-pelny-ekran" class="btn-menu btn-menu-2">⛶ Tryb pełnoekranowy</button>
@@ -78,7 +79,8 @@
         <div id="cel-lokalizacja-pole" class="pole-blok">
           <label class="pole-etykieta" for="input-cel">Lokalizacja docelowa</label>
           <div class="pole-skan">
-            <input type="text" id="input-cel" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj lub wpisz lokalizację">
+            <input type="text" id="input-cel" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj lub wpisz lokalizację" list="input-cel-list">
+            <datalist id="input-cel-list"></datalist>
           </div>
           <p id="cel-lokalizacja-hint" class="pole-hint"></p>
         </div>
@@ -99,7 +101,8 @@
         <div id="cel-zapas-pole" class="pole-blok hidden">
           <label class="pole-etykieta" for="input-zapas">Zapas K4 — dodatkowe miejsce (opcjonalnie)</label>
           <div class="pole-skan">
-            <input type="text" id="input-zapas" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj lub wpisz kod zapasu">
+            <input type="text" id="input-zapas" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj lub wpisz kod zapasu" list="input-zapas-list">
+            <datalist id="input-zapas-list"></datalist>
           </div>
           <p class="pole-hint">Drugi adres K4 tego SKU — w GT zapis jako „miejsce/zapas". Puste = bez zapasu.</p>
         </div>
@@ -210,6 +213,62 @@
   </div>
   </div><!-- /widok-historia -->
 
+  <!-- WIDOK SCIEZKI (Faza 6: zadania obchodu magazynu z checklista) -->
+  <div id="widok-sciezki" class="hidden">
+  <div class="ekran">
+    <header class="ekran-naglowek"><div class="ekran-sku"><h1 id="sciezki-tytul">Ścieżki</h1></div></header>
+    <main class="ekran-tresc">
+      <div id="sciezki-komunikat" class="komunikat hidden"></div>
+
+      <!-- podekran: menu scizek -->
+      <section id="sciezki-menu">
+        <button type="button" id="btn-sciezka-ostatnie" class="btn-menu">Ostatnie sztuki<span>weryfikacja stanów K4 ≤ 5 szt.</span></button>
+        <button type="button" id="btn-sciezka-raport" class="btn-menu btn-menu-2">Raport niezgodności<span>produkty do sprawdzenia</span></button>
+      </section>
+
+      <!-- podekran: obchod "Ostatnie sztuki" (jeden przystanek na ekran) -->
+      <section id="sciezki-obchod" class="hidden">
+        <p id="sciezki-postep" class="hint"></p>
+        <div id="sciezki-karta" class="karta-info"></div>
+        <div class="pole-blok">
+          <label class="pole-etykieta" for="sciezki-skan">Zeskanuj towar z półki</label>
+          <div class="pole-skan">
+            <input type="text" id="sciezki-skan" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj SKU / EAN">
+          </div>
+          <p id="sciezki-skan-hint" class="pole-hint"></p>
+        </div>
+        <div class="pole-blok">
+          <label class="pole-etykieta" for="sciezki-ilosc">Policzona ilość</label>
+          <div class="stepper">
+            <button type="button" id="sciezki-ilosc-minus" aria-label="Mniej">−</button>
+            <input type="number" id="sciezki-ilosc" class="stepper-wartosc" inputmode="numeric" min="0" step="1">
+            <button type="button" id="sciezki-ilosc-plus" aria-label="Więcej">+</button>
+          </div>
+        </div>
+        <p id="sciezki-pusto" class="hint hidden">Brak produktów do sprawdzenia. 🎉</p>
+      </section>
+
+      <!-- podekran: raport niezgodnosci (tap -> otwiera Ruch dla SKU) -->
+      <section id="sciezki-raport" class="hidden">
+        <div id="sciezki-raport-lista" class="lista"></div>
+        <p id="sciezki-raport-pusto" class="hint hidden">Brak niezgodności. 🎉</p>
+      </section>
+    </main>
+    <footer class="ekran-stopka">
+      <button type="button" id="sciezki-wstecz" class="btn-wstecz">← Wstecz</button>
+      <button type="button" id="sciezki-zatwierdz" class="btn-akcja hidden">Zgadza się ✓</button>
+    </footer>
+
+    <div id="sciezki-sukces" class="sukces-overlay hidden">
+      <div class="sukces-box">
+        <div class="sukces-ikona" id="sciezki-sukces-ikona">✓</div>
+        <p id="sciezki-sukces-tekst"></p>
+        <p class="sukces-hint">Dotknij, aby kontynuować</p>
+      </div>
+    </div>
+  </div>
+  </div><!-- /widok-sciezki -->
+
   <script src="/shared/auth.js"></script>
   <script src="blokada-edycji.js"></script>
   <script src="fullscreen.js"></script>
@@ -218,5 +277,6 @@
   <script src="ruch.js"></script>
   <script src="uzupelnienia.js"></script>
   <script src="historia.js"></script>
+  <script src="sciezki.js"></script>
 </body>
 </html>

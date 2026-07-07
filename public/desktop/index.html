@@ -14,7 +14,8 @@
   <header>
     <h1>WMS — Panel</h1>
     <nav id="zakladki">
-      <a href="#produkty" class="tab-link aktywny" data-panel="produkty">Produkty</a>
+      <a href="#pulpit" class="tab-link aktywny" data-panel="pulpit">Pulpit</a>
+      <a href="#produkty" class="tab-link" data-panel="produkty">Produkty</a>
       <a href="#rozjazdy" class="tab-link" data-panel="rozjazdy">Rozjazdy</a>
       <a href="#lokalizacje" class="tab-link" data-panel="lokalizacje">Lokalizacje</a>
       <a href="#mm" class="tab-link" data-panel="mm">MM</a>
@@ -29,7 +30,46 @@
   <main>
     <div id="komunikat" class="komunikat hidden"></div>
 
-    <section id="panel-produkty" class="panel">
+    <!-- Panel Pulpit (Faza 5) - dashboard. Role-aware: sekcje .pulpit-admin widoczne
+         tylko dla admina; magazynier widzi kolejke pracy + swoje liczby. -->
+    <section id="panel-pulpit" class="panel">
+      <div class="panel-naglowek">
+        <h2>Pulpit</h2>
+        <div class="filtry">
+          <button type="button" id="btn-pulpit-odswiez" class="btn">Odśwież</button>
+          <span id="pulpit-czas" class="opis"></span>
+        </div>
+      </div>
+
+      <!-- Twoja aktywnosc (zalogowany magazynier) -->
+      <div id="pulpit-moje" class="pulpit-kafle"></div>
+
+      <!-- Kolejka pracy: klikalne kafle -> odpowiedni panel -->
+      <h3 class="pulpit-tytul">Kolejka pracy</h3>
+      <div id="pulpit-kolejka" class="pulpit-kafle"></div>
+
+      <!-- Stan magazynu (widoczny takze dla magazyniera - "gdzie kłaść") -->
+      <h3 class="pulpit-tytul">Stan magazynu</h3>
+      <div id="pulpit-stan" class="pulpit-kafle"></div>
+
+      <!-- Trendy 7/30 dni (tylko admin) -->
+      <h3 class="pulpit-tytul pulpit-admin">Trendy</h3>
+      <div id="pulpit-trendy" class="pulpit-kafle pulpit-admin"></div>
+
+      <!-- Ludzie: ranking (tylko admin) -->
+      <h3 class="pulpit-tytul pulpit-admin">Aktywność magazynierów</h3>
+      <div class="tabela-wrapper pulpit-admin">
+        <table class="tabela">
+          <thead>
+            <tr><th>Magazynier</th><th>Dziś</th><th>7 dni</th><th>MM 7d</th><th>LOK 7d</th><th>Ostatnia aktywność</th></tr>
+          </thead>
+          <tbody id="pulpit-ludzie-tbody"></tbody>
+        </table>
+      </div>
+      <p id="pulpit-ludzie-brak" class="hint hidden pulpit-admin">Brak aktywności w ostatnich 7 dniach.</p>
+    </section>
+
+    <section id="panel-produkty" class="panel hidden">
       <div class="panel-naglowek">
         <h2>Produkty</h2>
         <div class="filtry">

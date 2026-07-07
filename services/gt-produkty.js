@@ -7,7 +7,7 @@
 
 const { query, naCzesci } = require('./gt-sql');
 const db = require('../db/database');
-const { MAGAZYNY } = require('../config/magazyny');
+const { MAGAZYNY, MAGAZYNY_RAZEM } = require('../config/magazyny');
 const { escapeLike, podzielNaSlowa, LIMIT_WYSZUKIWANIA } = require('./wyszukiwanie');
 const { pobierzPrzegladLokalizacji } = require('./gt-fields');
 
@@ -222,7 +222,7 @@ const SORT_WYRAZENIA = {
   sku: 't.tw_Symbol',
   nazwa: 't.tw_Nazwa',
   ean: 't.tw_PodstKodKresk',
-  razem: `(${MAGAZYNY.map((m) => wyrazenieStanu(m.kod)).join(' + ')})`,
+  razem: `(${MAGAZYNY_RAZEM.map((kod) => wyrazenieStanu(kod)).join(' + ')})`,
   k4: wyrazenieStanu('K4'),
   k4g: wyrazenieStanu('K4G'),
   mag: wyrazenieStanu('MAG'),
@@ -260,6 +260,12 @@ function stanyGtZWiersza(row) {
     stany_gt[m.kod] = { ilosc: row[`stan_${k}`], rezerwacja: row[`rez_${k}`] };
   }
   return stany_gt;
+}
+
+// Suma "Razem" = K4+K4G+MAG+LS (bez BRK, zob. MAGAZYNY_RAZEM). Musi byc spojna
+// z wyrazeniem SQL SORT_WYRAZENIA.razem uzywanym w trybie katalogowym.
+function sumaRazem(stany_gt) {
+  return MAGAZYNY_RAZEM.reduce((suma, kod) => suma + (stany_gt[kod]?.ilosc ?? 0), 0);
 }
 
 // Paginowana lista towarow z GT - do tabeli kontrolnej "Produkty" (desktop).
@@ -358,11 +364,52 @@ async function listujProdukty({ q, limit = 50, offset = 0, sort = 'sku', dir = '
       nazwa: row.tw_Nazwa,
       ean: row.tw_PodstKodKresk || null,
       stany_gt,
-      razem: Object.values(stany_gt).reduce((suma, w) => suma + w.ilosc, 0),
+      razem: sumaRazem(stany_gt),
     };
   });
 
   return { produkty, total };
+}
+
+// Sciezka "Ostatnie sztuki" (Faza 6): towary z niskim stanem GT w K4 (min..max szt.),
+// ktore MAJA lokalizacje K4 (tw_Pole1 niepuste - obchod idzie po lokalizacjach) I ktorych
+// LACZNY stan (Razem = K4+K4G+MAG+LS, bez BRK) <= maxRazem. Warunek Razem odsiewa towary
+// z niskim K4, ale z zapasem na innych magazynach (np. setki na K4G - to kandydat do
+// uzupelnienia, nie do liczenia "ostatnich sztuk"). GT = master stanow, wiec prog liczymy
+// po st_Stan, nie po WMS stany_lokalizacji. Tylko tw_Rodzaj=1 (towary) - wycina zestawy/komplety
+// (rodzaj 8: bundle bez wlasnego fizycznego stanu na polce, np. "Nerf ... + celownik + strzalki")
+// i uslugi. Filtr po RODZAJU, nie po nazwie - tysiace zwyklych towarow ma "zestaw" w nazwie
+// ("Zestaw klockow") i te zostaja. Sort po tw_Pole1 = kolejnosc zbierania.
+// Zwraca [{artykul_gt_id, symbol, nazwa, ean, lokalizacja_kod, stan_k4, rez_k4, razem}].
+async function pobierzK4NiskieStany({ min = 1, max = 5, maxRazem = 5 } = {}) {
+  const k4 = wyrazenieStanu('K4');
+  const rezK4 = wyrazenieRez('K4');
+  const razem = MAGAZYNY_RAZEM.map((kod) => wyrazenieStanu(kod)).join(' + ');
+
+  const { recordset } = await query(`
+    SELECT t.tw_Id, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk,
+           LTRIM(RTRIM(t.tw_Pole1)) AS lokalizacja,
+           ${k4} AS stan_k4, ${rezK4} AS rez_k4, ${razem} AS razem
+    FROM tw__Towar t
+    JOIN tw_Stan s ON s.st_TowId = t.tw_Id
+    JOIN sl_Magazyn m ON m.mag_Id = s.st_MagId
+    WHERE t.tw_Zablokowany = 0 AND LTRIM(RTRIM(t.tw_Pole1)) <> ''
+      AND t.tw_Rodzaj = 1
+    GROUP BY t.tw_Id, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk, LTRIM(RTRIM(t.tw_Pole1))
+    HAVING ${k4} >= @min AND ${k4} <= @max AND ${razem} <= @maxRazem
+    ORDER BY LTRIM(RTRIM(t.tw_Pole1)), t.tw_Symbol
+  `, { min, max, maxRazem });
+
+  return recordset.map((r) => ({
+    artykul_gt_id: String(r.tw_Id),
+    symbol: r.tw_Symbol,
+    nazwa: r.tw_Nazwa,
+    ean: r.tw_PodstKodKresk || null,
+    lokalizacja_kod: r.lokalizacja,
+    stan_k4: r.stan_k4,
+    rez_k4: r.rez_k4,
+    razem: r.razem,
+  }));
 }
 
 // Zbior artykulow relevantnych dla Zgodnosci K4/K4G: te, ktore maja stan > 0
@@ -448,7 +495,7 @@ async function pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny
         nazwa: info.tw_Nazwa,
         ean: info.tw_PodstKodKresk || null,
         stany_gt,
-        razem: Object.values(stany_gt).reduce((suma, w) => suma + w.ilosc, 0),
+        razem: sumaRazem(stany_gt),
         zgodnosc: { k4: zg.k4.stan, k4g: zg.k4g.stan, ogolna: zg.ogolna },
         lokalizacja_k4_gt: zg.k4.gt_tekst,
         lokalizacja_k4g_gt: zg.k4g.gt_tekst,
@@ -490,13 +537,43 @@ async function pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny
   return { produkty: produkty.slice(offset, offset + limit), total };
 }
 
+// Rozklad statusow zgodnosci GT<->WMS dla calego "zbioru WMS" (~2300-2400 SKU).
+// Zwraca liczniki 5 stanow ZGODNOSC po zgodnosci OGOLNEJ (najgorszy z K4/K4G) -
+// to samo pole, co badge na liscie Produkty i filtr Zgodnosc. Uzywane przez
+// job pulpit-snapshot (Faza 5) - drogie (krzyzuje caly zbior z GT), wiec liczone
+// godzinnym jobem, nie na zywo przy otwarciu pulpitu.
+async function rozkladZgodnosci() {
+  const ids = await pobierzZbiorWmsIds({});
+  const licznik = { OK: 0, NZ: 0, t_GT: 0, BD: 0, OF: 0 };
+  if (ids.length === 0) return { licznik, razem: 0 };
+
+  const [podstawoweMap, przegladMap] = await Promise.all([
+    pobierzPodstawoweInfo(ids),
+    pobierzPrzegladLokalizacji(ids),
+  ]);
+
+  let razem = 0;
+  for (const id of ids) {
+    const info = podstawoweMap.get(id);
+    if (info && info.tw_Zablokowany) continue; // zablokowane pomijamy (jak lista Produkty)
+    const zg = przegladMap.get(id);
+    if (!zg) continue;
+    if (licznik[zg.ogolna] === undefined) continue;
+    licznik[zg.ogolna]++;
+    razem++;
+  }
+  return { licznik, razem };
+}
+
 module.exports = {
   pobierzProdukt,
   szukajProdukty,
   szukajPoLokalizacjiGt,
   listujProdukty,
   pobierzProduktyZUniwersum,
+  pobierzK4NiskieStany,
   pobierzStanyGt,
+  rozkladZgodnosci,
   dostepneWGt,
   LIMIT_WYSZUKIWANIA,
   SORT_KLUCZE,

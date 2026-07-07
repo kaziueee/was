@@ -53,7 +53,10 @@ wms/
 |---|---|---|
 | K4 | Pick floor | TAK — 1 SKU = 1 lokalizacja |
 | K4gora | Bulk storage | TAK — 1 SKU = N lokalizacji |
-| ZEW1, ZEW2... | Zewnętrzne | NIE — tylko stan w GT |
+| MAG (Kajtek), LS (Leszno) | Zewnętrzne | NIE — tylko stan w GT |
+| BRK (Braki, mag 10) | Zewnętrzny, towar niepełnowartościowy | NIE — tylko stan w GT |
+
+Lista magazynów: `config/magazyny.js`. **Stan „Razem" = K4+K4G+MAG+LS, bez BRK** — braki to towar niepełnowartościowy i nie mają zawyżać sumy „ile mam". Sterowane flagą `liczDoRazem: false` na BRK → eksport `MAGAZYNY_RAZEM`, czytany w `services/gt-produkty.js` (wyrażenie SQL `SORT_WYRAZENIA.razem` + helper `sumaRazem` dla trybu Node — muszą zostać spójne). BRK ma własną kolumnę i MM w obie strony, wypada tylko z sumy zbiorczej.
 
 ## Pola własne GT (kartoteka towaru)
 
@@ -108,8 +111,23 @@ Typy ruchów: `LOK` (lokalizowanie po PZ/FZ, bez dokumentu GT), `MM` (przesunię
 
 1. **Ruch towaru** (`ruch.html`) — zlany MM + zmiana lokalizacji. Skan SKU/EAN/lokalizacji → wybór → krok „Dokąd i ile?": select **Cel** (Ta sama = LOK w obrębie magazynu / inny magazyn = MM) + ilość + lokalizacja. Operacja LOK/MM wyprowadzana automatycznie. Po zatwierdzeniu ekran sukcesu (dotknięcie zamyka) + sygnał dźwiękowy.
 2. **Test wyszukiwania** (`produkty.html`) — podgląd karty produktu z GT.
+3. **Ścieżki** (`sciezki.js`, widok w `ruch.html`) — zadania obchodu magazynu (Faza 6). Patrz sekcja „Ścieżki".
 
 Pola skanu mają `inputmode="none"` (skaner DataWedge wstrzykuje dane, klawiatura nie wyskakuje; dotknięcie pola = ręczne wpisanie). DataWedge (działająca konfiguracja): Keystroke output → Basic data formatting → **Send ENTER key** ON (dokłada Enter) + Key event options → **Send Characters as Events** ON + **Send Enter as string** ON. `onScan` w `kreator.js` łapie ten Enter także jako znak CR / `inputType:insertLineBreak`.
+
+## Ścieżki (Faza 6)
+
+Proste zadania „obchodu" magazynu z checklistą, posortowane w kolejności zbierania. Zdarzenia lądują w tabeli `audyt` (bez nowych tabel). Kafelek „Ścieżki" w menu Zebry → `widok-sciezki` (SPA). Backend: `routes/sciezki.js` (`/api/sciezki`, montowany z `auth.wymagajSesjiNaZapisie`). Front: `public/zebra/sciezki.js` (IIFE na globalnych `el`/`pokazWidok`/`onScan`, wzorzec jak `historia.js`).
+
+**Ścieżka 1 — „Ostatnie sztuki":** weryfikacja niskich stanów K4 (1–5 szt.).
+- **Źródło stanu: WMS tam gdzie istnieje, inaczej GT.** WMS (`stany_lokalizacji`) zapełnia się z czasem — dla zlokalizowanego towaru trzyma ilość per lokalizacja i jest prawdą; dla reszty fallback na stan GT (`st_Stan` K4). Dziś WMS ma ~kilka wierszy, więc prawie wszystko idzie z GT — reguła jest na przyszłość. Lista = **unia**: (a) wiersze WMS K4 ze stanem 1–5 (`zrodlo:'WMS'`, lokalizacja = kod WMS), (b) `gt-produkty.pobierzK4NiskieStany` = GT `st_Stan` 1–5 z **niepustą `tw_Pole1`** i **`tw_Rodzaj=1`** (tylko towary — wycina zestawy/komplety `rodzaj 8` typu „Nerf + celownik + strzałki" i usługi; filtr po RODZAJU, nie po nazwie — tysiące towarów ma „zestaw" w nazwie) dla SKU, których WMS jeszcze nie zna (`zrodlo:'GT'`). WMS ma pierwszeństwo (SKU w WMS nie dubluje się z GT; gdy WMS>5, SKU wypada mimo niskiego GT). `ORDER BY` kod lokalizacji.
+- **Warunek łącznego stanu:** dodatkowo `Razem ≤ 5` (`RAZEM_MAX`), gdzie Razem = K4+K4G+MAG+LS (bez BRK). Odsiewa towary z niskim K4, ale z zapasem na innych magazynach (np. setki na K4G = kandydat do uzupełnienia, nie do liczenia „ostatnich sztuk"). Dla gałęzi GT liczone w SQL (`HAVING`); dla gałęzi WMS: `K4_wms + (K4G+MAG+LS z GT)` (WMS nie zna innych magazynów) — stąd `pobierzStanyGt` dla SKU z WMS. Na starcie ~700 pozycji — backlog drenowany przez 180 dni.
+- `GET /ostatnie-sztuki` — jw.; przy niedostępnym GT zwraca **503**. **Nie robi ruchów WMS.**
+- Wyklucza parę (artykuł+lokalizacja) sprawdzoną w ciągu **180 dni** (`DNI_POMIN_SPRAWDZONE`) oraz SKU z przyjęciem z magazynu zewnętrznego (`ruchy.mag_zrodlo_zewnetrzny` NOT NULL) w ciągu **30 dni** (`DNI_POMIN_PRZYJECIE`) — świeżo dołożony stan jest znany. Oba filtry z SQLite, w Node.
+- `POST /ostatnie-sztuki/sprawdzenie` `{artykul_gt_id, artykul_symbol, lokalizacja_kod, ilosc_policzona}` — porównuje policzone ze stanem wg tej samej reguły (WMS jeśli jest, inaczej `dostepneWGt` GT); zgodne → audyt `akcja='sprawdzenie_stanu'`, niezgodne → `akcja='sprawdzenie_niezgodne'` (do raportu, `przed={stan, zrodlo}`). Bez ruchu WMS. GT niedostępny (i brak WMS) → 503. Raport czyta `przed.stan`/`zrodlo`, ze wsteczną zgodnością ze starym `{stan_gt}`.
+- `GET /ostatnie-sztuki/raport` — otwarte niezgodności: pary, dla których NAJNOWSZE sprawdzenie to `sprawdzenie_niezgodne` (późniejsze zgodne = domknięcie). Tap w raporcie → `window.ruchOtworzArtykul(symbol)` otwiera normalny ekran Ruch.
+
+UX obchodu: skan SKU/EAN potwierdza właściwą pozycję → pole ilości → zgodne = krótki beep + auto-przejście; niezgodne = beep błędu + nakładka `ostrzezenie` (dotknięcie = dalej). „Brak cichych porażek" — dźwięki zgodne/niezgodne różne.
 
 ## Most C# — endpointy (localhost:5000)
 
@@ -131,7 +149,7 @@ POST /api/inwentaryzacja/pw
 
 ## Stan obecny
 
-Zbudowane i działające: baza + `routes/` (lokalizacje, ruchy, magazyny, produkty, rozjazdy), most C# (`/api/mm`, `/api/lok`), ekran Zebry „Ruch towaru", panel desktopu (produkty, rozjazdy, ruchy, lokalizacje, MM), job rozjazdów.
+Zbudowane i działające: baza + `routes/` (lokalizacje, ruchy, magazyny, produkty, rozjazdy, sciezki), most C# (`/api/mm`, `/api/lok`), ekran Zebry „Ruch towaru", moduł Ścieżki (Faza 6: ścieżka „Ostatnie sztuki" + raport), panel desktopu (produkty, rozjazdy, ruchy, lokalizacje, MM), job rozjazdów.
 
 Do zrobienia od nowa: moduł inwentaryzacji (usunięty 2026-06-25).
 

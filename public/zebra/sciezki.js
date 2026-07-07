@@ -13,6 +13,9 @@
   let lista = [];   // przystanki obchodu
   let idx = 0;      // biezacy przystanek
   let potwierdzony = false; // czy zeskanowano wlasciwy towar na tym przystanku
+  // Aktualna sciezka - parametryzuje endpointy (lista / sprawdzenie / raport). Ustawiana z menu.
+  let sciezkaBaza = '/api/sciezki/ostatnie-sztuki';
+  let sciezkaNazwa = 'Ostatnie sztuki';
 
   function komunikat(t, typ) {
     const k = el('sciezki-komunikat');
@@ -56,12 +59,12 @@
   // =========================== SCIEZKA: OSTATNIE SZTUKI ===========================
   async function startObchod() {
     komunikat('');
-    el('sciezki-tytul').textContent = 'Ostatnie sztuki';
+    el('sciezki-tytul').textContent = sciezkaNazwa;
     pokazPod('sciezki-obchod');
     el('sciezki-karta').innerHTML = '<p class="hint">Ładuję…</p>';
     el('sciezki-pusto').classList.add('hidden');
     try {
-      const res = await fetch('/api/sciezki/ostatnie-sztuki');
+      const res = await fetch(sciezkaBaza);
       const dane = await res.json();
       if (!res.ok) throw new Error(dane?.blad || `Błąd ${res.status}`);
       lista = dane.pozycje || [];
@@ -137,7 +140,7 @@
     }
     el('sciezki-zatwierdz').disabled = true;
     try {
-      const res = await fetch('/api/sciezki/ostatnie-sztuki/sprawdzenie', {
+      const res = await fetch(sciezkaBaza + '/sprawdzenie', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -187,13 +190,13 @@
   // =========================== RAPORT NIEZGODNOSCI ===========================
   async function otworzRaport() {
     komunikat('');
-    el('sciezki-tytul').textContent = 'Raport niezgodności';
+    el('sciezki-tytul').textContent = `Raport: ${sciezkaNazwa}`;
     pokazPod('sciezki-raport');
     const box = el('sciezki-raport-lista');
     box.innerHTML = '<p class="hint">Ładuję…</p>';
     el('sciezki-raport-pusto').classList.add('hidden');
     try {
-      const res = await fetch('/api/sciezki/ostatnie-sztuki/raport');
+      const res = await fetch(sciezkaBaza + '/raport');
       const dane = await res.json();
       if (!res.ok) throw new Error(dane?.blad || `Błąd ${res.status}`);
       renderRaport(dane.pozycje || []);
@@ -229,8 +232,11 @@
     pokazWidok('sciezki');
     history.pushState({ v: 'sciezki' }, '');
   });
-  el('btn-sciezka-ostatnie').addEventListener('click', startObchod);
-  el('btn-sciezka-raport').addEventListener('click', otworzRaport);
+  function ustawSciezke(baza, nazwa) { sciezkaBaza = baza; sciezkaNazwa = nazwa; }
+  el('btn-sciezka-ostatnie').addEventListener('click', () => { ustawSciezke('/api/sciezki/ostatnie-sztuki', 'Ostatnie sztuki'); startObchod(); });
+  el('btn-sciezka-raport').addEventListener('click', () => { ustawSciezke('/api/sciezki/ostatnie-sztuki', 'Ostatnie sztuki'); otworzRaport(); });
+  el('btn-sciezka-rez').addEventListener('click', () => { ustawSciezke('/api/sciezki/k4-rezerwacja', 'K4 pełna rezerwacja'); startObchod(); });
+  el('btn-sciezka-rez-raport').addEventListener('click', () => { ustawSciezke('/api/sciezki/k4-rezerwacja', 'K4 pełna rezerwacja'); otworzRaport(); });
   el('sciezki-zatwierdz').addEventListener('click', zatwierdzPrzystanek);
   el('sciezki-sukces').addEventListener('click', zamknijSukces);
 

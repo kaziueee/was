@@ -412,6 +412,40 @@ async function pobierzK4NiskieStany({ min = 1, max = 5, maxRazem = 5 } = {}) {
   }));
 }
 
+// Sciezka "K4 z pelna rezerwacja": towary, ktore FIZYCZNIE lezą tylko w K4 (nic na
+// K4G/MAG/LS) i caly ich stan K4 jest zarezerwowany (rez_k4 >= stan_k4, stan_k4 > 0).
+// Czyli towar utknal - jest na miejscu, ale w calosci zablokowany rezerwacjami, a nie
+// ma go skad uzupelnic. tw_Rodzaj=1 (tylko towary, nie zestawy/uslugi), tw_Pole1 niepusta.
+async function pobierzK4PelnaRezerwacja() {
+  const k4 = wyrazenieStanu('K4');
+  const rezK4 = wyrazenieRez('K4');
+  const inne = ['K4G', 'MAG', 'LS'].map((kod) => wyrazenieStanu(kod)).join(' + ');
+
+  const { recordset } = await query(`
+    SELECT t.tw_Id, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk,
+           LTRIM(RTRIM(t.tw_Pole1)) AS lokalizacja,
+           ${k4} AS stan_k4, ${rezK4} AS rez_k4
+    FROM tw__Towar t
+    JOIN tw_Stan s ON s.st_TowId = t.tw_Id
+    JOIN sl_Magazyn m ON m.mag_Id = s.st_MagId
+    WHERE t.tw_Zablokowany = 0 AND LTRIM(RTRIM(t.tw_Pole1)) <> ''
+      AND t.tw_Rodzaj = 1
+    GROUP BY t.tw_Id, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk, LTRIM(RTRIM(t.tw_Pole1))
+    HAVING ${k4} > 0 AND ${rezK4} >= ${k4} AND (${inne}) = 0
+    ORDER BY LTRIM(RTRIM(t.tw_Pole1)), t.tw_Symbol
+  `);
+
+  return recordset.map((r) => ({
+    artykul_gt_id: String(r.tw_Id),
+    symbol: r.tw_Symbol,
+    nazwa: r.tw_Nazwa,
+    ean: r.tw_PodstKodKresk || null,
+    lokalizacja_kod: r.lokalizacja,
+    stan_k4: r.stan_k4,
+    rez_k4: r.rez_k4,
+  }));
+}
+
 // Zbior artykulow relevantnych dla Zgodnosci K4/K4G: te, ktore maja stan > 0
 // w K4 lub K4G w GT (aktywne, chyba ze pokazZablokowane), w unii z tymi, ktore
 // WMS juz ma w SQLite (stany_lokalizacji) - np. towar bez aktualnego stanu w
@@ -572,6 +606,7 @@ module.exports = {
   listujProdukty,
   pobierzProduktyZUniwersum,
   pobierzK4NiskieStany,
+  pobierzK4PelnaRezerwacja,
   pobierzStanyGt,
   rozkladZgodnosci,
   dostepneWGt,

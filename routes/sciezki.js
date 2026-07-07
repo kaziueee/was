@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db/database');
 const audyt = require('../services/audyt');
-const { pobierzK4NiskieStany, dostepneWGt, pobierzStanyGt } = require('../services/gt-produkty');
+const { pobierzK4NiskieStany, pobierzK4PelnaRezerwacja, dostepneWGt, pobierzStanyGt } = require('../services/gt-produkty');
 
 const router = express.Router();
 
@@ -31,6 +31,79 @@ function wmsK4(artykul_gt_id) {
      FROM stany_lokalizacji s JOIN lokalizacje l ON l.id = s.lokalizacja_id
      WHERE l.magazyn = 'K4' AND s.artykul_gt_id = ? LIMIT 1`
   ).get(String(artykul_gt_id));
+}
+
+// Wspolny zapis sprawdzenia przystanku (obie sciezki). Porownuje policzone ze stanem K4
+// (WMS jesli jest, inaczej GT), zapisuje do audytu pod podanymi akcjami. NIE robi ruchu WMS.
+async function zapiszSprawdzenie(req, res, akcjaZgodne, akcjaNiezgodne) {
+  const { artykul_gt_id, artykul_symbol, lokalizacja_kod, ilosc_policzona, operator } = req.body ?? {};
+  if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });
+  if (!lokalizacja_kod) return res.status(400).json({ blad: 'Pole "lokalizacja_kod" jest wymagane' });
+  const policzone = Number(ilosc_policzona);
+  if (!Number.isFinite(policzone) || policzone < 0) {
+    return res.status(400).json({ blad: 'Pole "ilosc_policzona" musi byc liczba >= 0' });
+  }
+
+  const wms = wmsK4(artykul_gt_id);
+  let stan, zrodlo;
+  if (wms) {
+    stan = Number(wms.stan);
+    zrodlo = 'WMS';
+  } else {
+    try {
+      const gt = await dostepneWGt(String(artykul_gt_id), 'K4');
+      stan = Number(gt.stan);
+      zrodlo = 'GT';
+    } catch (err) {
+      return res.status(503).json({ blad: 'Nie mozna zweryfikowac stanu GT (baza niedostepna). Sprobuj ponownie.' });
+    }
+  }
+
+  const zgodne = policzone === stan;
+  const roznica = policzone - stan;
+
+  audyt.zapisz({
+    uzytkownik: operator ?? null,
+    akcja: zgodne ? akcjaZgodne : akcjaNiezgodne,
+    artykul_gt_id: String(artykul_gt_id),
+    artykul_symbol: artykul_symbol ?? null,
+    magazyn: 'K4',
+    lokalizacja: lokalizacja_kod,
+    ilosc: policzone,
+    wynik: zgodne ? 'zgodne' : 'niezgodne',
+    przed: { stan, zrodlo },
+    po: { policzone },
+  });
+
+  res.status(201).json({ zgodne, stan, zrodlo, policzone, roznica });
+}
+
+// Wspolny raport otwartych niezgodnosci: pary (artykul+lokalizacja), dla ktorych NAJNOWSZE
+// sprawdzenie danej sciezki to "niezgodne" (nie domkniete pozniejszym zgodnym).
+function raportNiezgodnosci(res, akcjaZgodne, akcjaNiezgodne) {
+  const pozycje = db.prepare(`
+    SELECT a.artykul_gt_id, a.artykul_symbol, a.magazyn, a.lokalizacja AS lokalizacja_kod,
+           a.ilosc AS policzone, a.przed, a.czas, a.uzytkownik
+    FROM audyt a
+    JOIN (
+      SELECT artykul_gt_id, lokalizacja, MAX(id) AS max_id
+      FROM audyt
+      WHERE akcja IN (?, ?)
+      GROUP BY artykul_gt_id, lokalizacja
+    ) ost ON ost.max_id = a.id
+    WHERE a.akcja = ?
+    ORDER BY a.lokalizacja
+  `).all(akcjaZgodne, akcjaNiezgodne, akcjaNiezgodne);
+
+  for (const p of pozycje) {
+    let przed = {};
+    try { przed = JSON.parse(p.przed) || {}; } catch { przed = {}; }
+    p.stan = przed.stan ?? przed.stan_gt ?? null;
+    p.zrodlo = przed.zrodlo ?? (przed.stan_gt != null ? 'GT' : null);
+    delete p.przed;
+  }
+
+  res.json({ pozycje, razem: pozycje.length });
 }
 
 // GET /api/sciezki/ostatnie-sztuki - lista przystankow (towary K4 ze stanem 1..5, z lokalizacja
@@ -112,80 +185,48 @@ router.get('/ostatnie-sztuki', async (req, res, next) => {
 // POST /api/sciezki/ostatnie-sztuki/sprawdzenie - zapisz wynik sprawdzenia jednego przystanku.
 // Body: { artykul_gt_id, artykul_symbol, lokalizacja_kod, ilosc_policzona, operator }.
 // Porownuje policzone ze stanem GT w K4 (st_Stan). NIE robi ruchu WMS.
-router.post('/ostatnie-sztuki/sprawdzenie', async (req, res, next) => {
-  const { artykul_gt_id, artykul_symbol, lokalizacja_kod, ilosc_policzona, operator } = req.body ?? {};
-
-  if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });
-  if (!lokalizacja_kod) return res.status(400).json({ blad: 'Pole "lokalizacja_kod" jest wymagane' });
-  const policzone = Number(ilosc_policzona);
-  if (!Number.isFinite(policzone) || policzone < 0) {
-    return res.status(400).json({ blad: 'Pole "ilosc_policzona" musi byc liczba >= 0' });
-  }
-
-  // prawda: WMS jesli towar jest w WMS, inaczej GT
-  const wms = wmsK4(artykul_gt_id);
-  let stan, zrodlo;
-  if (wms) {
-    stan = Number(wms.stan);
-    zrodlo = 'WMS';
-  } else {
-    try {
-      const gt = await dostepneWGt(String(artykul_gt_id), 'K4');
-      stan = Number(gt.stan);
-      zrodlo = 'GT';
-    } catch (err) {
-      return res.status(503).json({ blad: 'Nie mozna zweryfikowac stanu GT (baza niedostepna). Sprobuj ponownie.' });
-    }
-  }
-
-  const zgodne = policzone === stan;
-  const roznica = policzone - stan;
-
-  audyt.zapisz({
-    uzytkownik: operator ?? null,
-    akcja: zgodne ? 'sprawdzenie_stanu' : 'sprawdzenie_niezgodne',
-    artykul_gt_id: String(artykul_gt_id),
-    artykul_symbol: artykul_symbol ?? null,
-    magazyn: 'K4',
-    lokalizacja: lokalizacja_kod,
-    ilosc: policzone,
-    wynik: zgodne ? 'zgodne' : 'niezgodne',
-    przed: { stan, zrodlo },
-    po: { policzone },
-  });
-
-  res.status(201).json({ zgodne, stan, zrodlo, policzone, roznica });
-});
+router.post('/ostatnie-sztuki/sprawdzenie', (req, res) =>
+  zapiszSprawdzenie(req, res, 'sprawdzenie_stanu', 'sprawdzenie_niezgodne'));
 
 // GET /api/sciezki/ostatnie-sztuki/raport - otwarte niezgodnosci: pary (artykul+lokalizacja),
 // dla ktorych NAJNOWSZE sprawdzenie to 'sprawdzenie_niezgodne' (nie domkniete pozniejszym
 // zgodnym sprawdzeniem). Posortowane po kodzie lokalizacji = kolejnosc zbierania.
-router.get('/ostatnie-sztuki/raport', (req, res) => {
-  const pozycje = db.prepare(`
-    SELECT a.artykul_gt_id, a.artykul_symbol, a.magazyn, a.lokalizacja AS lokalizacja_kod,
-           a.ilosc AS policzone, a.przed, a.czas, a.uzytkownik
-    FROM audyt a
-    JOIN (
-      SELECT artykul_gt_id, lokalizacja, MAX(id) AS max_id
-      FROM audyt
-      WHERE akcja IN ('sprawdzenie_stanu','sprawdzenie_niezgodne')
-      GROUP BY artykul_gt_id, lokalizacja
-    ) ost ON ost.max_id = a.id
-    WHERE a.akcja = 'sprawdzenie_niezgodne'
-    ORDER BY a.lokalizacja
-  `).all();
+router.get('/ostatnie-sztuki/raport', (req, res) =>
+  raportNiezgodnosci(res, 'sprawdzenie_stanu', 'sprawdzenie_niezgodne'));
 
-  // rozpakuj stan + zrodlo z pola "przed" (JSON) do plaskich pol dla frontu
-  for (const p of pozycje) {
-    let przed = {};
-    try { przed = JSON.parse(p.przed) || {}; } catch { przed = {}; }
-    // wsteczna zgodnosc ze starym formatem { stan_gt }
-    p.stan = przed.stan ?? przed.stan_gt ?? null;
-    p.zrodlo = przed.zrodlo ?? (przed.stan_gt != null ? 'GT' : null);
-    delete p.przed;
+// --- Sciezka 2: "K4 z pelna rezerwacja" - towary tylko w K4, caly stan zarezerwowany ---
+
+// GET /api/sciezki/k4-rezerwacja - lista przystankow (GT: K4>0, rez>=stan, nic na K4G/MAG/LS),
+// posortowana po lokalizacji. Wyklucza pary sprawdzone w ciagu DNI_POMIN_SPRAWDZONE dni
+// (wlasne akcje 'sprawdzenie_rez*', niezalezne od "Ostatnich sztuk").
+router.get('/k4-rezerwacja', async (req, res) => {
+  let gtRows;
+  try {
+    gtRows = await pobierzK4PelnaRezerwacja();
+  } catch (err) {
+    return res.status(503).json({ blad: 'Nie mozna pobrac stanow GT (baza niedostepna). Sprobuj ponownie.' });
   }
+
+  const sprawdzone = new Set(db.prepare(
+    `SELECT DISTINCT artykul_gt_id, lokalizacja FROM audyt
+     WHERE akcja IN ('sprawdzenie_rez','sprawdzenie_rez_niezgodne')
+       AND czas >= datetime('now', ?)`
+  ).all(`-${DNI_POMIN_SPRAWDZONE} days`).map((r) => `${r.artykul_gt_id}|${r.lokalizacja}`));
+
+  const pozycje = gtRows
+    .map((g) => ({ artykul_gt_id: g.artykul_gt_id, symbol: g.symbol, nazwa: g.nazwa,
+      ean: g.ean, lokalizacja_kod: g.lokalizacja_kod, stan: g.stan_k4, rezerwacja: g.rez_k4, zrodlo: 'GT' }))
+    .filter((t) => !sprawdzone.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`))
+    .sort((a, b) => (a.lokalizacja_kod || '').localeCompare(b.lokalizacja_kod || '')
+      || (a.symbol || '').localeCompare(b.symbol || ''));
 
   res.json({ pozycje, razem: pozycje.length });
 });
+
+router.post('/k4-rezerwacja/sprawdzenie', (req, res) =>
+  zapiszSprawdzenie(req, res, 'sprawdzenie_rez', 'sprawdzenie_rez_niezgodne'));
+
+router.get('/k4-rezerwacja/raport', (req, res) =>
+  raportNiezgodnosci(res, 'sprawdzenie_rez', 'sprawdzenie_rez_niezgodne'));
 
 module.exports = router;

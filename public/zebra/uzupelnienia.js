@@ -208,18 +208,25 @@
     aktualizujPrzycisk();
   }
 
-  // Blok info: stany i lokalizacje K4 / K4G (wg GT), rezerwacje na K4.
+  // Blok info: hierarchia Z K4G -> DO K4. Najwazniejsze dla magazyniera: SKAD i DOKAD
+  // (duza lokalizacja), po prawej ile tam jest; DO K4 dodatkowo rezerwacja w nawiasie.
   function renderujStany(p) {
+    const rez = p.rezerwacje ? ` <span class="uzup-kier-rez">(rez ${p.rezerwacje})</span>` : '';
     el('uzup-stany').innerHTML = `
-      <div class="uzup-stan-row">
-        <span class="uzup-stan-mag">K4</span>
-        <span class="uzup-stan-dane">stan <b>${p.stan_k4}</b> · rez <b>${p.rezerwacje}</b></span>
-        <span class="uzup-stan-lok">${p.lokalizacja_k4 || '—'}</span>
+      <div class="uzup-kierunek uzup-od">
+        <span class="uzup-kier-label">Z · K4G</span>
+        <div class="uzup-kier-rzad">
+          <span class="uzup-kier-lok">${p.lokalizacja_gora || '—'}</span>
+          <span class="uzup-kier-ilosc">${p.stan_gora} szt.</span>
+        </div>
       </div>
-      <div class="uzup-stan-row">
-        <span class="uzup-stan-mag">K4G</span>
-        <span class="uzup-stan-dane">stan <b>${p.stan_gora}</b></span>
-        <span class="uzup-stan-lok">${p.lokalizacja_gora || '—'}</span>
+      <div class="uzup-kier-strzalka">↓</div>
+      <div class="uzup-kierunek uzup-do">
+        <span class="uzup-kier-label">DO · K4</span>
+        <div class="uzup-kier-rzad">
+          <span class="uzup-kier-lok">${p.lokalizacja_k4 || '—'}</span>
+          <span class="uzup-kier-ilosc">${p.stan_k4} szt.${rez}</span>
+        </div>
       </div>`;
   }
 

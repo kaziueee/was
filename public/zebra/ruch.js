@@ -193,8 +193,68 @@ function renderujZrobione() {
   }
 }
 
+// --- Historia ostatnich produktow/lokalizacji (localStorage, per urzadzenie) ---
+// Szybki powrot do SKU/lokalizacji bez ponownego skanu. Przezywa restart apki.
+const OSTATNIE_MAX = 10;
+function ostatnieWczytaj(klucz) {
+  try { const v = JSON.parse(localStorage.getItem(klucz)); return Array.isArray(v) ? v : []; }
+  catch { return []; }
+}
+function ostatnieDopisz(klucz, wpis, kluczId) {
+  const lista = ostatnieWczytaj(klucz).filter((w) => w[kluczId] !== wpis[kluczId]);
+  lista.unshift(wpis);
+  try { localStorage.setItem(klucz, JSON.stringify(lista.slice(0, OSTATNIE_MAX))); } catch { /* storage pelny */ }
+}
+function zapamietajProdukt(a) {
+  if (!a || !a.artykul_symbol) return;
+  ostatnieDopisz('wms.ostatnieProdukty', { symbol: a.artykul_symbol, nazwa: a.artykul_nazwa || '', gt_id: a.artykul_gt_id }, 'symbol');
+}
+function zapamietajLokalizacje(kod, magazyn) {
+  if (!kod) return;
+  ostatnieDopisz('wms.ostatnieLokalizacje', { kod, magazyn: magazyn || '' }, 'kod');
+}
+function renderujOstatnie() {
+  const blok = el('ostatnie-blok');
+  if (!blok) return;
+  const prod = ostatnieWczytaj('wms.ostatnieProdukty');
+  const lok = ostatnieWczytaj('wms.ostatnieLokalizacje');
+  const wrapP = el('ostatnie-produkty-wrap');
+  const wrapL = el('ostatnie-lokalizacje-wrap');
+  const listaP = el('ostatnie-produkty');
+  const listaL = el('ostatnie-lokalizacje');
+  listaP.innerHTML = '';
+  listaL.innerHTML = '';
+  for (const p of prod) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ostatnie-chip';
+    b.textContent = p.symbol;
+    b.title = p.nazwa || p.symbol;
+    b.addEventListener('click', () => wykonajSkan(p.symbol));
+    listaP.appendChild(b);
+  }
+  for (const l of lok) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ostatnie-chip';
+    b.textContent = l.kod;
+    b.addEventListener('click', () => wykonajSkan(l.kod));
+    listaL.appendChild(b);
+  }
+  wrapP.classList.toggle('hidden', prod.length === 0);
+  wrapL.classList.toggle('hidden', lok.length === 0);
+  blok.classList.toggle('hidden', prod.length === 0 && lok.length === 0);
+}
+
+// Path 1: gdy po zapisie zostalo cos nieprzypisane (K4/K4G), ekran sukcesu daje "Dalej"
+// zamiast zamykac - zostajemy w tym samym produkcie. Ten flag wylacza tap-tlo = reset.
+let sukcesDalejAktywny = false;
+// Swieze dane produktu po zapisie (z /skan/:symbol) - "Dalej" otwiera je ta sama logika co skan.
+let swiezeDaneProduktu = null;
+
 function reset() {
   if (window.BlokadaEdycji) BlokadaEdycji.zwolnij(); // zwolnij lock edycji produktu
+  swiezeDaneProduktu = null;
   stan.artykul = null;
   stan.zrodlo = null;
   stan.cel = null;
@@ -228,6 +288,7 @@ function reset() {
   pokazKrok('start');
   el('input-start').focus();
   renderujZrobione(); // pokaz liste zrobionych (jesli sa w tej sesji)
+  renderujOstatnie(); // pokaz ostatnie produkty/lokalizacje (localStorage)
 }
 
 // --- krok 1: skan SKU, EAN, lokalizacji albo (czesci) nazwy artykulu ---
@@ -338,7 +399,7 @@ function obsluzArtykul(dane) {
     return;
   }
 
-  if (dane.lokalizacje.length === 1 && !(dane.deficyt_k4g > 0) && !maStanZewn) {
+  if (dane.lokalizacje.length === 1 && !(dane.deficyt_k4g > 0) && !(dane.deficyt_k4 > 0) && !maStanZewn) {
     stan.artykul = artykul;
     stan.zrodlo = dane.lokalizacje[0];
     stan.iloscSugestia = null;
@@ -811,9 +872,11 @@ function aktualizujKrokCelPrzypisanie() {
     : (stan.artykul.stany_gt?.[mag]?.ilosc ?? 0);
   const inputIlosc = el('input-ilosc');
   inputIlosc.removeAttribute('max'); // backend kapuje do deficytu magazynu
-  // K4 = 1 SKU = 1 lokalizacja -> cala ilosc, bez edycji (jak przy zmianie lokalizacji K4)
+  // K4 = 1 SKU = 1 lokalizacja -> cala ilosc, bez edycji (jak przy zmianie lokalizacji K4).
+  // K4G = N lokalizacji (palety): NIE podpowiadamy calego deficytu w polu (bledne "wpisz 2000"),
+  // pole zostaje PUSTE - magazynier wpisuje ile realnie kladzie tu; deficyt to podpowiedz nizej.
   inputIlosc.readOnly = (mag === 'K4');
-  inputIlosc.value = ile > 0 ? String(ile) : '';
+  inputIlosc.value = (mag === 'K4' && ile > 0) ? String(ile) : '';
 
   el('input-cel').value = '';
   el('input-cel').placeholder = `Skanuj lokalizację (${magazynyMapa[mag]?.nazwa ?? mag})`;
@@ -824,6 +887,13 @@ function aktualizujKrokCelPrzypisanie() {
   // Zapas K4 dostepny tez przy przypisaniu do K4 (po LOK lokalizacja K4 istnieje, k4-zapas zadziala)
   ustawZapasUI(mag === 'K4');
   aktualizujPozostanie();   // brak zrodla -> ukryje sie
+  // K4G: pokaz ile jeszcze zostalo do rozlozenia (pole ilosci jest puste)
+  if (mag === 'K4G' && ile > 0) {
+    const span = el('pozostanie');
+    span.textContent = `Zostało do rozłożenia: ${ile} szt.`;
+    span.classList.remove('blad');
+    span.classList.remove('hidden');
+  }
   aktualizujAkcjeLabel();
   el('input-cel').focus();
 }
@@ -991,18 +1061,19 @@ async function przetworzLokalizacjeCelu(kod) {
       : '';
     stan.cel = { typ: 'wms', id: dane.id, kod: dane.kod, magazyn: dane.magazyn };
     el('input-cel').value = dane.kod;
-    // Przypisanie (brak zrodla): podpowiedz pelna nieprzypisana ilosc W MAGAZYNIE
-    // SKANOWANEJ lokalizacji - NIE mieszac magazynow. K4G: deficyt (iloscSugestia dotyczy
-    // K4gora); K4: caly stan GT (WMS=0, bo 1 SKU = 1 lokalizacja). K4 -> ilosc zablokowana.
+    // Przypisanie (brak zrodla) wg magazynu SKANOWANEJ lokalizacji:
+    //  - K4 (1 SKU = 1 lokalizacja): narzuc CALA ilosc GT (WMS=0), pole zablokowane;
+    //  - K4G (N lokalizacji / palety): NIE nadpisujemy tego, co magazynier wpisal (np. 200) -
+    //    inaczej klik "Zatwierdz" podmienialby wpisana ilosc na caly deficyt. Pole zostaje.
     if (!stan.zrodlo) {
       const mag = dane.magazyn;
-      const pelny = (mag === 'K4G' && stan.iloscSugestia != null)
-        ? stan.iloscSugestia
-        : (stan.artykul.stany_gt?.[mag]?.ilosc ?? null);
       el('input-ilosc').readOnly = (mag === 'K4');
-      if (pelny != null && pelny > 0) {
-        el('input-ilosc').value = String(pelny);
-        aktualizujPozostanie();
+      if (mag === 'K4') {
+        const pelny = stan.artykul.stany_gt?.K4?.ilosc ?? null;
+        if (pelny != null && pelny > 0) {
+          el('input-ilosc').value = String(pelny);
+          aktualizujPozostanie();
+        }
       }
     }
     return true;
@@ -1239,13 +1310,36 @@ async function zatwierdz() {
   // "brak cichych porazek" (Faza A#3): gdy MM nie potwierdzil sie w GT (most/Sfera
   // niedostepne), NIE pokazujemy zielonego sukcesu - inaczej magazynier uzna, ze stan
   // sie przesunal. Ruch zostaje 'pending' w WMS i job ponawiania go dogoni.
+  // Path 2: zapamietaj produkt i lokalizacje (localStorage) - do szybkiego powrotu bez skanu
+  zapamietajProdukt(stan.artykul);
+  if (stan.cel && stan.cel.typ === 'wms') zapamietajLokalizacje(stan.cel.kod, stan.cel.magazyn);
+
   if (niepotwierdzoneMM) {
     zrobione.unshift(`⏳ niepotwierdzone w GT: ${tekst}`); // #5: uczciwy slad w liscie sesji
     pokazSukces(`${tekst}\n\n⏳ NIE potwierdzone w GT — oczekuje. Zapisane w WMS, zostanie ponowione. Sprawdź połączenie z GT.`, 'ostrzezenie');
     return;
   }
   zrobione.unshift(tekst); // #5: dopisz do listy zrobionych (widoczna po powrocie na start)
-  pokazSukces(tekst);
+  // Path 1: odswiez dane produktu; jesli cos jeszcze nieprzypisane (K4/K4G) -> ekran sukcesu da "Dalej"
+  swiezeDaneProduktu = await odswiezDaneProduktu();
+  const pozostalo = swiezeDaneProduktu
+    ? { K4: swiezeDaneProduktu.deficyt_k4 || 0, K4G: swiezeDaneProduktu.deficyt_k4g || 0 }
+    : null;
+  pokazSukces(tekst, null, pozostalo);
+}
+
+// Path 1: po zapisie pobierz swieze dane produktu (/skan/:symbol) - do decyzji "Dalej"
+// oraz do ponownego otwarcia produktu DOKLADNIE ta sama logika co po skanie (rozklad K4/K4G
+// + wiersze "BRAK LOKALIZACJI" dla niezlokalizowanego stanu). null gdy blad / nie artykul.
+async function odswiezDaneProduktu() {
+  const a = stan.artykul;
+  if (!a) return null;
+  try {
+    const res = await fetch(`/api/lokalizacje/skan/${encodeURIComponent(a.artykul_symbol)}`);
+    if (!res.ok) return null;
+    const dane = await res.json();
+    return dane.typ === 'artykul' ? dane : null;
+  } catch { return null; }
 }
 
 // --- ekran sukcesu (overlay + sygnal dzwiekowy; znika dopiero po dotknieciu) ---
@@ -1310,17 +1404,53 @@ function beepOstrzezenie() {
 
 // wariant 'ostrzezenie' = operacja NIE potwierdzona w GT (MM oczekuje) - inny kolor/ikona/
 // dzwiek, zeby magazynier nie odczytal ekranu jako zielony sukces ("brak cichych porazek").
-function pokazSukces(tekst, wariant) {
+function pokazSukces(tekst, wariant, pozostalo) {
   const ostrzezenie = wariant === 'ostrzezenie';
   el('sukces-tekst').textContent = tekst;
   el('sukces-ikona').textContent = ostrzezenie ? '⏳' : '✓';
   el('sukces-overlay').classList.toggle('ostrzezenie', ostrzezenie);
+
+  // Path 1: cos zostalo nieprzypisane -> tryb "Dalej" (zostajemy w produkcie), tlo nie zamyka
+  const zostalo = pozostalo ? (pozostalo.K4 || 0) + (pozostalo.K4G || 0) : 0;
+  sukcesDalejAktywny = zostalo > 0 && !ostrzezenie && !!stan.artykul;
+  el('sukces-akcje').classList.toggle('hidden', !sukcesDalejAktywny);
+  el('sukces-hint').classList.toggle('hidden', sukcesDalejAktywny);
+  if (sukcesDalejAktywny) {
+    const czesci = [];
+    if (pozostalo.K4 > 0) czesci.push(`K4 ${pozostalo.K4}`);
+    if (pozostalo.K4G > 0) czesci.push(`K4G ${pozostalo.K4G}`);
+    el('sukces-pozostalo').textContent = `Zostało do rozłożenia: ${czesci.join(' · ')} szt.`;
+  }
+
   el('sukces-overlay').classList.remove('hidden');
   if (ostrzezenie) beepOstrzezenie(); else beep();
 }
 
+// Path 1: zostan w tym samym produkcie i rozloz reszte (bez re-skanu SKU). Otwiera swieze
+// dane TA SAMA logika co po skanie -> pokaze rozklad (co na K4, co na K4G, co niezlokalizowane).
+function kontynuujTenSamProdukt() {
+  const dane = swiezeDaneProduktu;
+  if (!dane) { reset(); return; }
+  ukryjKomunikat();
+  obsluzArtykul(dane); // rozklad zrodel albo przypisanie - dokladnie jak po zeskanowaniu SKU
+}
+
 // ekran sukcesu znika po dotknieciu i resetuje kreator do nowego ruchu
+// (w trybie "Dalej" tlo NIE zamyka - trzeba wybrac przycisk Dalej/Gotowe)
 el('sukces-overlay').addEventListener('click', () => {
+  if (sukcesDalejAktywny) return;
+  el('sukces-overlay').classList.add('hidden');
+  reset();
+});
+el('btn-sukces-dalej').addEventListener('click', (e) => {
+  e.stopPropagation();
+  sukcesDalejAktywny = false;
+  el('sukces-overlay').classList.add('hidden');
+  kontynuujTenSamProdukt();
+});
+el('btn-sukces-gotowe').addEventListener('click', (e) => {
+  e.stopPropagation();
+  sukcesDalejAktywny = false;
   el('sukces-overlay').classList.add('hidden');
   reset();
 });

@@ -43,6 +43,17 @@
         <div class="pole-skan">
           <input type="text" id="input-start" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj lub wpisz kod" autofocus>
         </div>
+        <!-- Ostatnie produkty/lokalizacje (localStorage) - szybki powrot bez ponownego skanu -->
+        <div id="ostatnie-blok" class="ostatnie-blok hidden">
+          <div id="ostatnie-produkty-wrap" class="ostatnie-grupa hidden">
+            <p class="ostatnie-naglowek">Ostatnie produkty:</p>
+            <div id="ostatnie-produkty" class="ostatnie-chipy"></div>
+          </div>
+          <div id="ostatnie-lokalizacje-wrap" class="ostatnie-grupa hidden">
+            <p class="ostatnie-naglowek">Ostatnie lokalizacje:</p>
+            <div id="ostatnie-lokalizacje" class="ostatnie-chipy"></div>
+          </div>
+        </div>
         <!-- lista ruchow zrobionych w tej sesji (zostaje po sukcesie, czysci sie przy wejsciu w Ruch) -->
         <div id="zrobione-blok" class="zrobione-blok hidden">
           <p class="zrobione-naglowek">Zrobione w tej sesji:</p>
@@ -124,7 +135,13 @@
       <div class="sukces-box">
         <div class="sukces-ikona" id="sukces-ikona">✓</div>
         <p id="sukces-tekst"></p>
-        <p class="sukces-hint">Dotknij, aby kontynuować</p>
+        <p class="sukces-hint" id="sukces-hint">Dotknij, aby kontynuować</p>
+        <!-- Path 1: gdy zostalo cos nieprzypisane (K4/K4G) - zostajemy w produkcie -->
+        <div id="sukces-akcje" class="sukces-akcje hidden">
+          <p id="sukces-pozostalo" class="sukces-pozostalo"></p>
+          <button type="button" id="btn-sukces-dalej" class="btn-akcja">➕ Dalej — kolejna lokalizacja</button>
+          <button type="button" id="btn-sukces-gotowe" class="btn-wstecz">✓ Gotowe</button>
+        </div>
       </div>
     </div>
   </div>

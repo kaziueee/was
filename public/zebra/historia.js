@@ -47,9 +47,12 @@
       const div = document.createElement('div');
       div.className = 'lista-poz' + (w.wynik && w.wynik !== 'ok' ? ' st-warn' : '');
       const meta = czasSkrot(w.czas) + (w.uzytkownik ? ` · ${w.uzytkownik}` : '');
+      // stara lokalizacja GT (zapisana przy przypisaniu z "nieprzypisane") - do odzyskania
+      let staraGt = '';
+      try { const p = w.przed && JSON.parse(w.przed); if (p && p.stara_lok_gt) staraGt = ` · stara lok GT: ${p.stara_lok_gt}`; } catch { /* przed nie-JSON */ }
       div.innerHTML = `<span class="poz-glowna">`
         + `<span class="poz-kod">${w.artykul_symbol || w.artykul_gt_id || '—'}</span>`
-        + `<span class="poz-podpis">${w.akcja} · ${w.lokalizacja || ''}</span>`
+        + `<span class="poz-podpis">${w.akcja} · ${w.lokalizacja || ''}${staraGt}</span>`
         + `<span class="hist-meta">${meta}</span>`
         + `</span>`
         + `<span class="poz-prawa"><span class="poz-ilosc">${w.ilosc ?? ''}</span><span class="poz-rez">szt.</span></span>`;

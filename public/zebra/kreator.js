@@ -67,15 +67,40 @@ function onScan(input, callback) {
 // na tych polach jest ona zbedna. Domyslnie inputmode="none" (brak klawiatury). Dotkniecie
 // pola przelacza je chwilowo na tryb tekstowy i pokazuje klawiature (reczne wpisanie, np.
 // szukanie po nazwie); po wyjsciu z pola wraca do "none", by kolejny skan byl bez klawiatury.
+// Czas ostatniego programowego fokusu (fokusBezKlawiatury) - do odsiania "ghost click".
+let ostatniAutoFokusTs = 0;
+
 function polaSkanuBezKlawiatury(...inputy) {
   for (const inp of inputy) {
     if (!inp) continue;
     inp.setAttribute('inputmode', 'none');
     inp.addEventListener('click', () => {
+      // Ignoruj "ghost click": tap w wiersz rozkladu przechodzi krok, a syntetyczny click z
+      // tego tapu lada na nowo pokazanym polu. Prawdziwe dotkniecie (> 600ms po auto-fokusie)
+      // = reczne wpisanie: przywracamy datalist (podpowiedzi) i pokazujemy klawiature.
+      if (Date.now() - ostatniAutoFokusTs < 600) return;
+      if (inp.dataset.list) inp.setAttribute('list', inp.dataset.list);
       inp.blur();
       inp.setAttribute('inputmode', 'text');
       inp.focus();
     });
     inp.addEventListener('blur', () => inp.setAttribute('inputmode', 'none'));
   }
+}
+
+// Programowy fokus na pole skanu BEZ otwierania klawiatury (po skanie/przejsciu kroku).
+// Wymusza inputmode="none" tuz przed .focus() - inaczej pole moze miec zostawiony
+// inputmode="text" (po wczesniejszym dotknieciu) i klawiatura wyskakuje sama. Skan DataWedge
+// dziala normalnie; klawiatura pojawia sie dopiero na DOTKNIECIE pola (click w polaSkanuBezKlawiatury).
+function fokusBezKlawiatury(inp) {
+  if (!inp) return;
+  ostatniAutoFokusTs = Date.now(); // znacznik do odsiania ghost-click w polaSkanuBezKlawiatury
+  inp.setAttribute('inputmode', 'none');
+  // Datalist (list=) sprawia, ze Chrome na PROGRAMOWY fokus otwiera klawiature + autofill
+  // (pole "Skanuj lub wpisz" z lista). Zdejmujemy go na czas auto-fokusu - skan DataWedge
+  // dziala bez niego; wraca przy dotknieciu pola (polaSkanuBezKlawiatury). To roznica miedzy
+  // input-cel (z lista -> klawiatura) a input-wybor-skan (bez listy -> bez klawiatury).
+  const list = inp.getAttribute('list');
+  if (list) { inp.dataset.list = list; inp.removeAttribute('list'); }
+  inp.focus();
 }

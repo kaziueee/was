@@ -153,7 +153,7 @@ function wstecz() {
     // z kroku "cel": wroc do listy wyboru jesli byla, inaczej do czystego skanu
     if (opcjeWyboru.length > 0 || ostatniaListaArtykulow) {
       pokazKrok('wybor');
-      el('input-wybor-skan').focus();
+      fokusBezKlawiatury(el('input-wybor-skan'));
     } else {
       reset(); // brak listy -> czysty skan (czysci stan i naglowek)
     }
@@ -251,10 +251,14 @@ function renderujOstatnie() {
 let sukcesDalejAktywny = false;
 // Swieze dane produktu po zapisie (z /skan/:symbol) - "Dalej" otwiera je ta sama logika co skan.
 let swiezeDaneProduktu = null;
+// Deficyt przy przypisaniu K4G (ile jeszcze do rozlozenia) - podpowiedz ma zostac widoczna
+// takze podczas pisania ilosci (aktualizujPozostanie ja odtwarza).
+let deficytPrzypisania = null;
 
 function reset() {
   if (window.BlokadaEdycji) BlokadaEdycji.zwolnij(); // zwolnij lock edycji produktu
   swiezeDaneProduktu = null;
+  deficytPrzypisania = null;
   stan.artykul = null;
   stan.zrodlo = null;
   stan.cel = null;
@@ -286,7 +290,7 @@ function reset() {
   ukryjKomunikat();
   ukryjPotwierdzenie();
   pokazKrok('start');
-  el('input-start').focus();
+  fokusBezKlawiatury(el('input-start'));
   renderujZrobione(); // pokaz liste zrobionych (jesli sa w tej sesji)
   renderujOstatnie(); // pokaz ostatnie produkty/lokalizacje (localStorage)
 }
@@ -363,7 +367,7 @@ function obsluzLokalizacje({ lokalizacja, zawartosc }) {
   trybWyboru = 'wybor';
   renderujWybor(opcjeWyboru, wybierzOpcje);
   pokazKrok('wybor');
-  el('input-wybor-skan').focus();
+  fokusBezKlawiatury(el('input-wybor-skan'));
 }
 
 // zeskanowano SKU lub EAN -> wybierz lokalizacje zrodlowa
@@ -426,10 +430,16 @@ function pokazRozkladZrodel(dane, artykul) {
   // -> Wstecz z rozkladu/celu ma wrocic do wynikow, nie do czystego skanu
   powrotDoWyszukiwania = trybWyboru === 'szukaj' && !!ostatniaListaArtykulow;
 
+  // Kolejnosc wg zyczenia magazynierow: najpierw K4, potem K4G (rosnaco po ilosci - od
+  // najmniejszej do najwiekszej). Magazyny zewnetrzne (MAG/LS/BRK) dokladane osobno, na koniec.
+  const kolejnoscMag = { K4: 0, K4G: 1 };
+  const posortowaneLok = [...dane.lokalizacje].sort((a, b) =>
+    (kolejnoscMag[a.magazyn] ?? 9) - (kolejnoscMag[b.magazyn] ?? 9) || (a.ilosc - b.ilosc));
+
   // rezerwacja jest na poziomie magazynu - pokazujemy ja raz, przy pierwszym
   // wierszu danego magazynu (jak w rozkladzie desktopu).
   const rezPokazana = {};
-  opcjeWyboru = dane.lokalizacje.map((lok) => {
+  opcjeWyboru = posortowaneLok.map((lok) => {
     const rezMag = artykul.stany_gt?.[lok.magazyn]?.rezerwacja ?? 0;
     const rez = !rezPokazana[lok.magazyn] && rezMag ? rezMag : 0;
     rezPokazana[lok.magazyn] = true;
@@ -698,7 +708,11 @@ async function przejdzDoCelu() {
 
     const select = el('select-cel-magazyn');
     select.innerHTML = opcjeMag.map((m) => {
-      const ile = stany[m]?.ilosc ?? 0;
+      // Gdy przyszlismy z wiersza "BRAK" (celMagazynNowejLokalizacji): pokaz DEFICYT
+      // (ile jeszcze do rozlozenia), nie caly stan GT - inaczej mylace, gdy czesc juz zlokalizowana.
+      const ile = (m === stan.celMagazynNowejLokalizacji && stan.iloscSugestia != null)
+        ? stan.iloscSugestia
+        : (stany[m]?.ilosc ?? 0);
       const nazwa = magazynyMapa[m]?.nazwa ?? m;
       return `<option value="${m}">${nazwa}${ile ? ` — ${ile} szt.` : ''}</option>`;
     }).join('');
@@ -746,7 +760,7 @@ async function przejdzDoCelu() {
 // (inputmode=none -> bez klawiatury, gotowe na skan). Edycja ilosci = dotkniecie liczby.
 function skupSieNaIlosciLubLokalizacji() {
   if (!el('cel-lokalizacja-pole').classList.contains('hidden')) {
-    el('input-cel').focus();
+    fokusBezKlawiatury(el('input-cel'));
   }
 }
 
@@ -854,7 +868,7 @@ function aktualizujPrzyciskZapasu() {
 el('btn-zapas-toggle').addEventListener('click', () => {
   el('btn-zapas-toggle').classList.add('hidden');
   el('cel-zapas-pole').classList.remove('hidden');
-  el('input-zapas').focus();
+  fokusBezKlawiatury(el('input-zapas'));
 });
 
 // Krok cel dla PRZYPISANIA (brak zrodla): wybrany magazyn WMS narzuca ilosc (stan GT
@@ -886,16 +900,12 @@ function aktualizujKrokCelPrzypisanie() {
   el('cel-lokalizacja-hint').textContent = [gtLok && `wg GT: ${gtLok}`, regulaK4].filter(Boolean).join(' · ');
   // Zapas K4 dostepny tez przy przypisaniu do K4 (po LOK lokalizacja K4 istnieje, k4-zapas zadziala)
   ustawZapasUI(mag === 'K4');
-  aktualizujPozostanie();   // brak zrodla -> ukryje sie
-  // K4G: pokaz ile jeszcze zostalo do rozlozenia (pole ilosci jest puste)
-  if (mag === 'K4G' && ile > 0) {
-    const span = el('pozostanie');
-    span.textContent = `Zostało do rozłożenia: ${ile} szt.`;
-    span.classList.remove('blad');
-    span.classList.remove('hidden');
-  }
+  // K4G: ile jeszcze do rozlozenia (pole ilosci puste). Podpowiedz odtwarza aktualizujPozostanie,
+  // dzieki czemu ZOSTAJE widoczna takze podczas pisania (wczesniej znikala przy pierwszym znaku).
+  deficytPrzypisania = (mag === 'K4G' && ile > 0) ? ile : null;
+  aktualizujPozostanie();
   aktualizujAkcjeLabel();
-  el('input-cel').focus();
+  fokusBezKlawiatury(el('input-cel'));
 }
 
 el('select-cel-magazyn').addEventListener('change', () => {
@@ -908,7 +918,15 @@ el('select-cel-magazyn').addEventListener('change', () => {
 function aktualizujPozostanie() {
   const span = el('pozostanie');
   if (!stan.zrodlo) {
-    span.classList.add('hidden');
+    // Przypisanie: brak "pozostanie na zrodle", ale przy K4G pokazujemy staly deficyt
+    // ("Zostało do rozłożenia: X") - nie chowamy go przy pisaniu ilosci.
+    if (deficytPrzypisania != null) {
+      span.textContent = `Zostało do rozłożenia: ${deficytPrzypisania} szt.`;
+      span.classList.remove('blad');
+      span.classList.remove('hidden');
+    } else {
+      span.classList.add('hidden');
+    }
     return;
   }
   const ile = Number(el('input-ilosc').value);
@@ -1136,7 +1154,7 @@ el('btn-cel-utworz-tak').addEventListener('click', async () => {
 el('btn-cel-utworz-nie').addEventListener('click', () => {
   ukryjPotwierdzenie();
   el('input-cel').value = '';
-  el('input-cel').focus();
+  fokusBezKlawiatury(el('input-cel'));
 });
 
 // Zapis SAMEGO zapasu K4 (bez ruchu) - gdy w K4->K4 nie zmieniamy lokalizacji podstawowej,
@@ -1175,13 +1193,13 @@ async function zatwierdz() {
     const wpisany = el('input-cel').value.trim().toUpperCase();
     if (!wpisany) {
       pokazKomunikat('Zeskanuj lokalizację docelową', 'blad');
-      el('input-cel').focus();
+      fokusBezKlawiatury(el('input-cel'));
       return;
     }
     el('input-cel').value = '';
     const ok = await przetworzLokalizacjeCelu(wpisany);
     if (!ok) {
-      if (!kodDoUtworzenia) el('input-cel').focus();
+      if (!kodDoUtworzenia) fokusBezKlawiatury(el('input-cel'));
       return;
     }
   }

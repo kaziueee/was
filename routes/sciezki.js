@@ -22,19 +22,8 @@ const DNI_POMIN_SPRAWDZONE = 180;
 // i znany (ktos swiadomie dolozyl kilka szt.), nie ma czego weryfikowac.
 const DNI_POMIN_PRZYJECIE = 30;
 
-// Prawda o stanie: WMS tam, gdzie istnieje wpis w stany_lokalizacji (WMS zapelnia sie
-// z czasem - dla zlokalizowanych towarow trzyma ilosc per lokalizacja), GT jako fallback
-// dla reszty. Zwraca { stan, zrodlo:'WMS'|'GT', lokalizacja_kod } albo null gdy brak w obu.
-function wmsK4(artykul_gt_id) {
-  return db.prepare(
-    `SELECT s.ilosc AS stan, l.kod AS lokalizacja_kod
-     FROM stany_lokalizacji s JOIN lokalizacje l ON l.id = s.lokalizacja_id
-     WHERE l.magazyn = 'K4' AND s.artykul_gt_id = ? LIMIT 1`
-  ).get(String(artykul_gt_id));
-}
-
 // Wspolny zapis sprawdzenia przystanku (obie sciezki). Porownuje policzone ze stanem K4
-// (WMS jesli jest, inaczej GT), zapisuje do audytu pod podanymi akcjami. NIE robi ruchu WMS.
+// z GT (Subiekt = master stanow), zapisuje do audytu pod podanymi akcjami. NIE robi ruchu WMS.
 async function zapiszSprawdzenie(req, res, akcjaZgodne, akcjaNiezgodne) {
   const { artykul_gt_id, artykul_symbol, lokalizacja_kod, ilosc_policzona, operator } = req.body ?? {};
   if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });
@@ -44,19 +33,15 @@ async function zapiszSprawdzenie(req, res, akcjaZgodne, akcjaNiezgodne) {
     return res.status(400).json({ blad: 'Pole "ilosc_policzona" musi byc liczba >= 0' });
   }
 
-  const wms = wmsK4(artykul_gt_id);
+  // K4 = stan zawsze z Subiekta (GT master). Porownujemy policzone ze stanem GT, nie
+  // z kopia WMS (ta bywa nieaktualna - sprzedaz w Subiekcie zbija stan bez wiedzy WMS).
   let stan, zrodlo;
-  if (wms) {
-    stan = Number(wms.stan);
-    zrodlo = 'WMS';
-  } else {
-    try {
-      const gt = await dostepneWGt(String(artykul_gt_id), 'K4');
-      stan = Number(gt.stan);
-      zrodlo = 'GT';
-    } catch (err) {
-      return res.status(503).json({ blad: 'Nie mozna zweryfikowac stanu GT (baza niedostepna). Sprobuj ponownie.' });
-    }
+  try {
+    const gt = await dostepneWGt(String(artykul_gt_id), 'K4');
+    stan = Number(gt.stan);
+    zrodlo = 'GT';
+  } catch (err) {
+    return res.status(503).json({ blad: 'Nie mozna zweryfikowac stanu GT (baza niedostepna). Sprobuj ponownie.' });
   }
 
   const zgodne = policzone === stan;
@@ -112,16 +97,23 @@ function raportNiezgodnosci(res, akcjaZgodne, akcjaNiezgodne) {
 //  - pary (artykul+lokalizacja) sprawdzone w ciagu DNI_POMIN_SPRAWDZONE dni,
 //  - SKU z przyjeciem z zewnetrznego w ciagu DNI_POMIN_PRZYJECIE dni.
 router.get('/ostatnie-sztuki', async (req, res, next) => {
-  // WMS K4 (prawda tam gdzie istnieje) - 1 SKU = 1 lokalizacja K4
-  const wmsRows = db.prepare(
+  // WMS = master LOKALIZACJI: mowi, ktore SKU maja stale miejsce w K4 i jaki to kod.
+  // ILOSC na K4 bierzemy zawsze z GT (Subiekt = master stanow), nie z kopii WMS.
+  // 1 SKU = 1 lokalizacja K4, ale przejsciowo moze byc wiersz z ilosc=0 (zwolniona polka)
+  // obok aktywnego - dedupujemy do jednego na SKU, preferujac ten z zapasem.
+  const wmsWiersze = db.prepare(
     `SELECT s.artykul_gt_id, s.artykul_symbol AS symbol, s.artykul_nazwa AS nazwa,
-            s.artykul_ean AS ean, s.ilosc AS stan, l.kod AS lokalizacja_kod
+            s.artykul_ean AS ean, s.ilosc AS wms_ilosc, l.kod AS lokalizacja_kod
      FROM stany_lokalizacji s JOIN lokalizacje l ON l.id = s.lokalizacja_id
-     WHERE l.magazyn = 'K4'`
+     WHERE l.magazyn = 'K4'
+     ORDER BY s.ilosc DESC`
   ).all();
+  const wmsPoSku = new Map();
+  for (const w of wmsWiersze) {
+    if (!wmsPoSku.has(w.artykul_gt_id)) wmsPoSku.set(w.artykul_gt_id, w);
+  }
+  const wmsRows = [...wmsPoSku.values()];
   const wmsMa = new Set(wmsRows.map((r) => r.artykul_gt_id));
-  // WMS-kandydaci: stan 1..5 (0 = pusta lok, osobna sciezka); laczny stan dolozymy z GT
-  const wmsKandydaci = wmsRows.filter((w) => w.stan >= STAN_MIN && w.stan <= STAN_MAX);
 
   let gtRows;
   try {
@@ -130,16 +122,11 @@ router.get('/ostatnie-sztuki', async (req, res, next) => {
     return res.status(503).json({ blad: 'Nie mozna pobrac stanow GT (baza niedostepna). Sprobuj ponownie.' });
   }
 
-  // Dla WMS-kandydatow "laczny stan" = K4 z WMS (prawda) + reszta magazynow z GT (K4G/MAG/LS).
-  // WMS nie zna innych magazynow, wiec stan poza K4 bierzemy z GT.
-  const innychMap = new Map();
-  if (wmsKandydaci.length) {
+  // Dla SKU, ktore WMS zna (ma lokalizacje K4), stan K4 i "Razem" liczymy z GT na zywo.
+  let stanyWmsMap = new Map();
+  if (wmsRows.length) {
     try {
-      const stany = await pobierzStanyGt(wmsKandydaci.map((w) => w.artykul_gt_id));
-      for (const w of wmsKandydaci) {
-        const sg = stany.get(String(w.artykul_gt_id)) || {};
-        innychMap.set(w.artykul_gt_id, ['K4G', 'MAG', 'LS'].reduce((s, k) => s + (sg[k]?.ilosc ?? 0), 0));
-      }
+      stanyWmsMap = await pobierzStanyGt(wmsRows.map((w) => w.artykul_gt_id));
     } catch (err) {
       return res.status(503).json({ blad: 'Nie mozna pobrac stanow GT (baza niedostepna). Sprobuj ponownie.' });
     }
@@ -153,12 +140,15 @@ router.get('/ostatnie-sztuki', async (req, res, next) => {
         ean: g.ean, lokalizacja_kod: g.lokalizacja_kod, stan: g.stan_k4, zrodlo: 'GT' });
     }
   }
-  // WMS = prawda dla K4; bierz gdy laczny stan (K4_wms + inne_GT) <= RAZEM_MAX
-  for (const w of wmsKandydaci) {
-    const razem = w.stan + (innychMap.get(w.artykul_gt_id) ?? 0);
-    if (razem <= RAZEM_MAX) {
+  // WMS-known: lokalizacja z WMS, ale stan K4 i Razem (K4+K4G+MAG+LS) z GT. Bierzemy gdy
+  // GT K4 w progu 1..5 i Razem <= RAZEM_MAX - dokladnie jak gałąź GT, tylko kod z WMS.
+  for (const w of wmsRows) {
+    const sg = stanyWmsMap.get(String(w.artykul_gt_id)) || {};
+    const stanK4 = sg.K4?.ilosc ?? 0;
+    const razem = ['K4', 'K4G', 'MAG', 'LS'].reduce((s, k) => s + (sg[k]?.ilosc ?? 0), 0);
+    if (stanK4 >= STAN_MIN && stanK4 <= STAN_MAX && razem <= RAZEM_MAX) {
       kandydaci.push({ artykul_gt_id: w.artykul_gt_id, symbol: w.symbol, nazwa: w.nazwa,
-        ean: w.ean, lokalizacja_kod: w.lokalizacja_kod, stan: w.stan, zrodlo: 'WMS' });
+        ean: w.ean, lokalizacja_kod: w.lokalizacja_kod, stan: stanK4, zrodlo: 'GT' });
     }
   }
 

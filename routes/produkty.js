@@ -42,6 +42,11 @@ router.get('/', async (req, res, next) => {
     const dir = req.query.dir === 'desc' ? 'desc' : 'asc';
     const magazyny = parsujListe(req.query.magazyn, KODY_MAGAZYNOW);
     const zgodnosc = parsujListe(req.query.zgodnosc, KODY_ZGODNOSCI);
+    // OF (OBCIETE) = sumy WMS/GT zgodne, tylko pole GT za krotkie na wszystkie lokalizacje -
+    // to NIE blad, wiec filtr "OK" ma pokazywac tez OF (spojnie z badge-ok na liscie/modalu).
+    if (zgodnosc.includes(ZGODNOSC.ZGODNE) && !zgodnosc.includes(ZGODNOSC.OBCIETE)) {
+      zgodnosc.push(ZGODNOSC.OBCIETE);
+    }
     const zRezerwacja = req.query.z_rezerwacja === '1';
     const pokazZablokowane = req.query.pokaz_zablokowane === '1';
 

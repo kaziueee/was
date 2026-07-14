@@ -93,7 +93,7 @@ Format atomowy w WMS: `M2-J14-P2`. Format skrócony do GT: `M2-J14-P2/3; M2-J15-
 | Lokalizacja: kod unikalny globalnie, magazyn ∈ {K4, K4G} | ✅ backend | `/lokalizacje` |
 | Przyjęcie z zewn.: ilość ≤ stan GT magazynu MAG/LS | ✅ backend | `/ruchy/przyjecie` |
 | K4 LOK = cała ilość (nie częściowa) | ✅ backend | `/ruchy/lok` |
-| MM: ilość ≤ stan GT − rezerwacja (rezerwacje blokują MM) | ✅ backend | `/ruchy/mm`, `/przyjecie`, `/mm-zewnetrzny` |
+| MM: ilość ≤ stan GT − rezerwacja (GT master; egzekwowane ZAWSZE, nie tylko przy rezerwacji — chroni też przed stale-wysoką kopią WMS K4) | ✅ backend | `/ruchy/mm`, `/przyjecie`, `/mm-zewnetrzny` |
 
 Wszystkie inwarianty są egzekwowane w backendzie. Dodając nową regułę: najpierw `routes/`, front tylko jako UX.
 
@@ -110,6 +110,8 @@ Typy ruchów: `LOK` (lokalizowanie po PZ/FZ, bez dokumentu GT), `MM` (przesunię
 ## Ekrany Zebry
 
 1. **Ruch towaru** (`ruch.html`) — zlany MM + zmiana lokalizacji. Skan SKU/EAN/lokalizacji → wybór → krok „Dokąd i ile?": select **Cel** (Ta sama = LOK w obrębie magazynu / inny magazyn = MM) + ilość + lokalizacja. Operacja LOK/MM wyprowadzana automatycznie. Po zatwierdzeniu ekran sukcesu (dotknięcie zamyka) + sygnał dźwiękowy.
+   - **„Zostań w produkcie" (rozkładanie palet):** po zapisie backend liczy `deficyt_k4`/`deficyt_k4g` (stan GT − suma WMS, w `routes/lokalizacje.js` dolaczDaneGt). Gdy coś jeszcze nieprzypisane, ekran sukcesu daje **➕ Dalej** (zostaje w SKU, wraca do „Dokąd i ile?" w trybie przypisania, bez re-skanu) i **✓ Gotowe** (reset). Deficyt=0 → auto-reset. `pobierzPozostaloDoPrzypisania` w `ruch.js` (1 fetch `/skan/:symbol`, odświeża stany_gt).
+   - **Ostatnie produkty/lokalizacje** pod polem skanu (`localStorage`, per urządzenie, ~10 szt.): tap = otwiera SKU/lokalizację bez skanu. Zasilane przy każdym zapisie ruchu.
 2. **Test wyszukiwania** (`produkty.html`) — podgląd karty produktu z GT.
 3. **Ścieżki** (`sciezki.js`, widok w `ruch.html`) — zadania obchodu magazynu (Faza 6). Patrz sekcja „Ścieżki".
 
@@ -120,11 +122,11 @@ Pola skanu mają `inputmode="none"` (skaner DataWedge wstrzykuje dane, klawiatur
 Proste zadania „obchodu" magazynu z checklistą, posortowane w kolejności zbierania. Zdarzenia lądują w tabeli `audyt` (bez nowych tabel). Kafelek „Ścieżki" w menu Zebry → `widok-sciezki` (SPA). Backend: `routes/sciezki.js` (`/api/sciezki`, montowany z `auth.wymagajSesjiNaZapisie`). Front: `public/zebra/sciezki.js` (IIFE na globalnych `el`/`pokazWidok`/`onScan`, wzorzec jak `historia.js`).
 
 **Ścieżka 1 — „Ostatnie sztuki":** weryfikacja niskich stanów K4 (1–5 szt.).
-- **Źródło stanu: WMS tam gdzie istnieje, inaczej GT.** WMS (`stany_lokalizacji`) zapełnia się z czasem — dla zlokalizowanego towaru trzyma ilość per lokalizacja i jest prawdą; dla reszty fallback na stan GT (`st_Stan` K4). Dziś WMS ma ~kilka wierszy, więc prawie wszystko idzie z GT — reguła jest na przyszłość. Lista = **unia**: (a) wiersze WMS K4 ze stanem 1–5 (`zrodlo:'WMS'`, lokalizacja = kod WMS), (b) `gt-produkty.pobierzK4NiskieStany` = GT `st_Stan` 1–5 z **niepustą `tw_Pole1`** i **`tw_Rodzaj=1`** (tylko towary — wycina zestawy/komplety `rodzaj 8` typu „Nerf + celownik + strzałki" i usługi; filtr po RODZAJU, nie po nazwie — tysiące towarów ma „zestaw" w nazwie) dla SKU, których WMS jeszcze nie zna (`zrodlo:'GT'`). WMS ma pierwszeństwo (SKU w WMS nie dubluje się z GT; gdy WMS>5, SKU wypada mimo niskiego GT). `ORDER BY` kod lokalizacji.
-- **Warunek łącznego stanu:** dodatkowo `Razem ≤ 5` (`RAZEM_MAX`), gdzie Razem = K4+K4G+MAG+LS (bez BRK). Odsiewa towary z niskim K4, ale z zapasem na innych magazynach (np. setki na K4G = kandydat do uzupełnienia, nie do liczenia „ostatnich sztuk"). Dla gałęzi GT liczone w SQL (`HAVING`); dla gałęzi WMS: `K4_wms + (K4G+MAG+LS z GT)` (WMS nie zna innych magazynów) — stąd `pobierzStanyGt` dla SKU z WMS. Na starcie ~700 pozycji — backlog drenowany przez 180 dni.
+- **Źródło stanu K4 = ZAWSZE GT (Subiekt = master stanów).** WMS `stany_lokalizacji` to kopia, która się starzeje (sprzedaż w Subiekcie zbija stan bez wiedzy WMS → WMS bywa > GT), więc **ilości nigdy z niej nie czytamy** — WMS służy tylko za **master lokalizacji** (który SKU ma stałe miejsce w K4 i jaki to kod). Lista = **unia**: (a) `gt-produkty.pobierzK4NiskieStany` = GT `st_Stan` 1–5 z **niepustą `tw_Pole1`** i **`tw_Rodzaj=1`** (tylko towary — wycina zestawy/komplety `rodzaj 8` typu „Nerf + celownik + strzałki" i usługi; filtr po RODZAJU, nie po nazwie) dla SKU, których WMS nie zna, `lokalizacja = tw_Pole1`; (b) SKU, które WMS zna (ma wiersz K4) — **stan i Razem z GT** (`pobierzStanyGt`), `lokalizacja = kod z WMS`. Oba `zrodlo:'GT'`. WMS-wiersze dedupowane do 1 na SKU (preferuje ten z zapasem — 1 SKU = 1 lokalizacja). `ORDER BY` kod lokalizacji.
+- **Warunek łącznego stanu:** dodatkowo `Razem ≤ 5` (`RAZEM_MAX`), gdzie Razem = K4+K4G+MAG+LS (bez BRK). Odsiewa towary z niskim K4, ale z zapasem na innych magazynach (np. setki na K4G = kandydat do uzupełnienia, nie do liczenia „ostatnich sztuk"). Gałąź GT: w SQL (`HAVING`); gałąź WMS-known: z `pobierzStanyGt` (K4+K4G+MAG+LS, wszystko GT). Na starcie ~700 pozycji — backlog drenowany przez 180 dni.
 - `GET /ostatnie-sztuki` — jw.; przy niedostępnym GT zwraca **503**. **Nie robi ruchów WMS.**
 - Wyklucza parę (artykuł+lokalizacja) sprawdzoną w ciągu **180 dni** (`DNI_POMIN_SPRAWDZONE`) oraz SKU z przyjęciem z magazynu zewnętrznego (`ruchy.mag_zrodlo_zewnetrzny` NOT NULL) w ciągu **30 dni** (`DNI_POMIN_PRZYJECIE`) — świeżo dołożony stan jest znany. Oba filtry z SQLite, w Node.
-- `POST /ostatnie-sztuki/sprawdzenie` `{artykul_gt_id, artykul_symbol, lokalizacja_kod, ilosc_policzona}` — porównuje policzone ze stanem wg tej samej reguły (WMS jeśli jest, inaczej `dostepneWGt` GT); zgodne → audyt `akcja='sprawdzenie_stanu'`, niezgodne → `akcja='sprawdzenie_niezgodne'` (do raportu, `przed={stan, zrodlo}`). Bez ruchu WMS. GT niedostępny (i brak WMS) → 503. Raport czyta `przed.stan`/`zrodlo`, ze wsteczną zgodnością ze starym `{stan_gt}`.
+- `POST /ostatnie-sztuki/sprawdzenie` `{artykul_gt_id, artykul_symbol, lokalizacja_kod, ilosc_policzona}` — porównuje policzone ze stanem **GT w K4** (`dostepneWGt`, `zrodlo` zawsze `'GT'`); zgodne → audyt `akcja='sprawdzenie_stanu'`, niezgodne → `akcja='sprawdzenie_niezgodne'` (do raportu, `przed={stan, zrodlo}`). Bez ruchu WMS. GT niedostępny → 503. Raport czyta `przed.stan`/`zrodlo`, ze wsteczną zgodnością ze starym `{stan_gt}`.
 - `GET /ostatnie-sztuki/raport` — otwarte niezgodności: pary, dla których NAJNOWSZE sprawdzenie to `sprawdzenie_niezgodne` (późniejsze zgodne = domknięcie). Tap w raporcie → `window.ruchOtworzArtykul(symbol)` otwiera normalny ekran Ruch.
 
 UX obchodu: skan SKU/EAN potwierdza właściwą pozycję → pole ilości → zgodne = krótki beep + auto-przejście; niezgodne = beep błędu + nakładka `ostrzezenie` (dotknięcie = dalej). „Brak cichych porażek" — dźwięki zgodne/niezgodne różne.
@@ -145,7 +147,7 @@ POST /api/inwentaryzacja/pw
 - GT > WMS → ekran "do zlokalizowania"
 - GT < WMS w K4 → auto korekta (1 lokalizacja)
 - GT < WMS w K4gora → ekran "rozjazdy", magazynier decyduje
-- Job detekcji co godzinę w `services/rozjazdy.js`
+- Job detekcji co **10 min** (domyślnie; `ROZJAZDY_INTERWAL_MIN` w `.env`) w `services/rozjazdy.js` — auto-korekta K4 ściąga kopię WMS do stanu GT, więc częstszy przebieg = mniejsze okno rozjazdu na K4
 
 ## Stan obecny
 

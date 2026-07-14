@@ -44,19 +44,24 @@ router.post('/mm', async (req, res, next) => {
     });
   }
 
-  // Zasada 6: rezerwacje GT blokuja MM. Z magazynu zrodlowego mozna wyprowadzic
-  // najwyzej (stan GT - rezerwacja). Inaczej Sfera odrzuca MM ("brak towaru na
-  // magazynie zrodlowym") i ruch wisi 'pending' bez szans na retry. Egzekwujemy
-  // w backendzie - chroni jednakowo Zebre i desktop.
+  // Zasada 6 + "K4 stan zawsze z Subiekta": z magazynu zrodlowego mozna wyprowadzic
+  // najwyzej (stan GT - rezerwacja) - GT jest masterem stanow, kopia WMS bywa nieaktualna
+  // (na K4 sprzedaz w Subiekcie zbija stan bez wiedzy WMS, wiec WMS potrafi byc > GT).
+  // Bez tego twardego progu GT Sfera odrzucalaby MM ("brak towaru na magazynie zrodlowym")
+  // i ruch wisialby 'pending' bez szans na retry. Egzekwujemy zawsze (nie tylko przy
+  // rezerwacji) - chroni jednakowo Zebre i desktop.
   let dostZrodlo;
   try {
     dostZrodlo = await dostepneWGt(artykul_gt_id, zrodlo.magazyn);
   } catch (err) {
-    return res.status(503).json({ blad: 'Nie mozna zweryfikowac rezerwacji w GT (baza niedostepna) - MM wstrzymane. Sprobuj ponownie.' });
+    return res.status(503).json({ blad: 'Nie mozna zweryfikowac stanu GT (baza niedostepna) - MM wstrzymane. Sprobuj ponownie.' });
   }
-  if (dostZrodlo.rezerwacja > 0 && ilo > dostZrodlo.dostepne) {
+  if (ilo > dostZrodlo.dostepne) {
+    const powod = dostZrodlo.rezerwacja > 0
+      ? `stan GT ${dostZrodlo.stan}, rezerwacja ${dostZrodlo.rezerwacja} blokuje MM`
+      : `stan GT ${dostZrodlo.stan}`;
     return res.status(409).json({
-      blad: `Towar zarezerwowany w ${zrodlo.magazyn}: mozna przesunac najwyzej ${Math.max(dostZrodlo.dostepne, 0)} szt. (stan GT ${dostZrodlo.stan}, rezerwacja ${dostZrodlo.rezerwacja}). Rezerwacje blokuja MM.`
+      blad: `W ${zrodlo.magazyn} mozna przesunac najwyzej ${Math.max(dostZrodlo.dostepne, 0)} szt. wg Subiekta (${powod}).`
     });
   }
 
@@ -251,6 +256,10 @@ router.post('/lok', async (req, res, next) => {
     }
   }
 
+  // Stara lokalizacja GT (do historii ruchow) - przypisanie z "nieprzypisane" moze nadpisac
+  // pole GT, gdy deficyt spadnie do 0; zapisujemy poprzednia wartosc, by byla odzyskiwalna.
+  let staraLokGt = null;
+
   // Inwariant: suma WMS <= stan GT per magazyn. Przy przypisaniu (bez zrodla) nie wolno
   // zaklepac wiecej niz GT ma jeszcze nieprzypisane w docelowym magazynie - inaczej powstaje
   // fantomowy stan WMS > GT (rozjazd). Walidacja w backendzie chroni jednakowo Zebre i desktop.
@@ -279,6 +288,14 @@ router.post('/lok', async (req, res, next) => {
     if (cel.magazyn === 'K4' && ilo !== deficyt) {
       return res.status(400).json({ blad: `W magazynie K4 przypisz cala ilosc (${deficyt} szt.) - 1 SKU = 1 lokalizacja` });
     }
+
+    // Odczyt obecnej lokalizacji GT PRZED nadpisaniem (K4 -> tw_Pole1, K4G -> tw_Pole8).
+    try {
+      const pola = await gtFields.pobierzAktualnePolaLokalizacji([artykul_gt_id]);
+      const p = pola.get(String(artykul_gt_id));
+      const stara = ((cel.magazyn === 'K4' ? p?.tw_Pole1 : p?.tw_Pole8) || '').trim();
+      if (stara) staraLokGt = stara;
+    } catch { /* GT niedostepne - bez zapisu starej lok, nie blokujemy ruchu */ }
   }
 
   const symbol = stanZrodlo ? stanZrodlo.artykul_symbol : artykul_symbol;
@@ -351,6 +368,7 @@ router.post('/lok', async (req, res, next) => {
       uzytkownik: operator, akcja: zrodlo ? 'LOK' : 'przypisanie', artykul_gt_id, artykul_symbol: symbol,
       magazyn: cel.magazyn, lokalizacja: `${zrodlo ? zrodlo.kod : '(nieprzypisane)'} → ${cel.kod}`,
       ilosc: ilo, wynik: wynikRuch.status, ruch_id: ruchId,
+      przed: staraLokGt ? { stara_lok_gt: staraLokGt } : null,
     });
     res.status(201).json(wynikRuch);
   } catch (err) {

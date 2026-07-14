@@ -197,6 +197,15 @@ async function dolaczDaneGt(payload) {
         .reduce((suma, l) => suma + l.ilosc, 0);
       const deficytK4G = stanK4G - sumaK4G;
       if (deficytK4G > 0) payload.deficyt_k4g = deficytK4G;
+
+      // Analogicznie K4 (1 SKU = 1 lokalizacja): ile stanu GT jeszcze nieprzypisane w WMS.
+      // Pozwala Zebrze zostac w produkcie i dolokalizowac reszte bez ponownego skanu SKU.
+      const stanK4 = payload.stany_gt?.K4?.ilosc ?? 0;
+      const sumaK4 = payload.lokalizacje
+        .filter((l) => l.magazyn === 'K4')
+        .reduce((suma, l) => suma + l.ilosc, 0);
+      const deficytK4 = stanK4 - sumaK4;
+      if (deficytK4 > 0) payload.deficyt_k4 = deficytK4;
     } else if (payload.typ === 'lista_artykulow') {
       payload.artykuly = payload.artykuly.map(wzbogac);
     }

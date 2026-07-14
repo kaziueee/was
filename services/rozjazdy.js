@@ -11,7 +11,14 @@
 const db = require('../db/database');
 const { pobierzStanyGt } = require('./gt-produkty');
 
-const DOMYSLNY_INTERWAL_MS = 60 * 60 * 1000; // 1 godzina
+// K4 = pick floor z zywa sprzedaza (Sellasist zbija stan GT bez wiedzy WMS), wiec kopia WMS
+// szybko sie starzeje. Job scala WMS do GT - im czesciej, tym mniejsze okno rozjazdu na K4.
+// Domyslnie 10 min; nadpisywalne w .env przez ROZJAZDY_INTERWAL_MIN (minuty).
+function interwalZKonfiguracji() {
+  const min = Number(process.env.ROZJAZDY_INTERWAL_MIN);
+  return Number.isFinite(min) && min > 0 ? min * 60 * 1000 : 10 * 60 * 1000;
+}
+const DOMYSLNY_INTERWAL_MS = interwalZKonfiguracji();
 
 // suma ilosci WMS per (artykul, magazyn) dla K4/K4G - tylko artykuly z zapasem > 0
 function sumyWms() {

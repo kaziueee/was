@@ -32,7 +32,9 @@ router.get('/', async (req, res) => {
     most = false;
   }
 
-  res.json({ baza, gt, most });
+  // Srodowisko testowe (Mac/dev) - flaga w .env WMS_TESTOWY=1. Produkcja jej nie ustawia,
+  // wiec pasek "TESTOWY" tam sie nie pokaze, nawet gdyby kod tam trafil. Zob. public/shared/auth.js.
+  res.json({ baza, gt, most, testowy: process.env.WMS_TESTOWY === '1' });
 });
 
 module.exports = router;

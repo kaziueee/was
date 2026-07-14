@@ -83,6 +83,14 @@
       #widok-menu #wms-user-badge b{font-size:1.05rem;}
       #widok-menu #wms-user-badge button{background:none;border:none;color:#64748b;padding:0;
         font-size:.85rem;text-decoration:underline;cursor:pointer;}
+      /* Pasek srodowiska TESTOWEGO (Mac/dev) - szary, na samej gorze, nad wszystkim. Zeby
+         nie pomylic srodowisk. Produkcja go nie pokazuje (brak flagi WMS_TESTOWY). */
+      #wms-testowy-banner{position:fixed;top:0;left:0;right:0;z-index:100001;height:28px;
+        display:flex;align-items:center;justify-content:center;background:#64748b;color:#fff;
+        font-family:system-ui,sans-serif;font-weight:800;font-size:.82rem;letter-spacing:.08em;
+        box-shadow:0 2px 6px rgba(0,0,0,.3);pointer-events:none;}
+      body.wms-testowy{padding-top:28px;}                          /* desktop: przesun tresc w dol */
+      body.wms-testowy .ekran{height:calc(100dvh - 28px);}         /* Zebra: kiosk 100dvh */
     `;
     document.head.appendChild(s);
   }
@@ -194,8 +202,24 @@
     pokazWybor();
   }
 
+  // Pasek "TESTOWY" - na Macu/dev (flaga WMS_TESTOWY=1 w .env). Nieblokujacy; pokazuje sie
+  // niezaleznie od logowania (tez na ekranie wyboru profilu). Produkcja: brak flagi = brak paska.
+  async function pokazBannerTestowy() {
+    try {
+      const s = await jGet('/api/status');
+      if (!s || !s.testowy || document.getElementById('wms-testowy-banner')) return;
+      styl();
+      const b = document.createElement('div');
+      b.id = 'wms-testowy-banner';
+      b.textContent = 'ŚRODOWISKO TESTOWE — NIE PRODUKCJA';
+      document.body.appendChild(b);
+      document.body.classList.add('wms-testowy');
+    } catch { /* status niedostepny - bez paska */ }
+  }
+
   async function init() {
     styl();
+    pokazBannerTestowy();
     if (token()) {
       // zweryfikuj sesje (mogla wygasnac po stronie serwera)
       try { const ja = await jGet('/api/uzytkownicy/ja' + '?_t=' + Date.now()); localStorage.setItem(UKEY, JSON.stringify(ja)); pokazBadge(); window.dispatchEvent(new CustomEvent('wms-zalogowano', { detail: ja })); resolveGotowe(ja); return; }

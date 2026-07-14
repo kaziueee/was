@@ -1106,24 +1106,44 @@ function ustawDatalist(inputEl, opcje, czyscWartosc = true) {
   if (czyscWartosc) inputEl.value = '';
 }
 
-// Podpowiedzi lokalizacji po 3 znakach (debounce) - pobiera dopasowania z magazynu
-// zapisanego w inputEl.dataset.mag, zamiast ladowac wszystkie (855/1093 po imporcie mapy,
-// czego natywny <datalist> juz nie ogarnia). Skan/wpis dalej dziala; podpowiedzi to dodatek.
+// Cache lokalizacji per magazyn (do podpowiedzi bez fetcha na kazdy znak). Rozgrzewany przy
+// aktywacji pola (mmZaladujLokCache w mmZaladujLokCel) - dzieki temu filtr ponizej jest
+// SYNCHRONICZNY, a natywny <datalist> od razu pokazuje dopasowania. Async doladowanie opcji
+// (poprzednia wersja: fetch po 250ms) NIE odswieza juz otwartej listy w Chrome -> "nie proponuje".
+const lokMagData = {}; // mag -> [{id, kod}] gotowe do filtrowania; null = fetch w toku
+function mmZaladujLokCache(mag) {
+  if (!mag || lokMagData[mag] !== undefined) return; // juz jest albo w toku
+  lokMagData[mag] = null;
+  api(`/api/lokalizacje?magazyn=${encodeURIComponent(mag)}&aktywna=1`)
+    .then((lista) => { lokMagData[mag] = Array.isArray(lista) ? lista.map((l) => ({ id: l.id, kod: l.kod })) : []; })
+    .catch(() => { lokMagData[mag] = []; });
+}
+
+// Podpowiedzi lokalizacji po 3 znakach - filtr LOKALNY z cache (synchroniczny). Skan/wpis
+// dokladnego kodu dziala niezaleznie (lokComboIdRozwiaz dopyta bazy, gdy kodu nie ma w cache).
 function podlaczTypeaheadLok(inputEl) {
-  let timer = null;
   inputEl.addEventListener('input', () => {
     const mag = inputEl.dataset.mag;
-    const val = inputEl.value.trim();
-    clearTimeout(timer);
+    const val = inputEl.value.trim().toUpperCase();
     if (!mag || val.length < 3) { ustawDatalist(inputEl, [], false); return; }
-    timer = setTimeout(async () => {
-      if (inputEl.value.trim() !== val) return; // wartosc zmieniona w miedzyczasie
-      try {
-        const lista = await api(`/api/lokalizacje?magazyn=${encodeURIComponent(mag)}&aktywna=1&q=${encodeURIComponent(val)}&limit=30`);
-        ustawDatalist(inputEl, lista.map((l) => ({ id: l.id, kod: l.kod })), false);
-      } catch { /* podpowiedzi opcjonalne */ }
-    }, 250);
+    const lista = lokMagData[mag];
+    if (!lista) { mmZaladujLokCache(mag); return; } // jeszcze sie laduje - pokaze przy nastepnym znaku
+    const dopasowane = lista.filter((l) => l.kod.toUpperCase().includes(val)).slice(0, 50);
+    ustawDatalist(inputEl, dopasowane, false);
   });
+  blokujAutofillHasel(inputEl); // patrz nizej - zeby menedzer hasel Chrome nie zaslanial <datalist>
+}
+
+// Chrome pokazuje "Zarzadzaj haslami" (zapisane haslo dla domeny z logowania PIN-em) na polach
+// tekstowych i ZASLANIA nim natywny <datalist> - autocomplete="off" jest ignorowane. Pole
+// readonly Chrome pomija przy autofillu; zdejmujemy readonly na fokus (klik) -> pole edytowalne
+// i mozna pisac/skanowac, a popup hasel sie nie pojawia. Przywracamy na blur (re-arm).
+function blokujAutofillHasel(inputEl) {
+  if (inputEl.dataset.antiautofill) return; // idempotentne (pola statyczne + dynamiczne)
+  inputEl.dataset.antiautofill = '1';
+  inputEl.readOnly = true;
+  inputEl.addEventListener('focus', () => { inputEl.readOnly = false; });
+  inputEl.addEventListener('blur', () => { inputEl.readOnly = true; });
 }
 
 // Rozwiazuje kod lokalizacji -> id: najpierw z lokalnej mapy podpowiedzi, a gdy nie ma
@@ -1165,7 +1185,7 @@ function lokComboId(inputEl) {
   return mapa.get(inputEl.value.trim()) ?? null;
 }
 
-async function mmZaladujLokZrodlo(inputEl, brakEl, mag, symbol) {
+async function mmZaladujLokZrodlo(inputEl, brakEl, mag, produkt) {
   if (!mmCzyWms(mag)) {
     inputEl.classList.add('hidden');
     if (brakEl) brakEl.classList.remove('hidden');
@@ -1175,10 +1195,20 @@ async function mmZaladujLokZrodlo(inputEl, brakEl, mag, symbol) {
   inputEl.classList.remove('hidden');
   if (brakEl) brakEl.classList.add('hidden');
   try {
-    const dane = await api(`/api/lokalizacje/artykul/${encodeURIComponent(symbol)}`);
-    const loki = dane.lokalizacje.filter((l) => l.magazyn === mag && l.ilosc > 0);
-    ustawDatalist(inputEl, loki.map((l) => ({ id: l.lokalizacja_id, kod: l.kod, hint: `${l.ilosc} szt.`, stan: l.ilosc })));
-    if (loki.length === 1) inputEl.value = loki[0].kod;
+    const dane = await api(`/api/lokalizacje/artykul/${encodeURIComponent(produkt.symbol)}`);
+    if (mag === 'K4') {
+      // K4 = 1 SKU = 1 lokalizacja; stan zrodla ZAWSZE z GT (Subiekt = master), nie z kopii
+      // WMS (ta bywa nieaktualna). Dostepne do MM = stan GT - rezerwacja.
+      const dost = Math.max((produkt.stany_gt?.K4?.ilosc ?? 0) - (produkt.stany_gt?.K4?.rezerwacja ?? 0), 0);
+      const k4 = dane.lokalizacje.filter((l) => l.magazyn === 'K4');
+      ustawDatalist(inputEl, k4.map((l) => ({ id: l.lokalizacja_id, kod: l.kod, hint: `${dost} szt. wg GT`, stan: dost })));
+      if (k4.length === 1) inputEl.value = k4[0].kod;
+    } else {
+      // K4G: stan per-lokalizacja jest tylko w WMS (GT nie zna rozbicia na polki)
+      const loki = dane.lokalizacje.filter((l) => l.magazyn === mag && l.ilosc > 0);
+      ustawDatalist(inputEl, loki.map((l) => ({ id: l.lokalizacja_id, kod: l.kod, hint: `${l.ilosc} szt.`, stan: l.ilosc })));
+      if (loki.length === 1) inputEl.value = loki[0].kod;
+    }
   } catch { ustawDatalist(inputEl, []); }
 }
 
@@ -1209,9 +1239,10 @@ async function mmZaladujLokCel(inputEl, brakEl, mag) {
   }
   inputEl.classList.remove('hidden');
   if (brakEl) brakEl.classList.add('hidden');
-  // Zamiast ladowac wszystkie lokalizacje magazynu (855/1093 - natywny datalist tego nie
-  // ogarnia), zapamietujemy magazyn - podpowiedzi doladuja sie po 3 znakach (typeahead).
+  // Zapamietujemy magazyn + rozgrzewamy cache lokalizacji, zeby typeahead po 3 znakach
+  // filtrowal lokalnie i synchronicznie (natywny datalist od razu pokazuje dopasowania).
   inputEl.dataset.mag = mag;
+  mmZaladujLokCache(mag);
   ustawDatalist(inputEl, []);
 }
 
@@ -1316,7 +1347,7 @@ async function mmOdswiezLokFormularz() {
   if (!mmWybranyProdukt) return;
   const { zrodlo, cel } = mmParsujKierunek(el('mm-kierunek').value);
   await Promise.all([
-    mmZaladujLokZrodlo(el('mm-f-zrodlo'), el('mm-f-zrodlo-brak'), zrodlo, mmWybranyProdukt.symbol),
+    mmZaladujLokZrodlo(el('mm-f-zrodlo'), el('mm-f-zrodlo-brak'), zrodlo, mmWybranyProdukt),
     mmZaladujLokCel(el('mm-f-cel'), el('mm-f-cel-brak'), cel),
   ]);
   await mmUstawCelK4(el('mm-f-cel'), 'mm-f-cel-info', cel, mmWybranyProdukt);
@@ -1327,6 +1358,7 @@ el('mm-kierunek').addEventListener('change', mmOdswiezLokFormularz);
 el('mm-f-zrodlo').addEventListener('input', () => aktualizujPozostanie('mm-f-zrodlo', 'mm-f-ilosc', 'mm-f-pozostanie'));
 el('mm-f-ilosc').addEventListener('input', () => aktualizujPozostanie('mm-f-zrodlo', 'mm-f-ilosc', 'mm-f-pozostanie'));
 podlaczTypeaheadLok(el('mm-f-cel')); // podpowiedzi lokalizacji celu po 3 znakach
+blokujAutofillHasel(el('mm-f-zrodlo')); // zrodlo nie ma typeahead, ale tez blokujemy popup hasel
 
 el('btn-mm-anuluj').addEventListener('click', () => {
   el('mm-formularz').classList.add('hidden');
@@ -1426,7 +1458,7 @@ el('btn-mm-wyslij').addEventListener('click', async () => {
 
 // === MODAL PRODUKTU (edytowalny rozklad po magazynach) ===
 
-const MAG_LABEL = { K4: 'K4 Hala', K4G: 'K4 Góra', MAG: 'Kajtek (MAG)', LS: 'Leszno (LS)' };
+const MAG_LABEL = { K4: 'K4 Hala', K4G: 'K4 Góra', MAG: 'Kajtek (MAG)', LS: 'Leszno (LS)', BRK: 'Braki (BRK)' };
 const MAG_EXT = ['MAG', 'LS'];
 
 let modalProdukt = null;
@@ -1540,7 +1572,7 @@ async function renderModalRozklad() {
 
   dodajMagWms(tbody, 'K4', loki, k4Zapas, planK4);
   dodajMagWms(tbody, 'K4G', loki, k4Zapas, planK4g);
-  for (const mag of ['MAG', 'LS']) dodajMagZewn(tbody, mag);
+  for (const mag of ['MAG', 'LS', 'BRK']) dodajMagZewn(tbody, mag);
 
   // podsumowania na dole
   const rezRazem = ['K4', 'K4G', 'MAG', 'LS'].reduce((s, m) => s + (modalProdukt.stany_gt?.[m]?.rezerwacja ?? 0), 0);
@@ -1665,7 +1697,10 @@ function dodajMagWms(tbody, mag, loki, k4Zapas, planTekst) {
     tr.appendChild(tdZapas);
 
     const tdA = document.createElement('td');
-    const btn = przyciskAkcji('Przenieś', () => otworzAkcje({ typ: 'wms', zrodloMag: mag, zrodloLokId: l.lokalizacja_id, zrodloKod: l.kod, dostepne: l.ilosc }));
+    // K4 = 1 SKU = 1 lokalizacja: ile mozna przeniesc bierzemy z GT (stan - rez), nie z kopii
+    // WMS. K4G: per-lokalizacja jest tylko w WMS (GT nie zna rozbicia).
+    const dostepne = mag === 'K4' ? Math.max(gt.ilosc - gt.rezerwacja, 0) : l.ilosc;
+    const btn = przyciskAkcji('Przenieś', () => otworzAkcje({ typ: 'wms', zrodloMag: mag, zrodloLokId: l.lokalizacja_id, zrodloKod: l.kod, dostepne }));
     btn.disabled = l.ilosc <= 0;
     tdA.appendChild(btn);
     tr.appendChild(tdA);

@@ -371,8 +371,19 @@ html, body {
   flex-direction: column;
   align-items: flex-end;
 }
+.lista-poz .poz-prawa { gap: var(--space-2); }
 .lista-poz .poz-ilosc { font-size: var(--font-title); font-weight: 600; color: var(--color-primary); }
 .lista-poz .poz-rez { font-size: var(--font-label); color: var(--color-warning); }
+
+/* Raport niezgodnosci: licznik spraw + przycisk "Zalatwione" */
+.sciezki-raport-liczba { font-size: var(--font-label); font-weight: 600; color: var(--color-text-muted); margin: 0 0 var(--space-2); }
+.sciezki-zalatw {
+  border: 1px solid var(--color-success); color: var(--color-success);
+  background: var(--color-success-bg); border-radius: var(--radius-small);
+  padding: var(--space-1) var(--space-3); font-size: var(--font-label);
+  font-weight: 600; cursor: pointer; white-space: nowrap; min-height: 40px;
+}
+.sciezki-zalatw:active { background: var(--color-success); color: #fff; }
 .lista-poz .poz-strzalka { flex: 0 0 auto; color: var(--color-text-muted); font-size: 22px; }
 
 /* lewy pasek koloru wg statusu zgodnosci */
@@ -413,6 +424,49 @@ html, body {
 }
 .podsumowanie-stanu b { color: var(--color-primary); font-weight: 700; }
 .podsumowanie-sep { width: 1px; height: 1.2em; background: var(--color-border); }
+
+/* --- Rezerwacje ZK (rozwijana sekcja na kroku wyboru, lazy-load) --- */
+.rez-zk { margin-top: calc(var(--space-2) * -1); }
+.rez-zk__header {
+  width: 100%;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: #eef2f7;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  color: var(--color-primary);
+  font-size: var(--font-label); font-weight: 600;
+  cursor: pointer; text-align: left;
+}
+.rez-zk.otwarte .rez-zk__header { border-radius: var(--radius-medium) var(--radius-medium) 0 0; }
+.rez-zk__meta { display: flex; align-items: center; gap: var(--space-2); font-weight: 400; color: var(--color-text-muted); }
+.rez-zk__chev { font-size: 1.1em; }
+.rez-zk__body {
+  border: 1px solid var(--color-border); border-top: none;
+  border-radius: 0 0 var(--radius-medium) var(--radius-medium);
+  overflow: hidden;
+}
+.rez-zk__lista { max-height: 40vh; overflow-y: auto; }
+.rez-zk__row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+.rez-zk__row:last-child { border-bottom: none; }
+.rez-zk__nr { font-weight: 600; color: var(--color-primary); font-size: var(--font-label); }
+.rez-zk__sub { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; word-break: break-word; }
+.rez-zk__ilosc {
+  font-size: 13px; font-weight: 600; color: var(--color-primary);
+  background: #e7eef5; border-radius: 20px; padding: 2px 10px; white-space: nowrap;
+}
+.rez-zk__foot {
+  padding: var(--space-2) var(--space-3); text-align: right;
+  font-size: 12px; font-weight: 600;
+  color: var(--color-success); background: var(--color-success-bg);
+}
+.rez-zk__foot--rozjazd { color: var(--color-warning); background: var(--color-warning-bg); }
+.rez-zk__stan { padding: var(--space-3); font-size: var(--font-label); color: var(--color-text-muted); text-align: center; }
 
 /* --- Karty listy (renderowane przez ruch.js: lista-wyboru) - tymczasowy
    pomost stylu legacy do nowej powloki; docelowo przejdzie na .lista-poz --- */

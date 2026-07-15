@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db/database');
 const { pobierzProdukt, szukajProdukty, listujProdukty, pobierzProduktyZUniwersum, LIMIT_WYSZUKIWANIA, SORT_KLUCZE } = require('../services/gt-produkty');
 const { pobierzStatusLokalizacjiGt, pobierzPrzegladLokalizacji, ZGODNOSC } = require('../services/gt-fields');
+const { pobierzZkRezerwujaceK4 } = require('../services/gt-dokumenty');
 const { MAGAZYNY } = require('../config/magazyny');
 
 const router = express.Router();
@@ -129,6 +130,23 @@ async function dolaczLokalizacjeGt(produkty) {
     return produkty;
   }
 }
+
+// GET /api/produkty/:artykulGtId/rezerwacje - otwarte ZK rezerwujace towar na K4
+// (podglad "z czego wynika rezerwacja", lazy-load z karty towaru na Zebrze).
+// Zawsze przez GT SQL - gdy baza niedostepna zwracamy 503 (jak inne ekrany GT-only).
+// Dwuczlonowa sciezka, wiec nie koliduje z catch-all /:identyfikator ponizej.
+router.get('/:artykulGtId/rezerwacje', async (req, res, next) => {
+  const artykulGtId = Number(req.params.artykulGtId);
+  if (!Number.isInteger(artykulGtId) || artykulGtId <= 0) {
+    return res.status(400).json({ blad: 'Nieprawidłowy identyfikator towaru' });
+  }
+  try {
+    const zk = await pobierzZkRezerwujaceK4(artykulGtId);
+    res.json({ zk, suma: zk.reduce((s, r) => s + r.ilosc, 0) });
+  } catch (err) {
+    res.status(503).json({ blad: 'GT niedostępny — nie można odczytać rezerwacji ZK' });
+  }
+});
 
 // GET /api/produkty/:identyfikator - szuka towaru w GT po symbolu lub EAN (1:1, do skanow).
 // Jesli nie znaleziono dokladnego dopasowania, szuka po fragmencie nazwy/symbolu

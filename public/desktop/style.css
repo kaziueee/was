@@ -626,6 +626,41 @@ main {
   gap: 0.5rem;
 }
 
+/* --- Zakladki w modalu produktu (Edycja / Zamowienia / Historia) --- */
+.modal-taby {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 2px solid #e6e9ef;
+  margin-bottom: 1rem;
+}
+.modal-tab {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: #555;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+}
+.modal-tab:hover { color: #1d3557; }
+.modal-tab.aktywny { color: #1d3557; font-weight: bold; border-bottom-color: #1d3557; }
+.modal-tab-panel.hidden { display: none; }
+
+/* Panel Sprawy */
+.filtry-info { font-size: 0.9rem; color: #555; align-self: center; }
+.sprawy-roznica { font-weight: bold; color: #b36b00; }
+.btn-sprawy-zalatw { border-color: #16803a; color: #16803a; }
+.btn-sprawy-zalatw:hover { background: #e7f6eb; }
+/* Historia = szeroka tabela (8 kolumn) -> poszerz modal na tej zakladce */
+.modal-box.modal-szeroki { max-width: 1000px; }
+
+/* --- Zamowienia (ZK rezerwujace na K4) w modalu --- */
+.modal-zk__stan { padding: 1rem; color: #777; text-align: center; }
+.modal-zk .tabela td.zk-ilosc { text-align: right; font-weight: bold; color: #1d3557; }
+.modal-zk__foot { margin-top: 0.6rem; text-align: right; font-weight: bold; color: #16803a; }
+.modal-zk__foot--rozjazd { color: #b36b00; }
+
 /* --- rozklad towaru: Wariant A (jedna tabela: Magazyn|Stan|Lokalizacja|Zapas|akcja|data) --- */
 
 .rozklad-tabela { box-shadow: none; }
@@ -681,13 +716,10 @@ main {
 /* --- okno akcji (przenies / zmien lok / przypisz) - overlay na wierzchu modalu --- */
 
 #modal-akcja-overlay { z-index: 1100; }
-/* historia ("H") otwierana z modalu produktu - musi byc nad nim (modal produktu = 1000) */
-#modal-historia { z-index: 1100; padding: 2rem; }
-/* szersza ramka - historia ma 8 kolumn; nie zawijaj wierszy, scroll gdy duzo wpisow */
-#modal-historia .modal-box { max-width: 1100px; width: 92vw; max-height: 85vh; padding: 1.5rem 1.75rem; }
-#modal-historia .tabela-wrapper { overflow: auto; max-height: 65vh; }
-#modal-historia .tabela th,
-#modal-historia .tabela td { white-space: nowrap; }
+/* Zakladka Historia: 8 kolumn - nie zawijaj wierszy, scroll gdy duzo wpisow */
+[data-mpanel="historia"] .tabela-wrapper { overflow: auto; max-height: 60vh; }
+[data-mpanel="historia"] .tabela th,
+[data-mpanel="historia"] .tabela td { white-space: nowrap; }
 
 .modal-akcja-box { min-width: 520px; max-width: 700px; width: 100%; }
 

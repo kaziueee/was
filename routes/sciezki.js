@@ -65,7 +65,10 @@ async function zapiszSprawdzenie(req, res, akcjaZgodne, akcjaNiezgodne) {
 
 // Wspolny raport otwartych niezgodnosci: pary (artykul+lokalizacja), dla ktorych NAJNOWSZE
 // sprawdzenie danej sciezki to "niezgodne" (nie domkniete pozniejszym zgodnym).
-function raportNiezgodnosci(res, akcjaZgodne, akcjaNiezgodne) {
+function raportNiezgodnosci(res, akcjaZgodne, akcjaNiezgodne, akcjaZamkniecia) {
+  // Para wypada z raportu, gdy jej NAJNOWSZE zdarzenie to zgodne policzenie ALBO reczne
+  // domkniecie ("Zalatwione", akcjaZamkniecia) - dlatego wszystkie trzy akcje wchodza do
+  // okna MAX(id), a pokazujemy tylko te, gdzie najnowsze = niezgodne.
   const pozycje = db.prepare(`
     SELECT a.artykul_gt_id, a.artykul_symbol, a.magazyn, a.lokalizacja AS lokalizacja_kod,
            a.ilosc AS policzone, a.przed, a.czas, a.uzytkownik
@@ -73,12 +76,12 @@ function raportNiezgodnosci(res, akcjaZgodne, akcjaNiezgodne) {
     JOIN (
       SELECT artykul_gt_id, lokalizacja, MAX(id) AS max_id
       FROM audyt
-      WHERE akcja IN (?, ?)
+      WHERE akcja IN (?, ?, ?)
       GROUP BY artykul_gt_id, lokalizacja
     ) ost ON ost.max_id = a.id
     WHERE a.akcja = ?
     ORDER BY a.lokalizacja
-  `).all(akcjaZgodne, akcjaNiezgodne, akcjaNiezgodne);
+  `).all(akcjaZgodne, akcjaNiezgodne, akcjaZamkniecia, akcjaNiezgodne);
 
   for (const p of pozycje) {
     let przed = {};
@@ -89,6 +92,27 @@ function raportNiezgodnosci(res, akcjaZgodne, akcjaNiezgodne) {
   }
 
   res.json({ pozycje, razem: pozycje.length });
+}
+
+// Reczne domkniecie niezgodnosci ("Zalatwione"). Zapisuje wpis audytu, ktory staje sie
+// najnowszym zdarzeniem pary (artykul+lokalizacja) - wiec para wypada z raportu, tak jak
+// zamykalo ja zgodne policzenie. NIE robi ruchu WMS, nie dotyka GT (rozjazd naprawia sie
+// gdzie indziej, np. korekta w Subiekcie; tu tylko odnotowujemy, ze ktos to ogarnal).
+function zamknijNiezgodnosc(req, res, akcjaZamkniecia) {
+  const { artykul_gt_id, artykul_symbol, lokalizacja_kod, notatka, operator } = req.body ?? {};
+  if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });
+  if (!lokalizacja_kod) return res.status(400).json({ blad: 'Pole "lokalizacja_kod" jest wymagane' });
+  audyt.zapisz({
+    uzytkownik: operator ?? null,
+    akcja: akcjaZamkniecia,
+    artykul_gt_id: String(artykul_gt_id),
+    artykul_symbol: artykul_symbol ?? null,
+    magazyn: 'K4',
+    lokalizacja: lokalizacja_kod,
+    wynik: 'zamkniete',
+    po: notatka ? { notatka: String(notatka).slice(0, 500) } : null,
+  });
+  res.status(201).json({ zamkniete: true });
 }
 
 // GET /api/sciezki/ostatnie-sztuki - lista przystankow (towary K4 ze stanem 1..5, z lokalizacja
@@ -137,7 +161,7 @@ router.get('/ostatnie-sztuki', async (req, res, next) => {
   for (const g of gtRows) {
     if (!wmsMa.has(g.artykul_gt_id)) {
       kandydaci.push({ artykul_gt_id: g.artykul_gt_id, symbol: g.symbol, nazwa: g.nazwa,
-        ean: g.ean, lokalizacja_kod: g.lokalizacja_kod, stan: g.stan_k4, zrodlo: 'GT' });
+        ean: g.ean, lokalizacja_kod: g.lokalizacja_kod, stan: g.stan_k4, rezerwacja: g.rez_k4 ?? 0, zrodlo: 'GT' });
     }
   }
   // WMS-known: lokalizacja z WMS, ale stan K4 i Razem (K4+K4G+MAG+LS) z GT. Bierzemy gdy
@@ -148,14 +172,14 @@ router.get('/ostatnie-sztuki', async (req, res, next) => {
     const razem = ['K4', 'K4G', 'MAG', 'LS'].reduce((s, k) => s + (sg[k]?.ilosc ?? 0), 0);
     if (stanK4 >= STAN_MIN && stanK4 <= STAN_MAX && razem <= RAZEM_MAX) {
       kandydaci.push({ artykul_gt_id: w.artykul_gt_id, symbol: w.symbol, nazwa: w.nazwa,
-        ean: w.ean, lokalizacja_kod: w.lokalizacja_kod, stan: stanK4, zrodlo: 'GT' });
+        ean: w.ean, lokalizacja_kod: w.lokalizacja_kod, stan: stanK4, rezerwacja: sg.K4?.rezerwacja ?? 0, zrodlo: 'GT' });
     }
   }
 
   // zbiory wykluczen z SQLite (jedno zapytanie na kazdy) - filtrujemy w Node
   const sprawdzone = new Set(db.prepare(
     `SELECT DISTINCT artykul_gt_id, lokalizacja FROM audyt
-     WHERE akcja IN ('sprawdzenie_stanu','sprawdzenie_niezgodne')
+     WHERE akcja IN ('sprawdzenie_stanu','sprawdzenie_niezgodne','sprawdzenie_zamkniete')
        AND czas >= datetime('now', ?)`
   ).all(`-${DNI_POMIN_SPRAWDZONE} days`).map((r) => `${r.artykul_gt_id}|${r.lokalizacja}`));
 
@@ -182,7 +206,11 @@ router.post('/ostatnie-sztuki/sprawdzenie', (req, res) =>
 // dla ktorych NAJNOWSZE sprawdzenie to 'sprawdzenie_niezgodne' (nie domkniete pozniejszym
 // zgodnym sprawdzeniem). Posortowane po kodzie lokalizacji = kolejnosc zbierania.
 router.get('/ostatnie-sztuki/raport', (req, res) =>
-  raportNiezgodnosci(res, 'sprawdzenie_stanu', 'sprawdzenie_niezgodne'));
+  raportNiezgodnosci(res, 'sprawdzenie_stanu', 'sprawdzenie_niezgodne', 'sprawdzenie_zamkniete'));
+
+// POST .../niezgodnosc/zamknij - reczne "Zalatwione" dla pary (artykul+lokalizacja).
+router.post('/ostatnie-sztuki/niezgodnosc/zamknij', (req, res) =>
+  zamknijNiezgodnosc(req, res, 'sprawdzenie_zamkniete'));
 
 // --- Sciezka 2: "K4 z pelna rezerwacja" - towary tylko w K4, caly stan zarezerwowany ---
 
@@ -199,7 +227,7 @@ router.get('/k4-rezerwacja', async (req, res) => {
 
   const sprawdzone = new Set(db.prepare(
     `SELECT DISTINCT artykul_gt_id, lokalizacja FROM audyt
-     WHERE akcja IN ('sprawdzenie_rez','sprawdzenie_rez_niezgodne')
+     WHERE akcja IN ('sprawdzenie_rez','sprawdzenie_rez_niezgodne','sprawdzenie_rez_zamkniete')
        AND czas >= datetime('now', ?)`
   ).all(`-${DNI_POMIN_SPRAWDZONE} days`).map((r) => `${r.artykul_gt_id}|${r.lokalizacja}`));
 
@@ -217,6 +245,9 @@ router.post('/k4-rezerwacja/sprawdzenie', (req, res) =>
   zapiszSprawdzenie(req, res, 'sprawdzenie_rez', 'sprawdzenie_rez_niezgodne'));
 
 router.get('/k4-rezerwacja/raport', (req, res) =>
-  raportNiezgodnosci(res, 'sprawdzenie_rez', 'sprawdzenie_rez_niezgodne'));
+  raportNiezgodnosci(res, 'sprawdzenie_rez', 'sprawdzenie_rez_niezgodne', 'sprawdzenie_rez_zamkniete'));
+
+router.post('/k4-rezerwacja/niezgodnosc/zamknij', (req, res) =>
+  zamknijNiezgodnosc(req, res, 'sprawdzenie_rez_zamkniete'));
 
 module.exports = router;

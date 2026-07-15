@@ -509,6 +509,7 @@ function pokazRozkladZrodel(dane, artykul) {
     + `<span class="podsumowanie-sep"></span>`
     + `<span>Rezerwacje: <b>${rezRazem}</b></span>`;
   el('wybor-podsumowanie').classList.remove('hidden');
+  przygotujRezerwacjeZk(artykul);
 
   el('input-wybor-skan').placeholder = 'Skanuj kod lokalizacji';
   if (opcjeWyboru.length === 0) {
@@ -527,6 +528,83 @@ function pokazRozkladZrodel(dane, artykul) {
   // preventScroll: skupiamy pole na skan, ale NIE przewijamy tresci - tytul i
   // podsumowanie maja zostac widoczne na gorze (lista i tak jest przewijalna).
   el('input-wybor-skan').focus({ preventScroll: true });
+}
+
+// Rozwijana sekcja "Rezerwacje na K4" na kroku wyboru: pokazuje otwarte ZK
+// (zamowienia klienta), ktore rezerwuja towar na K4 - odpowiedz na "z czego wynika
+// rezerwacja". Widoczna tylko gdy jest rezerwacja na K4 (st_StanRez z GT, master).
+// Lazy-load: zapytanie o ZK leci dopiero po dotknieciu naglowka (nie dla kazdej
+// pozycji). Zob. routes/produkty.js (/:id/rezerwacje), services/gt-dokumenty.js.
+function przygotujRezerwacjeZk(artykul, box = el('rezerwacje-zk')) {
+  const rezK4 = artykul?.stany_gt?.K4?.rezerwacja ?? 0;
+  box.innerHTML = '';
+  box.classList.remove('otwarte');
+  if (rezK4 <= 0 || !artykul?.artykul_gt_id) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+
+  let otwarte = false;
+  let stanLadowania = 'idle'; // idle | ladowanie | ok | blad
+  let dane = null;            // { zk: [...], suma }
+
+  function fmtData(iso) {
+    if (!iso) return '';
+    const [r, m, d] = String(iso).split('-');
+    return d && m && r ? `${d}.${m}.${r}` : iso;
+  }
+
+  function bodyHtml() {
+    if (stanLadowania === 'ladowanie') return `<div class="rez-zk__body"><div class="rez-zk__stan">Ładowanie…</div></div>`;
+    if (stanLadowania === 'blad') return `<div class="rez-zk__body"><div class="rez-zk__stan">GT niedostępny — dotknij, aby spróbować ponownie.</div></div>`;
+    if (stanLadowania === 'ok') {
+      if (!dane.zk.length) return `<div class="rez-zk__body"><div class="rez-zk__stan">Brak otwartych ZK na K4.</div></div>`;
+      const wiersze = dane.zk.map((z) => {
+        const sub = [z.oryg, fmtData(z.data)].filter(Boolean).join(' · ');
+        return `<div class="rez-zk__row">`
+          + `<div><div class="rez-zk__nr">${z.nr_pelny || '—'}</div>`
+          + (sub ? `<div class="rez-zk__sub">${sub}</div>` : '')
+          + `</div><span class="rez-zk__ilosc">${z.ilosc} szt</span></div>`;
+      }).join('');
+      const zgodne = dane.suma === rezK4;
+      const foot = zgodne
+        ? `Σ ${dane.suma} szt = rezerwacja K4`
+        : `Σ ${dane.suma} szt · rezerwacja K4: ${rezK4}`;
+      return `<div class="rez-zk__body"><div class="rez-zk__lista">${wiersze}</div>`
+        + `<div class="rez-zk__foot${zgodne ? '' : ' rez-zk__foot--rozjazd'}">${foot}</div></div>`;
+    }
+    return '';
+  }
+
+  function render() {
+    box.classList.toggle('otwarte', otwarte);
+    box.innerHTML = `<button type="button" class="rez-zk__header">`
+      + `<span class="rez-zk__tytul">🔒 Rezerwacje na K4</span>`
+      + `<span class="rez-zk__meta">${rezK4} szt <span class="rez-zk__chev">${otwarte ? '▾' : '▸'}</span></span>`
+      + `</button>${otwarte ? bodyHtml() : ''}`;
+    box.querySelector('.rez-zk__header').addEventListener('click', onTap);
+  }
+
+  async function zaladuj() {
+    stanLadowania = 'ladowanie';
+    render();
+    try {
+      const res = await fetch(`/api/produkty/${encodeURIComponent(artykul.artykul_gt_id)}/rezerwacje`);
+      if (!res.ok) throw new Error('http ' + res.status);
+      dane = await res.json();
+      stanLadowania = 'ok';
+    } catch (e) {
+      stanLadowania = 'blad';
+    }
+    if (otwarte) render();
+  }
+
+  function onTap() {
+    otwarte = !otwarte;
+    render();
+    // ladujemy przy pierwszym rozwinieciu oraz przy ponowieniu po bledzie
+    if (otwarte && (stanLadowania === 'idle' || stanLadowania === 'blad')) zaladuj();
+  }
+
+  render();
 }
 
 // renderuje liste pozycji rozkladu jako karty .lista-poz (mag-badge, kod, ilosc,
@@ -1519,8 +1597,11 @@ el('btn-go-ruch').addEventListener('click', () => {
 el('btn-pelny-ekran').addEventListener('click', () => {
   if (window.przelaczPelnyEkran) window.przelaczPelnyEkran();
 });
-// systemowy/przegladarkowy Back -> wroc do menu (nie wychodz z apki)
-window.addEventListener('popstate', () => pokazWidok('menu'));
+// systemowy/przegladarkowy/sprzetowy Back -> wroc o jeden poziom (nie wychodz z apki).
+// Stan {v:'sciezki'} na stosie (dokladany przy wejsciu w menu scizek ORAZ w podekrany
+// obchodu/raportu) sprawia, ze Back z raportu/obchodu wraca do MENU SCIZEK, a dopiero
+// stamtad do menu glownego - zamiast przeskakiwac od razu do menu glownego.
+window.addEventListener('popstate', (e) => pokazWidok(e.state?.v === 'sciezki' ? 'sciezki' : 'menu'));
 
 (async () => { await initMagazyny(); })();
 pokazWidok('menu');

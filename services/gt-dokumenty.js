@@ -84,4 +84,44 @@ async function znajdzMM(nrPelny, twId) {
   }
 }
 
-module.exports = { znajdzMM, znajdzMMpoKluczu, kluczRuchu, budujUwagiMM };
+// Otwarte ZK (zamowienia klienta) rezerwujace dany towar na K4. Rezerwacja GT
+// (tw_Stan.st_StanRez) na K4 = suma pozycji otwartych ZK (dok_Typ=16,
+// dok_Status=7) na tym magazynie - potwierdzone na zywej bazie: suma pozycji =
+// st_StanRez. Ten sam wzorzec co uzupelnienia.js/kanaly.js, tylko per jeden
+// towar i ze zwrotem numerow dokumentow (do podgladu "z czego wynika rezerwacja").
+//
+// ob_TowId = @tow odsiewa pozycje bez towaru (uslugi/notatki maja ob_TowId NULL).
+// SUM(ob_Ilosc) per dokument - ten sam towar moze byc w kilku liniach jednego ZK.
+// Sort: najnowsze na gorze (data wystawienia malejaco).
+//
+// dok_NrPelny (np. "ZK 15123/2026") to stabilny numer dokumentu; dok_NrPelnyOryg
+// bywa smieciem (reczne ZK maja tam opis typu "NIEZGODNOSCI BRAKI") - dlatego
+// oba pola oddajemy, front pokazuje NrPelny jako glowny identyfikator.
+//
+// Rzuca gdy GT SQL niedostepny - wywolujacy (endpoint) mapuje na 503.
+const ZK_TYP = 16;
+const ZK_STATUS_OTWARTE = 7;
+const MAG_K4 = 4;
+
+async function pobierzZkRezerwujaceK4(twId) {
+  const { recordset } = await query(
+    `SELECT d.dok_Id, d.dok_NrPelny, d.dok_NrPelnyOryg AS oryg,
+            d.dok_DataWyst AS data, SUM(o.ob_Ilosc) AS ilosc
+     FROM dok_Pozycja o
+     JOIN dok__Dokument d ON d.dok_Id = o.ob_DokHanId
+     WHERE d.dok_Typ = @typ AND d.dok_Status = @status
+       AND o.ob_TowId = @tow AND o.ob_MagId = @mag
+     GROUP BY d.dok_Id, d.dok_NrPelny, d.dok_NrPelnyOryg, d.dok_DataWyst
+     ORDER BY d.dok_DataWyst DESC`,
+    { typ: ZK_TYP, status: ZK_STATUS_OTWARTE, tow: Number(twId), mag: MAG_K4 }
+  );
+  return recordset.map((r) => ({
+    dok_id: r.dok_Id,
+    nr_pelny: r.dok_NrPelny ? String(r.dok_NrPelny).trim() : null,
+    oryg: r.oryg ? String(r.oryg).trim() : null,
+    data: r.data instanceof Date ? r.data.toISOString().slice(0, 10) : null,
+    ilosc: Number(r.ilosc) || 0,
+  }));
+}
+
+module.exports = { znajdzMM, znajdzMMpoKluczu, kluczRuchu, budujUwagiMM, pobierzZkRezerwujaceK4 };

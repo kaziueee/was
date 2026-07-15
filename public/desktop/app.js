@@ -70,6 +70,7 @@ const panele = {
   lokalizacje: { sekcja: 'panel-lokalizacje', zaladowano: false, odswiez: odswiezLokalizacje },
   mm: { sekcja: 'panel-mm', zaladowano: false, odswiez: () => {} },
   uzupelnienia: { sekcja: 'panel-uzupelnienia', zaladowano: false, odswiez: odswiezUzupelnienia },
+  sprawy: { sekcja: 'panel-sprawy', zaladowano: false, odswiez: odswiezSprawy },
   log: { sekcja: 'panel-log', zaladowano: false, odswiez: odswiezLog },
   uzytkownicy: { sekcja: 'panel-uzytkownicy', zaladowano: false, odswiez: odswiezUzytkownicy },
 };
@@ -724,24 +725,125 @@ el('btn-log-odswiez').addEventListener('click', odswiezLog);
 el('log-akcja').addEventListener('change', odswiezLog);
 el('log-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') odswiezLog(); });
 
-// historia pojedynczego SKU (ikona "H" w modalu produktu)
-async function otworzHistorie(artykulGtId, symbol) {
-  el('modal-hist-sku').textContent = symbol ?? '';
-  el('modal-historia').classList.remove('hidden');
+// historia pojedynczego SKU (zakladka "Historia" w modalu produktu). Lazy-load
+// przy pierwszym wejsciu na zakladke (zob. modalPokazTab).
+async function renderModalHistoria() {
   const tbody = el('modal-hist-tbody');
   tbody.innerHTML = '';
   try {
-    const { wiersze } = await api(`/api/audyt?artykul_gt_id=${encodeURIComponent(artykulGtId)}&limit=500`);
+    const { wiersze } = await api(`/api/audyt?artykul_gt_id=${encodeURIComponent(modalProdukt.artykul_gt_id)}&limit=500`);
     el('modal-hist-brak').classList.toggle('hidden', wiersze.length > 0);
     for (const r of wiersze) tbody.appendChild(wierszLog(r, { zKolumnamiSku: false }));
   } catch (err) {
     pokazKomunikat(err.message, 'blad');
   }
 }
-function zamknijHistorie() { el('modal-historia').classList.add('hidden'); }
 
-el('btn-modal-hist-zamknij').addEventListener('click', zamknijHistorie);
-el('modal-historia').addEventListener('click', (e) => { if (e.target === el('modal-historia')) zamknijHistorie(); });
+// === SPRAWY (otwarte niezgodnosci ze sciezek - triaz + reczne "Zalatwione") ===
+// Zrodlo: raporty obu sciezek (services/routes/sciezki.js). Panel laczy oba w jedna
+// liste, sortuje po lokalizacji (kolejnosc obchodu), pozwala domknac sprawe recznie
+// ("Zalatwione" - wpis audytu, backend usuwa pare z raportu). NIE robi ruchu WMS.
+
+const SCIEZKI_SPRAW = [
+  { klucz: 'ostatnie-sztuki', nazwa: 'Ostatnie sztuki', baza: '/api/sciezki/ostatnie-sztuki' },
+  { klucz: 'k4-rezerwacja', nazwa: 'K4 pełna rezerwacja', baza: '/api/sciezki/k4-rezerwacja' },
+];
+
+let sprawyDane = [];
+
+function sprawyDniTemu(czas) {
+  if (!czas) return '';
+  const dt = new Date(String(czas).replace(' ', 'T') + 'Z');
+  if (isNaN(dt.getTime())) return '';
+  const dni = Math.floor((Date.now() - dt.getTime()) / 86400000);
+  if (dni <= 0) return 'dziś';
+  if (dni === 1) return 'wczoraj';
+  return `${dni} dni temu`;
+}
+
+async function odswiezSprawy() {
+  el('sprawy-tbody').innerHTML = '';
+  try {
+    const wyniki = await Promise.all(SCIEZKI_SPRAW.map(async (s) => {
+      const { pozycje } = await api(`${s.baza}/raport`);
+      return (pozycje || []).map((p) => ({ ...p, sciezka: s.klucz, sciezka_nazwa: s.nazwa, sciezka_baza: s.baza }));
+    }));
+    sprawyDane = wyniki.flat();
+    renderujSprawy();
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+  }
+}
+
+function renderujSprawy() {
+  const filtr = el('sprawy-sciezka').value;
+  const lista = (filtr ? sprawyDane.filter((s) => s.sciezka === filtr) : sprawyDane)
+    .slice()
+    .sort((a, b) => (a.lokalizacja_kod || '').localeCompare(b.lokalizacja_kod || '')
+      || (a.artykul_symbol || '').localeCompare(b.artykul_symbol || ''));
+  const tbody = el('sprawy-tbody');
+  tbody.innerHTML = '';
+  el('sprawy-brak').classList.toggle('hidden', lista.length > 0);
+  el('sprawy-licznik').textContent = lista.length ? `${lista.length} otwartych` : '';
+  for (const w of lista) {
+    const roznica = (w.policzone != null && w.stan != null) ? (w.policzone - w.stan) : null;
+    const roznicaTxt = roznica != null ? `${roznica > 0 ? '+' : ''}${roznica}` : '—';
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+        `<td><strong>${w.artykul_symbol || w.artykul_gt_id || '—'}</strong></td>`
+      + `<td>${w.lokalizacja_kod || '—'}</td>`
+      + `<td>${w.sciezka_nazwa}</td>`
+      + `<td>${w.stan ?? '—'}</td>`
+      + `<td>${w.policzone ?? '—'}</td>`
+      + `<td class="${roznica ? 'sprawy-roznica' : ''}">${roznicaTxt}</td>`
+      + `<td>${w.uzytkownik || '—'}</td>`
+      + `<td>${sprawyDniTemu(w.czas)}</td>`
+      + `<td class="td-akcja"></td>`;
+    const tdAkcja = tr.querySelector('.td-akcja');
+    const bZal = document.createElement('button');
+    bZal.className = 'btn btn-small btn-sprawy-zalatw';
+    bZal.textContent = '✓ Załatwione';
+    bZal.addEventListener('click', () => zalatwSprawe(w, tr));
+    const bOtw = document.createElement('button');
+    bOtw.className = 'btn btn-small';
+    bOtw.textContent = 'Produkt';
+    bOtw.addEventListener('click', () => otworzSprawaProdukt(w));
+    tdAkcja.append(bZal, bOtw);
+    tbody.appendChild(tr);
+  }
+}
+
+async function zalatwSprawe(w, tr) {
+  if (!confirm(`Oznaczyć jako załatwione?\n${w.artykul_symbol || w.artykul_gt_id} @ ${w.lokalizacja_kod}`)) return;
+  try {
+    await api(`${w.sciezka_baza}/niezgodnosc/zamknij`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ artykul_gt_id: w.artykul_gt_id, artykul_symbol: w.artykul_symbol, lokalizacja_kod: w.lokalizacja_kod }),
+    });
+    sprawyDane = sprawyDane.filter((s) => s !== w);
+    tr.remove();
+    renderujSprawy();
+    pokazKomunikat('Sprawa oznaczona jako załatwiona.', 'ok');
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+  }
+}
+
+// Otwiera modal produktu dla sprawy (dociaga pelny obiekt z /api/produkty).
+async function otworzSprawaProdukt(w) {
+  try {
+    const { produkty } = await api(`/api/produkty?q=${encodeURIComponent(w.artykul_symbol || w.artykul_gt_id)}&limit=10`);
+    const p = produkty.find((x) => String(x.artykul_gt_id) === String(w.artykul_gt_id)) || produkty[0];
+    if (p) otworzModalProdukt(p);
+    else pokazKomunikat('Nie znaleziono produktu w GT.', 'blad');
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+  }
+}
+
+el('btn-sprawy-odswiez').addEventListener('click', odswiezSprawy);
+el('sprawy-sciezka').addEventListener('change', renderujSprawy);
 
 // === UZYTKOWNICY (zakladka tylko dla admina) ===
 
@@ -1465,6 +1567,53 @@ let modalProdukt = null;
 let modalAkcjaCtx = null;
 
 let modalHeartbeat = null;
+// Zakladki modalu ladowane leniwie - flagi resetowane przy kazdym otwarciu produktu.
+let modalZkZaladowane = false;
+let modalHistZaladowane = false;
+
+// Przelacza zakladke w modalu produktu i doczytuje jej tresc przy pierwszym wejsciu.
+// Historia = szeroka tabela (8 kolumn) -> poszerzamy modal na czas tej zakladki.
+function modalPokazTab(nazwa) {
+  document.querySelectorAll('#modal-produkt .modal-tab').forEach((b) => b.classList.toggle('aktywny', b.dataset.mtab === nazwa));
+  document.querySelectorAll('#modal-produkt .modal-tab-panel').forEach((p) => p.classList.toggle('hidden', p.dataset.mpanel !== nazwa));
+  el('modal-produkt').querySelector('.modal-box').classList.toggle('modal-szeroki', nazwa === 'historia');
+  if (nazwa === 'zamowienia' && !modalZkZaladowane) { modalZkZaladowane = true; renderModalZk(); }
+  if (nazwa === 'historia' && !modalHistZaladowane) { modalHistZaladowane = true; renderModalHistoria(); }
+}
+
+function fmtDataZk(iso) {
+  if (!iso) return '—';
+  const [r, m, d] = String(iso).split('-');
+  return d && m && r ? `${d}.${m}.${r}` : iso;
+}
+
+// Zakladka "Zamowienia": otwarte ZK rezerwujace towar na K4 - odpowiedz na "z czego
+// wynika rezerwacja". Ten sam endpoint co Zebra (GET /api/produkty/:id/rezerwacje),
+// tylko gdy jest rezerwacja na K4 (st_StanRez z GT, master). Stopka domyka sume ZK
+// z rezerwacja GT - rozbieznosc = zolta (rozjazd do wyjasnienia).
+async function renderModalZk() {
+  const cont = el('modal-prod-zk');
+  const rezK4 = modalProdukt.stany_gt?.K4?.rezerwacja ?? 0;
+  if (rezK4 <= 0) { cont.innerHTML = '<div class="modal-zk__stan">Brak rezerwacji na K4.</div>'; return; }
+  cont.innerHTML = '<div class="modal-zk__stan">Ładowanie…</div>';
+  try {
+    const { zk, suma } = await api(`/api/produkty/${encodeURIComponent(modalProdukt.artykul_gt_id)}/rezerwacje`);
+    if (!zk.length) { cont.innerHTML = '<div class="modal-zk__stan">Brak otwartych ZK na K4.</div>'; return; }
+    const wiersze = zk.map((z) => `<tr>`
+      + `<td><strong>${z.nr_pelny || '—'}</strong></td>`
+      + `<td>${z.oryg || '—'}</td>`
+      + `<td>${fmtDataZk(z.data)}</td>`
+      + `<td class="zk-ilosc">${z.ilosc}</td></tr>`).join('');
+    const zgodne = suma === rezK4;
+    const foot = zgodne ? `Σ ${suma} szt = rezerwacja K4` : `Σ ${suma} szt · rezerwacja K4: ${rezK4}`;
+    cont.innerHTML = `<div class="tabela-wrapper"><table class="tabela">`
+      + `<thead><tr><th>Nr ZK</th><th>Oryginał</th><th>Data</th><th>Ilość</th></tr></thead>`
+      + `<tbody>${wiersze}</tbody></table></div>`
+      + `<div class="modal-zk__foot${zgodne ? '' : ' modal-zk__foot--rozjazd'}">${foot}</div>`;
+  } catch (err) {
+    cont.innerHTML = '<div class="modal-zk__stan">GT niedostępny — nie można odczytać rezerwacji ZK.</div>';
+  }
+}
 
 async function otworzModalProdukt(p) {
   // TWARDA BLOKADA: zajmij lock edycji produktu. 409 = edytuje kto inny -> nie otwieramy.
@@ -1486,6 +1635,10 @@ async function otworzModalProdukt(p) {
   zamknijAkcje();
   el('modal-komunikat').className = 'komunikat hidden';
   renderModalRozklad();
+  // zakladki: start na "Edycja", tresc pozostalych doczytywana leniwie przy wejsciu
+  modalZkZaladowane = false;
+  modalHistZaladowane = false;
+  modalPokazTab('edycja');
   // odswiezaj lock co 30s, dopoki modal otwarty
   modalHeartbeat = setInterval(() => {
     api(`/api/blokady/${encodeURIComponent(p.artykul_gt_id)}/heartbeat`, { method: 'POST' }).catch(() => {});
@@ -1502,8 +1655,8 @@ function zamknijModal() {
 }
 
 el('btn-modal-zamknij').addEventListener('click', zamknijModal);
-el('btn-modal-historia').addEventListener('click', () => {
-  if (modalProdukt) otworzHistorie(modalProdukt.artykul_gt_id, modalProdukt.symbol);
+document.querySelectorAll('#modal-produkt .modal-tab').forEach((b) => {
+  b.addEventListener('click', () => modalPokazTab(b.dataset.mtab));
 });
 el('modal-produkt').addEventListener('click', (e) => {
   if (e.target === el('modal-produkt')) zamknijModal();

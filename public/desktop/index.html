@@ -20,6 +20,7 @@
       <a href="#lokalizacje" class="tab-link" data-panel="lokalizacje">Lokalizacje</a>
       <a href="#mm" class="tab-link" data-panel="mm">MM</a>
       <a href="#uzupelnienia" class="tab-link" data-panel="uzupelnienia">Uzupełnienia</a>
+      <a href="#sprawy" class="tab-link" data-panel="sprawy">Sprawy</a>
       <a href="#log" class="tab-link" data-panel="log">Log</a>
       <a href="#uzytkownicy" class="tab-link" data-panel="uzytkownicy" id="tab-uzytkownicy" style="display:none">Użytkownicy</a>
     </nav>
@@ -328,6 +329,34 @@
       <p id="uzup-brak" class="hint hidden">Brak towarów do uzupełnienia.</p>
     </section>
 
+    <!-- Panel Sprawy: otwarte niezgodnosci ze sciezek (do triazu), reczne "Zalatwione" -->
+    <section id="panel-sprawy" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Sprawy do wyjaśnienia</h2>
+        <div class="filtry">
+          <select id="sprawy-sciezka">
+            <option value="">Wszystkie ścieżki</option>
+            <option value="ostatnie-sztuki">Ostatnie sztuki</option>
+            <option value="k4-rezerwacja">K4 pełna rezerwacja</option>
+          </select>
+          <span id="sprawy-licznik" class="filtry-info"></span>
+          <button type="button" id="btn-sprawy-odswiez" class="btn">Odśwież</button>
+        </div>
+      </div>
+      <div class="tabela-wrapper">
+        <table class="tabela">
+          <thead>
+            <tr>
+              <th>Artykuł</th><th>Lokalizacja</th><th>Ścieżka</th><th>Stan GT</th>
+              <th>Policzono</th><th>Różnica</th><th>Kto</th><th>Kiedy</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="sprawy-tbody"></tbody>
+        </table>
+      </div>
+      <p id="sprawy-brak" class="hint hidden">Brak otwartych spraw. 🎉</p>
+    </section>
+
     <!-- Panel Log biznesowy (audyt: kto/co/gdzie/kiedy) -->
     <section id="panel-log" class="panel hidden">
       <div class="panel-naglowek">
@@ -394,27 +423,6 @@
     </section>
 
     <!-- Modal: historia ruchow/zmian jednego SKU (ikona "H" w modalu produktu) -->
-    <div id="modal-historia" class="modal-overlay hidden">
-      <div class="modal-box">
-        <div class="modal-naglowek">
-          <div>
-            <strong>Historia</strong>
-            <span id="modal-hist-sku" class="opis"></span>
-          </div>
-          <button type="button" id="btn-modal-hist-zamknij" class="btn btn-small">✕</button>
-        </div>
-        <div class="tabela-wrapper">
-          <table class="tabela">
-            <thead>
-              <tr><th>Kiedy</th><th>Akcja</th><th>Magazyn</th><th>Lokalizacja</th><th>Ilość</th><th>Zmiana</th><th>Wynik</th><th>Kto</th></tr>
-            </thead>
-            <tbody id="modal-hist-tbody"></tbody>
-          </table>
-        </div>
-        <p id="modal-hist-brak" class="hint hidden">Brak historii dla tego SKU.</p>
-      </div>
-    </div>
-
     <!-- Modal: MM / Lok dla pojedynczego produktu (z tabeli Produkty) -->
     <div id="modal-produkt" class="modal-overlay hidden">
       <div class="modal-box">
@@ -424,16 +432,42 @@
             <span id="modal-prod-nazwa" class="opis"></span>
           </div>
           <div class="modal-naglowek-akcje">
-            <button type="button" id="btn-modal-historia" class="btn btn-small" title="Historia ruchów tego SKU">H</button>
             <button type="button" id="btn-modal-zamknij" class="btn btn-small">✕</button>
           </div>
         </div>
-        <div id="modal-prod-stany" class="modal-stany"></div>
 
-        <!-- Rozklad towaru po magazynach i lokalizacjach (renderowany w JS) -->
-        <div id="modal-rozklad"></div>
-        <datalist id="inline-lok-list"></datalist>
-        <datalist id="zapas-lok-list"></datalist>
+        <div class="modal-taby" role="tablist">
+          <button type="button" class="modal-tab aktywny" data-mtab="edycja" role="tab">Edycja</button>
+          <button type="button" class="modal-tab" data-mtab="zamowienia" role="tab">Zamówienia</button>
+          <button type="button" class="modal-tab" data-mtab="historia" role="tab">Historia</button>
+        </div>
+
+        <!-- Zakladka 1: edycja (stany + rozklad lokalizacji) -->
+        <div class="modal-tab-panel" data-mpanel="edycja">
+          <div id="modal-prod-stany" class="modal-stany"></div>
+          <!-- Rozklad towaru po magazynach i lokalizacjach (renderowany w JS) -->
+          <div id="modal-rozklad"></div>
+          <datalist id="inline-lok-list"></datalist>
+          <datalist id="zapas-lok-list"></datalist>
+        </div>
+
+        <!-- Zakladka 2: zamowienia (otwarte ZK rezerwujace na K4) -->
+        <div class="modal-tab-panel hidden" data-mpanel="zamowienia">
+          <div id="modal-prod-zk" class="modal-zk"></div>
+        </div>
+
+        <!-- Zakladka 3: historia ruchow SKU (dawne osobne okno pod "H") -->
+        <div class="modal-tab-panel hidden" data-mpanel="historia">
+          <div class="tabela-wrapper">
+            <table class="tabela">
+              <thead>
+                <tr><th>Kiedy</th><th>Akcja</th><th>Magazyn</th><th>Lokalizacja</th><th>Ilość</th><th>Zmiana</th><th>Wynik</th><th>Kto</th></tr>
+              </thead>
+              <tbody id="modal-hist-tbody"></tbody>
+            </table>
+          </div>
+          <p id="modal-hist-brak" class="hint hidden">Brak historii dla tego SKU.</p>
+        </div>
 
         <div id="modal-komunikat" class="komunikat hidden"></div>
       </div>

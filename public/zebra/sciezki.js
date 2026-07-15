@@ -61,6 +61,7 @@
     komunikat('');
     el('sciezki-tytul').textContent = sciezkaNazwa;
     pokazPod('sciezki-obchod');
+    history.pushState({ v: 'sciezki' }, ''); // Back z obchodu -> menu scizek (nie glowne)
     el('sciezki-karta').innerHTML = '<p class="hint">Ładuję…</p>';
     el('sciezki-pusto').classList.add('hidden');
     try {
@@ -85,6 +86,7 @@
       // koniec obchodu
       el('sciezki-postep').textContent = '';
       el('sciezki-karta').innerHTML = '';
+      el('sciezki-rez-zk').classList.add('hidden');
       el('sciezki-skan').closest('.pole-blok').classList.add('hidden');
       el('sciezki-ilosc').closest('.pole-blok').classList.add('hidden');
       el('sciezki-pusto').textContent = lista.length
@@ -103,6 +105,12 @@
       `<strong>${p.symbol || p.artykul_gt_id}</strong>`
       + `<span>${p.nazwa || ''}</span>`
       + `<span>📍 ${p.lokalizacja_kod}</span>`;
+    // Rezerwacje na K4 (rozwijana, lazy-load) - ta sama sekcja co ekran Ruch. Pokazuje
+    // sie tylko gdy rezerwacja > 0; nie zdradza liczonego stanu fizycznego (rez != stan).
+    przygotujRezerwacjeZk(
+      { artykul_gt_id: p.artykul_gt_id, stany_gt: { K4: { rezerwacja: p.rezerwacja ?? 0 } } },
+      el('sciezki-rez-zk')
+    );
     el('sciezki-skan-hint').textContent = 'Zeskanuj towar, aby potwierdzić że jesteś przy właściwej pozycji.';
     el('sciezki-skan').value = '';
     el('sciezki-ilosc').value = '';
@@ -192,6 +200,7 @@
     komunikat('');
     el('sciezki-tytul').textContent = `Raport: ${sciezkaNazwa}`;
     pokazPod('sciezki-raport');
+    history.pushState({ v: 'sciezki' }, ''); // Back z raportu -> menu scizek (nie glowne)
     const box = el('sciezki-raport-lista');
     box.innerHTML = '<p class="hint">Ładuję…</p>';
     el('sciezki-raport-pusto').classList.add('hidden');
@@ -206,22 +215,92 @@
     }
   }
 
+  // Odmiana "sprawa/sprawy/spraw" wg liczby (do licznika w naglowku raportu).
+  function odmianaSprawa(n) {
+    if (n === 1) return 'sprawa';
+    const o = n % 10, d = n % 100;
+    return (o >= 2 && o <= 4 && (d < 12 || d > 14)) ? 'sprawy' : 'spraw';
+  }
+
+  // "dziś / wczoraj / N dni temu" z czasu audytu (UTC bez znacznika strefy).
+  function dniTemuTekst(czas) {
+    if (!czas) return '';
+    const dt = new Date(String(czas).replace(' ', 'T') + 'Z');
+    if (isNaN(dt.getTime())) return '';
+    const dni = Math.floor((Date.now() - dt.getTime()) / 86400000);
+    if (dni <= 0) return 'dziś';
+    if (dni === 1) return 'wczoraj';
+    return `${dni} dni temu`;
+  }
+
+  function aktualizujLicznikRaportu() {
+    const box = el('sciezki-raport-lista');
+    const pozostalo = box.querySelectorAll('.lista-poz').length;
+    const nag = box.querySelector('.sciezki-raport-liczba');
+    if (nag) nag.textContent = `${pozostalo} ${odmianaSprawa(pozostalo)} do wyjaśnienia`;
+    if (pozostalo === 0) {
+      if (nag) nag.remove();
+      el('sciezki-raport-pusto').classList.remove('hidden');
+    }
+  }
+
+  // Reczne "Załatwione" - domyka pare (artykul+lokalizacja) w backendzie (wpis audytu),
+  // po czym znika z listy. Endpoint zalezy od aktywnej sciezki (sciezkaBaza).
+  async function zalatwSprawe(w, div) {
+    const etykieta = `${w.artykul_symbol || w.artykul_gt_id} @ ${w.lokalizacja_kod}`;
+    if (!window.confirm(`Oznaczyć jako załatwione?\n${etykieta}`)) return;
+    try {
+      const res = await fetch(sciezkaBaza + '/niezgodnosc/zamknij', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          artykul_gt_id: w.artykul_gt_id, artykul_symbol: w.artykul_symbol,
+          lokalizacja_kod: w.lokalizacja_kod, operator: operator(),
+        }),
+      });
+      const dane = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(dane?.blad || `Błąd ${res.status}`);
+      beep(true);
+      div.remove();
+      aktualizujLicznikRaportu();
+    } catch (err) {
+      beep(false);
+      komunikat(err.message, 'blad');
+    }
+  }
+
   function renderRaport(pozycje) {
     const box = el('sciezki-raport-lista');
     box.innerHTML = '';
     el('sciezki-raport-pusto').classList.toggle('hidden', pozycje.length > 0);
+    if (pozycje.length) {
+      const nag = document.createElement('p');
+      nag.className = 'sciezki-raport-liczba';
+      nag.textContent = `${pozycje.length} ${odmianaSprawa(pozycje.length)} do wyjaśnienia`;
+      box.appendChild(nag);
+    }
     for (const w of pozycje) {
       const roznica = (w.policzone != null && w.stan != null) ? (w.policzone - w.stan) : null;
+      const wiek = dniTemuTekst(w.czas);
+      const podpisKto = [w.uzytkownik, wiek].filter(Boolean).join(' · ');
       const div = document.createElement('div');
       div.className = 'lista-poz st-warn';
       div.innerHTML = `<span class="poz-glowna">`
         + `<span class="poz-kod">${w.artykul_symbol || w.artykul_gt_id || '—'}</span>`
         + `<span class="poz-podpis">📍 ${w.lokalizacja_kod || ''}</span>`
         + `<span class="hist-meta">${w.zrodlo || 'stan'} ${w.stan ?? '—'} · policzono ${w.policzone ?? '—'}${roznica != null ? ` (${roznica > 0 ? '+' : ''}${roznica})` : ''}</span>`
+        + (podpisKto ? `<span class="hist-meta">${podpisKto}</span>` : '')
         + `</span>`
-        + `<span class="poz-prawa"><span class="poz-rez">otwórz ›</span></span>`;
+        + `<span class="poz-prawa">`
+        + `<button type="button" class="sciezki-zalatw">✓ Załatwione</button>`
+        + `<span class="poz-rez">otwórz ›</span>`
+        + `</span>`;
       div.addEventListener('click', () => {
         if (window.ruchOtworzArtykul) window.ruchOtworzArtykul(w.artykul_symbol || w.artykul_gt_id);
+      });
+      div.querySelector('.sciezki-zalatw').addEventListener('click', (e) => {
+        e.stopPropagation();
+        zalatwSprawe(w, div);
       });
       box.appendChild(div);
     }
@@ -240,11 +319,10 @@
   el('sciezki-zatwierdz').addEventListener('click', zatwierdzPrzystanek);
   el('sciezki-sukces').addEventListener('click', zamknijSukces);
 
-  // Wstecz: z podekranu obchodu/raportu -> menu scizek; z menu scizek -> menu glowne
-  el('sciezki-wstecz').addEventListener('click', () => {
-    if (el('sciezki-menu').classList.contains('hidden')) otworz();
-    else pokazWidok('menu');
-  });
+  // Wstecz: z podekranu obchodu/raportu -> menu scizek; z menu scizek -> menu glowne.
+  // history.back() cofa dokladnie o jeden wpis (patrz pushState w startObchod/otworzRaport
+  // i handler popstate w ruch.js), wiec ekranowy i sprzetowy Back sa spojne.
+  el('sciezki-wstecz').addEventListener('click', () => history.back());
 
   // stepper ilosci
   el('sciezki-ilosc-minus').addEventListener('click', () => {

@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../db/database');
 const { pobierzProdukt, szukajProdukty, listujProdukty, pobierzProduktyZUniwersum, LIMIT_WYSZUKIWANIA, SORT_KLUCZE } = require('../services/gt-produkty');
 const { pobierzStatusLokalizacjiGt, pobierzPrzegladLokalizacji, ZGODNOSC } = require('../services/gt-fields');
-const { pobierzZkRezerwujaceK4 } = require('../services/gt-dokumenty');
+const { pobierzZkRezerwujaceK4, pobierzDostawyK4, rozbijDeficytK4 } = require('../services/gt-dokumenty');
 const { MAGAZYNY } = require('../config/magazyny');
 
 const router = express.Router();
@@ -12,6 +12,39 @@ const LIMIT_PRODUKTOW_MAX = 200;
 
 const KODY_MAGAZYNOW = new Set(MAGAZYNY.map((m) => m.kod));
 const KODY_ZGODNOSCI = new Set(Object.values(ZGODNOSC));
+
+// Dokleja do listy produktow rozbicie deficytu K4 na dostawy (PZ<-FZ) i anonimowa reszte -
+// ten sam obraz, co dostaje Zebra z /api/lokalizacje/skan/:kod (zob. routes/lokalizacje.js),
+// zeby rozklad w panelu i na kolektorze mowily to samo.
+//
+// Nie blokuje listy, gdy GT SQL padnie: bez dostaw panel dziala jak dotad (deficyt bez opisu).
+async function dolaczDostawyK4(produkty, wierszeWms) {
+  const sumaK4 = new Map();
+  for (const w of wierszeWms) {
+    if (w.magazyn !== 'K4') continue;
+    sumaK4.set(w.artykul_gt_id, (sumaK4.get(w.artykul_gt_id) || 0) + w.ilosc);
+  }
+
+  const zDeficytem = produkty.filter(
+    (p) => ((p.stany_gt?.K4?.ilosc ?? 0) - (sumaK4.get(p.artykul_gt_id) || 0)) > 0
+  );
+  if (zDeficytem.length === 0) return;
+
+  let dostawyMap;
+  try {
+    dostawyMap = await pobierzDostawyK4(zDeficytem.map((p) => p.artykul_gt_id));
+  } catch {
+    return;
+  }
+
+  for (const p of zDeficytem) {
+    const deficyt = (p.stany_gt?.K4?.ilosc ?? 0) - (sumaK4.get(p.artykul_gt_id) || 0);
+    const rozbicie = rozbijDeficytK4(deficyt, dostawyMap.get(String(p.artykul_gt_id)) || [], { artykul_gt_id: p.artykul_gt_id });
+    if (rozbicie.dostawy.length > 0) p.dostawy_k4 = rozbicie.dostawy;
+    if (rozbicie.zwroty.length > 0) p.zwroty_k4 = rozbicie.zwroty;
+    if (rozbicie.reszta > 0) p.nieprzypisane_k4 = rozbicie.reszta;
+  }
+}
 
 // Parsuje liste wartosci rozdzielonych przecinkami (np. "K4,K4G"), odfiltrowujac
 // te spoza dozwolonego zbioru - uzywane dla filtrow magazyn/zgodnosc.
@@ -111,6 +144,8 @@ router.get('/', async (req, res, next) => {
         };
       });
     }
+
+    await dolaczDostawyK4(produkty, wiersze);
 
     res.json({ produkty, total, limit, offset, tryb });
   } catch (err) {

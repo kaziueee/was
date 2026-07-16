@@ -13,6 +13,11 @@ const stan = {
   zrodlo: null,    // {lokalizacja_id, kod, magazyn, ilosc} albo null - produkt bez lokalizacji w WMS
   cel: null,       // {typ:'wms', id, kod, magazyn} albo {typ:'zew', magazyn, nazwa}
   iloscSugestia: null, // podpowiedz ilosci przy braku zrodla (np. deficyt K4gora)
+  zrodloPula: null,  // 'K4' = zrodlem jest NIEPRZYPISANA pula magazynu (dostawa PZ<-FZ albo
+                     // zwrot PZ<-KFS, jeszcze bez miejsca w WMS) -> zapis idzie w /ruchy/rozloz
+  zrodloDok: null,   // numer PZ rozkladanego dokumentu - backend rozlicza po nim kubelek
+  dostawa: null,     // {rodzaj, pz_nr, fz_nr, kontrahent, data, ilosc} - opis pozycji (naglowek)
+  zwrot: false,      // true = rozkladamy ZWROT (strefa zwrotow -> regal), nie dostawe
   celMagazynNowejLokalizacji: null, // magazyn wymagany dla nowej lokalizacji przy braku zrodla
                                      // (np. 'K4G' z opcji "+ Nowa lokalizacja K4G") - gdy null,
                                      // magazyn jest zgadywany na podstawie stanow GT
@@ -105,7 +110,14 @@ function naglowekHtml() {
   if (!a) return ''; // start: bez duzego naglowka - tytul "Skanuj..." jest w tresci
 
   let kontekst;
-  if (!stan.zrodlo) {
+  if (stan.dostawa) {
+    // Rozkladanie dostawy/zwrotu: pokaz CO sie rozklada (dokument + kontrahent przy dostawie).
+    // "Brak lokalizacji w WMS" byloby tu klamstwem i falszywym alarmem - produkt ma swoje
+    // miejsca, to dostawa jeszcze nie ma. Chip informacyjny, nie ostrzegawczy: normalna robota.
+    kontekst = `<span class="chip chip-dostawa">${stan.zwrot ? 'Zwrot' : 'Dostawa'} ${esc(krotkiNrDok(stan.dostawa.fz_nr))}</span>`
+      + (stan.zwrot ? '<span class="chip">Strefa zwrotów</span>' : '')
+      + (stan.dostawa.kontrahent ? `<span class="chip">${esc(stan.dostawa.kontrahent)}</span>` : '');
+  } else if (!stan.zrodlo) {
     kontekst = '<span class="chip chip-uwaga">Brak lokalizacji w WMS</span>';
   } else {
     // rezerwacja jest per-magazyn (GT) - pokazujemy ja jako chip ostrzegawczy, tylko gdy > 0
@@ -263,6 +275,10 @@ function reset() {
   stan.zrodlo = null;
   stan.cel = null;
   stan.iloscSugestia = null;
+  stan.zrodloPula = null;
+  stan.zrodloDok = null;
+  stan.dostawa = null;
+  stan.zwrot = false;
   stan.celMagazynNowejLokalizacji = null;
   opcjeWyboru = [];
   ostatniaListaArtykulow = null;
@@ -382,6 +398,12 @@ function przygotujKrokWybor() {
   el('wybor-podsumowanie').innerHTML = '';
   el('wybor-skan-etykieta').classList.add('hidden');
   el('checkbox-ukryj-zero-wrap').classList.add('hidden');
+  // Rezerwacje dotycza KONKRETNEGO produktu, wiec musza zniknac razem z reszta jego
+  // kontekstu. Bez tego zostawaly po powrocie (Wstecz) na liscie wynikow wyszukiwania i
+  // wisialy nad cudzymi artykulami. Karta produktu odbuduje je przez przygotujRezerwacjeZk.
+  el('rezerwacje-zk').innerHTML = '';
+  el('rezerwacje-zk').classList.add('hidden');
+  el('rezerwacje-zk').classList.remove('otwarte');
   el('input-wybor-skan').value = ''; // czyste pole; tryb 'szukaj' wypelni je z powrotem zapytaniem
   prefillWyszukiwaniaStale = false;
 }
@@ -389,11 +411,22 @@ function przygotujKrokWybor() {
 function obsluzArtykul(dane) {
   const artykul = { artykul_gt_id: dane.artykul_gt_id, artykul_symbol: dane.artykul_symbol, artykul_nazwa: dane.artykul_nazwa, stany_gt: dane.stany_gt, lokalizacja_gt: dane.lokalizacja_gt, zgodnosc: dane.zgodnosc };
 
+  // Kontekst rozkladania dostawy dotyczy KONKRETNEGO produktu - zerujemy go na wejsciu,
+  // zanim ktorakolwiek galez ustawi swoj stan. Sciezki skrotowe nizej nie przechodza przez
+  // wybierzOpcje(), wiec bez tego zostawal po POPRZEDNIM produkcie: zapis szedl w
+  // /ruchy/rozloz zamiast /ruchy/lok, a naglowek pokazywal cudza fakture.
+  stan.zrodloPula = null;
+  stan.dostawa = null;
+
   // czy towar ma stan w magazynie zewnetrznym (MAG/LS) - wtedy ZAWSZE pokazujemy
   // rozklad (zeby zewnetrzny byl osiagalny jako zrodlo przyjecia), nawet gdy 0/1 lok WMS.
   const maStanZewn = magazynyLista.some((m) => m.typ === 'zewnetrzny' && (dane.stany_gt?.[m.kod]?.ilosc ?? 0) > 0);
 
-  if (dane.lokalizacje.length === 0 && !maStanZewn) {
+  // Skrot "brak lokalizacji -> przypisz pierwsza" NIE moze objac produktu z dostawa: tam
+  // deficyt ma dwa rozne zrodla (paleta do rozlozenia + reszta na stale miejsce), wiec
+  // magazynier musi zobaczyc rozklad i wybrac, co robi. Inaczej wpadal od razu w goly
+  // ekran "Dokad i ile?" i wiersz DOSTAWA byl nieosiagalny.
+  if (dane.lokalizacje.length === 0 && !maStanZewn && !(dane.dostawy_k4?.length > 0)) {
     // produkt ma stan w GT, ale nie ma jeszcze zadnej lokalizacji w WMS - przypisz pierwsza
     stan.artykul = artykul;
     stan.zrodlo = null;
@@ -436,6 +469,44 @@ function pokazRozkladZrodel(dane, artykul) {
   const posortowaneLok = [...dane.lokalizacje].sort((a, b) =>
     (kolejnoscMag[a.magazyn] ?? 9) - (kolejnoscMag[b.magazyn] ?? 9) || (a.ilosc - b.ilosc));
 
+  // DOSTAWY I ZWROTY NA SAMEJ GORZE, przed lokalizacjami: to jedyne pozycje z realnym
+  // zadaniem do zrobienia (paleta stoi, zwrot lezy w strefie) - reszta listy to tylko stan.
+  // Maja wpasc w oczy pierwsze, bez scrollowania (ekran Zebry ma 360x640, kazdy wiersz
+  // nizej to ryzyko przeoczenia). Dostawy przed zwrotami - wieksze i pilniejsze.
+  const opcjeDostaw = (dane.dostawy_k4 || []).map((dost) => ({
+    klucz: '__DOSTAWA_' + (dost.pz_nr || dost.fz_nr) + '__',
+    artykul,
+    zrodlo: null,
+    iloscSugestia: dost.ilosc,
+    zrodloPula: 'K4',       // rozkladanie nieprzypisanej puli K4 (POST /api/ruchy/rozloz)
+    zrodloDok: dost.pz_nr,  // ktory dokument rozkladamy - backend rozlicza kubelek po nim
+    celMagazyn: null,       // cel DOWOLNY (K4 albo K4G) - magazynier decyduje, co zostaje
+                            // na dole, a co jedzie na gore; K4G tylko jako domyslny wybor
+    brak: true,
+    dostawa: dost,
+    mag: 'K4',
+    ilosc: dost.ilosc,
+    plan: gtLokDlaMagazynu('K4G') || '',
+  }));
+
+  // Zwrot: towar lezy w STREFIE ZWROTOW (KFS wystawiany, gdy fizycznie tam jest), a jego
+  // zadanie to "odnies na regal" - dlatego domyslny cel to K4, a nie gora jak przy dostawie.
+  const opcjeZwrotow = (dane.zwroty_k4 || []).map((zwr) => ({
+    klucz: '__ZWROT_' + (zwr.pz_nr || zwr.fz_nr) + '__',
+    artykul,
+    zrodlo: null,
+    iloscSugestia: zwr.ilosc,
+    zrodloPula: 'K4',
+    zrodloDok: zwr.pz_nr,
+    celMagazyn: null,
+    brak: true,
+    dostawa: zwr,           // ten sam ksztalt co dostawa - naglowek/wiersz czytaja fz_nr
+    zwrot: true,
+    mag: 'K4',
+    ilosc: zwr.ilosc,
+    plan: gtLokDlaMagazynu('K4') || '', // wg GT gdzie ten SKU ma stale miejsce na regale
+  }));
+
   // rezerwacja jest na poziomie magazynu - pokazujemy ja raz, przy pierwszym
   // wierszu danego magazynu (jak w rozkladzie desktopu).
   const rezPokazana = {};
@@ -456,16 +527,30 @@ function pokazRozkladZrodel(dane, artykul) {
     };
   });
 
-  // Nieprzypisany stan WMS per magazyn (GT - suma lokalizacji WMS) -> wiersz "BRAK
-  // LOKALIZACJI" do przypisania. K4G: zawsze gdy deficyt (1 SKU = N lokalizacji - mozna
-  // dolozyc kolejna). K4: tylko gdy NIE ma jeszcze zadnej lokalizacji K4 (1 SKU = 1
-  // lokalizacja; gdy juz jest, deficyt to rozjazd - nie tworzymy stad drugiej lokalizacji K4).
+  opcjeWyboru = [...opcjeDostaw, ...opcjeZwrotow, ...opcjeWyboru];
+
+  // Nieprzypisany stan WMS per magazyn (GT - suma lokalizacji WMS) -> wiersz do dzialania.
+  //
+  // Na K4 deficyt ma DWA rozne zrodla i kazde ma inna regule (backend rozbija go w
+  // routes/lokalizacje.js na dostawy_k4 / nieprzypisane_k4):
+  //   - DOSTAWA (PZ<-FZ): paleta wg GT lezy na K4, ale fizycznie nie ma jeszcze miejsca.
+  //     Cel dowolny (dol/gora), w dowolnych porcjach - ma swoj wiersz na gorze listy.
+  //   - RESZTA (stary stan, zwroty): stara zasada 1 SKU = 1 lokalizacja, calosc na D3.
+  // Produkt moze miec oba wiersze naraz - to fizycznie dwie rozne rzeczy.
+  //
+  // K4G: jeden wiersz jak dotad (1 SKU = N lokalizacji - mozna dolozyc kolejna).
   for (const mag of magazynyLista.filter((m) => m.typ === 'wms').map((m) => m.kod)) {
     const gtStan = artykul.stany_gt?.[mag]?.ilosc ?? 0;
     const wmsLok = dane.lokalizacje.filter((l) => l.magazyn === mag);
-    const niezlok = Math.max(gtStan - wmsLok.reduce((s, l) => s + l.ilosc, 0), 0);
+    const wyliczony = Math.max(gtStan - wmsLok.reduce((s, l) => s + l.ilosc, 0), 0);
+    // K4: tylko czesc deficytu NIEwyjasniona dokumentem (dostawa i zwrot maja swoje wiersze
+    // wyzej). Backend jest zrodlem prawdy - gdy zrobil rozbicie, bierzemy jego liczbe; gdy GT
+    // padl i rozbicia nie ma wcale, pokazujemy caly deficyt.
+    const jestRozbicie = dane.dostawy_k4 || dane.zwroty_k4 || dane.nieprzypisane_k4 != null;
+    const niezlok = mag === 'K4' && jestRozbicie
+      ? (dane.nieprzypisane_k4 || 0)
+      : wyliczony;
     if (niezlok <= 0) continue;
-    if (mag === 'K4' && wmsLok.length > 0) continue;
     opcjeWyboru.push({
       klucz: '__BRAK_' + mag + '__',
       artykul,
@@ -607,22 +692,42 @@ function przygotujRezerwacjeZk(artykul, box = el('rezerwacje-zk')) {
   render();
 }
 
+// "FZ 49/K4/2026" -> "FZ 49". Ekran Zebry ma 360 px - magazynierowi wystarcza numer
+// faktury do rozpoznania dostawy, magazyn i rok tylko zjadaja szerokosc.
+function krotkiNrDok(nr) {
+  return String(nr ?? '').split('/')[0].trim();
+}
+
+// Tekst z GT (symbol kontrahenta, numer dokumentu) trafia do innerHTML - escapujemy,
+// bo to dane z zewnatrz, nie nasze stale.
+function esc(t) {
+  const d = document.createElement('div');
+  d.textContent = String(t ?? '');
+  return d.innerHTML;
+}
+
 // renderuje liste pozycji rozkladu jako karty .lista-poz (mag-badge, kod, ilosc,
 // rez, strzalka); wiersz z flaga `brak` dostaje wariant .brak + podpis "(nieprzypisano)"
-// i opcjonalny plan "wg GT: ...".
+// i opcjonalny plan "wg GT: ...". Wiersz dostawy (o.dostawa) podpisuje sie numerem
+// faktury i kontrahentem - magazynier ma wiedziec, CO rozklada, nie tylko ile.
 function renderujRozklad(opcje, onWybierz) {
   const lista = el('lista-wyboru');
   lista.innerHTML = '';
   opcje.forEach((o) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'lista-poz' + (o.brak ? ' brak' : '');
+    btn.className = 'lista-poz' + (o.brak ? ' brak' : '') + (o.dostawa ? ' dostawa' : '');
     const rez = o.rez > 0 ? `<span class="poz-rez">(${o.rez} rez.)</span>` : '';
-    const glowna = o.brak
+    const glowna = o.dostawa
+      ? `<span class="poz-kod">${o.zwrot ? 'ZWROT' : 'DOSTAWA'}</span>`
+        + `<span class="poz-podpis">${esc(krotkiNrDok(o.dostawa.fz_nr))}`
+          + `${o.dostawa.kontrahent ? ' · ' + esc(o.dostawa.kontrahent) : ''}</span>`
+        + `<span class="poz-plan">${o.zwrot ? 'Strefa zwrotów — odnieś na regał' : 'do rozłożenia'}</span>`
+      : o.brak
       ? `<span class="poz-kod">BRAK LOKALIZACJI</span><span class="poz-podpis">(nieprzypisano)</span>`
-        + (o.plan ? `<span class="poz-plan">wg GT: ${o.plan}</span>` : '')
-      : `<span class="poz-kod">${o.kod}</span>`
-        + (o.podpis ? `<span class="poz-podpis">${o.podpis}</span>` : '');
+        + (o.plan ? `<span class="poz-plan">wg GT: ${esc(o.plan)}</span>` : '')
+      : `<span class="poz-kod">${esc(o.kod)}</span>`
+        + (o.podpis ? `<span class="poz-podpis">${esc(o.podpis)}</span>` : '');
     btn.innerHTML = `<span class="poz-mag">${o.mag}</span>`
       + `<span class="poz-glowna">${glowna}</span>`
       + `<span class="poz-prawa"><span class="poz-ilosc">${o.ilosc} szt.</span>${rez}</span>`
@@ -738,6 +843,10 @@ function wybierzOpcje(opcja) {
   stan.artykul = opcja.artykul;
   stan.zrodlo = opcja.zrodlo;
   stan.iloscSugestia = opcja.iloscSugestia ?? null;
+  stan.zrodloPula = opcja.zrodloPula ?? null;
+  stan.zrodloDok = opcja.zrodloDok ?? null;
+  stan.dostawa = opcja.dostawa ?? null;
+  stan.zwrot = opcja.zwrot ?? false;
   stan.celMagazynNowejLokalizacji = opcja.celMagazyn ?? null;
   przejdzDoCelu();
 }
@@ -779,21 +888,31 @@ async function przejdzDoCelu() {
     // - tylko ten jeden. Stany K4 i K4G NIE sa pokazywane razem - jeden magazyn naraz.
     const stany = stan.artykul.stany_gt || {};
     const wmsKody = magazynyLista.filter((m) => m.typ === 'wms').map((m) => m.kod);
-    let opcjeMag = stan.celMagazynNowejLokalizacji
-      ? [stan.celMagazynNowejLokalizacji]
-      : wmsKody.filter((m) => (stany[m]?.ilosc ?? 0) > 0);
+    // ROZKLADANIE DOSTAWY (zrodloPula): cel dowolny - czesc zostaje na dole, reszta jedzie
+    // na gore, w dowolnych ratach. Dlatego pokazujemy OBA magazyny WMS, niezaleznie od stanow.
+    let opcjeMag = stan.zrodloPula
+      ? wmsKody
+      : (stan.celMagazynNowejLokalizacji
+        ? [stan.celMagazynNowejLokalizacji]
+        : wmsKody.filter((m) => (stany[m]?.ilosc ?? 0) > 0));
     if (opcjeMag.length === 0) opcjeMag = wmsKody; // brak stanu GT - pozwol wskazac recznie
 
     const select = el('select-cel-magazyn');
     select.innerHTML = opcjeMag.map((m) => {
-      // Gdy przyszlismy z wiersza "BRAK" (celMagazynNowejLokalizacji): pokaz DEFICYT
-      // (ile jeszcze do rozlozenia), nie caly stan GT - inaczej mylace, gdy czesc juz zlokalizowana.
-      const ile = (m === stan.celMagazynNowejLokalizacji && stan.iloscSugestia != null)
+      // Gdy przyszlismy z wiersza "BRAK" (celMagazynNowejLokalizacji) albo rozkladamy dostawe:
+      // pokaz ile ZOSTALO do rozlozenia, nie caly stan GT magazynu - inaczej mylace.
+      const ile = ((stan.zrodloPula || m === stan.celMagazynNowejLokalizacji) && stan.iloscSugestia != null)
         ? stan.iloscSugestia
         : (stany[m]?.ilosc ?? 0);
       const nazwa = magazynyMapa[m]?.nazwa ?? m;
       return `<option value="${m}">${nazwa}${ile ? ` — ${ile} szt.` : ''}</option>`;
     }).join('');
+    // Dostawa najczesciej jedzie na gore, zwrot wraca na regal - stad rozne domysly.
+    // Oba bez blokady: magazynier moze zdecydowac inaczej.
+    if (stan.zrodloPula) {
+      const domyslny = stan.zwrot ? 'K4' : 'K4G';
+      if (opcjeMag.includes(domyslny)) select.value = domyslny;
+    }
 
     el('cel-magazyn-pole').classList.remove('hidden');
     el('cel-lokalizacja-pole').classList.remove('hidden');
@@ -959,31 +1078,87 @@ function aktualizujKrokCelPrzypisanie() {
   const mag = el('select-cel-magazyn').value;
   stan.celMagazynNowejLokalizacji = mag;
 
-  const ile = (mag === 'K4G' && stan.iloscSugestia != null)
+  // iloscSugestia = ilosc Z KLIKNIETEGO WIERSZA (deficyt tego kubelka), wiec ma pierwszenstwo
+  // przed calym stanem GT magazynu. Inaczej wiersz "nieprzypisane 10" podstawialby 30 (caly
+  // stan K4), czyli razem z nierozlozona dostawa - a tej na polce nie ma.
+  const ile = stan.iloscSugestia != null
     ? stan.iloscSugestia
     : (stan.artykul.stany_gt?.[mag]?.ilosc ?? 0);
   const inputIlosc = el('input-ilosc');
   inputIlosc.removeAttribute('max'); // backend kapuje do deficytu magazynu
-  // K4 = 1 SKU = 1 lokalizacja -> cala ilosc, bez edycji (jak przy zmianie lokalizacji K4).
+  // ROZKLADANIE DOSTAWY: zawsze edytowalne i puste, tez dla K4 - dostawe wolno rozbic na
+  // dowolne porcje (czesc na dol, reszta na gore), wiec narzucanie calej ilosci bylo bledem.
+  // Zwykle PRZYPISANIE na K4 = 1 SKU = 1 lokalizacja -> cala ilosc, bez edycji.
   // K4G = N lokalizacji (palety): NIE podpowiadamy calego deficytu w polu (bledne "wpisz 2000"),
   // pole zostaje PUSTE - magazynier wpisuje ile realnie kladzie tu; deficyt to podpowiedz nizej.
-  inputIlosc.readOnly = (mag === 'K4');
-  inputIlosc.value = (mag === 'K4' && ile > 0) ? String(ile) : '';
+  // ZWROT: podpowiadamy ilosc (to zwykle 1-3 szt., ktore magazynier ma w rece), ale zostawiamy
+  // edytowalne - przy zwrocie wielosztukowym moze odniesc czesc.
+  const calaIloscK4 = mag === 'K4' && !stan.zrodloPula;
+  inputIlosc.readOnly = calaIloscK4;
+  inputIlosc.value = ((calaIloscK4 || stan.zwrot) && ile > 0) ? String(ile) : '';
 
   el('input-cel').value = '';
   el('input-cel').placeholder = `Skanuj lokalizację (${magazynyMapa[mag]?.nazwa ?? mag})`;
-  // podpowiedz "wg GT" - gdzie GT trzyma lokalizacje tego magazynu (tw_Pole1/tw_Pole8) + regula K4
+  // podpowiedz "wg GT" - gdzie GT trzyma lokalizacje tego magazynu (tw_Pole1/tw_Pole8) + regula K4.
+  // Przy rozkladaniu dostawy regula "cala ilosc" NIE obowiazuje (wolno zostawic czesc na dole),
+  // wiec nie wypisujemy jej - bylaby instrukcja sprzeczna z tym, co pole dopuszcza.
   const gtLok = gtLokDlaMagazynu(mag);
-  const regulaK4 = mag === 'K4' ? 'K4: 1 SKU = 1 lokalizacja — cała ilość' : '';
+  const regulaK4 = calaIloscK4 ? 'K4: 1 SKU = 1 lokalizacja — cała ilość' : '';
   el('cel-lokalizacja-hint').textContent = [gtLok && `wg GT: ${gtLok}`, regulaK4].filter(Boolean).join(' · ');
   // Zapas K4 dostepny tez przy przypisaniu do K4 (po LOK lokalizacja K4 istnieje, k4-zapas zadziala)
   ustawZapasUI(mag === 'K4');
-  // K4G: ile jeszcze do rozlozenia (pole ilosci puste). Podpowiedz odtwarza aktualizujPozostanie,
-  // dzieki czemu ZOSTAJE widoczna takze podczas pisania (wczesniej znikala przy pierwszym znaku).
-  deficytPrzypisania = (mag === 'K4G' && ile > 0) ? ile : null;
+  // Ile jeszcze do rozlozenia (gdy pole ilosci puste): K4G, a przy dostawie rowniez K4.
+  // Podpowiedz odtwarza aktualizujPozostanie, dzieki czemu ZOSTAJE widoczna takze podczas
+  // pisania (wczesniej znikala przy pierwszym znaku).
+  deficytPrzypisania = (!calaIloscK4 && ile > 0) ? ile : null;
   aktualizujPozostanie();
   aktualizujAkcjeLabel();
+  if (mag === 'K4') podpowiedzLokalizacjeK4();
   fokusBezKlawiatury(el('input-cel'));
+}
+
+// K4 = 1 SKU = 1 stale miejsce, wiec przy celu na dole cel jest z gory znany - nie ma po co
+// kazac go szukac (zwrot: masz sztuke w rece i wiesz, gdzie wraca). Kaskada zrodel:
+//   1. lokalizacja K4 z WMS (k4-dom) - najpewniejsza, znamy ja i jej stan
+//   2. tw_Pole1 z GT - gdy WMS jeszcze nie zna miejsca (stan "tylko GT"); podstawiamy TYLKO
+//      gdy kod da sie rozwiazac na realna lokalizacje K4, bo tw_Pole1 bywa smieciem
+//      ("RB/M2-B37 - sciana /") i podstawienie go zablokowaloby zapis
+//   3. nic - i to jest UCZCIWE: zwrot przy stanie zero czesto nie ma juz swojego miejsca
+//      (slot na regale mogl przejac inny towar), wiec magazynier musi zdecydowac sam
+async function podpowiedzLokalizacjeK4() {
+  const artykulId = stan.artykul?.artykul_gt_id;
+  if (!artykulId) return;
+  const nadal = () => el('select-cel-magazyn').value === 'K4' && stan.artykul?.artykul_gt_id === artykulId;
+
+  try {
+    const res = await fetch(`/api/lokalizacje/k4-dom/${encodeURIComponent(artykulId)}`);
+    const dom = res.ok ? await res.json() : null;
+    if (!nadal() || el('input-cel').value) return; // magazynier zdazyl zmienic wybor / wpisac sam
+    if (dom?.kod) {
+      el('input-cel').value = dom.kod;
+      stan.cel = { typ: 'wms', id: dom.lokalizacja_id, kod: dom.kod, magazyn: 'K4' };
+      el('cel-lokalizacja-hint').textContent = `Stałe miejsce w K4 (obecnie: ${dom.ilosc} szt.) — zeskanuj inną, by zmienić`;
+      return;
+    }
+  } catch { /* brak podpowiedzi - magazynier zeskanuje */ }
+
+  // WMS nie zna miejsca - sprobuj tego, co GT trzyma w tw_Pole1
+  const zGt = gtLokDlaMagazynu('K4');
+  if (!zGt) {
+    if (nadal()) el('cel-lokalizacja-hint').textContent = 'Nowe miejsce w K4 — zeskanuj lokalizację';
+    return;
+  }
+  try {
+    const res = await fetch(`/api/lokalizacje/kod/${encodeURIComponent(zGt)}`);
+    if (!res.ok) return;                       // smieciowy tw_Pole1 - zostaje sama podpowiedz tekstowa
+    const lok = await res.json();
+    if (!nadal() || el('input-cel').value) return;
+    if (lok?.magazyn === 'K4') {
+      el('input-cel').value = lok.kod;
+      stan.cel = { typ: 'wms', id: lok.id, kod: lok.kod, magazyn: 'K4' };
+      el('cel-lokalizacja-hint').textContent = `Miejsce wg GT (${lok.kod}) — zeskanuj inną, by zmienić`;
+    }
+  } catch { /* brak podpowiedzi - magazynier zeskanuje */ }
 }
 
 el('select-cel-magazyn').addEventListener('change', () => {
@@ -1158,17 +1333,28 @@ async function przetworzLokalizacjeCelu(kod) {
     stan.cel = { typ: 'wms', id: dane.id, kod: dane.kod, magazyn: dane.magazyn };
     el('input-cel').value = dane.kod;
     // Przypisanie (brak zrodla) wg magazynu SKANOWANEJ lokalizacji:
-    //  - K4 (1 SKU = 1 lokalizacja): narzuc CALA ilosc GT (WMS=0), pole zablokowane;
+    //  - K4 (1 SKU = 1 lokalizacja): narzuc CALA ilosc, pole zablokowane;
     //  - K4G (N lokalizacji / palety): NIE nadpisujemy tego, co magazynier wpisal (np. 200) -
     //    inaczej klik "Zatwierdz" podmienialby wpisana ilosc na caly deficyt. Pole zostaje.
+    //  - ROZKLADANIE DOSTAWY: pole zostaje edytowalne takze dla K4 - dostawe wolno rozbic
+    //    na czesci, wiec narzucanie calosci bylo by bledem.
+    //
+    // "Cala ilosc" = iloscSugestia (deficyt KLIKNIETEGO wiersza), a NIE caly stan GT magazynu:
+    // ten drugi zawiera jeszcze nierozlozona dostawe, ktorej na polce fizycznie nie ma, wiec
+    // backend i tak by ja odrzucil ("przypisz cala ilosc (301) bez 20 z dostawy").
     if (!stan.zrodlo) {
       const mag = dane.magazyn;
-      el('input-ilosc').readOnly = (mag === 'K4');
-      if (mag === 'K4') {
-        const pelny = stan.artykul.stany_gt?.K4?.ilosc ?? null;
+      const calaIloscK4 = mag === 'K4' && !stan.zrodloPula;
+      el('input-ilosc').readOnly = calaIloscK4;
+      if (calaIloscK4) {
+        const pelny = stan.iloscSugestia != null
+          ? stan.iloscSugestia
+          : (stan.artykul.stany_gt?.K4?.ilosc ?? null);
         if (pelny != null && pelny > 0) {
           el('input-ilosc').value = String(pelny);
           aktualizujPozostanie();
+          aktualizujAkcjeLabel(); // .value ustawione z kodu nie odpala 'input' - etykieta przycisku
+                                  // zostalaby na starej liczbie (stad "pole 321 / ZAPISZ 301 szt.")
         }
       }
     }
@@ -1300,7 +1486,24 @@ async function zatwierdz() {
 
   const symbol = stan.artykul.artykul_symbol;
   let url, body, podsumowanie;
-  if (!stan.zrodlo) {
+  if (!stan.zrodlo && stan.zrodloPula) {
+    // ROZLOZENIE DOSTAWY: zrodlem jest nieprzypisana pula K4 (paleta lezy wg GT na dole,
+    // ale jedzie na gore). MM prosto z puli - polka pickowa NIE jest po drodze pompowana.
+    url = '/api/ruchy/rozloz';
+    body = {
+      artykul_gt_id: stan.artykul.artykul_gt_id,
+      mag_zrodlo_pula: stan.zrodloPula,
+      zrodlo_dok: stan.zrodloDok,
+      lok_cel_id: stan.cel.id,
+      artykul_symbol: stan.artykul.artykul_symbol,
+      artykul_nazwa: stan.artykul.artykul_nazwa,
+      ilosc: ilo,
+      operator: operator(),
+    };
+    podsumowanie = () => stan.zwrot
+      ? `Odniesiono zwrot ${symbol} (${ilo} szt.): ${stan.cel.kod}`
+      : `Rozłożono ${symbol} (${ilo} szt.): ${stan.zrodloPula} → ${stan.cel.kod}`;
+  } else if (!stan.zrodlo) {
     // przypisanie pierwszej/kolejnej lokalizacji w WMS (LOK)
     url = '/api/ruchy/lok';
     body = {
@@ -1382,7 +1585,8 @@ async function zatwierdz() {
   // przesuwa stan. LOK (zmiana lokalizacji w obrebie magazynu / przypisanie) NIE tworzy
   // dokumentu; jego 'pending' oznacza tylko zalegajacy sync pol lokalizacyjnych GT, a sama
   // zmiana w WMS jest juz zapisana i autorytatywna.
-  const wymagaDokumentuGt = url === '/api/ruchy/mm' || url === '/api/ruchy/przyjecie' || url === '/api/ruchy/mm-zewnetrzny';
+  const wymagaDokumentuGt = url === '/api/ruchy/mm' || url === '/api/ruchy/przyjecie'
+    || url === '/api/ruchy/mm-zewnetrzny' || url === '/api/ruchy/rozloz';
   const gtOczekuje = dane && dane.status && dane.status !== 'ok';
   const niepotwierdzoneMM = wymagaDokumentuGt && gtOczekuje;
   let tekst = podsumowanie();

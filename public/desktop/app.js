@@ -608,7 +608,7 @@ el('btn-rozjazdy-detekcja').addEventListener('click', async () => {
 // === LOG biznesowy (audyt: kto/co/gdzie/kiedy) ===
 
 const AKCJA_ETYKIETA = {
-  MM: 'MM', LOK: 'Zmiana lok.', przypisanie: 'Przypisanie', przyjecie: 'Przyjęcie',
+  MM: 'MM', LOK: 'Zmiana lok.', przypisanie: 'Przypisanie', przyjecie: 'Przyjęcie', rozlozenie: 'Rozłożenie',
   'MM-zewn': 'MM zewn.', Uzupelnienie: 'Uzupełnienie', usuniecie_ruchu: 'Usunięcie ruchu',
   lokalizacja_nowa: 'Nowa lok.', lokalizacja_edycja: 'Edycja lok.', lokalizacja_usuniecie: 'Usunięcie lok.',
   zapas_k4: 'Zapas K4', plan_lok: 'Plan lok.', import_lokalizacji: 'Import lok.',
@@ -1815,6 +1815,38 @@ function dodajMagWms(tbody, mag, loki, k4Zapas, planTekst) {
   const niezlok = Math.max(gt.ilosc - wmsSum, 0);
   let rezPokazana = false;
 
+  // Dostawy (PZ<-FZ) i zwroty (PZ<-KFS) - NAD lokalizacjami, bo to jedyne wiersze z realnym
+  // zadaniem (paleta stoi, zwrot lezy w strefie); reszta to tylko stan. Akcja idzie w
+  // /ruchy/rozloz: cel dowolny (dol/gora) i w dowolnych porcjach, bez pompowania polki
+  // pickowej po drodze - zob. routes/ruchy.js POST /rozloz.
+  const doRozlozenia = mag === 'K4'
+    ? [...(modalProdukt.dostawy_k4 || []), ...(modalProdukt.zwroty_k4 || [])]
+    : [];
+  for (const d of doRozlozenia) {
+    const zwrot = d.rodzaj === 'zwrot';
+    const tr = document.createElement('tr');
+    tr.className = 'rozklad-dostawa';
+    tr.appendChild(komorka(mag));
+    tr.appendChild(komorka(d.ilosc));
+    const tdLok = document.createElement('td');
+    tdLok.textContent = `${zwrot ? 'Zwrot' : 'Dostawa'} ${d.fz_nr || d.pz_nr || ''}`.trim();
+    const p = document.createElement('div');
+    p.className = 'rozklad-plan';
+    // przy zwrocie kontrahentem jest klient detaliczny - backend go nie oddaje (dane osobowe)
+    p.textContent = [zwrot ? 'Strefa zwrotów' : null, d.kontrahent, d.data].filter(Boolean).join(' · ');
+    p.title = `Przyjęte ${d.pz_nr || ''} — ${zwrot ? 'do odniesienia na regał' : 'do rozłożenia'}`;
+    tdLok.appendChild(p);
+    tr.appendChild(tdLok);
+    tr.appendChild(komorka());
+    const tdA = document.createElement('td');
+    tdA.appendChild(przyciskAkcji(zwrot ? 'Odnieś' : 'Rozłóż', () => otworzAkcje({
+      typ: 'pula', zrodloMag: mag, zrodloLokId: null, zrodloKod: null, dostepne: d.ilosc, dostawa: d,
+    }), true));
+    tr.appendChild(tdA);
+    tr.appendChild(komorka());
+    tbody.appendChild(tr);
+  }
+
   for (const l of wmsLoki) {
     const tr = document.createElement('tr');
     tr.appendChild(komorka(mag));
@@ -1862,11 +1894,18 @@ function dodajMagWms(tbody, mag, loki, k4Zapas, planTekst) {
     tbody.appendChild(tr);
   }
 
-  if (niezlok > 0) {
+  // Reszta deficytu (stary stan) - stara zasada 1 SKU = 1 lokalizacja, calosc na miejsce.
+  // Na K4 backend podaje ja wprost (nieprzypisane_k4); dostawa i zwrot maja swoje wiersze
+  // wyzej. Gdy GT padl i rozbicia nie ma wcale - pokazujemy caly deficyt.
+  const jestRozbicie = modalProdukt.dostawy_k4 || modalProdukt.zwroty_k4 || modalProdukt.nieprzypisane_k4 != null;
+  const nieprzypisane = (mag === 'K4' && jestRozbicie)
+    ? (modalProdukt.nieprzypisane_k4 || 0)
+    : niezlok;
+  if (nieprzypisane > 0) {
     const tr = document.createElement('tr');
     tr.className = 'rozklad-nieprzypisano';
     tr.appendChild(komorka(mag));
-    tr.appendChild(komorka(niezlok));
+    tr.appendChild(komorka(nieprzypisane));
     // Lokalizacja: "(nieprzypisano)" + plan z GT (sciaga gdzie rozlozyc), gdy jest
     const tdLok = document.createElement('td');
     tdLok.textContent = '(nieprzypisano)';
@@ -1880,7 +1919,7 @@ function dodajMagWms(tbody, mag, loki, k4Zapas, planTekst) {
     tr.appendChild(tdLok);
     tr.appendChild(komorka());
     const tdA = document.createElement('td');
-    tdA.appendChild(przyciskAkcji('Przypisz', () => otworzAkcje({ typ: 'gt', zrodloMag: mag, zrodloLokId: null, zrodloKod: null, dostepne: niezlok }), true));
+    tdA.appendChild(przyciskAkcji('Przypisz', () => otworzAkcje({ typ: 'gt', zrodloMag: mag, zrodloLokId: null, zrodloKod: null, dostepne: nieprzypisane }), true));
     tr.appendChild(tdA);
     tr.appendChild(komorka());
     tbody.appendChild(tr);
@@ -2011,9 +2050,17 @@ function otworzAkcje(ctx) {
   el('modal-akcja-overlay').classList.remove('hidden');
 
   // naglowek: typ akcji + (SKU nazwa — z zrodlo)
-  el('modal-akcja-typ').textContent = ctx.typ === 'gt' ? 'Przypisz' : 'Przenieś';
+  const zwrotCtx = ctx.typ === 'pula' && ctx.dostawa?.rodzaj === 'zwrot';
+  el('modal-akcja-typ').textContent = ctx.typ === 'gt' ? 'Przypisz'
+    : ctx.typ === 'pula' ? (zwrotCtx ? 'Odnieś zwrot' : 'Rozłóż') : 'Przenieś';
   let zrodloTxt;
   if (ctx.typ === 'gt') zrodloTxt = `z puli „nieprzypisano" (${MAG_LABEL[ctx.zrodloMag]})`;
+  else if (ctx.typ === 'pula') {
+    const d = ctx.dostawa || {};
+    zrodloTxt = zwrotCtx
+      ? `zwrot ${d.fz_nr || d.pz_nr || ''} ze strefy zwrotów`
+      : `dostawa ${d.fz_nr || d.pz_nr || ''}${d.kontrahent ? ' · ' + d.kontrahent : ''} (${MAG_LABEL[ctx.zrodloMag]})`;
+  }
   else if (ctx.typ === 'ext') zrodloTxt = `z ${MAG_LABEL[ctx.zrodloMag]}`;
   else zrodloTxt = `z ${ctx.zrodloKod} (${MAG_LABEL[ctx.zrodloMag]})`;
   el('modal-akcja-tytul').innerHTML = `<strong>${modalProdukt.symbol}</strong> ${modalProdukt.nazwa} <span class="modal-akcja-zrodlo">${zrodloTxt}</span>`;
@@ -2021,10 +2068,26 @@ function otworzAkcje(ctx) {
   el('modal-akcja-ile').value = ctx.dostepne || 1;
 
   const magSel = el('modal-akcja-magazyn');
+
+  // Rozlozenie dostawy dotyczy wylacznie magazynow WMS (K4/K4G) - zewnetrzne nie maja
+  // lokalizacji, a backend i tak by je odrzucil. Chowamy je, zeby select nie prowadzil
+  // w slepy zaulek. Dla pozostalych akcji pelna lista wraca.
+  for (const opt of magSel.options) {
+    opt.hidden = ctx.typ === 'pula' && !mmCzyWms(opt.value);
+    opt.disabled = opt.hidden;
+  }
+
   if (ctx.typ === 'gt') {
     // przypisanie tylko w obrębie tego samego magazynu WMS
     magSel.value = ctx.zrodloMag;
     magSel.disabled = true;
+  } else if (ctx.typ === 'pula') {
+    // Rozkladanie dostawy/zwrotu: cel DOWOLNY i w dowolnych porcjach - czesc moze zostac na
+    // dole (K4, wtedy samo przypisanie), reszta jedzie na gore (K4G, wtedy MM). Backend
+    // rozpoznaje operacje po magazynie celu. Domysl bez blokady: dostawa najczesciej idzie
+    // na gore, a zwrot wraca na regal.
+    magSel.disabled = false;
+    magSel.value = zwrotCtx ? 'K4' : (ctx.zrodloMag === 'K4' ? 'K4G' : 'K4');
   } else {
     magSel.disabled = false;
     // domyslny cel: przesuniecie miedzy K4 a K4G (uzupelnianie/odkladanie).
@@ -2090,7 +2153,14 @@ el('btn-modal-akcja-wykonaj').addEventListener('click', async () => {
 
   // dobór operacji: w obrębie magazynu WMS / przypisanie z GT -> LOK; między magazynami -> MM
   let url, body;
-  if (ctx.typ === 'gt') {
+  if (ctx.typ === 'pula') {
+    // MM prosto z nieprzypisanej puli - polka pickowa nie jest po drodze pompowana.
+    // zrodlo_dok = ktory dokument rozkladamy; backend go weryfikuje i po nim rozlicza kubelek.
+    url = '/api/ruchy/rozloz';
+    body = { artykul_gt_id: modalProdukt.artykul_gt_id, mag_zrodlo_pula: ctx.zrodloMag,
+             zrodlo_dok: ctx.dostawa?.pz_nr ?? null, lok_cel_id: lokCelId, ilosc: ile,
+             operator: operator(), artykul_symbol: modalProdukt.symbol, artykul_nazwa: modalProdukt.nazwa, artykul_ean: modalProdukt.ean ?? null };
+  } else if (ctx.typ === 'gt') {
     url = '/api/ruchy/lok';
     body = { artykul_gt_id: modalProdukt.artykul_gt_id, lok_zrodlo_id: null, lok_cel_id: lokCelId, ilosc: ile,
              operator: operator(), artykul_symbol: modalProdukt.symbol, artykul_nazwa: modalProdukt.nazwa };

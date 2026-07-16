@@ -49,7 +49,9 @@ async function wykonajRuchGTWewn(ruchId) {
   let bladDok = null;
 
   if (ruch.typ === 'MM' && !ruch.dok_gt_numer) {
-    const magazynZrodlowy = zrodlo ? zrodlo.magazyn : ruch.mag_zrodlo_zewnetrzny;
+    // Zrodlo bez lokalizacji WMS: magazyn zewnetrzny (przyjecie z MAG/LS) albo nieprzypisana
+    // pula magazynu WMS (dostawa lezy wg GT na K4, nie ma jeszcze miejsca w WMS).
+    const magazynZrodlowy = zrodlo ? zrodlo.magazyn : (ruch.mag_zrodlo_zewnetrzny || ruch.mag_zrodlo_pula);
     const magazynDocelowy = cel ? cel.magazyn : ruch.mag_cel_zewnetrzny;
     const magZrodloId = MAGAZYN_GT_ID[magazynZrodlowy];
     const magCelId = MAGAZYN_GT_ID[magazynDocelowy];

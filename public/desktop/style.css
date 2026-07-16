@@ -691,6 +691,18 @@ main {
   font-style: italic;
 }
 
+/* Wiersz dostawy do rozlozenia. Kolor informacyjny, NIE ostrzegawczy jak
+   .rozklad-nieprzypisano: dostawa to normalna robota, a nie usterka do wyjasnienia. */
+.rozklad-dostawa td:nth-child(2),
+.rozklad-dostawa td:nth-child(3) {
+  color: #1f5f99;
+  font-weight: 600;
+}
+.rozklad-dostawa .rozklad-plan {
+  color: #1f5f99;
+  font-weight: normal;
+}
+
 .rozklad-puste {
   color: #999;
   font-size: 0.85rem;

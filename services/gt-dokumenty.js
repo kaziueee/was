@@ -9,7 +9,12 @@
 // Schemat GT: naglowki dok__Dokument (dok_Id, dok_NrPelny, dok_Typ=9=MM), pozycje
 // dok_Pozycja (klucz ob_DokMagId = dok_Id, ob_TowId, ob_Ilosc).
 
-const { query } = require('./gt-sql');
+const { query, naCzesci } = require('./gt-sql');
+const db = require('../db/database');
+
+// Kod magazynu WMS (ruchy.mag_zrodlo_pula) - NIE mylic z MAG_K4 nizej, ktore jest
+// identyfikatorem magazynu w GT (sl_Magazyn.mag_Id = 4).
+const MAG_KOD_K4 = 'K4';
 
 // Uwagi dokumentu MM (Faza A#3): Node buduje tu cala tresc, ktora most C# wpisuje do
 // dok_Uwagi wystawianego dokumentu. Sklada sie z klucza idempotencji + kto + kiedy:
@@ -124,4 +129,133 @@ async function pobierzZkRezerwujaceK4(twId) {
   }));
 }
 
-module.exports = { znajdzMM, znajdzMMpoKluczu, kluczRuchu, budujUwagiMM, pobierzZkRezerwujaceK4 };
+// Nierozlozony towar przyjety na K4 - DOSTAWY (z faktury zakupu) i ZWROTY (z korekty
+// sprzedazy). Oba przychodza tym samym dokumentem magazynowym (PZ), wiec rozroznia je
+// dopiero dokument ZRODLOWY (dok_DoDokId):
+//   PZ <- FZ  (dok_Typ=1) = dostawa - paleta od dostawcy, jedzie w calosci na gore
+//   PZ <- KFS (dok_Typ=6) = zwrot od klienta - lezy w strefie zwrotow, wraca na regal
+//
+// Skala na zywej bazie (90 dni, mag 4): FZ = 24 dokumenty / 168 069 szt. (srednio 715);
+// KFS = 947 dokumentow / 1 162 szt. (srednio 1,1). Czyli 97% PZ-tow to zwroty, ale 99,3%
+// sztuk to dostawy - dlatego filtrujemy po rodzaju dokumentu zrodlowego, a nie po PZ.
+//
+// Okno liczymy po dacie PZ (= data przyjecia, dok_DataWyst = dok_DataMag), a NIE po dacie
+// FZ: faktura bywa starsza od przyjecia (na zywej bazie do 35 dni), bo PZ powstaje dopiero
+// przy wywolaniu dostawy. Dokument zrodlowy daje wylacznie podpis.
+//
+// Kontrahent TYLKO przy dostawie: tam to firma (kh_Symbol, np. "YIWUCHI"). Przy zwrocie
+// kontrahentem jest KLIENT DETALICZNY - czyli dane osobowe osoby prywatnej, bezuzyteczne
+// dla magazyniera. Zwrot podpisujemy samym numerem KFS, ktory wystarcza do presledzenia.
+//
+// Rzuca, gdy GT SQL niedostepny - wywolujacy decyduje (dolaczDaneGt tlumi i oddaje payload
+// bez dostaw, bo brak GT nie moze blokowac podstawowych funkcji WMS).
+const PZ_TYP = 10;
+const FZ_TYP = 1;
+const KFS_TYP = 6;
+const DOSTAWY_OKNO_DNI = 90;
+
+async function pobierzDostawyK4(twIds) {
+  const wynik = new Map();
+  if (!twIds || twIds.length === 0) return wynik;
+
+  const od = new Date(Date.now() - DOSTAWY_OKNO_DNI * 24 * 60 * 60 * 1000);
+
+  await Promise.all(naCzesci([...new Set(twIds.map(String))], 1000).map(async (paczka) => {
+    const parametry = { pzTyp: PZ_TYP, fzTyp: FZ_TYP, kfsTyp: KFS_TYP, mag: MAG_K4, od };
+    const placeholders = paczka.map((id, i) => {
+      parametry[`t${i}`] = Number(id);
+      return `@t${i}`;
+    }).join(', ');
+
+    const { recordset } = await query(`
+      SELECT o.ob_TowId, pz.dok_Id AS pz_id, pz.dok_NrPelny AS pz_nr,
+             zr.dok_Typ AS zrodlo_typ, zr.dok_NrPelny AS zrodlo_nr, kh.kh_Symbol AS kontrahent,
+             pz.dok_DataWyst AS data, SUM(o.ob_Ilosc) AS ilosc
+      FROM dok__Dokument pz
+      JOIN dok_Pozycja o ON o.ob_DokMagId = pz.dok_Id
+      JOIN dok__Dokument zr ON zr.dok_Id = pz.dok_DoDokId AND zr.dok_Typ IN (@fzTyp, @kfsTyp)
+      LEFT JOIN kh__Kontrahent kh ON kh.kh_Id = pz.dok_PlatnikId
+      WHERE pz.dok_Typ = @pzTyp AND o.ob_MagId = @mag AND pz.dok_DataWyst >= @od
+        AND o.ob_TowId IN (${placeholders})
+      GROUP BY o.ob_TowId, pz.dok_Id, pz.dok_NrPelny, zr.dok_Typ, zr.dok_NrPelny, kh.kh_Symbol, pz.dok_DataWyst
+      ORDER BY pz.dok_DataWyst DESC, pz.dok_Id DESC
+    `, parametry);
+
+    for (const r of recordset) {
+      const klucz = String(r.ob_TowId);
+      if (!wynik.has(klucz)) wynik.set(klucz, []);
+      const dostawa = r.zrodlo_typ === FZ_TYP;
+      wynik.get(klucz).push({
+        rodzaj: dostawa ? 'dostawa' : 'zwrot',
+        pz_nr: r.pz_nr ? String(r.pz_nr).trim() : null,
+        fz_nr: r.zrodlo_nr ? String(r.zrodlo_nr).trim() : null,
+        // przy zwrocie kontrahentem jest klient detaliczny (dane osobowe) - nie wynosimy go
+        // na ekran magazynu; numer KFS wystarcza do presledzenia
+        kontrahent: dostawa && r.kontrahent ? String(r.kontrahent).trim() : null,
+        data: r.data instanceof Date ? r.data.toISOString().slice(0, 10) : null,
+        ilosc: Number(r.ilosc) || 0,
+      });
+    }
+  }));
+
+  // Od najnowszej: nierozlozona jest zwykle ta swieza, starsze zdazyly pojsc na gore.
+  // Paczki wracaja rownolegle, wiec sortujemy po scaleniu, nie polegamy na ORDER BY.
+  for (const lista of wynik.values()) {
+    lista.sort((a, b) => String(b.data).localeCompare(String(a.data)));
+  }
+  return wynik;
+}
+
+// Ile z KONKRETNEGO dokumentu (PZ dostawy albo zwrotu) juz rozlozono - suma naszych
+// wlasnych ruchow z puli, podpisanych numerem tego dokumentu (ruchy.zrodlo_dok).
+//
+// Po co per dokument, a nie sumarycznie: SKU moze miec naraz dostawe (paleta) i zwrot
+// (sztuka w strefie). Gdybysmy liczyli lacznie, rozlozenie palety zjadaloby licznik zwrotu
+// i wiersz "Zwrot" znikalby, mimo ze sztuka dalej lezy w strefie.
+//
+// Liczymy z ruchow, a nie z osobnej tabeli, bo /ruchy/rozloz to JEDYNA droga wyprowadzenia
+// towaru z puli. Przypisanie starego stanu idzie przez /ruchy/lok (bez mag_zrodlo_pula),
+// wiec go nie liczy - i slusznie, bo to inny kubelek.
+function iloscRozlozonaZDokumentu(artykulGtId, magazyn, dokNr) {
+  if (!dokNr) return 0;
+  const r = db.prepare(`
+    SELECT COALESCE(SUM(ilosc), 0) AS suma FROM ruchy
+    WHERE artykul_gt_id = ? AND mag_zrodlo_pula = ? AND zrodlo_dok = ? AND status != 'blad'
+  `).get(String(artykulGtId), magazyn, String(dokNr));
+  return Number(r.suma) || 0;
+}
+
+// Rozbija deficyt K4 (stan GT - suma WMS) na trzy kubelki, ktore NIE nachodza na siebie:
+//   dostawy  - PZ<-FZ, paleta od dostawcy (rozkladana dowolnie, dol/gora, w czesciach)
+//   zwroty   - PZ<-KFS, sztuki lezace w strefie zwrotow (wracaja na regal)
+//   reszta   - stary stan, ktorego WMS nigdy nie poznal (stara zasada 1 SKU = 1 lokalizacja)
+//
+// Kubelek dokumentu = ilosc z PZ MINUS to, co z TEGO dokumentu juz rozlozylismy. Na koniec
+// wszystko jest capowane deficytem: gdy czesc zeszla sprzedaza (GT spada bez wiedzy WMS),
+// PZ nadal mowi 200, a deficyt juz tylko 195 - bierzemy 195. Dzieki temu rozlozone pozycje
+// znikaja same i nie wracaja jak zombie, niezaleznie od dlugosci okna.
+//
+// Kolejnosc capowania: najpierw dostawy i zwroty (mamy na nie dokument), na koncu reszta -
+// bo to ona jest "niewyjasniona" i to ona ma absorbowac niedobor.
+function rozbijDeficytK4(deficyt, dokumenty, { artykul_gt_id, magazyn = MAG_KOD_K4 } = {}) {
+  let zostalo = Math.max(Number(deficyt) || 0, 0);
+  const dostawy = [];
+  const zwroty = [];
+
+  for (const d of dokumenty || []) {
+    if (zostalo <= 0) break;
+    const juz = artykul_gt_id ? iloscRozlozonaZDokumentu(artykul_gt_id, magazyn, d.pz_nr) : 0;
+    const pozostalo = d.ilosc - juz;
+    if (pozostalo <= 0) continue;             // ten dokument juz rozlozony w calosci
+    const ilosc = Math.min(pozostalo, zostalo);
+    (d.rodzaj === 'zwrot' ? zwroty : dostawy).push({ ...d, ilosc });
+    zostalo -= ilosc;
+  }
+
+  return { dostawy, zwroty, reszta: zostalo };
+}
+
+module.exports = {
+  znajdzMM, znajdzMMpoKluczu, kluczRuchu, budujUwagiMM, pobierzZkRezerwujaceK4,
+  pobierzDostawyK4, rozbijDeficytK4,
+};

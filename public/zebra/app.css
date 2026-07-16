@@ -158,6 +158,7 @@ html, body {
 .stan-box .sb-ilosc { display: block; font-size: var(--font-body); font-weight: 700; color: var(--color-primary); white-space: nowrap; }
 .chip-tekst { font-size: var(--font-label); color: var(--color-text-muted); align-self: center; }
 .chip.chip-uwaga { background: var(--color-danger-bg); border-color: var(--color-danger); color: var(--color-danger); }
+.chip.chip-dostawa { background: var(--color-info-bg); border-color: var(--color-info); color: var(--color-info); font-weight: 600; }
 /* chip rezerwacji (kontekst zrodla na kroku celu) - zolty, tylko gdy rez > 0 */
 .chip.chip-rez { background: var(--color-warning-bg); border-color: var(--color-warning); color: var(--color-warning); font-weight: 600; }
 
@@ -406,6 +407,20 @@ html, body {
   color: var(--color-danger);
   border-color: var(--color-danger);
   background: var(--color-surface);
+}
+/* Wiersz dostawy do rozlozenia. Nadpisuje czerwien .brak: dostawa to normalna robota
+   ("przyjechala paleta, wywieziesz ja na gore"), a nie awaria - czerwony krzyczalby tym
+   samym glosem co realny rozjazd i magazynier przestalby go odrozniac. */
+.lista-poz.brak.dostawa {
+  background: var(--color-info-bg);
+  border-color: var(--color-info);
+  border-left-color: var(--color-info);
+}
+.lista-poz.brak.dostawa .poz-kod,
+.lista-poz.brak.dostawa .poz-ilosc { color: var(--color-info); }
+.lista-poz.brak.dostawa .poz-mag {
+  color: var(--color-info);
+  border-color: var(--color-info);
 }
 .lista-poz .poz-plan {
   font-size: var(--font-label);

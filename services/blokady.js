@@ -26,10 +26,17 @@ function status(artykulGtId) {
 
 // Proba przejecia locka. Zwraca { zajete:true, przez } gdy trzyma go KTO INNY (aktywnie),
 // albo { zajete:false, moje:true } gdy przejeto (wolne / wlasne / przeterminowane).
+//
+// Porownujemy po UZYTKOWNIKU, nie po tokenie: token jest per urzadzenie/karta, wiec ten sam
+// magazynier na Zebrze i na desktopie ma dwa rozne tokeny i blokowal SAM SIEBIE - z
+// komunikatem "Produkt edytuje Mateusz" wyswietlanym Mateuszowi. Lock ma chronic przed
+// KIMS INNYM ("A na przerwie, B edytuje, A wraca i zatwierdza na starych danych"); dwa
+// urzadzenia tej samej osoby to nie ten przypadek - wtedy lock po prostu przechodzi na
+// nowe urzadzenie (INSERT ... ON CONFLICT nizej nadpisuje token).
 function zajmij(artykulGtId, sesja) {
   sprzatnij();
   const ist = db.prepare('SELECT * FROM blokady_edycji WHERE artykul_gt_id=?').get(artykulGtId);
-  if (ist && ist.token !== sesja.token && !przeterminowana(ist)) {
+  if (ist && ist.uzytkownik_id !== sesja.uzytkownik_id && !przeterminowana(ist)) {
     return { zajete: true, przez: ist.imie, od: ist.czas_start };
   }
   db.prepare(`INSERT INTO blokady_edycji (artykul_gt_id, uzytkownik_id, imie, token, czas_start, heartbeat)
@@ -63,7 +70,9 @@ function middlewareRuch(req, res, next) {
   const id = req.body && req.body.artykul_gt_id;
   if (!id || !req.uzytkownik) return next();
   const b = status(String(id));
-  if (b && b.token !== req.uzytkownik.token) {
+  // Jak w zajmij(): po UZYTKOWNIKU, nie po tokenie - inaczej wlasna sesja z drugiego
+  // urzadzenia (Zebra vs desktop) odrzucalaby wlasny zapis.
+  if (b && b.uzytkownik_id !== req.uzytkownik.uzytkownik_id) {
     return res.status(409).json({ blad: `Produkt edytuje ${b.imie} — odśwież i otwórz ponownie` });
   }
   next();

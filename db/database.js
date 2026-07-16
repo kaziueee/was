@@ -34,6 +34,25 @@ if (!kolumnyRuchow.some((k) => k.name === 'mag_zrodlo_zewnetrzny')) {
   console.log('Migracja: dodano kolumne mag_zrodlo_zewnetrzny do ruchy');
 }
 
+// migracja: dodaj mag_zrodlo_pula do ruchy - MM z NIEPRZYPISANEJ puli magazynu WMS
+// (dostawa stoi na K4 wg GT, ale nie ma jeszcze lokalizacji WMS - jedzie prosto na K4G).
+// Osobna kolumna, a NIE mag_zrodlo_zewnetrzny: to drugie znaczy "przyjecie z MAG/LS" i jest
+// czytane przez Sciezki jako "swiezo dolozony stan, pomin przez 30 dni" (services/sciezki.js).
+// Wpisanie tam 'K4' zatrulo by tamten filtr.
+if (!kolumnyRuchow.some((k) => k.name === 'mag_zrodlo_pula')) {
+  db.exec('ALTER TABLE ruchy ADD COLUMN mag_zrodlo_pula TEXT');
+  console.log('Migracja: dodano kolumne mag_zrodlo_pula do ruchy');
+}
+
+// migracja: dodaj zrodlo_dok do ruchy - numer dokumentu GT, z ktorego pochodzi rozkladana
+// pula (PZ dostawy albo PZ zwrotu). Bez tego "ile z tej dostawy juz rozlozono" trzeba by
+// zgadywac heurystyka po sumie ruchow z mag_zrodlo_pula - a gdy SKU ma naraz dostawe i zwrot,
+// nie da sie ich rozroznic i rozlozenie jednego zjadaloby licznik drugiego.
+if (!kolumnyRuchow.some((k) => k.name === 'zrodlo_dok')) {
+  db.exec('ALTER TABLE ruchy ADD COLUMN zrodlo_dok TEXT');
+  console.log('Migracja: dodano kolumne zrodlo_dok do ruchy');
+}
+
 // migracja: dodaj dok_gt_id (PK dokumentu GT) do ruchy. dok_NrPelny NIE jest unikalny
 // (numeracja MM resetuje sie per magazyn/rok), wiec sam numer nie identyfikuje dokumentu
 // jednoznacznie - dok_Id (PK sl. dok__Dokument) domyka gwarancje zgodnosci numeru WMS<->GT.

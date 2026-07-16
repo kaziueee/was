@@ -1,9 +1,10 @@
 const express = require('express');
 const db = require('../db/database');
-const { MAGAZYNY_ZEWNETRZNE } = require('../config/magazyny');
+const { MAGAZYNY_WMS, MAGAZYNY_ZEWNETRZNE } = require('../config/magazyny');
 const { wykonajRuchGT } = require('../services/ruchy-gt');
 const gtFields = require('../services/gt-fields');
 const { pobierzStanyGt, dostepneWGt } = require('../services/gt-produkty');
+const gtDokumenty = require('../services/gt-dokumenty');
 const audyt = require('../services/audyt');
 
 const router = express.Router();
@@ -285,8 +286,37 @@ router.post('/lok', async (req, res, next) => {
     // K4 = 1 SKU = 1 lokalizacja = CALA ilosc. Czesciowe pierwsze przypisanie zostawiloby
     // K4 z niepelnym stanem, a kolejne przypisanie blokuje "juz ma lokalizacje K4" -> zakleszczenie.
     // Wymagamy calej dostepnej ilosci, tak jak przy zmianie lokalizacji K4 (1 SKU = 1 lokalizacja).
-    if (cel.magazyn === 'K4' && ilo !== deficyt) {
-      return res.status(400).json({ blad: `W magazynie K4 przypisz cala ilosc (${deficyt} szt.) - 1 SKU = 1 lokalizacja` });
+    //
+    // "Cala ilosc" NIE obejmuje jednak nierozlozonej dostawy ani zwrotu czekajacego w strefie:
+    // te sztuki wg GT sa na K4, ale fizycznie leza na palecie / w strefie zwrotow i NIE MOGA
+    // byc na polce pickowej. Zadanie "przypisz wszystkie 30" przy dostawie 20 w drodze bylo
+    // wiec zadaniem wpisania nieprawdy - i wiazalo niezalezne rzeczy w kolejnosc (stary stan
+    // dopiero PO dostawie). Odejmujemy oba kubelki, dzieki czemu kazdy rozklada sie osobno
+    // i w dowolnej kolejnosci (zob. POST /rozloz).
+    if (cel.magazyn === 'K4') {
+      let wDrodze = 0;
+      let opisKubelkow = [];
+      try {
+        const dok = (await gtDokumenty.pobierzDostawyK4([artykul_gt_id])).get(String(artykul_gt_id)) || [];
+        const r = gtDokumenty.rozbijDeficytK4(deficyt, dok, { artykul_gt_id });
+        const sumaDostaw = r.dostawy.reduce((s, d) => s + d.ilosc, 0);
+        const sumaZwrotow = r.zwroty.reduce((s, d) => s + d.ilosc, 0);
+        wDrodze = sumaDostaw + sumaZwrotow;
+        if (sumaDostaw > 0) opisKubelkow.push(`${sumaDostaw} szt. z nierozlozonej dostawy`);
+        if (sumaZwrotow > 0) opisKubelkow.push(`${sumaZwrotow} szt. ze zwrotu w strefie`);
+      } catch (err) {
+        return res.status(503).json({ blad: 'Nie mozna sprawdzic dostaw w GT - przypisanie wstrzymane. Sprobuj ponownie.' });
+      }
+      const doPrzypisania = deficyt - wDrodze;
+      if (doPrzypisania <= 0) {
+        return res.status(409).json({
+          blad: `Caly nieprzypisany stan K4 (${deficyt} szt.) to ${opisKubelkow.join(' i ')} - rozloz to z wlasciwego wiersza, nie przypisuj na polke.`,
+        });
+      }
+      if (ilo !== doPrzypisania) {
+        const bez = opisKubelkow.length > 0 ? ` (bez ${opisKubelkow.join(' i ')})` : '';
+        return res.status(400).json({ blad: `W magazynie K4 przypisz cala ilosc (${doPrzypisania} szt.)${bez} - 1 SKU = 1 lokalizacja` });
+      }
     }
 
     // Odczyt obecnej lokalizacji GT PRZED nadpisaniem (K4 -> tw_Pole1, K4G -> tw_Pole8).
@@ -468,6 +498,180 @@ router.post('/przyjecie', async (req, res, next) => {
     audyt.zapisz({
       uzytkownik: operator, akcja: 'przyjecie', artykul_gt_id, artykul_symbol: symbolDoWpisu,
       magazyn: cel.magazyn, lokalizacja: `${zrodloMag} → ${cel.kod}`,
+      ilosc: ilo, wynik: wynikRuch.status, ruch_id: ruchId, dok_gt_numer: wynikRuch.dok_gt_numer,
+    });
+    res.status(201).json(wynikRuch);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/ruchy/rozloz - rozklada NIEPRZYPISANA pule magazynu WMS (w praktyce: dostawe,
+// ktora wg GT lezy na K4, ale fizycznie stoi na palecie i nie ma jeszcze miejsca w WMS).
+// Cel dowolny i w dowolnych porcjach: czesc moze zostac na dole (K4), reszta jechac na gore
+// (K4G), w tylu ratach, ile jest palet.
+//
+// Dwie operacje pod jednym adresem - o tym decyduje magazyn CELU, nie osobny endpoint:
+//   cel w INNYM magazynie (K4 -> K4G) = MM, bo towar zmienia magazyn -> dokument w GT
+//   cel w TYM SAMYM magazynie (pula K4 -> polka K4) = LOK, bo wg GT towar juz tam lezy;
+//     zmienia sie tylko to, ze WMS wreszcie wie GDZIE. Zaden dokument nie jest potrzebny
+//     (CLAUDE.md: LOK = "lokalizowanie po PZ/FZ, bez dokumentu GT").
+//
+// Po co osobna sciezka zamiast "przypisz, potem zrob MM":
+// Dostawa fizycznie nie dotyka polki pickowej - PZ ksieguje ja na K4, ale paleta jedzie od
+// razu na gore. Droga dwukrokowa (przypisz cala dostawe na D3 -> MM z D3 na K4G) przeprowadza
+// WMS przez stan, w ktorym polka na 20 szt. rzekomo trzyma 4757. Gdy magazynier przerwie miedzy
+// krokami, GT i WMS sa ZGODNE (bo przypisanie podbilo kopie), wiec job rozjazdow widzi roznice
+// zero i zamraza to klamstwo na stale - nic go juz nie wykryje. Tutaj zrodlo nie ma lokalizacji,
+// wiec kopia WMS polki nie jest ruszana i stanu posredniego po prostu nie ma.
+//
+// UWAGA - czym to sie rozni od POST /ruchy/lok: tam przypisanie na K4 musi objac CALA
+// nieprzypisana ilosc ("1 SKU = 1 lokalizacja = caly stan K4"). Tutaj czesciowe jest
+// DOZWOLONE i to jest sedno: w trakcie dostawy WMS K4 z zalozenia jest mniejsze od stanu GT,
+// bo reszta stoi na palecie. Zasada "1 SKU = 1 lokalizacja" NIE jest tu naruszona - nadal
+// wolno dolozyc wylacznie do tego jednego miejsca K4 (nizej: 409 przy innej lokalizacji).
+//
+// Inwarianty: (1) ilosc <= deficyt magazynu zrodlowego (stan GT - suma WMS) - inaczej po ruchu
+// zrobiloby sie GT < WMS i auto-korekta scielaby polke, gubiac stan, ktorego nikt nie ruszal;
+// (2) tylko dla MM: ilosc <= stan GT - rezerwacja (zasada 6) - inaczej Sfera odrzuca dokument
+// i ruch wisi pending. Przy LOK nic z magazynu nie wychodzi, wiec rezerwacja nie ogranicza.
+router.post('/rozloz', async (req, res, next) => {
+  const { artykul_gt_id, mag_zrodlo_pula, zrodlo_dok, lok_cel_id, ilosc, operator,
+          artykul_symbol, artykul_nazwa, artykul_ean } = req.body ?? {};
+
+  if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });
+  const zrodloMag = String(mag_zrodlo_pula ?? '').trim().toUpperCase();
+  if (!MAGAZYNY_WMS.includes(zrodloMag)) {
+    return res.status(400).json({ blad: `Pole "mag_zrodlo_pula" musi byc jednym z: ${MAGAZYNY_WMS.join(', ')}` });
+  }
+  if (!Number.isInteger(lok_cel_id)) return res.status(400).json({ blad: 'Pole "lok_cel_id" jest wymagane' });
+  const ilo = Number(ilosc);
+  if (!Number.isFinite(ilo) || ilo <= 0) return res.status(400).json({ blad: 'Pole "ilosc" musi byc liczba > 0' });
+
+  const cel = db.prepare('SELECT * FROM lokalizacje WHERE id = ?').get(lok_cel_id);
+  if (!cel) return res.status(404).json({ blad: 'Lokalizacja docelowa nie istnieje' });
+  if (cel.aktywna !== 1) return res.status(409).json({ blad: 'Lokalizacja docelowa jest nieaktywna' });
+  if (!MAGAZYNY_WMS.includes(cel.magazyn)) {
+    return res.status(400).json({ blad: 'Rozlozenie moze trafic tylko do magazynu WMS (K4/K4G)' });
+  }
+  // Magazyn celu decyduje o operacji: inny = MM (dokument w GT), ten sam = LOK (samo
+  // wskazanie miejsca, towar wg GT juz tam jest).
+  const typRuchu = cel.magazyn === zrodloMag ? 'LOK' : 'MM';
+
+  if (cel.magazyn === 'K4') {
+    const inna = db.prepare(
+      `SELECT l.kod FROM stany_lokalizacji s
+       JOIN lokalizacje l ON l.id = s.lokalizacja_id
+       WHERE s.artykul_gt_id = ? AND l.magazyn = 'K4' AND s.ilosc > 0 AND l.id != ?`
+    ).get(artykul_gt_id, lok_cel_id);
+    if (inna) {
+      return res.status(409).json({ blad: `Artykul ma juz lokalizacje w K4 (${inna.kod}) - 1 SKU = 1 lokalizacja` });
+    }
+  }
+
+  let gtZrodla;
+  try {
+    gtZrodla = await dostepneWGt(artykul_gt_id, zrodloMag);
+  } catch (err) {
+    return res.status(503).json({ blad: 'Nie mozna zweryfikowac stanu GT (most niedostepny) - rozlozenie wstrzymane. Sprobuj ponownie.' });
+  }
+  const sumaWms = db.prepare(
+    `SELECT COALESCE(SUM(s.ilosc), 0) AS suma FROM stany_lokalizacji s
+     JOIN lokalizacje l ON l.id = s.lokalizacja_id
+     WHERE s.artykul_gt_id = ? AND l.magazyn = ?`
+  ).get(artykul_gt_id, zrodloMag).suma;
+
+  const deficyt = gtZrodla.stan - sumaWms;
+  if (deficyt <= 0) {
+    return res.status(409).json({ blad: `W ${zrodloMag} nie ma nieprzypisanego stanu (GT: ${gtZrodla.stan}, w WMS: ${sumaWms}) - nie ma czego rozkladac.` });
+  }
+  if (ilo > deficyt) {
+    return res.status(409).json({ blad: `Mozna rozlozyc najwyzej ${deficyt} szt. z puli ${zrodloMag} (GT: ${gtZrodla.stan}, juz w WMS: ${sumaWms}).` });
+  }
+  // Zasada 6 dotyczy tylko MM - rezerwacja blokuje WYPROWADZENIE towaru z magazynu.
+  // Przy LOK (cel w tym samym magazynie) nic z niego nie wychodzi, wiec nie ogranicza.
+  if (typRuchu === 'MM' && ilo > gtZrodla.dostepne) {
+    return res.status(409).json({ blad: `W ${zrodloMag} mozna wyprowadzic najwyzej ${Math.max(gtZrodla.dostepne, 0)} szt. wg GT (stan ${gtZrodla.stan}, rezerwacja ${gtZrodla.rezerwacja} blokuje MM).` });
+  }
+
+  // KTORY dokument jest rozkladany. Front podaje numer PZ klikanego wiersza, ale backend go
+  // WERYFIKUJE wlasnym rozbiciem (gt-dokumenty) - inaczej klient mogby podpisac ruch dowolna
+  // dostawa i zafalszowac zarowno log, jak i rozliczenie kubelka (ruchy.zrodlo_dok steruje
+  // tym, ile z danego dokumentu zostalo do rozlozenia).
+  let zrodloOpis = '(nieprzypisane)';
+  let zrodloDokumenty = null;
+  let dokDoZapisu = null;
+  try {
+    const dokumenty = (await gtDokumenty.pobierzDostawyK4([artykul_gt_id])).get(String(artykul_gt_id)) || [];
+    const { dostawy, zwroty } = gtDokumenty.rozbijDeficytK4(deficyt, dokumenty, { artykul_gt_id, magazyn: zrodloMag });
+    const pula = [...dostawy, ...zwroty];
+
+    if (zrodlo_dok) {
+      const poz = pula.find((d) => d.pz_nr === String(zrodlo_dok));
+      if (!poz) {
+        return res.status(409).json({
+          blad: `Dokument ${zrodlo_dok} nie ma juz nic do rozlozenia dla tego artykulu - odswiez karte produktu.`,
+        });
+      }
+      if (ilo > poz.ilosc) {
+        return res.status(409).json({
+          blad: `Z dokumentu ${poz.fz_nr || poz.pz_nr} zostalo ${poz.ilosc} szt. - nie mozna rozlozyc ${ilo}.`,
+        });
+      }
+      dokDoZapisu = poz.pz_nr;
+      zrodloOpis = poz.rodzaj === 'zwrot' ? 'zwrot' : 'dostawa';
+      zrodloDokumenty = { [zrodloOpis]: poz.fz_nr || poz.pz_nr };
+      if (poz.kontrahent) zrodloDokumenty.kontrahent = poz.kontrahent;
+    }
+  } catch { /* GT niedostepne - log bez opisu dokumentu, ruch idzie dalej */ }
+
+  const symbolDoWpisu = artykul_symbol
+    ?? db.prepare("SELECT artykul_symbol FROM stany_lokalizacji WHERE artykul_gt_id = ? LIMIT 1").get(artykul_gt_id)?.artykul_symbol
+    ?? String(artykul_gt_id);
+  const nazwaDoWpisu = artykul_nazwa
+    ?? db.prepare("SELECT artykul_nazwa FROM stany_lokalizacji WHERE artykul_gt_id = ? LIMIT 1").get(artykul_gt_id)?.artykul_nazwa
+    ?? '';
+  const eanDoWpisu = artykul_ean
+    ?? db.prepare("SELECT artykul_ean FROM stany_lokalizacji WHERE artykul_gt_id = ? LIMIT 1").get(artykul_gt_id)?.artykul_ean
+    ?? null;
+
+  let ruchId;
+  db.exec('BEGIN');
+  try {
+    const ruch = db.prepare(`
+      INSERT INTO ruchy (typ, artykul_gt_id, artykul_symbol, lok_zrodlo_id, lok_cel_id, mag_zrodlo_pula, zrodlo_dok, ilosc, status, operator)
+      VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 'pending', ?)
+    `).run(typRuchu, artykul_gt_id, symbolDoWpisu, lok_cel_id, zrodloMag, dokDoZapisu, ilo, operator ?? null);
+    ruchId = ruch.lastInsertRowid;
+
+    // Zrodlem jest pula bez lokalizacji, wiec po stronie zrodla NIE ma czego odejmowac -
+    // kopia WMS polki zostaje nietknieta i nadal mowi prawde. Przy MM stan GT zrodla zbije
+    // dopiero dokument (GT = master ilosci); przy LOK stan GT w ogole sie nie zmienia -
+    // rosnie tylko wiedza WMS o tym, gdzie ten towar lezy.
+    const stanCel = db.prepare('SELECT * FROM stany_lokalizacji WHERE lokalizacja_id = ? AND artykul_gt_id = ?')
+      .get(lok_cel_id, artykul_gt_id);
+    if (stanCel) {
+      db.prepare('UPDATE stany_lokalizacji SET ilosc = ilosc + ?, ostatnia_zmiana = CURRENT_TIMESTAMP, operator = ? WHERE id = ?')
+        .run(ilo, operator ?? null, stanCel.id);
+    } else {
+      db.prepare(`
+        INSERT INTO stany_lokalizacji (lokalizacja_id, artykul_gt_id, artykul_symbol, artykul_nazwa, artykul_ean, ilosc, operator)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(lok_cel_id, artykul_gt_id, symbolDoWpisu, nazwaDoWpisu, eanDoWpisu, ilo, operator ?? null);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    return next(err);
+  }
+
+  try {
+    const wynikRuch = await wykonajRuchGT(ruchId);
+    audyt.zapisz({
+      uzytkownik: operator, akcja: 'rozlozenie', artykul_gt_id, artykul_symbol: symbolDoWpisu,
+      magazyn: cel.magazyn,
+      lokalizacja: `${zrodloMag} ${zrodloOpis} → ${cel.kod}${typRuchu === 'LOK' ? ' (bez MM)' : ''}`,
+      przed: zrodloDokumenty,
       ilosc: ilo, wynik: wynikRuch.status, ruch_id: ruchId, dok_gt_numer: wynikRuch.dok_gt_numer,
     });
     res.status(201).json(wynikRuch);

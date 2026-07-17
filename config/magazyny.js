@@ -9,7 +9,12 @@ const MAGAZYNY = [
   { kod: 'BRK', nazwa: 'Braki', typ: 'zewnetrzny', gtId: 10, liczDoRazem: false },
   // Reklamacje: jak BRK - towar niepelnowartosciowy, wlasna kolumna i MM w obie strony,
   // ale wypada z sumy "Razem" (decyzja usera 2026-07-17). W GT mag_Id 9 = K4R.
-  { kod: 'K4R', nazwa: 'Reklamacje', typ: 'zewnetrzny', gtId: 9, liczDoRazem: false },
+  //
+  // naZebrze: false - reklamacje to proces BIURKOWY, nie robota na hali (decyzja usera).
+  // Kolektor ich nie pokazuje i nie pozwala nimi ruszac; obsluga zostaje na desktopie.
+  // Magazyn nadal istnieje w rachunkach (stany, "do sprawdzenia", zgodnosc) - chowamy
+  // go tylko przed magazynierem, a nie przed systemem.
+  { kod: 'K4R', nazwa: 'Reklamacje', typ: 'zewnetrzny', gtId: 9, liczDoRazem: false, naZebrze: false },
 ];
 
 // Magazyny GT, ktorych WMS swiadomie NIE obsluguje - trzymane tu, zeby nastepna osoba nie

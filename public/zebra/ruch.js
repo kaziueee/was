@@ -52,14 +52,19 @@ let powrotDoWyszukiwania = false;
 let ostatniaZawartoscLok = null;
 let powrotDoLokalizacji = false;
 
-// lista magazynow (z /api/magazyny), do wyboru celu w kroku 3
+// Magazyny OBSLUGIWANE NA ZEBRZE - z nich ida wybory celu/zrodla i wiersze rozkladu.
+// Bez tych z naZebrze:false (K4R/Reklamacje - proces biurkowy, nie robota na hali).
 let magazynyLista = [];
-const magazynyMapa = {}; // kod -> {kod, nazwa, typ}
+// Mapa PELNA - takze magazyny ukryte przed magazynierem. MUSI taka zostac: to z niej
+// liczyDoRazem() czyta flage liczDoRazem, a jego fallback dla nieznanego kodu brzmi "licz".
+// Odfiltrowanie K4R takze tutaj wpuscilo by go z powrotem do sumy "Razem" tylnymi drzwiami.
+const magazynyMapa = {}; // kod -> {kod, nazwa, typ, liczDoRazem?, naZebrze?}
 
 async function initMagazyny() {
   const res = await fetch('/api/magazyny');
-  magazynyLista = await res.json();
-  magazynyLista.forEach((m) => { magazynyMapa[m.kod] = m; });
+  const wszystkie = await res.json();
+  wszystkie.forEach((m) => { magazynyMapa[m.kod] = m; });
+  magazynyLista = wszystkie.filter((m) => m.naZebrze !== false);
 }
 
 // realny kod magazynu docelowego (SAME -> magazyn zrodla)
@@ -778,19 +783,20 @@ function statusBarKlasa(zgodnosc) {
   return (zgodnosc && zgodnosc.ogolna && ZGODNOSC_BAR[zgodnosc.ogolna]) || 'st-neutral';
 }
 
-// skrot stanow GT do podpisu karty: "Razem 58 · K4 28 · K4G 30" (magazyny z 0 pomijane).
-// "Razem" liczy bez BRK i K4R (sumaRazemGt), ale rozklad per magazyn pokazuje je dalej -
-// tak samo jak tabela desktopu, gdzie maja wlasne kolumny obok kolumny Razem.
+// skrot stanow GT do podpisu karty: "Razem 58 · K4 28 · K4G 30".
+// Pomijamy magazyny z zerem i ukryte na Zebrze (K4R). "Razem" liczy bez BRK i K4R
+// (sumaRazemGt), ale BRK pokazuje sie dalej w rozkladzie - tak samo jak w tabeli desktopu,
+// gdzie ma wlasna kolumne obok kolumny Razem.
 function stanSkrotKarty(stanyGt) {
-  const razem = sumaRazemGt(stanyGt);
-  // "Razem 0" przy stanie wylacznie na BRK/K4R to NIE "brak stanu w GT" - towar jest,
-  // tylko niepelnowartosciowy. Dlatego pustke rozstrzygamy suma WSZYSTKICH magazynow.
-  if (!sumaStanowGt(stanyGt)) return 'brak stanu w GT';
   const perMag = Object.entries(stanyGt || {})
-    .filter(([, w]) => w.ilosc)
+    .filter(([kod, w]) => w.ilosc && widocznyNaZebrze(kod))
     .map(([m, w]) => `${m} ${w.ilosc}${w.rezerwacja ? ` (rez ${w.rezerwacja})` : ''}`)
     .join(' · ');
-  return `Razem ${razem} · ${perMag}`;
+  // Pustke rozstrzygamy ROZKLADEM, nie suma: "Razem 0" przy stanie wylacznie na BRK to NIE
+  // brak stanu (towar jest, tylko niepelnowartosciowy), a przy stanie tylko na ukrytym K4R
+  // sklejalibysmy bezsensowne "Razem 0 · " z pustym rozkladem.
+  if (!perMag) return 'brak stanu w GT';
+  return `Razem ${sumaRazemGt(stanyGt)} · ${perMag}`;
 }
 
 // karta artykulu na liscie wyszukiwania (.lista-poz): SKU+badge / nazwa / stany / lokalizacje.

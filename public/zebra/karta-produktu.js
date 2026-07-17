@@ -4,10 +4,22 @@
 // routes/produkty.js (dolaczLokalizacjeGt). Uzywane na listach wyboru
 // i w widokach szczegolowych we wszystkich ekranach Zebry.
 
+// Czy magazyn jest w ogole pokazywany na Zebrze. Flaga naZebrze z config/magazyny.js
+// (przez /api/magazyny) - dzis wylacza K4R/Reklamacje: to proces biurkowy, magazynier
+// na hali ich nie rusza. Chowamy je przed CZLOWIEKIEM, nie przed systemem - w rachunkach
+// (stany, "do sprawdzenia", zgodnosc) magazyn dalej istnieje.
+//
+// To osobna sprawa niz liczyDoRazem: "czy pokazac" i "czy wliczyc do sumy" to dwa rozne
+// pytania. BRK odpowiada na nie roznie - jest widoczny, ale poza suma.
+function widocznyNaZebrze(kodMagazynu) {
+  const m = (typeof magazynyMapa !== 'undefined') ? magazynyMapa[kodMagazynu] : null;
+  return !m || m.naZebrze !== false;
+}
+
 // formatuje stany_gt ({K4: {ilosc, rezerwacja}, ...}) do podgladu, pomijajac
-// magazyny z zerowym stanem, np. "K4:15 (rez 2) K4G:46 MAG:2"
+// magazyny z zerowym stanem i te ukryte na Zebrze, np. "K4:15 (rez 2) K4G:46 MAG:2"
 function formatStanyGt(stanyGt) {
-  const wpisy = Object.entries(stanyGt || {}).filter(([, w]) => w.ilosc !== 0);
+  const wpisy = Object.entries(stanyGt || {}).filter(([kod, w]) => w.ilosc !== 0 && widocznyNaZebrze(kod));
   if (wpisy.length === 0) return 'brak stanu w GT';
   return wpisy.map(([magazyn, w]) => {
     const rezerwacja = w.rezerwacja ? ` (rez ${w.rezerwacja})` : '';
@@ -86,15 +98,17 @@ function liczbaArtykulow(n) {
   return `${n} artykułów`;
 }
 
-// suma ilosci ze WSZYSTKICH magazynow, RAZEM z BRK i K4R - do filtra "Ukryj produkty bez stanu"
-// i do sortowania wynikow wyszukiwania.
+// suma ilosci z magazynow WIDOCZNYCH NA ZEBRZE - z BRK (widoczny, tylko poza suma "Razem"),
+// bez K4R (ukryty). Do filtra "Ukryj produkty bez stanu" i do sprawdzenia "czy jest co robic".
 //
-// Tu celowo liczymy wszystko, w odroznieniu od sumaRazemGt: towar lezacy wylacznie na
-// Reklamacjach albo w Brakach MA stan i wolno go ruszyc (K4R -> K4 to legalne MM), wiec
-// ukrycie go pod "brak stanu" bylo by klamstwem. "Razem" odpowiada na pytanie "ile mam do
-// sprzedania", a to na pytanie "czy ten towar w ogole gdzies jest".
+// Liczy WIECEJ niz sumaRazemGt (bo bierze BRK) i MNIEJ niz caly stan_gt (bo pomija ukryte) -
+// to trzecie pytanie: "czy z tym towarem da sie cokolwiek zrobic Z ZEBRY". Musi zgadzac sie
+// z tym, co pokazuje formatStanyGt: gdyby liczylo takze ukryte magazyny, filtr "Ukryj produkty
+// bez stanu" wpuscilby produkt lezacy tylko na Reklamacjach, a karta powiedzialaby mu zaraz
+// "brak stanu w GT".
 function sumaStanowGt(stanyGt) {
-  return Object.values(stanyGt || {}).reduce((suma, w) => suma + w.ilosc, 0);
+  return Object.entries(stanyGt || {})
+    .reduce((suma, [kod, w]) => suma + (widocznyNaZebrze(kod) ? (w.ilosc || 0) : 0), 0);
 }
 
 // dla pierwszej lokalizacji produktu w WMS (brak lokalizacji zrodlowej) - zgaduje

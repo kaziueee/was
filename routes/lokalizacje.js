@@ -212,6 +212,7 @@ async function dolaczDaneGt(payload) {
       //   dostawy_k4       - PZ<-FZ, paleta od dostawcy -> wolno dzielic, cel dol albo gora
       //   zwroty_k4        - PZ<-KFS, sztuki w strefie zwrotow -> wracaja na regal
       //   przywozki_k4     - MM z MAG/LS, towar w strefie przywozki -> wraca na regal
+      //   przyjecia_k4     - PW, przychod wewnetrzny w szufladzie przyjec -> wraca na regal
       //   nieprzypisane_k4 - reszta ("do sprawdzenia") -> stara zasada 1 SKU = 1 lok K4
       // Produkt moze miec wszystkie naraz i to poprawne: to fizycznie rozne rzeczy - paleta
       // do wywiezienia, sztuki w strefach i polka do zaklepania.
@@ -227,6 +228,7 @@ async function dolaczDaneGt(payload) {
         if (rozbicie.dostawy.length > 0) payload.dostawy_k4 = rozbicie.dostawy;
         if (rozbicie.zwroty.length > 0) payload.zwroty_k4 = rozbicie.zwroty;
         if (rozbicie.przywozki.length > 0) payload.przywozki_k4 = rozbicie.przywozki;
+        if (rozbicie.przyjecia.length > 0) payload.przyjecia_k4 = rozbicie.przyjecia;
         // nieprzypisane_k4 ustawiamy ZAWSZE (takze 0) - jego obecnosc jest dla frontu sygnalem
         // "rozbicie sie udalo, ufaj tej liczbie". Gdyby bylo pomijane przy zerze, front musialby
         // zgadywac po obecnosci pozostalych kubelkow i przy kazdym nowym rodzaju znowu bledy

@@ -428,11 +428,13 @@ function obsluzArtykul(dane) {
   // rozklad (zeby zewnetrzny byl osiagalny jako zrodlo przyjecia), nawet gdy 0/1 lok WMS.
   const maStanZewn = magazynyLista.some((m) => m.typ === 'zewnetrzny' && (dane.stany_gt?.[m.kod]?.ilosc ?? 0) > 0);
 
-  // Skrot "brak lokalizacji -> przypisz pierwsza" NIE moze objac produktu z dostawa: tam
-  // deficyt ma dwa rozne zrodla (paleta do rozlozenia + reszta na stale miejsce), wiec
-  // magazynier musi zobaczyc rozklad i wybrac, co robi. Inaczej wpadal od razu w goly
-  // ekran "Dokad i ile?" i wiersz DOSTAWA byl nieosiagalny.
-  if (dane.lokalizacje.length === 0 && !maStanZewn && !(dane.dostawy_k4?.length > 0)) {
+  // Skrot "brak lokalizacji -> przypisz pierwsza" NIE moze objac produktu z DOKUMENTEM w puli
+  // (dostawa/zwrot/przywozka/PW): tam stan ma dwa rozne zrodla (kubelek do rozlozenia + reszta
+  // na stale miejsce), wiec magazynier musi zobaczyc rozklad i wybrac, co robi. Inaczej wpadal
+  // od razu w goly ekran "Dokad i ile?" i wiersz kubelka byl nieosiagalny.
+  const maKubelekWPuli = (dane.dostawy_k4?.length || dane.zwroty_k4?.length
+    || dane.przywozki_k4?.length || dane.przyjecia_k4?.length) > 0;
+  if (dane.lokalizacje.length === 0 && !maStanZewn && !maKubelekWPuli) {
     // produkt ma stan w GT, ale nie ma jeszcze zadnej lokalizacji w WMS - przypisz pierwsza
     stan.artykul = artykul;
     stan.zrodlo = null;
@@ -486,6 +488,7 @@ function pokazRozkladZrodel(dane, artykul) {
     ...(dane.dostawy_k4 || []),
     ...(dane.zwroty_k4 || []),
     ...(dane.przywozki_k4 || []),
+    ...(dane.przyjecia_k4 || []),
   ].map((dok) => ({
     klucz: '__' + dok.rodzaj.toUpperCase() + '_' + (dok.pz_nr || dok.fz_nr) + '__',
     artykul,
@@ -701,9 +704,10 @@ function krotkiNrDok(nr) {
 // zepchnie kolejne pozycje pod krawedz. Sama nazwa strefy mowi, gdzie towar lezy - co z nim
 // zrobic, wynika z tapniecia (i tak pisze to naglowek kroku "Dokad i ile?").
 const RODZAJE_DOK = {
-  dostawa:   { naglowek: 'DOSTAWA',   opis: 'do rozłożenia',    domyslnyCel: 'K4G' },
-  zwrot:     { naglowek: 'ZWROT',     opis: 'Strefa zwrotów',   domyslnyCel: 'K4' },
-  przywozka: { naglowek: 'PRZYWÓZKA', opis: 'Strefa przywózki', domyslnyCel: 'K4' },
+  dostawa:        { naglowek: 'DOSTAWA',       opis: 'do rozłożenia',     domyslnyCel: 'K4G' },
+  zwrot:          { naglowek: 'ZWROT',         opis: 'Strefa zwrotów',    domyslnyCel: 'K4' },
+  przywozka:      { naglowek: 'PRZYWÓZKA',     opis: 'Strefa przywózki',  domyslnyCel: 'K4' },
+  przyjecie_wewn: { naglowek: 'PRZYJĘCIE (PW)', opis: 'Szuflada przyjęć', domyslnyCel: 'K4' },
 };
 const rodzajDok = (dok) => RODZAJE_DOK[dok?.rodzaj] || RODZAJE_DOK.dostawa;
 

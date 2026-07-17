@@ -2413,9 +2413,10 @@ function porownajKodLok(a, b) {
 // Podpisy pozycji do rozlozenia (parytet z Zebra). Dostawa czeka na palecie i idzie zwykle
 // na gore; zwrot i przywozka leza w swoich strefach i wracaja na regal.
 const RODZAJE_DOK = {
-  dostawa:   { etykieta: 'Dostawa',   strefa: null,                akcja: 'Rozłóż',  zadanie: 'do rozłożenia',            domyslnyCel: 'K4G' },
-  zwrot:     { etykieta: 'Zwrot',     strefa: 'Strefa zwrotów',    akcja: 'Odnieś',  zadanie: 'do odniesienia na regał',  domyslnyCel: 'K4' },
-  przywozka: { etykieta: 'Przywózka', strefa: 'Strefa przywózki',  akcja: 'Odnieś',  zadanie: 'do odniesienia na regał',  domyslnyCel: 'K4' },
+  dostawa:        { etykieta: 'Dostawa',        strefa: null,                akcja: 'Rozłóż',  zadanie: 'do rozłożenia',            domyslnyCel: 'K4G' },
+  zwrot:          { etykieta: 'Zwrot',          strefa: 'Strefa zwrotów',    akcja: 'Odnieś',  zadanie: 'do odniesienia na regał',  domyslnyCel: 'K4' },
+  przywozka:      { etykieta: 'Przywózka',      strefa: 'Strefa przywózki',  akcja: 'Odnieś',  zadanie: 'do odniesienia na regał',  domyslnyCel: 'K4' },
+  przyjecie_wewn: { etykieta: 'Przyjęcie (PW)', strefa: 'Szuflada przyjęć',  akcja: 'Odnieś',  zadanie: 'do odłożenia na regał',    domyslnyCel: 'K4' },
 };
 
 function dodajMagWms(tbody, mag, loki, k4Zapas, planTekst) {
@@ -2430,7 +2431,8 @@ function dodajMagWms(tbody, mag, loki, k4Zapas, planTekst) {
   // /ruchy/rozloz: cel dowolny (dol/gora) i w dowolnych porcjach, bez pompowania polki
   // pickowej po drodze - zob. routes/ruchy.js POST /rozloz.
   const doRozlozenia = mag === 'K4'
-    ? [...(modalProdukt.dostawy_k4 || []), ...(modalProdukt.zwroty_k4 || []), ...(modalProdukt.przywozki_k4 || [])]
+    ? [...(modalProdukt.dostawy_k4 || []), ...(modalProdukt.zwroty_k4 || []),
+       ...(modalProdukt.przywozki_k4 || []), ...(modalProdukt.przyjecia_k4 || [])]
     : [];
   for (const d of doRozlozenia) {
     const r = RODZAJE_DOK[d.rodzaj] || RODZAJE_DOK.dostawa;

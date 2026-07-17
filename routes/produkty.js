@@ -52,6 +52,7 @@ async function dolaczDostawyK4(produkty, wierszeWms) {
     if (rozbicie.dostawy.length > 0) p.dostawy_k4 = rozbicie.dostawy;
     if (rozbicie.zwroty.length > 0) p.zwroty_k4 = rozbicie.zwroty;
     if (rozbicie.przywozki.length > 0) p.przywozki_k4 = rozbicie.przywozki;
+    if (rozbicie.przyjecia.length > 0) p.przyjecia_k4 = rozbicie.przyjecia;
     p.nieprzypisane_k4 = rozbicie.reszta; // zawsze - obecnosc = sygnal "rozbicie sie udalo"
     p.polka_k4 = rozbicie.polka;
     p.polka_k4_klamie = rozbicie.polka_klamie;

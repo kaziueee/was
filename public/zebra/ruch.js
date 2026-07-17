@@ -690,10 +690,13 @@ function krotkiNrDok(nr) {
 
 // Podpisy pozycji do rozlozenia. Dostawa czeka na palecie i idzie zwykle na gore; zwrot i
 // przywozka leza w swoich strefach i wracaja na regal (stad domyslny cel K4).
+// Opis krotki: ekran ma 360 px i kazda linia wiecej to ryzyko, ze wiersz sie zawinie i
+// zepchnie kolejne pozycje pod krawedz. Sama nazwa strefy mowi, gdzie towar lezy - co z nim
+// zrobic, wynika z tapniecia (i tak pisze to naglowek kroku "Dokad i ile?").
 const RODZAJE_DOK = {
-  dostawa:   { naglowek: 'DOSTAWA',   opis: 'do rozłożenia',                     domyslnyCel: 'K4G' },
-  zwrot:     { naglowek: 'ZWROT',     opis: 'Strefa zwrotów — odnieś na regał',  domyslnyCel: 'K4' },
-  przywozka: { naglowek: 'PRZYWÓZKA', opis: 'Strefa przywózki — odnieś na regał', domyslnyCel: 'K4' },
+  dostawa:   { naglowek: 'DOSTAWA',   opis: 'do rozłożenia',    domyslnyCel: 'K4G' },
+  zwrot:     { naglowek: 'ZWROT',     opis: 'Strefa zwrotów',   domyslnyCel: 'K4' },
+  przywozka: { naglowek: 'PRZYWÓZKA', opis: 'Strefa przywózki', domyslnyCel: 'K4' },
 };
 const rodzajDok = (dok) => RODZAJE_DOK[dok?.rodzaj] || RODZAJE_DOK.dostawa;
 

@@ -11,6 +11,7 @@
 
 const { query, naCzesci } = require('./gt-sql');
 const db = require('../db/database');
+const { MAGAZYNY_ZEWNETRZNE, MAGAZYN_GT_ID } = require('../config/magazyny');
 
 // Kod magazynu WMS (ruchy.mag_zrodlo_pula) - NIE mylic z MAG_K4 nizej, ktore jest
 // identyfikatorem magazynu w GT (sl_Magazyn.mag_Id = 4).
@@ -129,19 +130,28 @@ async function pobierzZkRezerwujaceK4(twId) {
   }));
 }
 
-// Nierozlozony towar przyjety na K4 - DOSTAWY (z faktury zakupu) i ZWROTY (z korekty
-// sprzedazy). Oba przychodza tym samym dokumentem magazynowym (PZ), wiec rozroznia je
-// dopiero dokument ZRODLOWY (dok_DoDokId):
-//   PZ <- FZ  (dok_Typ=1) = dostawa - paleta od dostawcy, jedzie w calosci na gore
-//   PZ <- KFS (dok_Typ=6) = zwrot od klienta - lezy w strefie zwrotow, wraca na regal
+// Nierozlozony towar przyjety na K4 - trzy zrodla, kazde z innym dokumentem w GT:
+//   PZ <- FZ  (dok_Typ=1)  = DOSTAWA    - paleta od dostawcy, jedzie w calosci na gore
+//   PZ <- KFS (dok_Typ=6)  = ZWROT      - sztuka od klienta, lezy w strefie zwrotow
+//   MM z magazynu zewn.    = PRZYWOZKA  - towar przywieziony z MAG/LS, lezy w strefie przywozki
 //
-// Skala na zywej bazie (90 dni, mag 4): FZ = 24 dokumenty / 168 069 szt. (srednio 715);
-// KFS = 947 dokumentow / 1 162 szt. (srednio 1,1). Czyli 97% PZ-tow to zwroty, ale 99,3%
-// sztuk to dostawy - dlatego filtrujemy po rodzaju dokumentu zrodlowego, a nie po PZ.
+// PZ nie oznacza dostawy - rozroznia je dokument ZRODLOWY (dok_DoDokId). Skala na zywej bazie
+// (90 dni, mag 4): FZ = 24 dok./168 069 szt. (srednio 715); KFS = 947 dok./1 162 szt.
+// (srednio 1,1). Czyli 97% PZ-tow to zwroty, ale 99,3% sztuk to dostawy - dlatego filtr po
+// rodzaju dokumentu zrodlowego, a nie po samym PZ.
 //
-// Okno liczymy po dacie PZ (= data przyjecia, dok_DataWyst = dok_DataMag), a NIE po dacie
-// FZ: faktura bywa starsza od przyjecia (na zywej bazie do 35 dni), bo PZ powstaje dopiero
-// przy wywolaniu dostawy. Dokument zrodlowy daje wylacznie podpis.
+// MM: kierunek czytamy z dok_MagId (ZRODLO) + dok_OdbiorcaId (CEL). To NIE jest kontrahent,
+// mimo nazwy - przy MM Subiekt trzyma tam mag_Id magazynu docelowego (potwierdzone na wlasnych
+// dokumentach WMS, gdzie kierunek znamy z klucza WMS-RUCH w uwagach; join do kh__Kontrahent
+// daje bzdury typu "SPOLEM" - to przypadkowa kolizja id).
+//
+// Wlasne MM (uwagi zaczynaja sie od WMS-RUCH:) POMIJAMY: przyjecie z MAG/LS przez WMS
+// (/ruchy/przyjecie) od razu zapisuje lokalizacje, wiec nie ma czego rozkladac - a wliczone
+// psulyby atrybucje kubelka (nie maja zrodlo_dok, wiec wygladalyby na nierozlozone).
+//
+// Okno liczymy po dacie dokumentu magazynowego (dok_DataWyst = dok_DataMag = data przyjecia),
+// a NIE po dacie FZ: faktura bywa starsza od przyjecia (na zywej bazie do 35 dni), bo PZ
+// powstaje dopiero przy wywolaniu dostawy. Dokument zrodlowy daje wylacznie podpis.
 //
 // Kontrahent TYLKO przy dostawie: tam to firma (kh_Symbol, np. "YIWUCHI"). Przy zwrocie
 // kontrahentem jest KLIENT DETALICZNY - czyli dane osobowe osoby prywatnej, bezuzyteczne
@@ -152,46 +162,89 @@ async function pobierzZkRezerwujaceK4(twId) {
 const PZ_TYP = 10;
 const FZ_TYP = 1;
 const KFS_TYP = 6;
-const DOSTAWY_OKNO_DNI = 90;
+const MM_TYP = 9;
+
+// Dwa rozne okna, bo to dwa rozne zjawiska:
+//   DOSTAWA (24 dok./kwartal, srednio 715 szt.) - duza i rzadka, potrafi poczekac dzien-dwa
+//     na rozlozenie, a data FZ bywa starsza od przyjecia nawet o 35 dni -> szerokie okno.
+//   ZWROT / PRZYWOZKA (947 + 141 dok./kwartal, srednio 1-2 szt.) - drobne i codzienne,
+//     odnoszone na regal tego samego dnia. Przy oknie 90 dni kazdy deficyt sciagalby na ekran
+//     zwroty sprzed trzech miesiecy (dawno odlozone, bo pula jest WYLICZANA - dokument
+//     rozlozony przed wdrozeniem tej funkcji nie ma ruchu, wiec wygladalby na nierozlozony).
+//     Krotkie okno tnie ten falszywy alarm i zalew ekranu na starcie.
+const OKNO_DOSTAWY_DNI = 90;
+const OKNO_ZWROTY_PRZYWOZKI_DNI = 14;
 
 async function pobierzDostawyK4(twIds) {
   const wynik = new Map();
   if (!twIds || twIds.length === 0) return wynik;
 
-  const od = new Date(Date.now() - DOSTAWY_OKNO_DNI * 24 * 60 * 60 * 1000);
+  const dni = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
+  const od = dni(OKNO_DOSTAWY_DNI);
+  const odDrobne = dni(OKNO_ZWROTY_PRZYWOZKI_DNI);
+
+  // magazyny zewnetrzne (MAG/LS/BRK) jako mag_Id GT - zrodla przywozek
+  const zewnGtIds = MAGAZYNY_ZEWNETRZNE.map((k) => MAGAZYN_GT_ID[k]).filter(Boolean);
 
   await Promise.all(naCzesci([...new Set(twIds.map(String))], 1000).map(async (paczka) => {
-    const parametry = { pzTyp: PZ_TYP, fzTyp: FZ_TYP, kfsTyp: KFS_TYP, mag: MAG_K4, od };
+    const parametry = { pzTyp: PZ_TYP, fzTyp: FZ_TYP, kfsTyp: KFS_TYP, mmTyp: MM_TYP, mag: MAG_K4, od, odDrobne };
     const placeholders = paczka.map((id, i) => {
       parametry[`t${i}`] = Number(id);
       return `@t${i}`;
     }).join(', ');
+    const zewnPlaceholders = zewnGtIds.map((id, i) => {
+      parametry[`z${i}`] = id;
+      return `@z${i}`;
+    }).join(', ');
 
     const { recordset } = await query(`
-      SELECT o.ob_TowId, pz.dok_Id AS pz_id, pz.dok_NrPelny AS pz_nr,
+      SELECT o.ob_TowId, dok.dok_NrPelny AS dok_nr,
              zr.dok_Typ AS zrodlo_typ, zr.dok_NrPelny AS zrodlo_nr, kh.kh_Symbol AS kontrahent,
-             pz.dok_DataWyst AS data, SUM(o.ob_Ilosc) AS ilosc
-      FROM dok__Dokument pz
-      JOIN dok_Pozycja o ON o.ob_DokMagId = pz.dok_Id
-      JOIN dok__Dokument zr ON zr.dok_Id = pz.dok_DoDokId AND zr.dok_Typ IN (@fzTyp, @kfsTyp)
-      LEFT JOIN kh__Kontrahent kh ON kh.kh_Id = pz.dok_PlatnikId
-      WHERE pz.dok_Typ = @pzTyp AND o.ob_MagId = @mag AND pz.dok_DataWyst >= @od
+             NULL AS zrodlo_mag, dok.dok_DataWyst AS data, SUM(o.ob_Ilosc) AS ilosc, dok.dok_Id AS dok_id
+      FROM dok__Dokument dok
+      JOIN dok_Pozycja o ON o.ob_DokMagId = dok.dok_Id
+      JOIN dok__Dokument zr ON zr.dok_Id = dok.dok_DoDokId AND zr.dok_Typ IN (@fzTyp, @kfsTyp)
+      LEFT JOIN kh__Kontrahent kh ON kh.kh_Id = dok.dok_PlatnikId
+      WHERE dok.dok_Typ = @pzTyp AND o.ob_MagId = @mag
+        AND dok.dok_DataWyst >= CASE WHEN zr.dok_Typ = @fzTyp THEN @od ELSE @odDrobne END
         AND o.ob_TowId IN (${placeholders})
-      GROUP BY o.ob_TowId, pz.dok_Id, pz.dok_NrPelny, zr.dok_Typ, zr.dok_NrPelny, kh.kh_Symbol, pz.dok_DataWyst
-      ORDER BY pz.dok_DataWyst DESC, pz.dok_Id DESC
+      GROUP BY o.ob_TowId, dok.dok_Id, dok.dok_NrPelny, zr.dok_Typ, zr.dok_NrPelny, kh.kh_Symbol, dok.dok_DataWyst
+
+      UNION ALL
+
+      -- PRZYWOZKI: MM z magazynu zewnetrznego na K4, wystawione POZA WMS.
+      -- Kierunek: dok_MagId = zrodlo, dok_OdbiorcaId = cel (przy MM to mag_Id, nie kontrahent).
+      SELECT o.ob_TowId, dok.dok_NrPelny AS dok_nr,
+             NULL AS zrodlo_typ, NULL AS zrodlo_nr, NULL AS kontrahent,
+             mz.mag_Symbol AS zrodlo_mag, dok.dok_DataWyst AS data, SUM(o.ob_Ilosc) AS ilosc, dok.dok_Id AS dok_id
+      FROM dok__Dokument dok
+      JOIN dok_Pozycja o ON o.ob_DokMagId = dok.dok_Id
+      JOIN sl_Magazyn mz ON mz.mag_Id = dok.dok_MagId
+      WHERE dok.dok_Typ = @mmTyp AND dok.dok_OdbiorcaId = @mag
+        AND dok.dok_MagId IN (${zewnPlaceholders})
+        AND ISNULL(dok.dok_Uwagi, '') NOT LIKE 'WMS-RUCH:%'
+        AND dok.dok_DataWyst >= @odDrobne
+        AND o.ob_TowId IN (${placeholders})
+      GROUP BY o.ob_TowId, dok.dok_Id, dok.dok_NrPelny, mz.mag_Symbol, dok.dok_DataWyst
+
+      ORDER BY data DESC, dok_id DESC
     `, parametry);
 
     for (const r of recordset) {
       const klucz = String(r.ob_TowId);
       if (!wynik.has(klucz)) wynik.set(klucz, []);
-      const dostawa = r.zrodlo_typ === FZ_TYP;
+      const rodzaj = r.zrodlo_mag ? 'przywozka' : (r.zrodlo_typ === FZ_TYP ? 'dostawa' : 'zwrot');
       wynik.get(klucz).push({
-        rodzaj: dostawa ? 'dostawa' : 'zwrot',
-        pz_nr: r.pz_nr ? String(r.pz_nr).trim() : null,
-        fz_nr: r.zrodlo_nr ? String(r.zrodlo_nr).trim() : null,
+        rodzaj,
+        // dokument magazynowy - klucz atrybucji (ruchy.zrodlo_dok)
+        pz_nr: r.dok_nr ? String(r.dok_nr).trim() : null,
+        // podpis na ekranie: dostawa/zwrot maja dokument zrodlowy (FZ/KFS), przywozka jest
+        // sama dla siebie dokumentem (MM), wiec podpisujemy ja wlasnym numerem
+        fz_nr: (r.zrodlo_nr ? String(r.zrodlo_nr).trim() : null) ?? (r.dok_nr ? String(r.dok_nr).trim() : null),
+        zrodlo_mag: r.zrodlo_mag ? String(r.zrodlo_mag).trim() : null,
         // przy zwrocie kontrahentem jest klient detaliczny (dane osobowe) - nie wynosimy go
         // na ekran magazynu; numer KFS wystarcza do presledzenia
-        kontrahent: dostawa && r.kontrahent ? String(r.kontrahent).trim() : null,
+        kontrahent: rodzaj === 'dostawa' && r.kontrahent ? String(r.kontrahent).trim() : null,
         data: r.data instanceof Date ? r.data.toISOString().slice(0, 10) : null,
         ilosc: Number(r.ilosc) || 0,
       });
@@ -225,10 +278,11 @@ function iloscRozlozonaZDokumentu(artykulGtId, magazyn, dokNr) {
   return Number(r.suma) || 0;
 }
 
-// Rozbija deficyt K4 (stan GT - suma WMS) na trzy kubelki, ktore NIE nachodza na siebie:
-//   dostawy  - PZ<-FZ, paleta od dostawcy (rozkladana dowolnie, dol/gora, w czesciach)
-//   zwroty   - PZ<-KFS, sztuki lezace w strefie zwrotow (wracaja na regal)
-//   reszta   - stary stan, ktorego WMS nigdy nie poznal (stara zasada 1 SKU = 1 lokalizacja)
+// Rozbija deficyt K4 (stan GT - suma WMS) na kubelki, ktore NIE nachodza na siebie:
+//   dostawy    - PZ<-FZ, paleta od dostawcy (rozkladana dowolnie, dol/gora, w czesciach)
+//   zwroty     - PZ<-KFS, sztuki lezace w strefie zwrotow (wracaja na regal)
+//   przywozki  - MM z MAG/LS, towar w strefie przywozki (wraca na regal)
+//   reszta     - stary stan, ktorego WMS nigdy nie poznal (stara zasada 1 SKU = 1 lokalizacja)
 //
 // Kubelek dokumentu = ilosc z PZ MINUS to, co z TEGO dokumentu juz rozlozylismy. Na koniec
 // wszystko jest capowane deficytem: gdy czesc zeszla sprzedaza (GT spada bez wiedzy WMS),
@@ -239,8 +293,7 @@ function iloscRozlozonaZDokumentu(artykulGtId, magazyn, dokNr) {
 // bo to ona jest "niewyjasniona" i to ona ma absorbowac niedobor.
 function rozbijDeficytK4(deficyt, dokumenty, { artykul_gt_id, magazyn = MAG_KOD_K4 } = {}) {
   let zostalo = Math.max(Number(deficyt) || 0, 0);
-  const dostawy = [];
-  const zwroty = [];
+  const kubelki = { dostawa: [], zwrot: [], przywozka: [] };
 
   for (const d of dokumenty || []) {
     if (zostalo <= 0) break;
@@ -248,11 +301,11 @@ function rozbijDeficytK4(deficyt, dokumenty, { artykul_gt_id, magazyn = MAG_KOD_
     const pozostalo = d.ilosc - juz;
     if (pozostalo <= 0) continue;             // ten dokument juz rozlozony w calosci
     const ilosc = Math.min(pozostalo, zostalo);
-    (d.rodzaj === 'zwrot' ? zwroty : dostawy).push({ ...d, ilosc });
+    (kubelki[d.rodzaj] || kubelki.dostawa).push({ ...d, ilosc });
     zostalo -= ilosc;
   }
 
-  return { dostawy, zwroty, reszta: zostalo };
+  return { dostawy: kubelki.dostawa, zwroty: kubelki.zwrot, przywozki: kubelki.przywozka, reszta: zostalo };
 }
 
 module.exports = {

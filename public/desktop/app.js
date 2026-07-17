@@ -1808,6 +1808,14 @@ function porownajKodLok(a, b) {
   return 0;
 }
 
+// Podpisy pozycji do rozlozenia (parytet z Zebra). Dostawa czeka na palecie i idzie zwykle
+// na gore; zwrot i przywozka leza w swoich strefach i wracaja na regal.
+const RODZAJE_DOK = {
+  dostawa:   { etykieta: 'Dostawa',   strefa: null,                akcja: 'Rozłóż',  zadanie: 'do rozłożenia',            domyslnyCel: 'K4G' },
+  zwrot:     { etykieta: 'Zwrot',     strefa: 'Strefa zwrotów',    akcja: 'Odnieś',  zadanie: 'do odniesienia na regał',  domyslnyCel: 'K4' },
+  przywozka: { etykieta: 'Przywózka', strefa: 'Strefa przywózki',  akcja: 'Odnieś',  zadanie: 'do odniesienia na regał',  domyslnyCel: 'K4' },
+};
+
 function dodajMagWms(tbody, mag, loki, k4Zapas, planTekst) {
   const gt = modalProdukt.stany_gt?.[mag] ?? { ilosc: 0, rezerwacja: 0 };
   const wmsLoki = loki.filter((l) => l.magazyn === mag).sort((a, b) => porownajKodLok(a.kod, b.kod));
@@ -1820,26 +1828,27 @@ function dodajMagWms(tbody, mag, loki, k4Zapas, planTekst) {
   // /ruchy/rozloz: cel dowolny (dol/gora) i w dowolnych porcjach, bez pompowania polki
   // pickowej po drodze - zob. routes/ruchy.js POST /rozloz.
   const doRozlozenia = mag === 'K4'
-    ? [...(modalProdukt.dostawy_k4 || []), ...(modalProdukt.zwroty_k4 || [])]
+    ? [...(modalProdukt.dostawy_k4 || []), ...(modalProdukt.zwroty_k4 || []), ...(modalProdukt.przywozki_k4 || [])]
     : [];
   for (const d of doRozlozenia) {
-    const zwrot = d.rodzaj === 'zwrot';
+    const r = RODZAJE_DOK[d.rodzaj] || RODZAJE_DOK.dostawa;
     const tr = document.createElement('tr');
     tr.className = 'rozklad-dostawa';
     tr.appendChild(komorka(mag));
     tr.appendChild(komorka(d.ilosc));
     const tdLok = document.createElement('td');
-    tdLok.textContent = `${zwrot ? 'Zwrot' : 'Dostawa'} ${d.fz_nr || d.pz_nr || ''}`.trim();
+    tdLok.textContent = `${r.etykieta} ${d.fz_nr || d.pz_nr || ''}`.trim();
     const p = document.createElement('div');
     p.className = 'rozklad-plan';
     // przy zwrocie kontrahentem jest klient detaliczny - backend go nie oddaje (dane osobowe)
-    p.textContent = [zwrot ? 'Strefa zwrotów' : null, d.kontrahent, d.data].filter(Boolean).join(' · ');
-    p.title = `Przyjęte ${d.pz_nr || ''} — ${zwrot ? 'do odniesienia na regał' : 'do rozłożenia'}`;
+    const zrodloMag = d.zrodlo_mag ? (MAG_LABEL[d.zrodlo_mag] ?? d.zrodlo_mag) : null;
+    p.textContent = [r.strefa, zrodloMag, d.kontrahent, d.data].filter(Boolean).join(' · ');
+    p.title = `Przyjęte ${d.pz_nr || ''} — ${r.zadanie}`;
     tdLok.appendChild(p);
     tr.appendChild(tdLok);
     tr.appendChild(komorka());
     const tdA = document.createElement('td');
-    tdA.appendChild(przyciskAkcji(zwrot ? 'Odnieś' : 'Rozłóż', () => otworzAkcje({
+    tdA.appendChild(przyciskAkcji(r.akcja, () => otworzAkcje({
       typ: 'pula', zrodloMag: mag, zrodloLokId: null, zrodloKod: null, dostepne: d.ilosc, dostawa: d,
     }), true));
     tr.appendChild(tdA);
@@ -2050,15 +2059,16 @@ function otworzAkcje(ctx) {
   el('modal-akcja-overlay').classList.remove('hidden');
 
   // naglowek: typ akcji + (SKU nazwa — z zrodlo)
-  const zwrotCtx = ctx.typ === 'pula' && ctx.dostawa?.rodzaj === 'zwrot';
+  const rodzajCtx = ctx.typ === 'pula' ? (RODZAJE_DOK[ctx.dostawa?.rodzaj] || RODZAJE_DOK.dostawa) : null;
   el('modal-akcja-typ').textContent = ctx.typ === 'gt' ? 'Przypisz'
-    : ctx.typ === 'pula' ? (zwrotCtx ? 'Odnieś zwrot' : 'Rozłóż') : 'Przenieś';
+    : ctx.typ === 'pula' ? (rodzajCtx.strefa ? `${rodzajCtx.akcja} — ${rodzajCtx.etykieta.toLowerCase()}` : 'Rozłóż')
+    : 'Przenieś';
   let zrodloTxt;
   if (ctx.typ === 'gt') zrodloTxt = `z puli „nieprzypisano" (${MAG_LABEL[ctx.zrodloMag]})`;
   else if (ctx.typ === 'pula') {
     const d = ctx.dostawa || {};
-    zrodloTxt = zwrotCtx
-      ? `zwrot ${d.fz_nr || d.pz_nr || ''} ze strefy zwrotów`
+    zrodloTxt = rodzajCtx.strefa
+      ? `${rodzajCtx.etykieta.toLowerCase()} ${d.fz_nr || d.pz_nr || ''} — ${rodzajCtx.strefa.toLowerCase()}`
       : `dostawa ${d.fz_nr || d.pz_nr || ''}${d.kontrahent ? ' · ' + d.kontrahent : ''} (${MAG_LABEL[ctx.zrodloMag]})`;
   }
   else if (ctx.typ === 'ext') zrodloTxt = `z ${MAG_LABEL[ctx.zrodloMag]}`;
@@ -2082,12 +2092,12 @@ function otworzAkcje(ctx) {
     magSel.value = ctx.zrodloMag;
     magSel.disabled = true;
   } else if (ctx.typ === 'pula') {
-    // Rozkladanie dostawy/zwrotu: cel DOWOLNY i w dowolnych porcjach - czesc moze zostac na
-    // dole (K4, wtedy samo przypisanie), reszta jedzie na gore (K4G, wtedy MM). Backend
-    // rozpoznaje operacje po magazynie celu. Domysl bez blokady: dostawa najczesciej idzie
-    // na gore, a zwrot wraca na regal.
+    // Rozkladanie dostawy/zwrotu/przywozki: cel DOWOLNY i w dowolnych porcjach - czesc moze
+    // zostac na dole (K4, wtedy samo przypisanie), reszta jedzie na gore (K4G, wtedy MM).
+    // Backend rozpoznaje operacje po magazynie celu. Domysl bez blokady: dostawa najczesciej
+    // idzie na gore, drobnica ze stref wraca na regal.
     magSel.disabled = false;
-    magSel.value = zwrotCtx ? 'K4' : (ctx.zrodloMag === 'K4' ? 'K4G' : 'K4');
+    magSel.value = rodzajCtx.domyslnyCel;
   } else {
     magSel.disabled = false;
     // domyslny cel: przesuniecie miedzy K4 a K4G (uzupelnianie/odkladanie).

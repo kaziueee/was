@@ -211,15 +211,17 @@ async function dolaczDaneGt(payload) {
       // Rozbicie deficytu K4 na zrodla, bo kazde ma inna regule (zob. gt-dokumenty.js):
       //   dostawy_k4       - PZ<-FZ, paleta od dostawcy -> wolno dzielic, cel dol albo gora
       //   zwroty_k4        - PZ<-KFS, sztuki w strefie zwrotow -> wracaja na regal
+      //   przywozki_k4     - MM z MAG/LS, towar w strefie przywozki -> wraca na regal
       //   nieprzypisane_k4 - reszta (stary stan) -> stara zasada 1 SKU = 1 lok K4
-      // Produkt moze miec wszystkie trzy naraz i to poprawne: to fizycznie trzy rozne
-      // rzeczy - paleta do wywiezienia, sztuka w strefie i polka do zaklepania.
+      // Produkt moze miec wszystkie naraz i to poprawne: to fizycznie rozne rzeczy - paleta
+      // do wywiezienia, sztuki w strefach i polka do zaklepania.
       if (deficytK4 > 0) {
         const dokumenty = (await gtDokumenty.pobierzDostawyK4([payload.artykul_gt_id]))
           .get(String(payload.artykul_gt_id)) || [];
         const rozbicie = gtDokumenty.rozbijDeficytK4(deficytK4, dokumenty, { artykul_gt_id: payload.artykul_gt_id });
         if (rozbicie.dostawy.length > 0) payload.dostawy_k4 = rozbicie.dostawy;
         if (rozbicie.zwroty.length > 0) payload.zwroty_k4 = rozbicie.zwroty;
+        if (rozbicie.przywozki.length > 0) payload.przywozki_k4 = rozbicie.przywozki;
         if (rozbicie.reszta > 0) payload.nieprzypisane_k4 = rozbicie.reszta;
       }
     } else if (payload.typ === 'lista_artykulow') {

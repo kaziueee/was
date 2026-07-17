@@ -16,8 +16,8 @@ const stan = {
   zrodloPula: null,  // 'K4' = zrodlem jest NIEPRZYPISANA pula magazynu (dostawa PZ<-FZ albo
                      // zwrot PZ<-KFS, jeszcze bez miejsca w WMS) -> zapis idzie w /ruchy/rozloz
   zrodloDok: null,   // numer PZ rozkladanego dokumentu - backend rozlicza po nim kubelek
-  dostawa: null,     // {rodzaj, pz_nr, fz_nr, kontrahent, data, ilosc} - opis pozycji (naglowek)
-  zwrot: false,      // true = rozkladamy ZWROT (strefa zwrotow -> regal), nie dostawe
+  dostawa: null,     // {rodzaj, pz_nr, fz_nr, kontrahent, zrodlo_mag, data, ilosc} - rozkladana
+                     // pozycja: dostawa / zwrot / przywozka (rodzaj steruje podpisem i celem)
   celMagazynNowejLokalizacji: null, // magazyn wymagany dla nowej lokalizacji przy braku zrodla
                                      // (np. 'K4G' z opcji "+ Nowa lokalizacja K4G") - gdy null,
                                      // magazyn jest zgadywany na podstawie stanow GT
@@ -114,8 +114,10 @@ function naglowekHtml() {
     // Rozkladanie dostawy/zwrotu: pokaz CO sie rozklada (dokument + kontrahent przy dostawie).
     // "Brak lokalizacji w WMS" byloby tu klamstwem i falszywym alarmem - produkt ma swoje
     // miejsca, to dostawa jeszcze nie ma. Chip informacyjny, nie ostrzegawczy: normalna robota.
-    kontekst = `<span class="chip chip-dostawa">${stan.zwrot ? 'Zwrot' : 'Dostawa'} ${esc(krotkiNrDok(stan.dostawa.fz_nr))}</span>`
-      + (stan.zwrot ? '<span class="chip">Strefa zwrotów</span>' : '')
+    const r = rodzajDok(stan.dostawa);
+    const strefa = { zwrot: 'Strefa zwrotów', przywozka: 'Strefa przywózki' }[stan.dostawa.rodzaj];
+    kontekst = `<span class="chip chip-dostawa">${r.naglowek.charAt(0) + r.naglowek.slice(1).toLowerCase()} ${esc(krotkiNrDok(stan.dostawa.fz_nr))}</span>`
+      + (strefa ? `<span class="chip">${strefa}</span>` : '')
       + (stan.dostawa.kontrahent ? `<span class="chip">${esc(stan.dostawa.kontrahent)}</span>` : '');
   } else if (!stan.zrodlo) {
     kontekst = '<span class="chip chip-uwaga">Brak lokalizacji w WMS</span>';
@@ -278,7 +280,6 @@ function reset() {
   stan.zrodloPula = null;
   stan.zrodloDok = null;
   stan.dostawa = null;
-  stan.zwrot = false;
   stan.celMagazynNowejLokalizacji = null;
   opcjeWyboru = [];
   ostatniaListaArtykulow = null;
@@ -469,42 +470,31 @@ function pokazRozkladZrodel(dane, artykul) {
   const posortowaneLok = [...dane.lokalizacje].sort((a, b) =>
     (kolejnoscMag[a.magazyn] ?? 9) - (kolejnoscMag[b.magazyn] ?? 9) || (a.ilosc - b.ilosc));
 
-  // DOSTAWY I ZWROTY NA SAMEJ GORZE, przed lokalizacjami: to jedyne pozycje z realnym
-  // zadaniem do zrobienia (paleta stoi, zwrot lezy w strefie) - reszta listy to tylko stan.
-  // Maja wpasc w oczy pierwsze, bez scrollowania (ekran Zebry ma 360x640, kazdy wiersz
-  // nizej to ryzyko przeoczenia). Dostawy przed zwrotami - wieksze i pilniejsze.
-  const opcjeDostaw = (dane.dostawy_k4 || []).map((dost) => ({
-    klucz: '__DOSTAWA_' + (dost.pz_nr || dost.fz_nr) + '__',
+  // DOKUMENTY DO ROZLOZENIA NA SAMEJ GORZE, przed lokalizacjami: to jedyne pozycje z realnym
+  // zadaniem (paleta stoi, zwrot/przywozka lezy w strefie) - reszta listy to tylko stan. Maja
+  // wpasc w oczy pierwsze, bez scrollowania (ekran Zebry ma 360x640, kazdy wiersz nizej to
+  // ryzyko przeoczenia). Kolejnosc: dostawa (najwieksza robota), potem drobnica ze stref.
+  //
+  // Roznica miedzy nimi jest tylko w podpisie i domyslnym celu - mechanika ta sama:
+  // /ruchy/rozloz z numerem dokumentu, cel dowolny, w dowolnych porcjach.
+  const opcjeDokumentow = [
+    ...(dane.dostawy_k4 || []),
+    ...(dane.zwroty_k4 || []),
+    ...(dane.przywozki_k4 || []),
+  ].map((dok) => ({
+    klucz: '__' + dok.rodzaj.toUpperCase() + '_' + (dok.pz_nr || dok.fz_nr) + '__',
     artykul,
     zrodlo: null,
-    iloscSugestia: dost.ilosc,
+    iloscSugestia: dok.ilosc,
     zrodloPula: 'K4',       // rozkladanie nieprzypisanej puli K4 (POST /api/ruchy/rozloz)
-    zrodloDok: dost.pz_nr,  // ktory dokument rozkladamy - backend rozlicza kubelek po nim
-    celMagazyn: null,       // cel DOWOLNY (K4 albo K4G) - magazynier decyduje, co zostaje
-                            // na dole, a co jedzie na gore; K4G tylko jako domyslny wybor
+    zrodloDok: dok.pz_nr,   // ktory dokument rozkladamy - backend rozlicza kubelek po nim
+    celMagazyn: null,       // cel DOWOLNY (K4 albo K4G) - magazynier decyduje; ponizej tylko domysl
     brak: true,
-    dostawa: dost,
+    dostawa: dok,
     mag: 'K4',
-    ilosc: dost.ilosc,
-    plan: gtLokDlaMagazynu('K4G') || '',
-  }));
-
-  // Zwrot: towar lezy w STREFIE ZWROTOW (KFS wystawiany, gdy fizycznie tam jest), a jego
-  // zadanie to "odnies na regal" - dlatego domyslny cel to K4, a nie gora jak przy dostawie.
-  const opcjeZwrotow = (dane.zwroty_k4 || []).map((zwr) => ({
-    klucz: '__ZWROT_' + (zwr.pz_nr || zwr.fz_nr) + '__',
-    artykul,
-    zrodlo: null,
-    iloscSugestia: zwr.ilosc,
-    zrodloPula: 'K4',
-    zrodloDok: zwr.pz_nr,
-    celMagazyn: null,
-    brak: true,
-    dostawa: zwr,           // ten sam ksztalt co dostawa - naglowek/wiersz czytaja fz_nr
-    zwrot: true,
-    mag: 'K4',
-    ilosc: zwr.ilosc,
-    plan: gtLokDlaMagazynu('K4') || '', // wg GT gdzie ten SKU ma stale miejsce na regale
+    ilosc: dok.ilosc,
+    // dostawa jedzie zwykle na gore, drobnica ze stref wraca na regal - stad rozny plan "wg GT"
+    plan: gtLokDlaMagazynu(dok.rodzaj === 'dostawa' ? 'K4G' : 'K4') || '',
   }));
 
   // rezerwacja jest na poziomie magazynu - pokazujemy ja raz, przy pierwszym
@@ -527,7 +517,7 @@ function pokazRozkladZrodel(dane, artykul) {
     };
   });
 
-  opcjeWyboru = [...opcjeDostaw, ...opcjeZwrotow, ...opcjeWyboru];
+  opcjeWyboru = [...opcjeDokumentow, ...opcjeWyboru];
 
   // Nieprzypisany stan WMS per magazyn (GT - suma lokalizacji WMS) -> wiersz do dzialania.
   //
@@ -698,6 +688,20 @@ function krotkiNrDok(nr) {
   return String(nr ?? '').split('/')[0].trim();
 }
 
+// Podpisy pozycji do rozlozenia. Dostawa czeka na palecie i idzie zwykle na gore; zwrot i
+// przywozka leza w swoich strefach i wracaja na regal (stad domyslny cel K4).
+const RODZAJE_DOK = {
+  dostawa:   { naglowek: 'DOSTAWA',   opis: 'do rozłożenia',                     domyslnyCel: 'K4G' },
+  zwrot:     { naglowek: 'ZWROT',     opis: 'Strefa zwrotów — odnieś na regał',  domyslnyCel: 'K4' },
+  przywozka: { naglowek: 'PRZYWÓZKA', opis: 'Strefa przywózki — odnieś na regał', domyslnyCel: 'K4' },
+};
+const rodzajDok = (dok) => RODZAJE_DOK[dok?.rodzaj] || RODZAJE_DOK.dostawa;
+
+// Zwrot i przywozka = drobnica lezaca w strefie: magazynier ma ja w rece i zna cel, wiec
+// podpowiadamy ilosc. Dostawa to paleta - tam ilosci NIE podpowiadamy (bledne "wpisz 2000"),
+// bo magazynier sam decyduje, ile klika na ktora palete.
+const czyDrobnicaZeStrefy = () => stan.dostawa?.rodzaj === 'zwrot' || stan.dostawa?.rodzaj === 'przywozka';
+
 // Tekst z GT (symbol kontrahenta, numer dokumentu) trafia do innerHTML - escapujemy,
 // bo to dane z zewnatrz, nie nasze stale.
 function esc(t) {
@@ -719,10 +723,11 @@ function renderujRozklad(opcje, onWybierz) {
     btn.className = 'lista-poz' + (o.brak ? ' brak' : '') + (o.dostawa ? ' dostawa' : '');
     const rez = o.rez > 0 ? `<span class="poz-rez">(${o.rez} rez.)</span>` : '';
     const glowna = o.dostawa
-      ? `<span class="poz-kod">${o.zwrot ? 'ZWROT' : 'DOSTAWA'}</span>`
+      ? `<span class="poz-kod">${rodzajDok(o.dostawa).naglowek}</span>`
         + `<span class="poz-podpis">${esc(krotkiNrDok(o.dostawa.fz_nr))}`
-          + `${o.dostawa.kontrahent ? ' · ' + esc(o.dostawa.kontrahent) : ''}</span>`
-        + `<span class="poz-plan">${o.zwrot ? 'Strefa zwrotów — odnieś na regał' : 'do rozłożenia'}</span>`
+          + `${o.dostawa.kontrahent ? ' · ' + esc(o.dostawa.kontrahent) : ''}`
+          + `${o.dostawa.zrodlo_mag ? ' · ' + esc(magazynyMapa[o.dostawa.zrodlo_mag]?.nazwa ?? o.dostawa.zrodlo_mag) : ''}</span>`
+        + `<span class="poz-plan">${rodzajDok(o.dostawa).opis}</span>`
       : o.brak
       ? `<span class="poz-kod">BRAK LOKALIZACJI</span><span class="poz-podpis">(nieprzypisano)</span>`
         + (o.plan ? `<span class="poz-plan">wg GT: ${esc(o.plan)}</span>` : '')
@@ -846,7 +851,6 @@ function wybierzOpcje(opcja) {
   stan.zrodloPula = opcja.zrodloPula ?? null;
   stan.zrodloDok = opcja.zrodloDok ?? null;
   stan.dostawa = opcja.dostawa ?? null;
-  stan.zwrot = opcja.zwrot ?? false;
   stan.celMagazynNowejLokalizacji = opcja.celMagazyn ?? null;
   przejdzDoCelu();
 }
@@ -910,7 +914,7 @@ async function przejdzDoCelu() {
     // Dostawa najczesciej jedzie na gore, zwrot wraca na regal - stad rozne domysly.
     // Oba bez blokady: magazynier moze zdecydowac inaczej.
     if (stan.zrodloPula) {
-      const domyslny = stan.zwrot ? 'K4' : 'K4G';
+      const domyslny = rodzajDok(stan.dostawa).domyslnyCel;
       if (opcjeMag.includes(domyslny)) select.value = domyslny;
     }
 
@@ -1095,7 +1099,7 @@ function aktualizujKrokCelPrzypisanie() {
   // edytowalne - przy zwrocie wielosztukowym moze odniesc czesc.
   const calaIloscK4 = mag === 'K4' && !stan.zrodloPula;
   inputIlosc.readOnly = calaIloscK4;
-  inputIlosc.value = ((calaIloscK4 || stan.zwrot) && ile > 0) ? String(ile) : '';
+  inputIlosc.value = ((calaIloscK4 || czyDrobnicaZeStrefy()) && ile > 0) ? String(ile) : '';
 
   el('input-cel').value = '';
   el('input-cel').placeholder = `Skanuj lokalizację (${magazynyMapa[mag]?.nazwa ?? mag})`;
@@ -1500,8 +1504,8 @@ async function zatwierdz() {
       ilosc: ilo,
       operator: operator(),
     };
-    podsumowanie = () => stan.zwrot
-      ? `Odniesiono zwrot ${symbol} (${ilo} szt.): ${stan.cel.kod}`
+    podsumowanie = () => czyDrobnicaZeStrefy()
+      ? `Odniesiono ${stan.dostawa.rodzaj === 'zwrot' ? 'zwrot' : 'przywózkę'} ${symbol} (${ilo} szt.): ${stan.cel.kod}`
       : `Rozłożono ${symbol} (${ilo} szt.): ${stan.zrodloPula} → ${stan.cel.kod}`;
   } else if (!stan.zrodlo) {
     // przypisanie pierwszej/kolejnej lokalizacji w WMS (LOK)

@@ -175,6 +175,48 @@ const MM_TYP = 9;
 const OKNO_DOSTAWY_DNI = 90;
 const OKNO_ZWROTY_PRZYWOZKI_DNI = Number(process.env.WMS_OKNO_DROBNICA_DNI) || 14;
 
+// Zapytanie ODWROTNE do pobierzDostawyK4: tam pytamy "co przyszlo na TE towary", tu "ktore
+// towary maja w ogole zwrot na K4". Potrzebne do listy zwrotow, ktora nie zna z gory zbioru
+// SKU (karta produktu zna - stad tamten kierunek).
+//
+// Zwraca sam ZBIOR KANDYDATOW (tw_Id + dane towaru do wyswietlenia), a NIE ilosci do rozlozenia.
+// Ile realnie zostalo, liczy dopiero rozbijDeficytK4 na deficycie - jedno zrodlo prawdy dla
+// karty produktu i listy. Druga implementacja licznika rozjechalaby oba ekrany.
+//
+// tw_Rodzaj = 1: tylko towary (wycina zestawy/komplety rodzaju 8 i uslugi) - ten sam filtr,
+// co w sciezce "Ostatnie sztuki", z tego samego powodu: zestaw nie ma fizycznego stanu na polce.
+const TW_RODZAJ_TOWAR = 1;
+
+// zrodloTyp: KFS_TYP = zwroty (okno krotkie), FZ_TYP = dostawy (okno dlugie). Okno idzie w parze
+// z typem, bo to dwa rozne zjawiska - patrz komentarz przy OKNO_* wyzej.
+async function pobierzTowaryZeZrodlemK4(zrodloTyp) {
+  const dni = zrodloTyp === FZ_TYP ? OKNO_DOSTAWY_DNI : OKNO_ZWROTY_PRZYWOZKI_DNI;
+  const od = new Date(Date.now() - dni * 24 * 60 * 60 * 1000);
+  const { recordset } = await query(`
+    SELECT DISTINCT o.ob_TowId AS tw_id, t.tw_Symbol AS symbol, t.tw_Nazwa AS nazwa,
+           t.tw_PodstKodKresk AS ean, t.tw_Pole1 AS lok_gt
+    FROM dok__Dokument pz
+    JOIN dok_Pozycja o ON o.ob_DokMagId = pz.dok_Id
+    JOIN dok__Dokument zr ON zr.dok_Id = pz.dok_DoDokId AND zr.dok_Typ = @zrodloTyp
+    JOIN tw__Towar t ON t.tw_Id = o.ob_TowId AND t.tw_Rodzaj = @rodzaj
+    WHERE pz.dok_Typ = @pzTyp AND o.ob_MagId = @mag AND pz.dok_DataWyst >= @od
+  `, { pzTyp: PZ_TYP, zrodloTyp, mag: MAG_K4, od, rodzaj: TW_RODZAJ_TOWAR });
+
+  return recordset.map((r) => ({
+    artykul_gt_id: String(r.tw_id),
+    symbol: r.symbol ? String(r.symbol).trim() : null,
+    nazwa: r.nazwa ? String(r.nazwa).trim() : null,
+    // EAN z GT, nie z kopii WMS: stany_lokalizacji.artykul_ean bywa puste (wypelnia sie
+    // dopiero przy ruchu), a na Zebrze skanuje sie kod kreskowy, nie symbol
+    ean: r.ean ? String(r.ean).trim() : null,
+    // podpowiedz miejsca na polce, gdy WMS nie zna lokalizacji tego SKU
+    lok_gt: r.lok_gt ? String(r.lok_gt).trim() : null,
+  }));
+}
+
+const pobierzTowaryZeZwrotamiK4 = () => pobierzTowaryZeZrodlemK4(KFS_TYP);
+const pobierzTowaryZDostawamiK4 = () => pobierzTowaryZeZrodlemK4(FZ_TYP);
+
 async function pobierzDostawyK4(twIds) {
   const wynik = new Map();
   if (!twIds || twIds.length === 0) return wynik;
@@ -322,5 +364,6 @@ function rozbijDeficytK4(deficyt, dokumenty, { artykul_gt_id, magazyn = MAG_KOD_
 
 module.exports = {
   znajdzMM, znajdzMMpoKluczu, kluczRuchu, budujUwagiMM, pobierzZkRezerwujaceK4,
-  pobierzDostawyK4, rozbijDeficytK4,
+  pobierzDostawyK4, pobierzTowaryZeZwrotamiK4, pobierzTowaryZDostawamiK4,
+  rozbijDeficytK4, iloscRozlozonaZDokumentu,
 };

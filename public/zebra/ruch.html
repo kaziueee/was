@@ -21,6 +21,8 @@
       <button type="button" id="btn-go-ruch" class="btn-menu">Ruch towaru<span>MM / zmiana lokalizacji</span></button>
       <button type="button" id="btn-go-uzup" class="btn-menu">Uzupełnienia K4<span>K4G → K4 wg rezerwacji</span></button>
       <button type="button" id="btn-go-sciezki" class="btn-menu">Ścieżki<span>zadania obchodu magazynu</span></button>
+      <button type="button" id="btn-go-zwroty" class="btn-menu">Zwroty<span>rozłóż wózek z korekt</span></button>
+      <button type="button" id="btn-go-dostawy" class="btn-menu">Dostawy<span>rozłóż towar z faktur</span></button>
       <button type="button" id="btn-go-historia" class="btn-menu">Historia ruchów<span>ostatnie operacje na Zebrze</span></button>
       <a class="btn-menu" href="produkty.html">Test wyszukiwania (GT)<span>podgląd karty produktu</span></a>
       <button type="button" id="btn-pelny-ekran" class="btn-menu btn-menu-2">⛶ Tryb pełnoekranowy</button>
@@ -267,6 +269,12 @@
           </div>
         </div>
         <p id="sciezki-pusto" class="hint hidden">Brak produktów do sprawdzenia. 🎉</p>
+        <!-- Wyjscia bez liczenia. "Brak" nie wymaga skanu (nie ma czego zeskanowac),
+             wiec siedzi tu, a nie za potwierdzeniem tozsamosci towaru. -->
+        <div id="sciezki-wyjscia" class="sciezki-wyjscia hidden">
+          <button type="button" id="sciezki-pomin" class="btn-poboczny">Pomiń →</button>
+          <button type="button" id="sciezki-brak" class="btn-poboczny btn-poboczny-ostrzez">Brak (0 szt.)</button>
+        </div>
       </section>
 
       <!-- podekran: raport niezgodnosci (tap -> otwiera Ruch dla SKU) -->
@@ -290,6 +298,95 @@
   </div>
   </div><!-- /widok-sciezki -->
 
+  <!-- Zwroty: rozkladanie wozka zbudowanego na desktopie. Wozek = fizyczny przedmiot,
+       lista pozycji = to, co ktos na niego realnie polozyl przy wystawianiu korekty. -->
+  <div id="widok-zwroty" class="hidden">
+  <div class="ekran">
+    <header class="ekran-naglowek"><div class="ekran-sku"><h1 id="zwroty-tytul">Zwroty</h1></div></header>
+    <main class="ekran-tresc">
+      <div id="zwroty-komunikat" class="komunikat hidden"></div>
+
+      <!-- podekran: lista wozkow -->
+      <section id="zwroty-wozki">
+        <div id="zwroty-wozki-lista" class="lista"></div>
+        <p id="zwroty-wozki-pusto" class="hint hidden">Brak wózków do rozłożenia.</p>
+      </section>
+
+      <!-- podekran: rozkladanie (jedna pozycja na ekran) -->
+      <section id="zwroty-poz" class="hidden">
+        <p id="zwroty-postep" class="hint"></p>
+        <div id="zwroty-karta" class="karta-info"></div>
+        <div class="pole-blok">
+          <label class="pole-etykieta" for="zwroty-skan">Zeskanuj towar z wózka</label>
+          <div class="pole-skan">
+            <input type="text" id="zwroty-skan" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj SKU / EAN">
+          </div>
+          <p id="zwroty-skan-hint" class="pole-hint"></p>
+        </div>
+        <div class="pole-blok hidden" id="zwroty-blok-lok">
+          <label class="pole-etykieta" for="zwroty-lok">Lokalizacja</label>
+          <div class="pole-skan">
+            <input type="text" id="zwroty-lok" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj lokalizację">
+          </div>
+          <p id="zwroty-lok-hint" class="pole-hint"></p>
+        </div>
+        <div class="pole-blok hidden" id="zwroty-blok-ilosc">
+          <label class="pole-etykieta" for="zwroty-ilosc">Ilość</label>
+          <div class="stepper">
+            <button type="button" id="zwroty-ilosc-minus" aria-label="Mniej">−</button>
+            <input type="number" id="zwroty-ilosc" class="stepper-wartosc" inputmode="numeric" min="1" step="1">
+            <button type="button" id="zwroty-ilosc-plus" aria-label="Więcej">+</button>
+          </div>
+        </div>
+        <div id="zwroty-wyjscia" class="sciezki-wyjscia hidden">
+          <button type="button" id="zwroty-pomin" class="btn-poboczny">Pomiń →</button>
+          <button type="button" id="zwroty-brak" class="btn-poboczny btn-poboczny-ostrzez">Brak na wózku</button>
+        </div>
+      </section>
+    </main>
+    <footer class="ekran-stopka">
+      <button type="button" id="zwroty-wstecz" class="btn-wstecz">← Wstecz</button>
+      <button type="button" id="zwroty-zatwierdz" class="btn-akcja hidden">Odłóż ✓</button>
+    </footer>
+
+    <div id="zwroty-sukces" class="sukces-overlay hidden">
+      <div class="sukces-box">
+        <div class="sukces-ikona" id="zwroty-sukces-ikona">✓</div>
+        <p id="zwroty-sukces-tekst"></p>
+        <p class="sukces-hint">Dotknij, aby kontynuować</p>
+      </div>
+    </div>
+  </div>
+  </div><!-- /widok-zwroty -->
+
+  <!-- Dostawy: faktury -> towary z faktury -> produkt (rozkladany zakladka Ruch).
+       Trzy poziomy, bo dostawa to 24 dokumenty na kwartal po ~715 szt. i do 43 SKU -
+       magazynier pracuje "faktura", nie pojedyncza sztuka. -->
+  <div id="widok-dostawy" class="hidden">
+  <div class="ekran">
+    <header class="ekran-naglowek"><div class="ekran-sku"><h1 id="dostawy-tytul">Dostawy</h1></div></header>
+    <main class="ekran-tresc">
+      <div id="dostawy-komunikat" class="komunikat hidden"></div>
+
+      <!-- podekran: lista faktur -->
+      <section id="dostawy-faktury">
+        <div id="dostawy-faktury-lista" class="lista"></div>
+        <p id="dostawy-faktury-pusto" class="hint hidden">Brak dostaw do rozłożenia. 🎉</p>
+      </section>
+
+      <!-- podekran: towary z jednej faktury -->
+      <section id="dostawy-towary" class="hidden">
+        <p id="dostawy-podpis" class="hint"></p>
+        <div id="dostawy-towary-lista" class="lista"></div>
+        <p id="dostawy-towary-pusto" class="hint hidden">Dostawa rozłożona. 🎉</p>
+      </section>
+    </main>
+    <footer class="ekran-stopka">
+      <button type="button" id="dostawy-wstecz" class="btn-wstecz">← Wstecz</button>
+    </footer>
+  </div>
+  </div><!-- /widok-dostawy -->
+
   <script src="/shared/auth.js"></script>
   <script src="blokada-edycji.js"></script>
   <script src="fullscreen.js"></script>
@@ -299,5 +396,7 @@
   <script src="uzupelnienia.js"></script>
   <script src="historia.js"></script>
   <script src="sciezki.js"></script>
+  <script src="zwroty.js"></script>
+  <script src="dostawy.js"></script>
 </body>
 </html>

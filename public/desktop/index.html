@@ -20,7 +20,8 @@
       <a href="#lokalizacje" class="tab-link" data-panel="lokalizacje">Lokalizacje</a>
       <a href="#mm" class="tab-link" data-panel="mm">MM</a>
       <a href="#uzupelnienia" class="tab-link" data-panel="uzupelnienia">Uzupełnienia</a>
-      <a href="#sprawy" class="tab-link" data-panel="sprawy">Sprawy</a>
+      <a href="#zwroty" class="tab-link" data-panel="zwroty">Zwroty</a>
+      <a href="#raporty" class="tab-link" data-panel="raporty">Raporty</a>
       <a href="#log" class="tab-link" data-panel="log">Log</a>
       <a href="#uzytkownicy" class="tab-link" data-panel="uzytkownicy" id="tab-uzytkownicy" style="display:none">Użytkownicy</a>
     </nav>
@@ -330,17 +331,56 @@
     </section>
 
     <!-- Panel Sprawy: otwarte niezgodnosci ze sciezek (do triazu), reczne "Zalatwione" -->
-    <section id="panel-sprawy" class="panel hidden">
+    <!-- Panel Zwroty: co wrocilo korekta (PZ<-KFS) i czeka na odniesienie na regal.
+         Zaznaczasz to, co realnie kladziesz na wozek -> "Stworz wozek". Reszta ma "Usun ze
+         zwrotow" (idzie na lokalizacje podstawowa) albo "Produkt" -> normalna operacja
+         (np. przeniesienie na K4R/BRK, gdy towar jest uszkodzony). -->
+    <section id="panel-zwroty" class="panel hidden">
       <div class="panel-naglowek">
-        <h2>Sprawy do wyjaśnienia</h2>
+        <h2>Zwroty do rozłożenia</h2>
         <div class="filtry">
-          <select id="sprawy-sciezka">
+          <span id="zwroty-licznik" class="filtry-info"></span>
+          <button type="button" id="btn-zwroty-wozek" class="btn btn-primary" disabled>Stwórz wózek</button>
+          <button type="button" id="btn-zwroty-odswiez" class="btn">Odśwież</button>
+        </div>
+      </div>
+      <div class="tabela-wrapper">
+        <table class="tabela">
+          <thead>
+            <tr>
+              <th class="kol-zazn"><input type="checkbox" id="zwroty-zazn-wszystkie" title="Zaznacz wszystkie"></th>
+              <th>Artykuł</th><th>Korekta</th><th>Data</th><th>Szt.</th>
+              <th>Lokalizacja</th><th>Stan K4</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="zwroty-tbody"></tbody>
+        </table>
+      </div>
+      <p id="zwroty-brak" class="hint hidden">Brak zwrotów do rozłożenia. 🎉</p>
+
+      <h3 class="podnaglowek">Wózki</h3>
+      <div class="tabela-wrapper">
+        <table class="tabela">
+          <thead>
+            <tr><th>Wózek</th><th>Status</th><th>SKU</th><th>Do rozłożenia</th><th>Kto</th><th>Kiedy</th><th></th></tr>
+          </thead>
+          <tbody id="wozki-tbody"></tbody>
+        </table>
+      </div>
+      <p id="wozki-brak" class="hint hidden">Brak wózków.</p>
+    </section>
+
+    <section id="panel-raporty" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Raporty</h2>
+        <div class="filtry">
+          <select id="raporty-sciezka">
             <option value="">Wszystkie ścieżki</option>
             <option value="ostatnie-sztuki">Ostatnie sztuki</option>
             <option value="k4-rezerwacja">K4 pełna rezerwacja</option>
           </select>
-          <span id="sprawy-licznik" class="filtry-info"></span>
-          <button type="button" id="btn-sprawy-odswiez" class="btn">Odśwież</button>
+          <span id="raporty-licznik" class="filtry-info"></span>
+          <button type="button" id="btn-raporty-odswiez" class="btn">Odśwież</button>
         </div>
       </div>
       <div class="tabela-wrapper">
@@ -348,13 +388,13 @@
           <thead>
             <tr>
               <th>Artykuł</th><th>Lokalizacja</th><th>Ścieżka</th><th>Stan GT</th>
-              <th>Policzono</th><th>Różnica</th><th>Kto</th><th>Kiedy</th><th></th>
+              <th>Policzono</th><th>Różnica</th><th>Rezerwacja</th><th>Kto</th><th>Kiedy</th><th></th>
             </tr>
           </thead>
-          <tbody id="sprawy-tbody"></tbody>
+          <tbody id="raporty-tbody"></tbody>
         </table>
       </div>
-      <p id="sprawy-brak" class="hint hidden">Brak otwartych spraw. 🎉</p>
+      <p id="raporty-brak" class="hint hidden">Brak otwartych spraw. 🎉</p>
     </section>
 
     <!-- Panel Log biznesowy (audyt: kto/co/gdzie/kiedy) -->

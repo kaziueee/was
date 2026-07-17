@@ -1742,24 +1742,39 @@ function kontynuujTenSamProdukt() {
   obsluzArtykul(dane); // rozklad zrodel albo przypisanie - dokladnie jak po zeskanowaniu SKU
 }
 
+// Dokad wyjsc po zamknieciu sukcesu. Domyslnie: reset kreatora (wejscie z kafla "Ruch" =
+// nowy ruch od zera). Ekran, ktory wchodzi tu ze SWOJEJ listy (Dostawy), podaje wlasny
+// powrot przez ruchOtworzArtykul(kod, {powrot}) - wtedy sukces oddaje go na te liste,
+// zamiast wyrzucac do pustego skanu.
+//
+// Callback jest zerowany przy KAZDYM wyjsciu z widoku Ruch (pokazWidok) i tuz przed
+// wywolaniem - inaczej wyciekalby na kolejny, niezwiazany produkt. Tak juz raz powstal blad
+// z kontekstem dostawy, wiec kasujemy go w jednym miejscu i bezwarunkowo.
+let powrotPoSukcesie = null;
+
+function wyjdzZSukcesu() {
+  el('sukces-overlay').classList.add('hidden');
+  const powrot = powrotPoSukcesie;
+  powrotPoSukcesie = null;
+  if (powrot) powrot(); else reset();
+}
+
 // ekran sukcesu znika po dotknieciu i resetuje kreator do nowego ruchu
 // (w trybie "Dalej" tlo NIE zamyka - trzeba wybrac przycisk Dalej/Gotowe)
 el('sukces-overlay').addEventListener('click', () => {
   if (sukcesDalejAktywny) return;
-  el('sukces-overlay').classList.add('hidden');
-  reset();
+  wyjdzZSukcesu();
 });
 el('btn-sukces-dalej').addEventListener('click', (e) => {
   e.stopPropagation();
   sukcesDalejAktywny = false;
   el('sukces-overlay').classList.add('hidden');
-  kontynuujTenSamProdukt();
+  kontynuujTenSamProdukt();   // zostajemy w produkcie - powrot czeka na "Gotowe"
 });
 el('btn-sukces-gotowe').addEventListener('click', (e) => {
   e.stopPropagation();
   sukcesDalejAktywny = false;
-  el('sukces-overlay').classList.add('hidden');
-  reset();
+  wyjdzZSukcesu();
 });
 
 el('btn-zatwierdz').addEventListener('click', zatwierdz);
@@ -1779,7 +1794,10 @@ el('input-zapas').addEventListener('keydown', (e) => { if (e.key === 'Enter') { 
 el('input-zapas').addEventListener('input', aktualizujAkcjeLabel);
 
 // --- router widokow (SPA: menu <-> ruch bez przeladowania, pelny ekran sie trzyma) ---
-function pokazWidok(nazwa) {
+// stan - opcjonalny wpis historii ({v, ...}), przekazywany widokom-SPA, zeby Back wracal do
+// KONKRETNEGO podekranu, a nie na poczatek widoku (Dostawy maja trzy poziomy: faktury ->
+// towary -> produkt, wiec sam 'dostawy' nie wystarczy do odtworzenia miejsca).
+function pokazWidok(nazwa, stan) {
   el('widok-menu').classList.toggle('hidden', nazwa !== 'menu');
   el('widok-ruch').classList.toggle('hidden', nazwa !== 'ruch');
   const uzup = el('widok-uzupelnienia');
@@ -1788,16 +1806,28 @@ function pokazWidok(nazwa) {
   if (hist) hist.classList.toggle('hidden', nazwa !== 'historia');
   const sciezki = el('widok-sciezki');
   if (sciezki) sciezki.classList.toggle('hidden', nazwa !== 'sciezki');
+  const zwroty = el('widok-zwroty');
+  if (zwroty) zwroty.classList.toggle('hidden', nazwa !== 'zwroty');
+  const dostawy = el('widok-dostawy');
+  if (dostawy) dostawy.classList.toggle('hidden', nazwa !== 'dostawy');
+  // Wyjscie z Ruchu unieważnia powrot poprzedniego wywolujacego - inaczej sukces w zupelnie
+  // innym kontekscie odeslalby na liste, ktorej juz nie ma na ekranie.
+  if (nazwa !== 'ruch') powrotPoSukcesie = null;
   if (nazwa === 'ruch') { zrobione = []; reset(); } // #5: swieze wejscie czysci liste zrobionych
   if (nazwa === 'uzupelnienia' && window.uzupOtworz) window.uzupOtworz();
   if (nazwa === 'historia' && window.historiaOtworz) window.historiaOtworz();
   if (nazwa === 'sciezki' && window.sciezkiOtworz) window.sciezkiOtworz();
+  if (nazwa === 'zwroty' && window.zwrotyOtworz) window.zwrotyOtworz();
+  if (nazwa === 'dostawy' && window.dostawyOtworz) window.dostawyOtworz(stan);
 }
 window.pokazWidok = pokazWidok;
 
 // Otworz widok Ruch od razu dla danego SKU/lokalizacji (uzywane np. z raportu Sciezek).
-window.ruchOtworzArtykul = (kod) => {
+// opcje.powrot - funkcja wolana po zamknieciu ekranu sukcesu zamiast resetu kreatora.
+// Ustawiamy PO pokazWidok, bo pokazWidok('ruch') czysci kontekst poprzedniego wejscia.
+window.ruchOtworzArtykul = (kod, opcje) => {
   pokazWidok('ruch');
+  powrotPoSukcesie = opcje?.powrot ?? null;
   history.pushState({ v: 'ruch' }, '');
   if (kod) wykonajSkan(String(kod));
 };
@@ -1812,7 +1842,13 @@ el('btn-pelny-ekran').addEventListener('click', () => {
 // Stan {v:'sciezki'} na stosie (dokladany przy wejsciu w menu scizek ORAZ w podekrany
 // obchodu/raportu) sprawia, ze Back z raportu/obchodu wraca do MENU SCIZEK, a dopiero
 // stamtad do menu glownego - zamiast przeskakiwac od razu do menu glownego.
-window.addEventListener('popstate', (e) => pokazWidok(e.state?.v === 'sciezki' ? 'sciezki' : 'menu'));
+// Widoki-SPA pushuja {v:<nazwa>} na wejsciu i przy podekranie, wiec Back cofa o jeden krok:
+// podekran -> menu widoku -> menu glowne. Nieznany/pusty stan = menu glowne.
+const WIDOKI_Z_HISTORIA = ['sciezki', 'zwroty', 'dostawy'];
+window.addEventListener('popstate', (e) => {
+  const v = WIDOKI_Z_HISTORIA.includes(e.state?.v) ? e.state.v : 'menu';
+  pokazWidok(v, e.state);   // caly wpis, bo niesie tez podekran (np. {v:'dostawy', dok})
+});
 
 (async () => { await initMagazyny(); })();
 pokazWidok('menu');

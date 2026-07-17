@@ -18,6 +18,11 @@ const STAN_MAX = 5;
 const RAZEM_MAX = 5;
 // Ile dni po sprawdzeniu pary (artykul+lokalizacja) wypada z listy.
 const DNI_POMIN_SPRAWDZONE = 180;
+// Ile dni pary POMINIETEJ ("Pomin" na obchodzie) nie pokazujemy. Krotkie okno, bo pominiecie
+// to "nie teraz" (zastawiona lokalizacja, brak czasu), a nie "sprawdzone" - po 180 dniach jak
+// przy sprawdzeniu zadanie by wyparowalo, a bez okna wracaloby jutro na to samo miejsce listy
+// (sort po lokalizacji), wiec magazyniera witalaby zawsze ta sama blokada.
+const DNI_POMIN_POMINIETE = 7;
 // Ile dni po przyjeciu z magazynu zewnetrznego (MAG/LS) pomijamy SKU - stan jest swiezy
 // i znany (ktos swiadomie dolozyl kilka szt.), nie ma czego weryfikowac.
 const DNI_POMIN_PRZYJECIE = 30;
@@ -63,9 +68,44 @@ async function zapiszSprawdzenie(req, res, akcjaZgodne, akcjaNiezgodne) {
   res.status(201).json({ zgodne, stan, zrodlo, policzone, roznica });
 }
 
+// Wspolne "Pomin" - magazynier nie moze teraz sprawdzic pozycji (lokalizacja zastawiona,
+// brak czasu). To NIE jest wynik liczenia, wiec:
+//  - nie wchodzi do okna MAX(id) w raportNiezgodnosci: pominiecie po niezgodnosci NIE moze
+//    jej domykac ("nie chcialo mi sie" != "zalatwione"),
+//  - ma wlasne, krotkie okno wykluczenia (DNI_POMIN_POMINIETE), niezalezne od sprawdzonych.
+// Skan nie jest wymagany - magazynier wlasnie mowi, ze do towaru nie dotarl.
+function zapiszPominiecie(req, res, akcja) {
+  const { artykul_gt_id, artykul_symbol, lokalizacja_kod, operator } = req.body ?? {};
+  if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });
+  if (!lokalizacja_kod) return res.status(400).json({ blad: 'Pole "lokalizacja_kod" jest wymagane' });
+  audyt.zapisz({
+    uzytkownik: operator ?? null,
+    akcja,
+    artykul_gt_id: String(artykul_gt_id),
+    artykul_symbol: artykul_symbol ?? null,
+    magazyn: 'K4',
+    lokalizacja: lokalizacja_kod,
+    wynik: 'pominiete',
+  });
+  res.status(201).json({ pominiete: true });
+}
+
+// Zbior par (artykul|lokalizacja) pominietych w oknie DNI_POMIN_POMINIETE - do wykluczenia z listy.
+function paryPominiete(akcja) {
+  return new Set(db.prepare(
+    `SELECT DISTINCT artykul_gt_id, lokalizacja FROM audyt
+     WHERE akcja = ? AND czas >= datetime('now', ?)`
+  ).all(akcja, `-${DNI_POMIN_POMINIETE} days`).map((r) => `${r.artykul_gt_id}|${r.lokalizacja}`));
+}
+
 // Wspolny raport otwartych niezgodnosci: pary (artykul+lokalizacja), dla ktorych NAJNOWSZE
 // sprawdzenie danej sciezki to "niezgodne" (nie domkniete pozniejszym zgodnym).
-function raportNiezgodnosci(res, akcjaZgodne, akcjaNiezgodne, akcjaZamkniecia) {
+//
+// Rezerwacja jest dociagana z GT NA ZYWO (nie z audytu), bo do decyzji "czym sie zajac
+// najpierw" liczy sie stan dzisiejszy: rezerwacja sprzed dwoch tygodni juz nic nie mowi -
+// ZK zdazyly powstac i zniknac. Ale GT NIE MOZE wywrocic raportu: przy niedostepnej bazie
+// oddajemy rezerwacja=null i raport dziala dalej (to czysty odczyt audytu - zadnego 503).
+async function raportNiezgodnosci(res, akcjaZgodne, akcjaNiezgodne, akcjaZamkniecia) {
   // Para wypada z raportu, gdy jej NAJNOWSZE zdarzenie to zgodne policzenie ALBO reczne
   // domkniecie ("Zalatwione", akcjaZamkniecia) - dlatego wszystkie trzy akcje wchodza do
   // okna MAX(id), a pokazujemy tylko te, gdzie najnowsze = niezgodne.
@@ -89,6 +129,17 @@ function raportNiezgodnosci(res, akcjaZgodne, akcjaNiezgodne, akcjaZamkniecia) {
     p.stan = przed.stan ?? przed.stan_gt ?? null;
     p.zrodlo = przed.zrodlo ?? (przed.stan_gt != null ? 'GT' : null);
     delete p.przed;
+    p.rezerwacja = null;
+  }
+
+  // GT tylko wzbogaca - blad tlumimy, bo raport ma dzialac takze przy padnietym Subiekcie
+  if (pozycje.length) {
+    try {
+      const stany = await pobierzStanyGt(pozycje.map((p) => p.artykul_gt_id));
+      for (const p of pozycje) {
+        p.rezerwacja = stany.get(String(p.artykul_gt_id))?.K4?.rezerwacja ?? null;
+      }
+    } catch { /* GT niedostepny - rezerwacja zostaje null, front pokaze "—" */ }
   }
 
   res.json({ pozycje, razem: pozycje.length });
@@ -188,8 +239,11 @@ router.get('/ostatnie-sztuki', async (req, res, next) => {
      WHERE mag_zrodlo_zewnetrzny IS NOT NULL AND data_ruchu >= datetime('now', ?)`
   ).all(`-${DNI_POMIN_PRZYJECIE} days`).map((r) => r.artykul_gt_id));
 
+  const pominiete = paryPominiete('sprawdzenie_pominiete');
+
   const pozycje = kandydaci
-    .filter((t) => !sprawdzone.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`) && !przyjete.has(t.artykul_gt_id))
+    .filter((t) => !sprawdzone.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`) && !przyjete.has(t.artykul_gt_id)
+      && !pominiete.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`))
     .sort((a, b) => (a.lokalizacja_kod || '').localeCompare(b.lokalizacja_kod || '')
       || (a.symbol || '').localeCompare(b.symbol || ''));
 
@@ -205,12 +259,16 @@ router.post('/ostatnie-sztuki/sprawdzenie', (req, res) =>
 // GET /api/sciezki/ostatnie-sztuki/raport - otwarte niezgodnosci: pary (artykul+lokalizacja),
 // dla ktorych NAJNOWSZE sprawdzenie to 'sprawdzenie_niezgodne' (nie domkniete pozniejszym
 // zgodnym sprawdzeniem). Posortowane po kodzie lokalizacji = kolejnosc zbierania.
-router.get('/ostatnie-sztuki/raport', (req, res) =>
-  raportNiezgodnosci(res, 'sprawdzenie_stanu', 'sprawdzenie_niezgodne', 'sprawdzenie_zamkniete'));
+router.get('/ostatnie-sztuki/raport', (req, res, next) =>
+  raportNiezgodnosci(res, 'sprawdzenie_stanu', 'sprawdzenie_niezgodne', 'sprawdzenie_zamkniete').catch(next));
 
 // POST .../niezgodnosc/zamknij - reczne "Zalatwione" dla pary (artykul+lokalizacja).
 router.post('/ostatnie-sztuki/niezgodnosc/zamknij', (req, res) =>
   zamknijNiezgodnosc(req, res, 'sprawdzenie_zamkniete'));
+
+// POST /ostatnie-sztuki/pomin - "nie teraz": pozycja znika z obchodu na DNI_POMIN_POMINIETE dni.
+router.post('/ostatnie-sztuki/pomin', (req, res) =>
+  zapiszPominiecie(req, res, 'sprawdzenie_pominiete'));
 
 // --- Sciezka 2: "K4 z pelna rezerwacja" - towary tylko w K4, caly stan zarezerwowany ---
 
@@ -231,10 +289,13 @@ router.get('/k4-rezerwacja', async (req, res) => {
        AND czas >= datetime('now', ?)`
   ).all(`-${DNI_POMIN_SPRAWDZONE} days`).map((r) => `${r.artykul_gt_id}|${r.lokalizacja}`));
 
+  const pominiete = paryPominiete('sprawdzenie_rez_pominiete');
+
   const pozycje = gtRows
     .map((g) => ({ artykul_gt_id: g.artykul_gt_id, symbol: g.symbol, nazwa: g.nazwa,
       ean: g.ean, lokalizacja_kod: g.lokalizacja_kod, stan: g.stan_k4, rezerwacja: g.rez_k4, zrodlo: 'GT' }))
-    .filter((t) => !sprawdzone.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`))
+    .filter((t) => !sprawdzone.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`)
+      && !pominiete.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`))
     .sort((a, b) => (a.lokalizacja_kod || '').localeCompare(b.lokalizacja_kod || '')
       || (a.symbol || '').localeCompare(b.symbol || ''));
 
@@ -244,10 +305,13 @@ router.get('/k4-rezerwacja', async (req, res) => {
 router.post('/k4-rezerwacja/sprawdzenie', (req, res) =>
   zapiszSprawdzenie(req, res, 'sprawdzenie_rez', 'sprawdzenie_rez_niezgodne'));
 
-router.get('/k4-rezerwacja/raport', (req, res) =>
-  raportNiezgodnosci(res, 'sprawdzenie_rez', 'sprawdzenie_rez_niezgodne', 'sprawdzenie_rez_zamkniete'));
+router.get('/k4-rezerwacja/raport', (req, res, next) =>
+  raportNiezgodnosci(res, 'sprawdzenie_rez', 'sprawdzenie_rez_niezgodne', 'sprawdzenie_rez_zamkniete').catch(next));
 
 router.post('/k4-rezerwacja/niezgodnosc/zamknij', (req, res) =>
   zamknijNiezgodnosc(req, res, 'sprawdzenie_rez_zamkniete'));
+
+router.post('/k4-rezerwacja/pomin', (req, res) =>
+  zapiszPominiecie(req, res, 'sprawdzenie_rez_pominiete'));
 
 module.exports = router;

@@ -650,6 +650,9 @@ main {
 /* Panel Sprawy */
 .filtry-info { font-size: 0.9rem; color: #555; align-self: center; }
 .sprawy-roznica { font-weight: bold; color: #b36b00; }
+/* Rezerwacja > 0 przy otwartej niezgodnosci = na ten towar czeka ZK, wiec sprawa jest
+   pilna. Zero i "—" (GT nie odpowiedzial) zostaja neutralne - to nie sygnal. */
+.sprawy-rez { font-weight: bold; color: #9b2226; }
 .btn-sprawy-zalatw { border-color: #16803a; color: #16803a; }
 .btn-sprawy-zalatw:hover { background: #e7f6eb; }
 /* Historia = szeroka tabela (8 kolumn) -> poszerz modal na tej zakladce */
@@ -845,3 +848,10 @@ main {
 }
 .kafel-amber .kafel-pasek span { background: #e0a800; }
 .kafel-red   .kafel-pasek span { background: #9b2226; }
+
+/* --- Zwroty --- */
+/* Drugorzedny tekst w komorce (nazwa towaru, "z GT", "nieznana"). Inline, bo siedzi
+   obok tresci glownej, a nie jako osobny blok jak .hint. */
+.hint-inline { color: #777; font-size: 0.85em; }
+.kol-zazn { width: 32px; text-align: center; }
+.podnaglowek { margin: 24px 0 8px; font-size: 1.05em; }

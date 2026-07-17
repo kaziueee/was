@@ -70,7 +70,8 @@ const panele = {
   lokalizacje: { sekcja: 'panel-lokalizacje', zaladowano: false, odswiez: odswiezLokalizacje },
   mm: { sekcja: 'panel-mm', zaladowano: false, odswiez: () => {} },
   uzupelnienia: { sekcja: 'panel-uzupelnienia', zaladowano: false, odswiez: odswiezUzupelnienia },
-  sprawy: { sekcja: 'panel-sprawy', zaladowano: false, odswiez: odswiezSprawy },
+  zwroty: { sekcja: 'panel-zwroty', zaladowano: false, odswiez: odswiezZwroty },
+  raporty: { sekcja: 'panel-raporty', zaladowano: false, odswiez: odswiezRaporty },
   log: { sekcja: 'panel-log', zaladowano: false, odswiez: odswiezLog },
   uzytkownicy: { sekcja: 'panel-uzytkownicy', zaladowano: false, odswiez: odswiezUzytkownicy },
 };
@@ -744,14 +745,14 @@ async function renderModalHistoria() {
 // liste, sortuje po lokalizacji (kolejnosc obchodu), pozwala domknac sprawe recznie
 // ("Zalatwione" - wpis audytu, backend usuwa pare z raportu). NIE robi ruchu WMS.
 
-const SCIEZKI_SPRAW = [
+const SCIEZKI_RAPORTOW = [
   { klucz: 'ostatnie-sztuki', nazwa: 'Ostatnie sztuki', baza: '/api/sciezki/ostatnie-sztuki' },
   { klucz: 'k4-rezerwacja', nazwa: 'K4 pełna rezerwacja', baza: '/api/sciezki/k4-rezerwacja' },
 ];
 
-let sprawyDane = [];
+let raportyDane = [];
 
-function sprawyDniTemu(czas) {
+function dniTemu(czas) {
   if (!czas) return '';
   const dt = new Date(String(czas).replace(' ', 'T') + 'Z');
   if (isNaN(dt.getTime())) return '';
@@ -761,30 +762,30 @@ function sprawyDniTemu(czas) {
   return `${dni} dni temu`;
 }
 
-async function odswiezSprawy() {
-  el('sprawy-tbody').innerHTML = '';
+async function odswiezRaporty() {
+  el('raporty-tbody').innerHTML = '';
   try {
-    const wyniki = await Promise.all(SCIEZKI_SPRAW.map(async (s) => {
+    const wyniki = await Promise.all(SCIEZKI_RAPORTOW.map(async (s) => {
       const { pozycje } = await api(`${s.baza}/raport`);
       return (pozycje || []).map((p) => ({ ...p, sciezka: s.klucz, sciezka_nazwa: s.nazwa, sciezka_baza: s.baza }));
     }));
-    sprawyDane = wyniki.flat();
-    renderujSprawy();
+    raportyDane = wyniki.flat();
+    renderujRaporty();
   } catch (err) {
     pokazKomunikat(err.message, 'blad');
   }
 }
 
-function renderujSprawy() {
-  const filtr = el('sprawy-sciezka').value;
-  const lista = (filtr ? sprawyDane.filter((s) => s.sciezka === filtr) : sprawyDane)
+function renderujRaporty() {
+  const filtr = el('raporty-sciezka').value;
+  const lista = (filtr ? raportyDane.filter((s) => s.sciezka === filtr) : raportyDane)
     .slice()
     .sort((a, b) => (a.lokalizacja_kod || '').localeCompare(b.lokalizacja_kod || '')
       || (a.artykul_symbol || '').localeCompare(b.artykul_symbol || ''));
-  const tbody = el('sprawy-tbody');
+  const tbody = el('raporty-tbody');
   tbody.innerHTML = '';
-  el('sprawy-brak').classList.toggle('hidden', lista.length > 0);
-  el('sprawy-licznik').textContent = lista.length ? `${lista.length} otwartych` : '';
+  el('raporty-brak').classList.toggle('hidden', lista.length > 0);
+  el('raporty-licznik').textContent = lista.length ? `${lista.length} otwartych` : '';
   for (const w of lista) {
     const roznica = (w.policzone != null && w.stan != null) ? (w.policzone - w.stan) : null;
     const roznicaTxt = roznica != null ? `${roznica > 0 ? '+' : ''}${roznica}` : '—';
@@ -796,8 +797,11 @@ function renderujSprawy() {
       + `<td>${w.stan ?? '—'}</td>`
       + `<td>${w.policzone ?? '—'}</td>`
       + `<td class="${roznica ? 'sprawy-roznica' : ''}">${roznicaTxt}</td>`
+      // rezerwacja z GT na zywo: mowi, czy braku pilnuje jakies otwarte ZK. null = GT nie
+      // odpowiedzial (raport dziala dalej), 0 = nikt nie czeka - to dwie rozne rzeczy
+      + `<td class="${w.rezerwacja ? 'sprawy-rez' : ''}">${w.rezerwacja == null ? '—' : w.rezerwacja}</td>`
       + `<td>${w.uzytkownik || '—'}</td>`
-      + `<td>${sprawyDniTemu(w.czas)}</td>`
+      + `<td>${dniTemu(w.czas)}</td>`
       + `<td class="td-akcja"></td>`;
     const tdAkcja = tr.querySelector('.td-akcja');
     const bZal = document.createElement('button');
@@ -821,9 +825,9 @@ async function zalatwSprawe(w, tr) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ artykul_gt_id: w.artykul_gt_id, artykul_symbol: w.artykul_symbol, lokalizacja_kod: w.lokalizacja_kod }),
     });
-    sprawyDane = sprawyDane.filter((s) => s !== w);
+    raportyDane = raportyDane.filter((s) => s !== w);
     tr.remove();
-    renderujSprawy();
+    renderujRaporty();
     pokazKomunikat('Sprawa oznaczona jako załatwiona.', 'ok');
   } catch (err) {
     pokazKomunikat(err.message, 'blad');
@@ -842,8 +846,199 @@ async function otworzSprawaProdukt(w) {
   }
 }
 
-el('btn-sprawy-odswiez').addEventListener('click', odswiezSprawy);
-el('sprawy-sciezka').addEventListener('change', renderujSprawy);
+el('btn-raporty-odswiez').addEventListener('click', odswiezRaporty);
+el('raporty-sciezka').addEventListener('change', renderujRaporty);
+
+// === ZWROTY (PZ <- KFS na K4) + wozki ===
+//
+// Lista jest liczona na zywo w backendzie (kubelek "zwrot" z rozbijDeficytK4). Front NIE liczy
+// nic sam - zaznacza tylko, ktore pozycje ida na wozek. Backend i tak przelicza wybor u siebie
+// (zasada 5: front to UX, nie autorytet).
+
+let zwrotyDane = [];
+let zwrotyNaWozkach = 0;
+const zaznaczone = new Set();
+const kluczZwrotu = (z) => `${z.artykul_gt_id}|${z.zrodlo_dok}`;
+
+async function odswiezZwroty() {
+  try {
+    const [lista, wozki] = await Promise.all([api('/api/zwroty'), api('/api/zwroty/wozki')]);
+    zwrotyDane = lista.pozycje || [];
+    // zaznaczenia pozycji, ktorych juz nie ma (ktos rozlozyl w miedzyczasie), musza zniknac -
+    // inaczej "Stworz wozek" wyslalby duchy i dostal 409
+    for (const k of [...zaznaczone]) {
+      if (!zwrotyDane.some((z) => kluczZwrotu(z) === k)) zaznaczone.delete(k);
+    }
+    zwrotyNaWozkach = lista.na_wozkach || 0;
+    renderujZwroty();
+    renderujWozki(wozki.wozki || []);
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+  }
+}
+
+function renderujZwroty() {
+  const tbody = el('zwroty-tbody');
+  tbody.innerHTML = '';
+  el('zwroty-brak').classList.toggle('hidden', zwrotyDane.length > 0);
+  el('zwroty-licznik').textContent = zwrotyDane.length
+    ? `${zwrotyDane.length} do rozłożenia${zwrotyNaWozkach ? ` · ${zwrotyNaWozkach} na wózkach` : ''}`
+    : (zwrotyNaWozkach ? `${zwrotyNaWozkach} na wózkach` : '');
+
+  for (const z of zwrotyDane) {
+    const tr = document.createElement('tr');
+    // lokalizacja z GT (tw_Pole1) to tylko podpowiedz - WMS jej nie potwierdza, wiec oznaczamy
+    const lokTxt = z.lokalizacja_kod
+      ? `${z.lokalizacja_kod}${z.lok_zrodlo === 'GT' ? ' <span class="hint-inline">(z GT)</span>' : ''}`
+      : '<span class="hint-inline">nieznana</span>';
+    tr.innerHTML =
+        `<td class="kol-zazn"><input type="checkbox"></td>`
+      + `<td><strong>${z.symbol || z.artykul_gt_id}</strong><br><span class="hint-inline">${z.nazwa || ''}</span></td>`
+      + `<td>${z.dok_zrodlowy || '—'}</td>`
+      + `<td>${z.data || '—'}</td>`
+      + `<td>${z.ilosc}</td>`
+      + `<td>${lokTxt}</td>`
+      + `<td>${z.stan_k4 ?? '—'}</td>`
+      + `<td class="td-akcja"></td>`;
+
+    const chk = tr.querySelector('input[type=checkbox]');
+    chk.checked = zaznaczone.has(kluczZwrotu(z));
+    chk.addEventListener('change', () => {
+      if (chk.checked) zaznaczone.add(kluczZwrotu(z)); else zaznaczone.delete(kluczZwrotu(z));
+      odswiezPrzyciskWozka();
+    });
+
+    const tdAkcja = tr.querySelector('.td-akcja');
+    const bUsun = document.createElement('button');
+    bUsun.className = 'btn btn-small';
+    bUsun.textContent = 'Usuń ze zwrotów';
+    bUsun.title = 'Odkłada na lokalizację podstawową - pozycja znika z listy zwrotów';
+    bUsun.addEventListener('click', () => usunZeZwrotow(z, bUsun));
+    const bProd = document.createElement('button');
+    bProd.className = 'btn btn-small';
+    bProd.textContent = 'Produkt';
+    bProd.title = 'Otwiera kartę - stąd zrobisz normalną operację, np. przeniesienie na K4R/BRK';
+    bProd.addEventListener('click', () => otworzSprawaProdukt({ artykul_gt_id: z.artykul_gt_id, artykul_symbol: z.symbol }));
+    tdAkcja.append(bUsun, bProd);
+    tbody.appendChild(tr);
+  }
+  odswiezPrzyciskWozka();
+  el('zwroty-zazn-wszystkie').checked = zwrotyDane.length > 0 && zaznaczone.size === zwrotyDane.length;
+}
+
+function odswiezPrzyciskWozka() {
+  const b = el('btn-zwroty-wozek');
+  b.disabled = zaznaczone.size === 0;
+  b.textContent = zaznaczone.size ? `Stwórz wózek (${zaznaczone.size})` : 'Stwórz wózek';
+}
+
+// "Usun ze zwrotow" = POST /ruchy/rozloz z celem = lokalizacja podstawowa. NIE jest to osobny
+// endpoint ani wlasny stan: to normalne rozlozenie, tyle ze z pominieciem wozka. Dzieki temu
+// licznik dokumentu (ruchy.zrodlo_dok) zdejmuje pozycje tak samo, jak rozlozenie z wozka.
+//
+// Lokalizacje podpowiadamy (WMS -> tw_Pole1 -> puste), ale operator moze nadpisac - bywa, ze
+// WMS nie zna miejsca tego SKU, a on wie, gdzie towar odklada.
+async function usunZeZwrotow(z, btn) {
+  const kod = prompt(
+    `Usuń ze zwrotów: ${z.symbol} (${z.ilosc} szt.)\n\n`
+    + `Na jaką lokalizację odkładasz?`,
+    z.lokalizacja_kod || ''
+  );
+  if (kod === null) return;
+  const kodTrim = String(kod).trim();
+  if (!kodTrim) { pokazKomunikat('Podaj lokalizację.', 'blad'); return; }
+
+  btn.disabled = true;
+  try {
+    const lok = await api(`/api/lokalizacje/kod/${encodeURIComponent(kodTrim)}`);
+    await api('/api/ruchy/rozloz', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        artykul_gt_id: z.artykul_gt_id,
+        mag_zrodlo_pula: 'K4',
+        zrodlo_dok: z.zrodlo_dok,
+        lok_cel_id: lok.id,
+        ilosc: z.ilosc,
+        artykul_symbol: z.symbol,
+        artykul_nazwa: z.nazwa,
+        artykul_ean: z.ean,
+      }),
+    });
+    pokazKomunikat(`${z.symbol}: ${z.ilosc} szt. odłożone na ${lok.kod}.`, 'ok');
+    odswiezZwroty();
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+    btn.disabled = false;
+  }
+}
+
+async function stworzWozek() {
+  const wybor = zwrotyDane.filter((z) => zaznaczone.has(kluczZwrotu(z)));
+  if (!wybor.length) return;
+  const nazwa = prompt(`Nazwa wózka (${wybor.length} SKU) — możesz zostawić puste:`, '');
+  if (nazwa === null) return;
+  try {
+    const r = await api('/api/zwroty/wozki', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nazwa: nazwa || null,
+        pozycje: wybor.map((z) => ({ artykul_gt_id: z.artykul_gt_id, zrodlo_dok: z.zrodlo_dok })),
+      }),
+    });
+    zaznaczone.clear();
+    const odrzucone = (r.odrzucone || []).length;
+    pokazKomunikat(
+      `Wózek ${r.wozek_id}: ${r.pozycji} SKU.` + (odrzucone ? ` ${odrzucone} pominięto (rozłożone w międzyczasie).` : ''),
+      'ok'
+    );
+    odswiezZwroty();
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+  }
+}
+
+function renderujWozki(wozki) {
+  const tbody = el('wozki-tbody');
+  tbody.innerHTML = '';
+  el('wozki-brak').classList.toggle('hidden', wozki.length > 0);
+  for (const w of wozki) {
+    const tr = document.createElement('tr');
+    // "rozlozony" wynika z pozycji (do_rozlozenia=0), nie z osobnej flagi - patrz stanPozycjiWozka
+    const gotowy = w.do_rozlozenia === 0;
+    tr.innerHTML =
+        `<td><strong>${w.nazwa || `Wózek ${w.id}`}</strong></td>`
+      + `<td>${w.status}${gotowy ? ' <span class="hint-inline">· rozłożony</span>' : ''}</td>`
+      + `<td>${w.pozycji}</td>`
+      + `<td>${w.do_rozlozenia}</td>`
+      + `<td>${w.utworzyl || '—'}</td>`
+      + `<td>${dniTemu(w.utworzono)}</td>`
+      + `<td class="td-akcja"></td>`;
+    if (w.status === 'otwarty') {
+      const b = document.createElement('button');
+      b.className = 'btn btn-small';
+      b.textContent = 'Zamknij';
+      b.title = 'Zamknięty wózek nie przyjmuje nowych pozycji - kolejne zwroty pójdą na następny';
+      b.addEventListener('click', async () => {
+        try {
+          await api(`/api/zwroty/wozki/${w.id}/zamknij`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          odswiezZwroty();
+        } catch (err) { pokazKomunikat(err.message, 'blad'); }
+      });
+      tr.querySelector('.td-akcja').appendChild(b);
+    }
+    tbody.appendChild(tr);
+  }
+}
+
+el('btn-zwroty-odswiez').addEventListener('click', odswiezZwroty);
+el('btn-zwroty-wozek').addEventListener('click', stworzWozek);
+el('zwroty-zazn-wszystkie').addEventListener('change', (e) => {
+  zaznaczone.clear();
+  if (e.target.checked) for (const z of zwrotyDane) zaznaczone.add(kluczZwrotu(z));
+  renderujZwroty();
+});
 
 // === UZYTKOWNICY (zakladka tylko dla admina) ===
 

@@ -147,6 +147,48 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_audyt_czas ON audyt(czas)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_audyt_artykul ON audyt(artykul_gt_id)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_audyt_uzytkownik ON audyt(uzytkownik)');
 
+// Wozki zwrotow. Wozek to FIZYCZNY przedmiot: osoba wystawiajaca korekte klade na niego towar
+// od reki, a potem go zamyka i odwozi. Dlatego jako jedyna sciezka ma wlasna tabele - reszta
+// wystarcza sobie audytem, bo nie modeluje rzeczy z magazynu, tylko zdarzenia.
+//
+// Wozek powstaje z ZAZNACZENIA na liscie zwrotow (snapshot), nie z jobu pollujacego GT. Powod:
+// GT nie odroznia zwrotu sprawnego od uszkodzonego - kazda korekta wchodzi PZ-em na K4
+// (zweryfikowane na zywej bazie: 0 pozycji PZ<-KFS na BRK/K4R). Tylko czlowiek trzymajacy
+// towar wie, czy jedzie na regal, czy na K4R/BRK - i to on zaznacza.
+db.exec(`CREATE TABLE IF NOT EXISTS wozki (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nazwa TEXT,
+  status TEXT NOT NULL DEFAULT 'otwarty',
+  utworzono DATETIME DEFAULT CURRENT_TIMESTAMP,
+  utworzyl TEXT,
+  zamkniety DATETIME,
+  zamknal TEXT
+)`);
+
+// Pozycja wozka. ilosc = SNAPSHOT z chwili tworzenia, NIE biezacy stan kubelka.
+//
+// Po co snapshot, skoro wszedzie indziej liczymy na zywo: kubelek zwrotu widzi tylko okno
+// WMS_OKNO_DROBNICA_DNI (14 dni). Wozek stojacy dluzej mialby kubelek pusty i wygladalby na
+// rozlozony, choc towar dalej na nim lezy. Snapshot jest odporny na okno.
+//
+// UWAGA: "ile juz rozlozono" NIE jest tu trzymane - liczy sie je z ruchow, przez
+// iloscRozlozonaZDokumentu(artykul, 'K4', zrodlo_dok). Wlasna flaga "rozlozone" rozjechalaby
+// sie z rzeczywistoscia, gdy ktos rozlozy ten sam zwrot z karty produktu (zakladka Ruch).
+// Snapshot mowi "ile tego bylo", ruchy mowia "ile zrobiono" - prawda o zrobieniu ma jedno zrodlo.
+db.exec(`CREATE TABLE IF NOT EXISTS pozycje_wozka (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  wozek_id INTEGER NOT NULL REFERENCES wozki(id) ON DELETE CASCADE,
+  artykul_gt_id TEXT NOT NULL,
+  artykul_symbol TEXT,
+  artykul_nazwa TEXT,
+  artykul_ean TEXT,
+  zrodlo_dok TEXT NOT NULL,
+  ilosc DECIMAL NOT NULL,
+  lok_podpowiedz TEXT,
+  UNIQUE (wozek_id, artykul_gt_id, zrodlo_dok)
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_pozycje_wozka_wozek ON pozycje_wozka(wozek_id)');
+
 // Uzytkownicy + logowanie (Faza A#4). PIN opcjonalny (pin_hash/pin_salt NULL = bez PIN).
 // Rola: 'admin' (zarzadza userami) | 'magazynier'. Dezaktywacja (aktywny=0) zamiast
 // usuwania - zachowuje slad "kto" w audycie/ruchach.

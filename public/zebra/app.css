@@ -611,7 +611,10 @@ html, body {
   overflow-wrap: anywhere;
 }
 .karta-info strong { font-size: var(--font-title); font-weight: 700; display: block; }
-.karta-info span { font-size: var(--font-label); color: var(--color-text-muted); }
+/* block, NIE inline: przy inline sasiednie spany zlewaly sie w jeden ciag i "M2-J30" + "1 szt."
+   czytalo sie jako "M2-J301 szt." - falszywy kod lokalizacji, czyli ryzyko odlozenia w zle
+   miejsce. Kazdy fakt (nazwa / miejsce / ilosc) ma wlasna linie. */
+.karta-info span { font-size: var(--font-label); color: var(--color-text-muted); display: block; }
 
 /* krok "wybor": odstepy miedzy blokami w obrebie kroku (gap .ekran-tresc dziala
    tylko miedzy sekcjami) - rozdziela tytul/podsumowanie/pole skanu/liste.
@@ -632,6 +635,30 @@ html, body {
   font-weight: 600;
   cursor: pointer;
 }
+
+/* Wyjscia z przystanku obchodu bez liczenia (Pomin / Brak). Para pod polami, NIE w stopce -
+   tam sa juz Wstecz i Zatwierdz, a cztery przyciski nie mieszcza sie w 360 px szerokosci
+   Zebry. Slabszy wizualnie niz btn-akcja: to wyjscia awaryjne, nie glowna sciezka. */
+.sciezki-wyjscia {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+.btn-poboczny {
+  flex: 1 1 0;
+  min-height: 44px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--font-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-poboczny:active { background: var(--color-border); }
+.btn-poboczny:disabled { opacity: 0.5; }
+/* "Brak" to zgloszenie zera - trafia do raportu jak niezgodnosc, wiec ma wage ostrzezenia. */
+.btn-poboczny-ostrzez { border-color: var(--color-warning); color: var(--color-warning); }
 
 /* --- Blok pola (etykieta + kontrolka) --- */
 .pole-blok { display: flex; flex-direction: column; }

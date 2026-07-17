@@ -89,6 +89,7 @@
       el('sciezki-rez-zk').classList.add('hidden');
       el('sciezki-skan').closest('.pole-blok').classList.add('hidden');
       el('sciezki-ilosc').closest('.pole-blok').classList.add('hidden');
+      el('sciezki-wyjscia').classList.add('hidden');
       el('sciezki-pusto').textContent = lista.length
         ? `Sprawdzono ${lista.length} ${lista.length === 1 ? 'pozycję' : 'pozycji'}. 🎉`
         : 'Brak produktów do sprawdzenia. 🎉';
@@ -111,10 +112,79 @@
       { artykul_gt_id: p.artykul_gt_id, stany_gt: { K4: { rezerwacja: p.rezerwacja ?? 0 } } },
       el('sciezki-rez-zk')
     );
+    el('sciezki-wyjscia').classList.remove('hidden');
     el('sciezki-skan-hint').textContent = 'Zeskanuj towar, aby potwierdzić że jesteś przy właściwej pozycji.';
     el('sciezki-skan').value = '';
     el('sciezki-ilosc').value = '';
     el('sciezki-skan').focus();
+  }
+
+  // "Pomin" - nie teraz (zastawiona lokalizacja, brak czasu). Zapisujemy, zeby pozycja nie
+  // wracala jutro na to samo miejsce listy (sort po lokalizacji), ale krotko - to nie jest
+  // sprawdzenie. Bez skanu: magazynier wlasnie mowi, ze do towaru nie dotarl.
+  async function pominPrzystanek() {
+    const p = lista[idx];
+    if (!p) return;
+    el('sciezki-pomin').disabled = true;
+    try {
+      const res = await fetch(sciezkaBaza + '/pomin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          artykul_gt_id: p.artykul_gt_id,
+          artykul_symbol: p.artykul_symbol || p.symbol,
+          lokalizacja_kod: p.lokalizacja_kod,
+          operator: operator(),
+        }),
+      });
+      const dane = await res.json();
+      if (!res.ok) throw new Error(dane?.blad || `Błąd ${res.status}`);
+      idx += 1;
+      renderPrzystanek();
+    } catch (err) {
+      komunikat(err.message, 'blad');
+    } finally {
+      el('sciezki-pomin').disabled = false;
+    }
+  }
+
+  // "Brak" - zgloszenie zera. To zwykle sprawdzenie z policzona iloscia 0, tylko bez skanu:
+  // pustej polki nie ma jak zeskanowac. Backend porowna 0 ze stanem GT i (przy stanie > 0)
+  // zapisze niezgodnosc do raportu - czyli ta sama sciezka co reczne wpisanie zera.
+  async function zglosBrak() {
+    const p = lista[idx];
+    if (!p) return;
+    el('sciezki-brak').disabled = true;
+    try {
+      const res = await fetch(sciezkaBaza + '/sprawdzenie', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          artykul_gt_id: p.artykul_gt_id,
+          artykul_symbol: p.artykul_symbol || p.symbol,
+          lokalizacja_kod: p.lokalizacja_kod,
+          ilosc_policzona: 0,
+          operator: operator(),
+        }),
+      });
+      const dane = await res.json();
+      if (!res.ok) throw new Error(dane?.blad || `Błąd ${res.status}`);
+      // Zgodne = GT tez ma 0 (pusta polka potwierdzona). Niezgodne = GT ma stan, ktorego
+      // na polce nie ma - to najwazniejszy sygnal tej sciezki, wiec zatrzymanie z komunikatem.
+      if (dane.zgodne) {
+        beep(true);
+        komunikat('Pusto — zgadza się ✓', 'ok');
+        idx += 1;
+        setTimeout(renderPrzystanek, 650);
+      } else {
+        beep(false);
+        sukcesNiezgodne(p, dane);
+      }
+    } catch (err) {
+      komunikat(err.message, 'blad');
+    } finally {
+      el('sciezki-brak').disabled = false;
+    }
   }
 
   // skan potwierdza tozsamosc towaru (symbol lub EAN); dopiero wtedy pole ilosci
@@ -318,6 +388,8 @@
   el('btn-sciezka-rez-raport').addEventListener('click', () => { ustawSciezke('/api/sciezki/k4-rezerwacja', 'K4 pełna rezerwacja'); otworzRaport(); });
   el('sciezki-zatwierdz').addEventListener('click', zatwierdzPrzystanek);
   el('sciezki-sukces').addEventListener('click', zamknijSukces);
+  el('sciezki-pomin').addEventListener('click', pominPrzystanek);
+  el('sciezki-brak').addEventListener('click', zglosBrak);
 
   // Wstecz: z podekranu obchodu/raportu -> menu scizek; z menu scizek -> menu glowne.
   // history.back() cofa dokladnie o jeden wpis (patrz pushState w startObchod/otworzRaport

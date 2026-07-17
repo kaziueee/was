@@ -69,6 +69,10 @@ async function policzKafle() {
       const k = await gtDokumenty.pobierzTowaryZeZwrotamiK4();
       return (await doRozlozenia.zbierz(k, 'zwroty')).length;
     }),
+    licz('dostawy', async () => {
+      const k = await gtDokumenty.pobierzTowaryZDostawamiK4();
+      return (await doRozlozenia.zbierz(k, 'dostawy')).length;
+    }),
     // Kafel liczy TYLKO "nieznany przychod" (WMS zna miejsce, a stan GT urosl poza naszym
     // obiegiem), a NIE cale "do sprawdzenia". Powod: druga polowa tej listy to backlog
     // migracyjny (~2300 SKU, ktorych WMS nigdy nie poznal) - on zjedzie do zera dopiero po

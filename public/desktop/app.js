@@ -225,12 +225,13 @@ function renderujPulpitKolejke(d) {
   });
   if (k) {
     kafle.push(kafelZadania('Nadsprzedaż', k.nadsprzedaz, '#zestawienia/nadsprzedaz', 'red'));
+    kafle.push(kafelZadania('Dostawy do rozłożenia', k.dostawy, '#ruchy/dostawy', 'amber'));
     kafle.push(kafelZadania('Przywózka do rozłożenia', k.przywozka, '#zestawienia/przywozka', 'amber'));
     kafle.push(kafelZadania('Zwroty do rozłożenia', k.zwroty, '#zwroty', 'amber'));
     // Tylko "nieznany przychod", nie cale "do sprawdzenia" (patrz pulpit-snapshot.js): backlog
     // migracyjny to osobny kafel "Do zlokalizowania (t_GT)" wyzej. Ekran otwiera sie domyslnie
     // na tej samej zakladce, wiec liczba z kafla zgadza sie z tym, co user zobaczy po kliknieciu.
-    kafle.push(kafelZadania('Przyjęcia wewn (PW) do odłożenia', k.do_sprawdzenia, '#ruchy/do-sprawdzenia', 'amber'));
+    kafle.push(kafelZadania('Nieznane PW do rozwiązania', k.do_sprawdzenia, '#ruchy/do-sprawdzenia', 'amber'));
     kafle.push(kafelZadania('Do przywiezienia z Leszna', k.leszno, '#zestawienia/leszno', 'blue'));
   }
 

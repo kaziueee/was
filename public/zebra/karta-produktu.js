@@ -34,9 +34,35 @@ function statusZgodnosciBadge(produkt) {
   return `<span class="zg-badge ${klasa}" title="K4: ${z.k4 ?? '–'} | K4G: ${z.k4g ?? '–'}">${z.ogolna}</span>`;
 }
 
-// suma rezerwacji ze stany_gt (wszystkie magazyny) - do pokazania "(rez N)" przy ilosci
+// Czy magazyn wlicza sie do "Razem". BRK (braki) i K4R (reklamacje) NIE - to towar
+// niepelnowartosciowy i nie ma zawyzac sumy "ile mam" (CLAUDE.md, "Magazyny").
+//
+// Zrodlem prawdy jest config/magazyny.js (flaga liczDoRazem), ktora Zebra dostaje gotowa
+// z /api/magazyny - dlatego NIE wypisujemy tu kodow po raz trzeci. Backend liczy to samo
+// dwoma sposobami (SORT_WYRAZENIA.razem w SQL + helper sumaRazem w Node); czwarta, reczna
+// lista tutaj rozjechalaby sie przy pierwszym nowym magazynie - tak wlasnie K4R trafil do
+// "Lacznego stanu" na Zebrze, choc backend go stamtad wykluczal.
+function liczyDoRazem(kodMagazynu) {
+  // magazynyMapa (ruch.js) laduje sie z /api/magazyny asynchronicznie po starcie. Karta
+  // renderuje sie dopiero po skanie, wiec w praktyce jest juz gotowa; gdyby jeszcze nie byla,
+  // wolimy policzyc magazyn (zachowanie sprzed zmiany) niz pokazac zanizone "Razem".
+  const m = (typeof magazynyMapa !== 'undefined') ? magazynyMapa[kodMagazynu] : null;
+  return !m || m.liczDoRazem !== false;
+}
+
+// suma "Razem" = K4+K4G+MAG+LS (bez BRK i K4R) - do POKAZANIA uzytkownikowi
+function sumaRazemGt(stanyGt) {
+  return Object.entries(stanyGt || {})
+    .reduce((suma, [kod, w]) => suma + (liczyDoRazem(kod) ? (w.ilosc || 0) : 0), 0);
+}
+
+// suma rezerwacji - te same magazyny co "Razem". Bez tego produkt z K4R:60 (rez 60) pokazywal
+// "Rezerwacje: 60", choc na polce nie jest zarezerwowane nic: stan na Reklamacjach jest w 100%
+// zarezerwowany (zmierzone), wiec zalewalby ten licznik. Backend wyklucza je z REZ_RAZEM
+// z tego samego powodu ("to inny proces, nie sprzedaz z polki").
 function sumaRezerwacji(stanyGt) {
-  return Object.values(stanyGt || {}).reduce((s, w) => s + (w.rezerwacja || 0), 0);
+  return Object.entries(stanyGt || {})
+    .reduce((suma, [kod, w]) => suma + (liczyDoRazem(kod) ? (w.rezerwacja || 0) : 0), 0);
 }
 
 // buduje {podetykieta, podetykieta2} dla pozycji listy wyboru (zob.
@@ -60,7 +86,13 @@ function liczbaArtykulow(n) {
   return `${n} artykułów`;
 }
 
-// suma ilosci ze stany_gt (wszystkie magazyny) - do filtra "Ukryj produkty bez stanu"
+// suma ilosci ze WSZYSTKICH magazynow, RAZEM z BRK i K4R - do filtra "Ukryj produkty bez stanu"
+// i do sortowania wynikow wyszukiwania.
+//
+// Tu celowo liczymy wszystko, w odroznieniu od sumaRazemGt: towar lezacy wylacznie na
+// Reklamacjach albo w Brakach MA stan i wolno go ruszyc (K4R -> K4 to legalne MM), wiec
+// ukrycie go pod "brak stanu" bylo by klamstwem. "Razem" odpowiada na pytanie "ile mam do
+// sprzedania", a to na pytanie "czy ten towar w ogole gdzies jest".
 function sumaStanowGt(stanyGt) {
   return Object.values(stanyGt || {}).reduce((suma, w) => suma + w.ilosc, 0);
 }

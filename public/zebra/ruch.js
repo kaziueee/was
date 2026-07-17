@@ -578,7 +578,9 @@ function pokazRozkladZrodel(dane, artykul) {
 
   przygotujKrokWybor();
 
-  const lacznyStan = sumaStanowGt(artykul.stany_gt);
+  // "Laczny stan" = Razem (bez BRK i K4R) - to odpowiedz na "ile mam do sprzedania".
+  // Stan na Brakach/Reklamacjach widac nizej, w rozkladzie per magazyn.
+  const lacznyStan = sumaRazemGt(artykul.stany_gt);
   const rezRazem = sumaRezerwacji(artykul.stany_gt);
   el('wybor-podsumowanie').innerHTML = `<span>Łączny stan: <b>${lacznyStan} szt.</b></span>`
     + `<span class="podsumowanie-sep"></span>`
@@ -776,10 +778,14 @@ function statusBarKlasa(zgodnosc) {
   return (zgodnosc && zgodnosc.ogolna && ZGODNOSC_BAR[zgodnosc.ogolna]) || 'st-neutral';
 }
 
-// skrot stanow GT do podpisu karty: "Razem 58 · K4 28 · K4G 30" (magazyny z 0 pomijane)
+// skrot stanow GT do podpisu karty: "Razem 58 · K4 28 · K4G 30" (magazyny z 0 pomijane).
+// "Razem" liczy bez BRK i K4R (sumaRazemGt), ale rozklad per magazyn pokazuje je dalej -
+// tak samo jak tabela desktopu, gdzie maja wlasne kolumny obok kolumny Razem.
 function stanSkrotKarty(stanyGt) {
-  const razem = sumaStanowGt(stanyGt);
-  if (!razem) return 'brak stanu w GT';
+  const razem = sumaRazemGt(stanyGt);
+  // "Razem 0" przy stanie wylacznie na BRK/K4R to NIE "brak stanu w GT" - towar jest,
+  // tylko niepelnowartosciowy. Dlatego pustke rozstrzygamy suma WSZYSTKICH magazynow.
+  if (!sumaStanowGt(stanyGt)) return 'brak stanu w GT';
   const perMag = Object.entries(stanyGt || {})
     .filter(([, w]) => w.ilosc)
     .map(([m, w]) => `${m} ${w.ilosc}${w.rezerwacja ? ` (rez ${w.rezerwacja})` : ''}`)

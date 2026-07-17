@@ -707,7 +707,7 @@ const RODZAJE_DOK = {
   dostawa:        { naglowek: 'DOSTAWA',       opis: 'do rozłożenia',     domyslnyCel: 'K4G' },
   zwrot:          { naglowek: 'ZWROT',         opis: 'Strefa zwrotów',    domyslnyCel: 'K4' },
   przywozka:      { naglowek: 'PRZYWÓZKA',     opis: 'Strefa przywózki',  domyslnyCel: 'K4' },
-  przyjecie_wewn: { naglowek: 'PRZYJĘCIE (PW)', opis: 'Szuflada przyjęć', domyslnyCel: 'K4' },
+  przyjecie_wewn: { naglowek: 'PRZYJĘCIE (PW)', opis: 'do odłożenia', domyslnyCel: 'K4' },
 };
 const rodzajDok = (dok) => RODZAJE_DOK[dok?.rodzaj] || RODZAJE_DOK.dostawa;
 

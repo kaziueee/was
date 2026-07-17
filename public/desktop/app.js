@@ -2416,7 +2416,7 @@ const RODZAJE_DOK = {
   dostawa:        { etykieta: 'Dostawa',        strefa: null,                akcja: 'Rozłóż',  zadanie: 'do rozłożenia',            domyslnyCel: 'K4G' },
   zwrot:          { etykieta: 'Zwrot',          strefa: 'Strefa zwrotów',    akcja: 'Odnieś',  zadanie: 'do odniesienia na regał',  domyslnyCel: 'K4' },
   przywozka:      { etykieta: 'Przywózka',      strefa: 'Strefa przywózki',  akcja: 'Odnieś',  zadanie: 'do odniesienia na regał',  domyslnyCel: 'K4' },
-  przyjecie_wewn: { etykieta: 'Przyjęcie (PW)', strefa: 'Szuflada przyjęć',  akcja: 'Odnieś',  zadanie: 'do odłożenia na regał',    domyslnyCel: 'K4' },
+  przyjecie_wewn: { etykieta: 'Przyjęcie (PW)', strefa: null,                akcja: 'Odnieś',  zadanie: 'do odłożenia na regał',    domyslnyCel: 'K4' },
 };
 
 function dodajMagWms(tbody, mag, loki, k4Zapas, planTekst) {

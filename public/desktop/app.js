@@ -71,19 +71,53 @@ const panele = {
   mm: { sekcja: 'panel-mm', zaladowano: false, odswiez: () => {} },
   uzupelnienia: { sekcja: 'panel-uzupelnienia', zaladowano: false, odswiez: odswiezUzupelnienia },
   zwroty: { sekcja: 'panel-zwroty', zaladowano: false, odswiez: odswiezZwroty },
-  raporty: { sekcja: 'panel-raporty', zaladowano: false, odswiez: odswiezRaporty },
+  dostawy: { sekcja: 'panel-dostawy', zaladowano: false, odswiez: odswiezDostawy },
+  zestawienia: { sekcja: 'panel-zestawienia', zaladowano: false, odswiez: odswiezZestawienia },
+  sciezki: { sekcja: 'panel-sciezki', zaladowano: false, odswiez: odswiezRaporty },
   log: { sekcja: 'panel-log', zaladowano: false, odswiez: odswiezLog },
   uzytkownicy: { sekcja: 'panel-uzytkownicy', zaladowano: false, odswiez: odswiezUzytkownicy },
 };
 
-function pokazPanel(nazwa) {
+// Grupa "Ruchy" - jedna pozycja w nawigacji, cztery osobne panele pod spodem. Trzymamy je
+// jako oddzielne sekcje (a nie jeden panel z przelaczana trescia), bo istnialy wczesniej i
+// kazdy ma swoj stan; grupa dokłada tylko warstwe nawigacji.
+const GRUPY = { ruchy: { domyslny: 'mm', panele: ['mm', 'uzupelnienia', 'rozjazdy', 'dostawy'] } };
+
+// panel -> grupa, do zaznaczania wlasciwej zakladki glownej i pokazania paska podzakladek
+const GRUPA_PANELU = Object.fromEntries(
+  Object.entries(GRUPY).flatMap(([g, def]) => def.panele.map((p) => [p, g]))
+);
+
+function pokazPanel(nazwa, pod) {
   if (!panele[nazwa]) nazwa = 'pulpit';
+  // wejscie na sama grupe (#ruchy) - pokaz jej domyslny panel
+  if (GRUPY[nazwa]) nazwa = GRUPY[nazwa].domyslny;
+
   for (const [klucz, p] of Object.entries(panele)) {
     el(p.sekcja).classList.toggle('hidden', klucz !== nazwa);
   }
+
+  // Zakladka glowna: dla panelu w grupie podswietlamy GRUPE, nie panel (panel nie ma
+  // wlasnej pozycji w nawigacji).
+  const glowna = GRUPA_PANELU[nazwa] ?? nazwa;
   document.querySelectorAll('.tab-link').forEach((btn) => {
-    btn.classList.toggle('aktywny', btn.dataset.panel === nazwa);
+    btn.classList.toggle('aktywny', btn.dataset.panel === glowna);
   });
+
+  // Pasek podzakladek Ruchow - widoczny tylko wewnatrz grupy
+  const pasek = el('podzakladki-ruchy');
+  pasek.classList.toggle('hidden', GRUPA_PANELU[nazwa] !== 'ruchy');
+  pasek.querySelectorAll('.podzakladka').forEach((a) => {
+    a.classList.toggle('aktywna', a.dataset.pod === nazwa);
+  });
+
+  // Zestawienia maja wlasne podzakladki (jeden panel, przelaczana tresc) - adres nimi steruje.
+  // Zmiana podzakladki uniewaznia "zaladowano", zeby przeladowanie poszlo RAZ, ponizej -
+  // inaczej ustawZestawienie i panel.odswiez() strzelalyby oba.
+  if (nazwa === 'zestawienia' && ustawZestawienie(pod || zestAktywne)) {
+    panele.zestawienia.zaladowano = false;
+  }
+
   const panel = panele[nazwa];
   if (!panel.zaladowano) {
     panel.zaladowano = true;
@@ -91,14 +125,27 @@ function pokazPanel(nazwa) {
   }
 }
 
-// Routing po hashu (#mm itd.) - zakladki to <a href="#...">, wiec prawy/srodkowy/
-// Cmd-klik otwiera panel w nowej karcie; klik zmienia hash -> hashchange.
-function panelZHasha() {
+// Routing po hashu. Format: #panel albo #panel/podzakladka (np. #ruchy/mm, #zestawienia/leszno).
+// Zakladki i podzakladki to <a href="#...">, wiec prawy/srodkowy/Cmd-klik otwiera je w nowej
+// karcie - a dzieki podzakladce w adresie karta otwiera sie DOKLADNIE tam, gdzie klikales.
+function zHasha() {
   const h = decodeURIComponent(location.hash.replace(/^#/, ''));
-  return panele[h] ? h : 'pulpit';
+  const [glowna, pod] = h.split('/');
+  // panel w grupie adresujemy przez grupe (#ruchy/mm), ale bezposredni #mm tez ma dzialac -
+  // stare linki i zakladki przegladarki nie moga sie psuc
+  if (GRUPY[glowna]) {
+    const cel = GRUPY[glowna].panele.includes(pod) ? pod : GRUPY[glowna].domyslny;
+    return { nazwa: cel, pod: null };
+  }
+  return { nazwa: panele[glowna] ? glowna : 'pulpit', pod: pod || null };
 }
 
-window.addEventListener('hashchange', () => pokazPanel(panelZHasha()));
+function przejdzZHasha() {
+  const { nazwa, pod } = zHasha();
+  pokazPanel(nazwa, pod);
+}
+
+window.addEventListener('hashchange', przejdzZHasha);
 
 // === PULPIT (Faza 5) ===
 
@@ -141,16 +188,6 @@ function renderujPulpitKolejke(d) {
   const kafle = [];
 
   kafle.push(pulpitKafel({
-    etykieta: 'Ruchy z błędem', wartosc: z.ruchy_error,
-    podpis: z.ruchy_error ? pulpitWiek(z.ruchy_error_wiek_dni) : 'brak',
-    wariant: z.ruchy_error ? 'red' : 'ok', onKlik: pulpitSkokLog,
-  }));
-  kafle.push(pulpitKafel({
-    etykieta: 'Ruchy oczekujące', wartosc: z.ruchy_pending,
-    podpis: z.ruchy_pending ? pulpitWiek(z.ruchy_pending_wiek_dni) : 'brak',
-    wariant: z.ruchy_pending ? 'amber' : 'ok', onKlik: pulpitSkokLog,
-  }));
-  kafle.push(pulpitKafel({
     etykieta: 'Rozjazdy do wyjaśnienia', wartosc: z.rozjazdy_nowe,
     podpis: z.rozjazdy_nowe ? pulpitWiek(z.rozjazdy_wiek_dni) : 'brak',
     wariant: z.rozjazdy_nowe ? 'amber' : 'ok', onKlik: () => { location.hash = '#rozjazdy'; },
@@ -171,10 +208,45 @@ function renderujPulpitKolejke(d) {
       podpis: 'jeszcze nie policzone', wariant: 'neutral' }));
   }
 
+  // Kafle "do zrobienia" ze snapshotu (jak statusy - licza sie z GT raz na godzine).
+  // Kazdy klika sie na ZYWA liste, wiec licznik jest wskazowka "czy jest co robic",
+  // a nie zrodlem prawdy - ta jest na liscie.
+  //
+  // null = snapshot nie policzyl (brak GT / job jeszcze nie chodzil) -> "—", NIE zero.
+  // Zero znaczy "sprawdzone, nic nie ma" i to zupelnie inna informacja niz "nie wiem".
+  const k = d.kafle;
+  const kafelZadania = (etykieta, wartosc, hash, wariantGdyJest) => pulpitKafel({
+    etykieta,
+    wartosc: wartosc == null ? '—' : wartosc,
+    podpis: wartosc == null ? 'brak danych' : (wartosc ? 'SKU' : 'nic do zrobienia'),
+    wariant: wartosc == null ? 'neutral' : (wartosc ? wariantGdyJest : 'ok'),
+    onKlik: () => { location.hash = hash; },
+  });
+  if (k) {
+    kafle.push(kafelZadania('Nadsprzedaż', k.nadsprzedaz, '#zestawienia/nadsprzedaz', 'red'));
+    kafle.push(kafelZadania('Przywózka do rozłożenia', k.przywozka, '#zestawienia/przywozka', 'amber'));
+    kafle.push(kafelZadania('Zwroty do rozłożenia', k.zwroty, '#zwroty', 'amber'));
+    kafle.push(kafelZadania('Do przywiezienia z Leszna', k.leszno, '#zestawienia/leszno', 'blue'));
+  }
+
   kafle.push(pulpitKafel({ etykieta: 'Uzupełnienia K4', wartosc: '→',
     wariant: 'neutral', onKlik: () => { location.hash = '#uzupelnienia'; } }));
 
-  kafle.forEach((k) => cont.appendChild(k));
+  // Stan kolejki technicznej na KONIEC: to diagnostyka ("czy cos sie zacielo"), a nie praca
+  // do zrobienia. W normalny dzien oba sa zerem, wiec na poczatku zajmowaly najlepsze miejsce
+  // i spychaly w dol kafle, ktore realnie mowia, co robic.
+  kafle.push(pulpitKafel({
+    etykieta: 'Ruchy z błędem', wartosc: z.ruchy_error,
+    podpis: z.ruchy_error ? pulpitWiek(z.ruchy_error_wiek_dni) : 'brak',
+    wariant: z.ruchy_error ? 'red' : 'ok', onKlik: pulpitSkokLog,
+  }));
+  kafle.push(pulpitKafel({
+    etykieta: 'Ruchy oczekujące', wartosc: z.ruchy_pending,
+    podpis: z.ruchy_pending ? pulpitWiek(z.ruchy_pending_wiek_dni) : 'brak',
+    wariant: z.ruchy_pending ? 'amber' : 'ok', onKlik: pulpitSkokLog,
+  }));
+
+  kafle.forEach((x) => cont.appendChild(x));
 }
 
 function renderujPulpitStan(zajetosc) {
@@ -301,6 +373,9 @@ async function odswiezProdukty() {
   const zgodnosc = zaznaczoneWartosci('.prod-zgodnosc');
   if (zgodnosc.length > 0) params.set('zgodnosc', zgodnosc.join(','));
 
+  const strefy = zaznaczoneWartosci('.prod-strefa');
+  if (strefy.length > 0) params.set('strefa', strefy.join(','));
+
   if (el('prod-rezerwacja').checked) params.set('z_rezerwacja', '1');
   if (el('prod-zablokowane').checked) params.set('pokaz_zablokowane', '1');
 
@@ -358,6 +433,7 @@ function renderujProdukty({ produkty, total, limit, offset, tryb }) {
       <td>${komorkaStan(p.stany_gt, 'MAG')}</td>
       <td>${komorkaStan(p.stany_gt, 'LS')}</td>
       <td>${komorkaStan(p.stany_gt, 'BRK')}</td>
+      <td>${komorkaStan(p.stany_gt, 'K4R')}</td>
       <td>${p.razem}</td>
       <td class="kol-lok">${wmsK4}</td>
       <td class="kol-lok">${wmsK4g}</td>
@@ -407,7 +483,7 @@ el('prod-rezerwacja').addEventListener('change', () => {
   prodOffset = 0;
   odswiezProdukty();
 });
-document.querySelectorAll('.prod-magazyn, .prod-zgodnosc').forEach((cb) => {
+document.querySelectorAll('.prod-magazyn, .prod-zgodnosc, .prod-strefa').forEach((cb) => {
   cb.addEventListener('change', () => {
     prodOffset = 0;
     odswiezProdukty();
@@ -810,8 +886,8 @@ function renderujRaporty() {
     bZal.addEventListener('click', () => zalatwSprawe(w, tr));
     const bOtw = document.createElement('button');
     bOtw.className = 'btn btn-small';
-    bOtw.textContent = 'Produkt';
-    bOtw.addEventListener('click', () => otworzSprawaProdukt(w));
+    bOtw.textContent = 'Edytuj';
+    bOtw.addEventListener('click', () => otworzProduktPoSymbolu(w));
     tdAkcja.append(bZal, bOtw);
     tbody.appendChild(tr);
   }
@@ -834,8 +910,10 @@ async function zalatwSprawe(w, tr) {
   }
 }
 
-// Otwiera modal produktu dla sprawy (dociaga pelny obiekt z /api/produkty).
-async function otworzSprawaProdukt(w) {
+// Otwiera kartę produktu dla wiersza z DOWOLNEJ listy (Raporty / Zwroty / Zestawienia).
+// Dociaga pelny obiekt z /api/produkty, bo modal potrzebuje danych WMS (lokalizacje, zgodnosc),
+// ktorych listy nie niosa - one maja tylko stany GT.
+async function otworzProduktPoSymbolu(w) {
   try {
     const { produkty } = await api(`/api/produkty?q=${encodeURIComponent(w.artykul_symbol || w.artykul_gt_id)}&limit=10`);
     const p = produkty.find((x) => String(x.artykul_gt_id) === String(w.artykul_gt_id)) || produkty[0];
@@ -851,7 +929,7 @@ el('raporty-sciezka').addEventListener('change', renderujRaporty);
 
 // === ZWROTY (PZ <- KFS na K4) + wozki ===
 //
-// Lista jest liczona na zywo w backendzie (kubelek "zwrot" z rozbijDeficytK4). Front NIE liczy
+// Lista jest liczona na zywo w backendzie (kubelek "zwrot" z rozbijStanK4). Front NIE liczy
 // nic sam - zaznacza tylko, ktore pozycje ida na wozek. Backend i tak przelicza wybor u siebie
 // (zasada 5: front to UX, nie autorytet).
 
@@ -916,9 +994,9 @@ function renderujZwroty() {
     bUsun.addEventListener('click', () => usunZeZwrotow(z, bUsun));
     const bProd = document.createElement('button');
     bProd.className = 'btn btn-small';
-    bProd.textContent = 'Produkt';
+    bProd.textContent = 'Edytuj';
     bProd.title = 'Otwiera kartę - stąd zrobisz normalną operację, np. przeniesienie na K4R/BRK';
-    bProd.addEventListener('click', () => otworzSprawaProdukt({ artykul_gt_id: z.artykul_gt_id, artykul_symbol: z.symbol }));
+    bProd.addEventListener('click', () => otworzProduktPoSymbolu({ artykul_gt_id: z.artykul_gt_id, artykul_symbol: z.symbol }));
     tdAkcja.append(bUsun, bProd);
     tbody.appendChild(tr);
   }
@@ -1031,6 +1109,175 @@ function renderujWozki(wozki) {
     tbody.appendChild(tr);
   }
 }
+
+// === DOSTAWY (PZ <- FZ) - faktury -> towary ===
+
+let dostawyFaktura = null;   // otwarta faktura albo null = poziom listy faktur
+
+async function odswiezDostawy() {
+  if (dostawyFaktura) return wczytajTowaryFaktury(dostawyFaktura.zrodlo_dok);
+  el('dostawy-faktury-widok').classList.remove('hidden');
+  el('dostawy-towary-widok').classList.add('hidden');
+  el('btn-dostawy-wstecz').classList.add('hidden');
+  el('dostawy-naglowek').textContent = 'Dostawy do rozłożenia';
+  try {
+    const { faktury, razem } = await api('/api/dostawy');
+    const tbody = el('dostawy-faktury-tbody');
+    tbody.innerHTML = '';
+    el('dostawy-faktury-brak').classList.toggle('hidden', faktury.length > 0);
+    el('dostawy-licznik').textContent = razem ? `${razem} do rozłożenia` : '';
+    for (const f of faktury) {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+          `<td><strong>${f.dok_zrodlowy || '—'}</strong></td>`
+        + `<td>${f.kontrahent || '—'}</td>`
+        + `<td>${f.zrodlo_dok}</td>`
+        + `<td>${f.data || '—'}</td>`
+        + `<td>${f.sku}</td>`
+        + `<td>${f.sztuk}</td>`
+        + `<td class="td-akcja"><button class="btn btn-small" type="button">Towary</button></td>`;
+      tr.querySelector('button').addEventListener('click', () => {
+        dostawyFaktura = f;
+        wczytajTowaryFaktury(f.zrodlo_dok);
+      });
+      tbody.appendChild(tr);
+    }
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+  }
+}
+
+async function wczytajTowaryFaktury(dok) {
+  el('dostawy-faktury-widok').classList.add('hidden');
+  el('dostawy-towary-widok').classList.remove('hidden');
+  el('btn-dostawy-wstecz').classList.remove('hidden');
+  try {
+    const dane = await api(`/api/dostawy/${encodeURIComponent(dok)}`);
+    // numer FZ i kontrahent backend czyta z POZYCJI, wiec po rozlozeniu ostatniego SKU sa null -
+    // trzymamy podpis z listy faktur, zeby naglowek nie zdegradowal sie w chwili sukcesu
+    const podpis = [dane.dok_zrodlowy ?? dostawyFaktura?.dok_zrodlowy, dane.kontrahent ?? dostawyFaktura?.kontrahent]
+      .filter(Boolean).join(' · ');
+    el('dostawy-naglowek').textContent = podpis ? `${podpis} (${dok})` : dok;
+    el('dostawy-licznik').textContent = dane.razem ? `${dane.razem} SKU do rozłożenia` : '';
+    const tbody = el('dostawy-towary-tbody');
+    tbody.innerHTML = '';
+    el('dostawy-towary-brak').classList.toggle('hidden', dane.pozycje.length > 0);
+    for (const p of dane.pozycje) {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+          `<td><strong>${p.symbol || p.artykul_gt_id}</strong></td>`
+        + `<td>${p.nazwa || ''}</td>`
+        + `<td>${p.ilosc}</td>`
+        + `<td>${p.lokalizacja_kod || '<span class="hint-inline">nieznana</span>'}`
+        + `${p.lok_zrodlo === 'GT' ? ' <span class="hint-inline">(z GT)</span>' : ''}</td>`
+        + `<td>${p.stan_k4 ?? '—'}</td>`
+        + `<td class="${p.rezerwacja ? 'sprawy-rez' : ''}">${p.rezerwacja ?? 0}</td>`
+        + `<td class="td-akcja"><button class="btn btn-small" type="button">Edytuj</button></td>`;
+      tr.querySelector('button').addEventListener('click', () =>
+        otworzProduktPoSymbolu({ artykul_gt_id: p.artykul_gt_id, artykul_symbol: p.symbol }));
+      tbody.appendChild(tr);
+    }
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+  }
+}
+
+el('btn-dostawy-odswiez').addEventListener('click', odswiezDostawy);
+el('btn-dostawy-wstecz').addEventListener('click', () => { dostawyFaktura = null; odswiezDostawy(); });
+
+// === ZESTAWIENIA (przywozka / leszno / nadsprzedaz) ===
+
+// Kolejnosc = kolejnosc podzakladek; pierwszy jest domyslny (przy pustym/nieznanym adresie).
+const ZESTAWIENIA = ['przywozka', 'leszno', 'nadsprzedaz'];
+let zestAktywne = 'przywozka';
+
+// Wiersz "katalogowy" - ten sam zestaw kolumn co tabela Produktow (stan + rezerwacja w jednej
+// komorce przez komorkaStan), zeby czytalo sie tak samo w calym panelu.
+function wierszKatalogowy(p, dodatkowe = '') {
+  const tr = document.createElement('tr');
+  tr.innerHTML =
+      `<td><strong>${p.symbol}</strong></td>`
+    + `<td>${p.nazwa || ''}</td>`
+    + `<td>${p.ean ?? '—'}</td>`
+    + `<td>${komorkaStan(p.stany_gt, 'K4')}</td>`
+    + `<td>${komorkaStan(p.stany_gt, 'K4G')}</td>`
+    + `<td>${komorkaStan(p.stany_gt, 'MAG')}</td>`
+    + `<td>${komorkaStan(p.stany_gt, 'LS')}</td>`
+    + `<td>${p.razem}</td>`
+    + dodatkowe
+    + `<td class="td-akcja"><button class="btn btn-small" type="button">Edytuj</button></td>`;
+  tr.querySelector('button').addEventListener('click', () =>
+    otworzProduktPoSymbolu({ artykul_gt_id: p.artykul_gt_id, artykul_symbol: p.symbol }));
+  return tr;
+}
+
+function wypelnijKatalog(tbodyId, brakId, produkty, dodatkowe) {
+  const tbody = el(tbodyId);
+  tbody.innerHTML = '';
+  el(brakId).classList.toggle('hidden', produkty.length > 0);
+  for (const p of produkty) tbody.appendChild(wierszKatalogowy(p, dodatkowe ? dodatkowe(p) : ''));
+}
+
+async function odswiezZestawienia() {
+  try {
+    if (zestAktywne === 'przywozka') {
+      const d = await api('/api/zestawienia/przywozka');
+      const tbody = el('zest-strefa-tbody');
+      tbody.innerHTML = '';
+      el('zest-strefa-brak').classList.toggle('hidden', d.strefa.length > 0);
+      for (const p of d.strefa) {
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+            `<td><strong>${p.symbol || p.artykul_gt_id}</strong></td>`
+          + `<td>${p.nazwa || ''}</td>`
+          + `<td>${p.zrodlo_mag || '—'}</td>`
+          + `<td>${p.ilosc}</td>`
+          + `<td>${p.lokalizacja_kod || '<span class="hint-inline">nieznana</span>'}</td>`
+          + `<td>${p.stan_k4 ?? '—'}</td>`
+          + `<td class="${p.rezerwacja ? 'sprawy-rez' : ''}">${p.rezerwacja ?? 0}</td>`
+          + `<td class="td-akcja"><button class="btn btn-small" type="button">Edytuj</button></td>`;
+        tr.querySelector('button').addEventListener('click', () =>
+          otworzProduktPoSymbolu({ artykul_gt_id: p.artykul_gt_id, artykul_symbol: p.symbol }));
+        tbody.appendChild(tr);
+      }
+      wypelnijKatalog('zest-doprzywiezienia-tbody', 'zest-doprzywiezienia-brak', d.do_przywiezienia);
+      el('zest-licznik').textContent = `${d.razem_strefa} w strefie · ${d.razem_do_przywiezienia} do przywiezienia`;
+    } else if (zestAktywne === 'leszno') {
+      const d = await api('/api/zestawienia/leszno');
+      wypelnijKatalog('zest-leszno-tbody', 'zest-leszno-brak', d.produkty);
+      el('zest-licznik').textContent = d.razem ? `${d.razem} do przywiezienia` : '';
+    } else {
+      const d = await api('/api/zestawienia/nadsprzedaz');
+      // Backend liczy rezerwacje ze SWIEZYCH ZK (okno WMS_NADSPRZEDAZ_DNI) - i te sama liczbe
+      // pokazujemy. NIE sumujemy st_StanRez ze stany_gt: tamto liczy takze zombie ZK sprzed
+      // roku, wiec kolumna klocilaby sie z warunkiem, ktory wiersz tu wpuscil.
+      wypelnijKatalog('zest-nadsprzedaz-tbody', 'zest-nadsprzedaz-brak', d.produkty,
+        (p) => `<td class="sprawy-rez">${p.rezerwacja_swieza ?? '—'}</td>`
+             + `<td class="sprawy-roznica">${(p.rezerwacja_swieza ?? 0) - p.razem}</td>`);
+      el('zest-licznik').textContent = d.razem ? `${d.razem} pozycji` : '';
+    }
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+  }
+}
+
+// Przelacza podzakladke Zestawien. Zwraca `true`, gdy faktycznie sie zmienila - pokazPanel
+// uzywa tego, zeby przeladowac dane RAZ. Sam nie pobiera: podzakladki sa linkami (#zestawienia/
+// leszno), wiec steruje nimi adres, a nie handler klikniecia - dzieki temu Cmd-klik otwiera
+// konkretna podzakladke w nowej karcie.
+function ustawZestawienie(pod) {
+  if (!ZESTAWIENIA.includes(pod)) pod = ZESTAWIENIA[0];
+  const zmiana = pod !== zestAktywne;
+  zestAktywne = pod;
+  document.querySelectorAll('.podzakladka[data-zest]').forEach((a) => {
+    a.classList.toggle('aktywna', a.dataset.zest === pod);
+  });
+  for (const t of document.querySelectorAll('.zest-tresc')) {
+    t.classList.toggle('hidden', t.id !== `zest-${pod}`);
+  }
+  return zmiana;
+}
+el('btn-zest-odswiez').addEventListener('click', odswiezZestawienia);
 
 el('btn-zwroty-odswiez').addEventListener('click', odswiezZwroty);
 el('btn-zwroty-wozek').addEventListener('click', stworzWozek);
@@ -1755,7 +2002,7 @@ el('btn-mm-wyslij').addEventListener('click', async () => {
 
 // === MODAL PRODUKTU (edytowalny rozklad po magazynach) ===
 
-const MAG_LABEL = { K4: 'K4 Hala', K4G: 'K4 Góra', MAG: 'Kajtek (MAG)', LS: 'Leszno (LS)', BRK: 'Braki (BRK)' };
+const MAG_LABEL = { K4: 'K4 Hala', K4G: 'K4 Góra', MAG: 'Kajtek (MAG)', LS: 'Leszno (LS)', BRK: 'Braki (BRK)', K4R: 'Reklamacje (K4R)' };
 const MAG_EXT = ['MAG', 'LS'];
 
 let modalProdukt = null;
@@ -1920,9 +2167,12 @@ async function renderModalRozklad() {
 
   dodajMagWms(tbody, 'K4', loki, k4Zapas, planK4);
   dodajMagWms(tbody, 'K4G', loki, k4Zapas, planK4g);
-  for (const mag of ['MAG', 'LS', 'BRK']) dodajMagZewn(tbody, mag);
+  // BRK i K4R to towar niepelnowartosciowy - maja wlasny wiersz i MM w obie strony,
+  // wypadaja tylko z sumy "Razem" (config/magazyny.js: liczDoRazem: false).
+  for (const mag of ['MAG', 'LS', 'BRK', 'K4R']) dodajMagZewn(tbody, mag);
 
-  // podsumowania na dole
+  // podsumowania na dole. Lista = MAGAZYNY_RAZEM z config/magazyny.js (bez BRK i K4R) -
+  // gdyby doszedl kolejny magazyn liczony do "Razem", trzeba ja tu dopisac.
   const rezRazem = ['K4', 'K4G', 'MAG', 'LS'].reduce((s, m) => s + (modalProdukt.stany_gt?.[m]?.rezerwacja ?? 0), 0);
   tbody.appendChild(wierszPodsumowania('Razem', modalProdukt.razem ?? '', 'rozklad-total'));
   if (rezRazem > 0) tbody.appendChild(wierszPodsumowania('Rezerwacje', rezRazem, 'rozklad-total'));
@@ -2482,4 +2732,4 @@ el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
 
 // --- init ---
 
-pokazPanel(panelZHasha());
+przejdzZHasha();

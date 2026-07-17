@@ -13,6 +13,7 @@ const uzupelnieniaRouter = require('./routes/uzupelnienia');
 const sciezkiRouter = require('./routes/sciezki');
 const zwrotyRouter = require('./routes/zwroty');
 const dostawyRouter = require('./routes/dostawy');
+const zestawieniaRouter = require('./routes/zestawienia');
 const audytRouter = require('./routes/audyt');
 const statusRouter = require('./routes/status');
 const uzytkownicyRouter = require('./routes/uzytkownicy');
@@ -57,6 +58,7 @@ app.use('/api/uzupelnienia', auth.wymagajSesjiNaZapisie, auth.blokujUcznia, uzup
 app.use('/api/sciezki', auth.wymagajSesjiNaZapisie, sciezkiRouter);
 app.use('/api/zwroty', auth.wymagajSesjiNaZapisie, auth.blokujUcznia, zwrotyRouter);
 app.use('/api/dostawy', auth.wymagajSesjiNaZapisie, auth.blokujUcznia, dostawyRouter);
+app.use('/api/zestawienia', zestawieniaRouter);  // czysty odczyt z GT - bez sesji, jak /api/produkty
 app.use('/api/magazyny', magazynyRouter);
 app.use('/api/status', statusRouter); // publiczny - pasek stanu na ekranie logowania
 app.use('/api/produkty', produktyRouter);

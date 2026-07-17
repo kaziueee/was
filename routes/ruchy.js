@@ -294,12 +294,15 @@ router.post('/lok', async (req, res, next) => {
     // dopiero PO dostawie). Odejmujemy oba kubelki, dzieki czemu kazdy rozklada sie osobno
     // i w dowolnej kolejnosci (zob. POST /rozloz).
     if (cel.magazyn === 'K4') {
-      let wDrodze = 0;
+      let doPrzypisania = 0;
       let opisKubelkow = [];
       try {
         const dok = (await gtDokumenty.pobierzDostawyK4([artykul_gt_id])).get(String(artykul_gt_id)) || [];
-        const r = gtDokumenty.rozbijDeficytK4(deficyt, dok, { artykul_gt_id });
-        wDrodze = r.wDrodze; // suma WSZYSTKICH kubelkow - nie skladamy jej recznie (patrz gt-dokumenty)
+        const r = gtDokumenty.rozbijStanK4(gtStan, sumaWMS, dok, { artykul_gt_id });
+        // `reszta` to dokladnie to, co wolno przypisac na polke: stan GT minus strefy minus
+        // to, co WMS juz zna. Wczesniej liczone recznie jako `deficyt - wDrodze` - ta sama
+        // liczba, ale teraz definicja jest w jednym miejscu (i pokryta testami).
+        doPrzypisania = r.reszta;
         const sumy = [
           [r.dostawy, 'z nierozlozonej dostawy'],
           [r.zwroty, 'ze zwrotu w strefie'],
@@ -312,7 +315,6 @@ router.post('/lok', async (req, res, next) => {
       } catch (err) {
         return res.status(503).json({ blad: 'Nie mozna sprawdzic dostaw w GT - przypisanie wstrzymane. Sprobuj ponownie.' });
       }
-      const doPrzypisania = deficyt - wDrodze;
       if (doPrzypisania <= 0) {
         return res.status(409).json({
           blad: `Caly nieprzypisany stan K4 (${deficyt} szt.) to ${opisKubelkow.join(' i ')} - rozloz to z wlasciwego wiersza, nie przypisuj na polke.`,
@@ -587,16 +589,29 @@ router.post('/rozloz', async (req, res, next) => {
   ).get(artykul_gt_id, zrodloMag).suma;
 
   const deficyt = gtZrodla.stan - sumaWms;
-  if (deficyt <= 0) {
-    return res.status(409).json({ blad: `W ${zrodloMag} nie ma nieprzypisanego stanu (GT: ${gtZrodla.stan}, w WMS: ${sumaWms}) - nie ma czego rozkladac.` });
-  }
-  if (ilo > deficyt) {
-    return res.status(409).json({ blad: `Mozna rozlozyc najwyzej ${deficyt} szt. z puli ${zrodloMag} (GT: ${gtZrodla.stan}, juz w WMS: ${sumaWms}).` });
+
+  // USUNIETY inwariant `ilo <= deficyt` (2026-07-17). Bronil kopii polki: "inaczej po ruchu
+  // zrobiloby sie GT < WMS i auto-korekta scielaby polke, gubiac stan, ktorego nikt nie ruszal".
+  // Pod regula #3 usera to zdanie jest ODWROCONE - scielenie polki to nie strata, tylko
+  // MECHANIZM: polka ma zejsc jako pierwsza. To wlasnie ten inwariant ucinal rozlozenie palety
+  // (paleta 4080, po dwoch dniach sprzedazy deficyt 4075 -> backend przepuszczal 4075 i 5 szt.
+  // zostawalo w GT "na K4", choc fizycznie pojechaly na gore).
+  //
+  // Co pilnuje granic zamiast niego:
+  //   - ilosc <= ile zostalo z dokumentu (nizej, przy weryfikacji zrodlo_dok),
+  //   - zasada 6: ilosc <= stan GT - rezerwacja (dla MM) - to ona lapie prob rozlozenia
+  //     palety-widma i zwraca czytelny blad zamiast wiszacego pending,
+  //   - dla LOK: ilosc <= stan GT (nizej) - nie da sie zaklepac wiecej, niz GT w ogole ma.
+  if (gtZrodla.stan <= 0) {
+    return res.status(409).json({ blad: `W ${zrodloMag} nie ma stanu (GT: 0) - nie ma czego rozkladac.` });
   }
   // Zasada 6 dotyczy tylko MM - rezerwacja blokuje WYPROWADZENIE towaru z magazynu.
   // Przy LOK (cel w tym samym magazynie) nic z niego nie wychodzi, wiec nie ogranicza.
   if (typRuchu === 'MM' && ilo > gtZrodla.dostepne) {
     return res.status(409).json({ blad: `W ${zrodloMag} mozna wyprowadzic najwyzej ${Math.max(gtZrodla.dostepne, 0)} szt. wg GT (stan ${gtZrodla.stan}, rezerwacja ${gtZrodla.rezerwacja} blokuje MM).` });
+  }
+  if (typRuchu === 'LOK' && ilo > gtZrodla.stan) {
+    return res.status(409).json({ blad: `W ${zrodloMag} jest ${gtZrodla.stan} szt. wg GT - nie da sie zaklepac ${ilo}.` });
   }
 
   // KTORY dokument jest rozkladany. Front podaje numer PZ klikanego wiersza, ale backend go
@@ -608,7 +623,7 @@ router.post('/rozloz', async (req, res, next) => {
   let dokDoZapisu = null;
   try {
     const dokumenty = (await gtDokumenty.pobierzDostawyK4([artykul_gt_id])).get(String(artykul_gt_id)) || [];
-    const { wszystkie: pula } = gtDokumenty.rozbijDeficytK4(deficyt, dokumenty, { artykul_gt_id, magazyn: zrodloMag });
+    const { wszystkie: pula } = gtDokumenty.rozbijStanK4(gtZrodla.stan, sumaWms, dokumenty, { artykul_gt_id, magazyn: zrodloMag });
 
     if (zrodlo_dok) {
       const poz = pula.find((d) => d.pz_nr === String(zrodlo_dok));

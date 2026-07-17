@@ -11,7 +11,7 @@ const router = express.Router();
 // wiec najpierw wybiera dokument, a dopiero potem chodzi po jego towarach.
 //
 // Rachunek "ile zostalo" jest WSPOLNY ze zwrotami (services/do-rozlozenia) - ta sama funkcja,
-// ten sam rozbijDeficytK4. Licznik SKU na liscie faktur i lista towarow w fakturze pochodza
+// ten sam rozbijStanK4. Licznik SKU na liscie faktur i lista towarow w fakturze pochodza
 // z jednego przebiegu, wiec nie moga sie rozjechac ("12 SKU" na liscie, 8 w srodku).
 //
 // Samo rozkladanie NIE ma tu endpointu: to POST /ruchy/rozloz, ten sam co dla wozka, "Usun ze

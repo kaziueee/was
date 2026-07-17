@@ -10,7 +10,7 @@ const router = express.Router();
 //
 // Model (ustalenia z magazynierem):
 //  - Lista zwrotow jest LICZONA NA ZYWO z GT, bez jobu i bez wlasnej tabeli. Nie ma czego
-//    synchronizowac: zwrot = dokument w GT, a "ile zostalo" = kubelek z rozbijDeficytK4.
+//    synchronizowac: zwrot = dokument w GT, a "ile zostalo" = kubelek z rozbijStanK4.
 //  - Wozek to FIZYCZNY przedmiot. Powstaje z zaznaczenia na liscie (snapshot), bo GT nie wie,
 //    ktory zwrot jest sprawny - kazda korekta wchodzi PZ-em na K4 (0 pozycji PZ<-KFS na
 //    BRK/K4R na zywej bazie). Tylko czlowiek trzymajacy towar to wie.
@@ -25,7 +25,7 @@ const MAG = 'K4';
 // Sklada liste zwrotow do rozlozenia. Wspolne dla listy i dla weryfikacji przy tworzeniu wozka
 // (backend nie wierzy kliencki - patrz POST /wozki).
 //
-// Ilosci NIE licze tu sam: to rozbijDeficytK4 na deficycie (stan GT - suma WMS). Druga
+// Ilosci NIE licze tu sam: to rozbijStanK4 na stanie GT i kopii WMS. Druga
 // implementacja licznika rozjechalaby liste z karta produktu - kolejnosc capowania kubelkow
 // jest czescia definicji, nie detalem.
 async function zbierzZwroty() {

@@ -208,17 +208,22 @@ async function dolaczDaneGt(payload) {
       const deficytK4 = stanK4 - sumaK4;
       if (deficytK4 > 0) payload.deficyt_k4 = deficytK4;
 
-      // Rozbicie deficytu K4 na zrodla, bo kazde ma inna regule (zob. gt-dokumenty.js):
+      // Rozbicie stanu K4 na zrodla, bo kazde ma inna regule (zob. gt-dokumenty.js):
       //   dostawy_k4       - PZ<-FZ, paleta od dostawcy -> wolno dzielic, cel dol albo gora
       //   zwroty_k4        - PZ<-KFS, sztuki w strefie zwrotow -> wracaja na regal
       //   przywozki_k4     - MM z MAG/LS, towar w strefie przywozki -> wraca na regal
-      //   nieprzypisane_k4 - reszta (stary stan) -> stara zasada 1 SKU = 1 lok K4
+      //   nieprzypisane_k4 - reszta ("do sprawdzenia") -> stara zasada 1 SKU = 1 lok K4
       // Produkt moze miec wszystkie naraz i to poprawne: to fizycznie rozne rzeczy - paleta
       // do wywiezienia, sztuki w strefach i polka do zaklepania.
-      if (deficytK4 > 0) {
+      //
+      // Warunek to STAN, nie deficyt (zmiana 2026-07-17 razem z capem stanem). Strefy zaleza
+      // teraz od samego stanu GT, wiec przy nieaktualnej kopii polki (WMS >= GT, czyli deficyt
+      // <= 0) stary warunek `deficytK4 > 0` wycinalby je z karty, mimo ze zwrot fizycznie lezy
+      // w strefie. Stan 0 = nie ma czego rozbijac i nie ma po co pytac GT o dokumenty.
+      if (stanK4 > 0) {
         const dokumenty = (await gtDokumenty.pobierzDostawyK4([payload.artykul_gt_id]))
           .get(String(payload.artykul_gt_id)) || [];
-        const rozbicie = gtDokumenty.rozbijDeficytK4(deficytK4, dokumenty, { artykul_gt_id: payload.artykul_gt_id });
+        const rozbicie = gtDokumenty.rozbijStanK4(stanK4, sumaK4, dokumenty, { artykul_gt_id: payload.artykul_gt_id });
         if (rozbicie.dostawy.length > 0) payload.dostawy_k4 = rozbicie.dostawy;
         if (rozbicie.zwroty.length > 0) payload.zwroty_k4 = rozbicie.zwroty;
         if (rozbicie.przywozki.length > 0) payload.przywozki_k4 = rozbicie.przywozki;
@@ -227,6 +232,10 @@ async function dolaczDaneGt(payload) {
         // zgadywac po obecnosci pozostalych kubelkow i przy kazdym nowym rodzaju znowu bledy
         // (wiersz "brak lokalizacji" dublowal wtedy dokument).
         payload.nieprzypisane_k4 = rozbicie.reszta;
+        // Ile MOZE lezec na polce wg GT + o ile klamie kopia WMS. Front pokazuje polke_k4
+        // zamiast surowej kopii, dzieki czemu sprzedaz widac od razu, a nie dopiero po jobie.
+        payload.polka_k4 = rozbicie.polka;
+        payload.polka_k4_klamie = rozbicie.polka_klamie;
       }
     } else if (payload.typ === 'lista_artykulow') {
       payload.artykuly = payload.artykuly.map(wzbogac);

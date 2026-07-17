@@ -3,7 +3,7 @@
 // Wspolny rachunek "co jeszcze zostalo do rozlozenia na K4" - dla zwrotow i dostaw.
 //
 // Oba ekrany zadaja to samo pytanie, tylko o inny kubelek, wiec licza tym samym kodem. To NIE
-// jest oszczednosc linijek: kolejnosc capowania kubelkow w rozbijDeficytK4 jest czescia
+// jest oszczednosc linijek: kolejnosc zjadania kubelkow w rozbijStanK4 jest czescia
 // DEFINICJI "ile zostalo", a nie detalem implementacji. Druga implementacja tego rachunku
 // rozjechalaby liste z karta produktu - lista mowilaby "12 SKU", a po wejsciu bylo 8.
 //
@@ -17,7 +17,7 @@ const { pobierzStanyGt } = require('./gt-produkty');
 
 const MAG = 'K4';
 
-// kubelek: 'zwroty' | 'dostawy' | 'przywozki' (klucze z rozbijDeficytK4)
+// kubelek: 'zwroty' | 'dostawy' | 'przywozki' (klucze z rozbijStanK4)
 async function zbierz(kandydaci, kubelek) {
   if (!kandydaci.length) return [];
 
@@ -56,12 +56,11 @@ async function zbierz(kandydaci, kubelek) {
   for (const k of kandydaci) {
     const sg = stany.get(String(k.artykul_gt_id)) || {};
     const stanK4 = sg.K4?.ilosc ?? 0;
-    const deficyt = stanK4 - (sumyWms.get(k.artykul_gt_id) ?? 0);
-    const r = gtDokumenty.rozbijDeficytK4(deficyt, dokMap.get(k.artykul_gt_id) || [], {
+    const r = gtDokumenty.rozbijStanK4(stanK4, sumyWms.get(k.artykul_gt_id) ?? 0, dokMap.get(k.artykul_gt_id) || [], {
       artykul_gt_id: k.artykul_gt_id, magazyn: MAG,
     });
     const wKubelku = r[kubelek] || [];
-    if (!wKubelku.length) continue;   // rozlozone albo zjedzone deficytem - nie ma zadania
+    if (!wKubelku.length) continue;   // rozlozone albo zjedzone stanem - nie ma zadania
 
     const w = lokWms.get(k.artykul_gt_id);
     for (const d of wKubelku) {
@@ -72,6 +71,9 @@ async function zbierz(kandydaci, kubelek) {
         ean: k.ean ?? w?.ean ?? null,
         zrodlo_dok: d.pz_nr,          // klucz atrybucji (ruchy.zrodlo_dok)
         dok_zrodlowy: d.fz_nr,        // podpis na ekranie: FZ przy dostawie, KFS przy zwrocie
+        // skad przyjechala przywozka (MAG / LS). Przy dostawie i zwrocie null - tam zrodlem
+        // jest kontrahent, nie magazyn.
+        zrodlo_mag: d.zrodlo_mag ?? null,
         kontrahent: d.kontrahent ?? null,
         data: d.data,
         ilosc: d.ilosc,

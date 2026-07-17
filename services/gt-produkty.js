@@ -218,37 +218,98 @@ function wyrazenieRez(kodMagazynu) {
 
 // Dozwolone klucze sortowania (i HAVING dla magazynow) - wspolne dla trybu
 // katalogowego (SQL) i trybu "zbior WMS" (Node, zob. wartoscSortowania).
+// Klucze per magazyn generujemy z configu, a NIE wypisujemy recznie. Powod jest twardy:
+// routes/produkty.js waliduje ?magazyn= przeciw KODY_MAGAZYNOW (te same MAGAZYNY), wiec kod
+// wpisany tylko w configu przechodzi walidacje, a potem MAGAZYNY_WYRAZENIA[kod] daje undefined
+// i do SQL leci literalne "(undefined > 0)" -> blad skladni, 500. Reczna lista rozjezdza sie
+// z kontraktem API w momencie dopisania linii do configu, zanim ktokolwiek dotknie frontu.
 const SORT_WYRAZENIA = {
   sku: 't.tw_Symbol',
   nazwa: 't.tw_Nazwa',
   ean: 't.tw_PodstKodKresk',
   razem: `(${MAGAZYNY_RAZEM.map((kod) => wyrazenieStanu(kod)).join(' + ')})`,
-  k4: wyrazenieStanu('K4'),
-  k4g: wyrazenieStanu('K4G'),
-  mag: wyrazenieStanu('MAG'),
-  ls: wyrazenieStanu('LS'),
-  brk: wyrazenieStanu('BRK'),
+  ...Object.fromEntries(MAGAZYNY.map((m) => [m.kod.toLowerCase(), wyrazenieStanu(m.kod)])),
 };
 const SORT_KLUCZE = Object.keys(SORT_WYRAZENIA);
-const MAGAZYNY_WYRAZENIA = { K4: SORT_WYRAZENIA.k4, K4G: SORT_WYRAZENIA.k4g, MAG: SORT_WYRAZENIA.mag, LS: SORT_WYRAZENIA.ls, BRK: SORT_WYRAZENIA.brk };
+const MAGAZYNY_WYRAZENIA = Object.fromEntries(MAGAZYNY.map((m) => [m.kod, wyrazenieStanu(m.kod)]));
 const REZ_WYRAZENIA = Object.fromEntries(MAGAZYNY.map((m) => [m.kod, wyrazenieRez(m.kod)]));
+
+// Kolumny stan_<kod>/rez_<kod> dla listujProdukty - ten sam powod co wyzej: stanyGtZWiersza
+// czyta row[`stan_${kod}`] dla KAZDEGO magazynu z configu, wiec brak kolumny nie wybucha,
+// tylko cicho daje {ilosc: undefined} w stany_gt.
+const KOLUMNY_STANOW = MAGAZYNY.map((m) => {
+  const k = m.kod.toLowerCase();
+  return `${wyrazenieStanu(m.kod)} AS stan_${k}, ${wyrazenieRez(m.kod)} AS rez_${k}`;
+}).join(',\n      ');
+
+// --- Zestawienia (desktop) - gotowe pytania "co przywiezc / czego brakuje" ---
+//
+// Kazde to WARUNEK HAVING na tych samych agregatach, co listujProdukty. Skladamy je z
+// SORT_WYRAZENIA/REZ_WYRAZENIA zamiast pisac czwarty wariant SQL-a - dzieki temu definicja
+// "Razem" (K4+K4G+MAG+LS, bez BRK) jest jedna dla calego systemu.
+//
+// Prog Leszna w .env, bo to liczba biznesowa, nie stala techniczna. Na dzis daje 0 wierszy:
+// LS ma tylko 4 SKU, a kazde ma na K4+K4G 137-1184 szt. To lista OBSERWACYJNA - zapali sie,
+// gdy hala zejdzie nisko, i o to chodzi.
+const PROG_LESZNO = Number(process.env.WMS_PROG_LESZNO) || 50;
+
+// Rezerwacje sumujemy po tych samych magazynach co "Razem" - bez BRK (towar niepelnowartosciowy)
+// i bez K4R (reklamacje; 385 szt. rezerwacji, ale to inny proces, nie sprzedaz z polki).
+// Inaczej nadsprzedaz mieszalaby dwa nieporownywalne swiaty.
+const REZ_RAZEM = `(${MAGAZYNY_RAZEM.map((kod) => REZ_WYRAZENIA[kod]).join(' + ')})`;
+
+// NADSPRZEDAZ liczy rezerwacje z POZYCJI otwartych ZK, a NIE z tw_Stan.st_StanRez - bo
+// st_StanRez to licznik zbiorczy BEZ DATY, a nadsprzedaz ma dotyczyc swiezych zamowien.
+// Na zywej bazie (OKITRADE) otwarte ZK to w wiekszosci zombie: 2408 szt. z dokumentow
+// starszych niz ROK, przy 377 szt. z ostatnich 30 dni. Bez okna zestawienie pokazywalo 15
+// pozycji, z ktorych zadna nie byla realnym, aktualnym problemem.
+//
+// Rownowaznosc "suma pozycji otwartych ZK = st_StanRez" jest potwierdzona na zywej bazie
+// (zob. pobierzZkRezerwujaceK4 w gt-dokumenty.js), wiec bez okna oba rachunki daja to samo.
+const ZK_TYP = 16;
+const ZK_STATUS_OTWARTE = 7;
+const NADSPRZEDAZ_DNI = Number(process.env.WMS_NADSPRZEDAZ_DNI) || 30;
+
+// ob_TowId = t.tw_Id koreluje po zgrupowanej kolumnie, wiec dziala i w SELECT, i w HAVING.
+const REZ_ZK_SWIEZE = `ISNULL((
+  SELECT SUM(o.ob_Ilosc)
+  FROM dok_Pozycja o
+  JOIN dok__Dokument d ON d.dok_Id = o.ob_DokHanId
+  JOIN sl_Magazyn g ON g.mag_Id = o.ob_MagId
+  WHERE d.dok_Typ = ${ZK_TYP} AND d.dok_Status = ${ZK_STATUS_OTWARTE}
+    AND o.ob_TowId = t.tw_Id
+    AND g.mag_Symbol IN (${MAGAZYNY_RAZEM.map((k) => `'${k}'`).join(', ')})
+    AND d.dok_DataWyst >= DATEADD(day, -${NADSPRZEDAZ_DNI}, GETDATE())
+), 0)`;
+
+const WARUNKI_ZESTAWIEN = {
+  // Do przywiezienia z MAG: sprzedane wiecej, niz mamy w hali, a zapas lezy na MAG.
+  przywozka: `${REZ_WYRAZENIA.K4} > 0`
+    + ` AND ${REZ_WYRAZENIA.K4} > ${SORT_WYRAZENIA.k4} + ${SORT_WYRAZENIA.k4g}`
+    + ` AND ${SORT_WYRAZENIA.mag} > 0`,
+  // Do przywiezienia z Leszna: hala schodzi ponizej progu, a w LS jest zapas.
+  leszno: `${SORT_WYRAZENIA.k4} + ${SORT_WYRAZENIA.k4g} < ${PROG_LESZNO} AND ${SORT_WYRAZENIA.ls} > 0`,
+  // Nadsprzedaz: obiecane wiecej, niz mamy gdziekolwiek - ale tylko na SWIEZYCH zamowieniach.
+  nadsprzedaz: `${REZ_ZK_SWIEZE} > ${SORT_WYRAZENIA.razem}`,
+};
 
 // Wartosc danego "klucza sortowania" dla produktu zlozonego w JS - uzywane w
 // trybie "zbior WMS" (pobierzProduktyZUniwersum), gdzie sortowanie/filtrowanie
 // dzieje sie w Node, a nie w SQL.
+// Klucze niemagazynowe wypisane, magazynowe rozwiazywane z configu - inaczej sort po nowym
+// magazynie cicho degraduje do `default` (sortowanie po symbolu) zamiast zadzialac.
+const SORTY_NIEMAGAZYNOWE = {
+  sku: (p) => p.symbol,
+  nazwa: (p) => p.nazwa,
+  ean: (p) => p.ean || '',
+  razem: (p) => p.razem,
+};
 function wartoscSortowania(p, klucz) {
-  switch (klucz) {
-    case 'sku': return p.symbol;
-    case 'nazwa': return p.nazwa;
-    case 'ean': return p.ean || '';
-    case 'razem': return p.razem;
-    case 'k4': return p.stany_gt.K4.ilosc;
-    case 'k4g': return p.stany_gt.K4G.ilosc;
-    case 'mag': return p.stany_gt.MAG.ilosc;
-    case 'ls': return p.stany_gt.LS.ilosc;
-    case 'brk': return p.stany_gt.BRK.ilosc;
-    default: return p.symbol;
-  }
+  const staly = SORTY_NIEMAGAZYNOWE[klucz];
+  if (staly) return staly(p);
+  const mag = MAGAZYNY.find((m) => m.kod.toLowerCase() === klucz);
+  if (mag) return p.stany_gt[mag.kod]?.ilosc ?? 0;
+  return p.symbol;
 }
 
 // Mapuje wiersz wyniku zapytania agregujacego (kolumny stan_k4/rez_k4/...) na
@@ -279,9 +340,18 @@ function sumaRazem(stany_gt) {
 // (stare/wylaczone produkty).
 // Zwraca {produkty, total} - total to liczba wszystkich wynikow (bez limitu),
 // do wyswietlenia "X-Y z Z" i obliczenia czy jest nastepna strona.
-async function listujProdukty({ q, limit = 50, offset = 0, sort = 'sku', dir = 'asc', magazyny = [], zRezerwacja = false, pokazZablokowane = false } = {}) {
+// zestawienie - klucz z WARUNKI_ZESTAWIEN ('przywozka'|'leszno'|'nadsprzedaz'). Doklada gotowy
+// warunek HAVING i zawezenie do tw_Rodzaj=1 (tylko towary - zestawy/komplety rodzaju 8 nie maja
+// fizycznego stanu na polce, wiec w zestawieniach "co przywiezc" byly by szumem).
+// tylkoIdy - opcjonalna lista tw_Id do zawezenia wynikow (filtr stref w routes/produkty.js:
+// strefa nie jest kolumna w GT, wiec zbior liczy Node i podaje gotowe id). Pusta TABLICA
+// znaczy "nic nie pasuje" i musi dac 0 wynikow - dlatego rozrozniamy ja od null ("bez filtru").
+async function listujProdukty({ q, limit = 50, offset = 0, sort = 'sku', dir = 'asc', magazyny = [], zRezerwacja = false, pokazZablokowane = false, zestawienie = null, tylkoIdy = null } = {}) {
   const parametry = { limit, offset };
   let where = '1=1';
+  if (zestawienie && !WARUNKI_ZESTAWIEN[zestawienie]) {
+    throw new Error(`Nieznane zestawienie: ${zestawienie}`);
+  }
 
   const fraza = (q ?? '').trim();
   if (fraza) {
@@ -305,10 +375,28 @@ async function listujProdukty({ q, limit = 50, offset = 0, sort = 'sku', dir = '
   if (!pokazZablokowane) {
     where += ' AND t.tw_Zablokowany = 0';
   }
+  // MUSI byc po bloku `fraza` - tamten NADPISUJE `where`, a nie doklada, wiec warunek
+  // postawiony wyzej wyparowalby przy niepustym q.
+  if (zestawienie) where += ' AND t.tw_Rodzaj = 1';
+
+  // Filtr stref: zbior tw_Id policzony w Node (patrz tylkoIdy wyzej). Pusta tablica =
+  // "zaden produkt nie ma wybranej strefy" -> 0 wynikow, a nie "pokaz wszystko".
+  if (Array.isArray(tylkoIdy)) {
+    if (tylkoIdy.length === 0) {
+      where += ' AND 1=0';
+    } else {
+      const idPlaceholders = tylkoIdy.map((id, i) => {
+        parametry[`id${i}`] = Number(id);
+        return `@id${i}`;
+      }).join(', ');
+      where += ` AND t.tw_Id IN (${idPlaceholders})`;
+    }
+  }
 
   // Filtr magazynowy (stan > 0) i "z rezerwacja" (st_StanRez > 0) lacza sie przez
   // AND; oba w obrebie wybranych magazynow (lub wszystkich, gdy filtr magazynu pusty).
   const warunkiHaving = [];
+  if (zestawienie) warunkiHaving.push(`(${WARUNKI_ZESTAWIEN[zestawienie]})`);
   if (magazyny.length > 0) {
     warunkiHaving.push(`(${magazyny.map((m) => `${MAGAZYNY_WYRAZENIA[m]} > 0`).join(' OR ')})`);
   }
@@ -339,16 +427,8 @@ async function listujProdukty({ q, limit = 50, offset = 0, sort = 'sku', dir = '
   const { recordset: lista } = await query(`
     SELECT
       t.tw_Id, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk,
-      COALESCE(SUM(CASE WHEN m.mag_Symbol = 'K4'  THEN s.st_Stan    END), 0) AS stan_k4,
-      COALESCE(SUM(CASE WHEN m.mag_Symbol = 'K4'  THEN s.st_StanRez END), 0) AS rez_k4,
-      COALESCE(SUM(CASE WHEN m.mag_Symbol = 'K4G' THEN s.st_Stan    END), 0) AS stan_k4g,
-      COALESCE(SUM(CASE WHEN m.mag_Symbol = 'K4G' THEN s.st_StanRez END), 0) AS rez_k4g,
-      COALESCE(SUM(CASE WHEN m.mag_Symbol = 'MAG' THEN s.st_Stan    END), 0) AS stan_mag,
-      COALESCE(SUM(CASE WHEN m.mag_Symbol = 'MAG' THEN s.st_StanRez END), 0) AS rez_mag,
-      COALESCE(SUM(CASE WHEN m.mag_Symbol = 'LS'  THEN s.st_Stan    END), 0) AS stan_ls,
-      COALESCE(SUM(CASE WHEN m.mag_Symbol = 'LS'  THEN s.st_StanRez END), 0) AS rez_ls,
-      COALESCE(SUM(CASE WHEN m.mag_Symbol = 'BRK' THEN s.st_Stan    END), 0) AS stan_brk,
-      COALESCE(SUM(CASE WHEN m.mag_Symbol = 'BRK' THEN s.st_StanRez END), 0) AS rez_brk
+      ${KOLUMNY_STANOW}
+      ${zestawienie === 'nadsprzedaz' ? `, ${REZ_ZK_SWIEZE} AS rez_zk_swieze` : ''}
     ${polaczenie}
     GROUP BY t.tw_Id, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk
     ${having}
@@ -365,6 +445,10 @@ async function listujProdukty({ q, limit = 50, offset = 0, sort = 'sku', dir = '
       ean: row.tw_PodstKodKresk || null,
       stany_gt,
       razem: sumaRazem(stany_gt),
+      // rezerwacja ze SWIEZYCH ZK - tylko dla nadsprzedazy. Musi jechac na front, bo to ona
+      // wpuscila wiersz na liste; pokazanie zamiast niej st_StanRez (ktore liczy takze zombie
+      // ZK sprzed roku) kazaloby patrzec na inna liczbe niz ta, ktora decyduje.
+      ...(row.rez_zk_swieze !== undefined ? { rezerwacja_swieza: Number(row.rez_zk_swieze) } : {}),
     };
   });
 
@@ -504,8 +588,14 @@ async function pobierzPodstawoweInfo(ids) {
 // K4 -> k4g, inaczej -> ogolna). Kombinacje dajace zero wynikow (np.
 // magazyny=['LS'] + zgodnosc=['NZ']) zwracaja po prostu pusta liste - bez
 // specjalnej obslugi, tak jak ustalono (brak automatycznych blokad UI).
-async function pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny, zgodnosc, zRezerwacja, pokazZablokowane }) {
-  const ids = await pobierzZbiorWmsIds({ pokazZablokowane });
+async function pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny, zgodnosc, zRezerwacja, pokazZablokowane, tylkoIdy = null }) {
+  let ids = await pobierzZbiorWmsIds({ pokazZablokowane });
+  // Filtr stref (zob. tylkoIdy w listujProdukty). Zawezamy PRZED pobraniem stanow/przegladu -
+  // te zapytania sa najdrozsze w tym trybie, a strefy zwykle tna zbior do kilkuset pozycji.
+  if (Array.isArray(tylkoIdy)) {
+    const dozwolone = new Set(tylkoIdy.map(String));
+    ids = ids.filter((id) => dozwolone.has(String(id)));
+  }
   if (ids.length === 0) return { produkty: [], total: 0 };
 
   const [podstawoweMap, stanyMap, przegladMap] = await Promise.all([

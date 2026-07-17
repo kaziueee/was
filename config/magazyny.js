@@ -7,7 +7,14 @@ const MAGAZYNY = [
   { kod: 'MAG', nazwa: 'Kajtek', typ: 'zewnetrzny', gtId: 1 },
   { kod: 'LS', nazwa: 'Leszno', typ: 'zewnetrzny', gtId: 6 },
   { kod: 'BRK', nazwa: 'Braki', typ: 'zewnetrzny', gtId: 10, liczDoRazem: false },
+  // Reklamacje: jak BRK - towar niepelnowartosciowy, wlasna kolumna i MM w obie strony,
+  // ale wypada z sumy "Razem" (decyzja usera 2026-07-17). W GT mag_Id 9 = K4R.
+  { kod: 'K4R', nazwa: 'Reklamacje', typ: 'zewnetrzny', gtId: 9, liczDoRazem: false },
 ];
+
+// Magazyny GT, ktorych WMS swiadomie NIE obsluguje - trzymane tu, zeby nastepna osoba nie
+// musiala zgadywac, czy ich brak to decyzja, czy przeoczenie (sl_Magazyn ma 9 pozycji):
+//   3 SR  Srem, 5 ZW Zestawy Wirtualne, 7 KAK Magazyn Kartonow
 
 // Mapa symbol -> mag_Id GT, do rozwiazywania magazynu przy wystawianiu MM.
 const MAGAZYN_GT_ID = Object.fromEntries(MAGAZYNY.map((m) => [m.kod, m.gtId]));

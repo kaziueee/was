@@ -2,7 +2,8 @@ const express = require('express');
 const db = require('../db/database');
 const { pobierzProdukt, szukajProdukty, listujProdukty, pobierzProduktyZUniwersum, LIMIT_WYSZUKIWANIA, SORT_KLUCZE } = require('../services/gt-produkty');
 const { pobierzStatusLokalizacjiGt, pobierzPrzegladLokalizacji, ZGODNOSC } = require('../services/gt-fields');
-const { pobierzZkRezerwujaceK4, pobierzDostawyK4, rozbijDeficytK4 } = require('../services/gt-dokumenty');
+const { pobierzZkRezerwujaceK4, pobierzDostawyK4, rozbijStanK4, RODZAJE_STREF } = require('../services/gt-dokumenty');
+const doRozlozenia = require('../services/do-rozlozenia');
 const { MAGAZYNY } = require('../config/magazyny');
 
 const router = express.Router();
@@ -12,6 +13,8 @@ const LIMIT_PRODUKTOW_MAX = 200;
 
 const KODY_MAGAZYNOW = new Set(MAGAZYNY.map((m) => m.kod));
 const KODY_ZGODNOSCI = new Set(Object.values(ZGODNOSC));
+// Kody stref bierzemy z RODZAJE_STREF, a nie wypisujemy - czwarty rodzaj ma sie tu pojawic sam.
+const KODY_STREF = new Set(Object.keys(RODZAJE_STREF));
 
 // Dokleja do listy produktow rozbicie deficytu K4 na dostawy (PZ<-FZ) i anonimowa reszte -
 // ten sam obraz, co dostaje Zebra z /api/lokalizacje/skan/:kod (zob. routes/lokalizacje.js),
@@ -25,33 +28,55 @@ async function dolaczDostawyK4(produkty, wierszeWms) {
     sumaK4.set(w.artykul_gt_id, (sumaK4.get(w.artykul_gt_id) || 0) + w.ilosc);
   }
 
-  const zDeficytem = produkty.filter(
-    (p) => ((p.stany_gt?.K4?.ilosc ?? 0) - (sumaK4.get(p.artykul_gt_id) || 0)) > 0
-  );
-  if (zDeficytem.length === 0) return;
+  // Warunek to STAN, nie deficyt - jak w routes/lokalizacje.js. Strefy zaleza od stanu GT,
+  // wiec przy nieaktualnej kopii polki deficyt bywa <= 0, a zwrot dalej lezy w strefie.
+  const zeStanem = produkty.filter((p) => (p.stany_gt?.K4?.ilosc ?? 0) > 0);
+  if (zeStanem.length === 0) return;
 
   let dostawyMap;
   try {
-    dostawyMap = await pobierzDostawyK4(zDeficytem.map((p) => p.artykul_gt_id));
+    dostawyMap = await pobierzDostawyK4(zeStanem.map((p) => p.artykul_gt_id));
   } catch {
     return;
   }
 
-  for (const p of zDeficytem) {
-    const deficyt = (p.stany_gt?.K4?.ilosc ?? 0) - (sumaK4.get(p.artykul_gt_id) || 0);
-    const rozbicie = rozbijDeficytK4(deficyt, dostawyMap.get(String(p.artykul_gt_id)) || [], { artykul_gt_id: p.artykul_gt_id });
+  for (const p of zeStanem) {
+    const stanK4 = p.stany_gt?.K4?.ilosc ?? 0;
+    const rozbicie = rozbijStanK4(stanK4, sumaK4.get(p.artykul_gt_id) || 0, dostawyMap.get(String(p.artykul_gt_id)) || [], { artykul_gt_id: p.artykul_gt_id });
     if (rozbicie.dostawy.length > 0) p.dostawy_k4 = rozbicie.dostawy;
     if (rozbicie.zwroty.length > 0) p.zwroty_k4 = rozbicie.zwroty;
     if (rozbicie.przywozki.length > 0) p.przywozki_k4 = rozbicie.przywozki;
     p.nieprzypisane_k4 = rozbicie.reszta; // zawsze - obecnosc = sygnal "rozbicie sie udalo"
+    p.polka_k4 = rozbicie.polka;
+    p.polka_k4_klamie = rozbicie.polka_klamie;
   }
 }
 
 // Parsuje liste wartosci rozdzielonych przecinkami (np. "K4,K4G"), odfiltrowujac
-// te spoza dozwolonego zbioru - uzywane dla filtrow magazyn/zgodnosc.
+// te spoza dozwolonego zbioru - uzywane dla filtrow magazyn/zgodnosc/strefa.
 function parsujListe(wartosc, dozwolone) {
   if (!wartosc) return [];
   return String(wartosc).split(',').map((s) => s.trim()).filter((s) => dozwolone.has(s));
+}
+
+// Zbior tw_Id majacych NIEPUSTY kubelek ktorejkolwiek z wybranych stref - OR, jak przy
+// magazynach (decyzja usera). Strefa nie jest kolumna w GT: to wynik rozbicia deficytu na
+// dokumenty, wiec zbioru nie da sie policzyc w SQL-u obok stanow. Liczymy go w Node i
+// podajemy do listujProdukty gotowa lista id (patrz `tylkoIdy`).
+//
+// Rachunek robi doRozlozenia.zbierz - TEN SAM, co listy zwrotow/dostaw i karta produktu.
+// Wlasny licznik tutaj rozjechalby filtr z ekranami: filtr mowilby "12 SKU", a po wejsciu
+// w produkt bylo 8 (zob. komentarz na gorze services/do-rozlozenia.js).
+//
+// Koszt: para zapytan do GT na kazda zaznaczona strefe. Filtr jest uzywany okazjonalnie,
+// a kandydaci to setki SKU (okno 90 dni na dostawy, 14 na zwroty/przywozki), nie caly katalog.
+async function idyZeStrefami(strefy) {
+  const zbiory = await Promise.all(strefy.map(async (rodzaj) => {
+    const { kubelek, kandydaci } = RODZAJE_STREF[rodzaj];
+    const pozycje = await doRozlozenia.zbierz(await kandydaci(), kubelek);
+    return pozycje.map((p) => p.artykul_gt_id);
+  }));
+  return [...new Set(zbiory.flat())];
 }
 
 // GET /api/produkty - paginowana lista wszystkich towarow z GT do tabeli
@@ -84,13 +109,18 @@ router.get('/', async (req, res, next) => {
     }
     const zRezerwacja = req.query.z_rezerwacja === '1';
     const pokazZablokowane = req.query.pokaz_zablokowane === '1';
+    const strefy = parsujListe(req.query.strefa, KODY_STREF);
+
+    // null = brak filtru stref; TABLICA (takze pusta) = filtr aktywny. Pusta tablica musi dac
+    // 0 wynikow, nie "wszystko" - stad rozroznienie zamiast samego sprawdzania dlugosci.
+    const tylkoIdy = strefy.length > 0 ? await idyZeStrefami(strefy) : null;
 
     let lista, total, tryb;
     if (zgodnosc.length > 0) {
-      ({ produkty: lista, total } = await pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny, zgodnosc, zRezerwacja, pokazZablokowane }));
+      ({ produkty: lista, total } = await pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny, zgodnosc, zRezerwacja, pokazZablokowane, tylkoIdy }));
       tryb = 'zbior_wms';
     } else {
-      ({ produkty: lista, total } = await listujProdukty({ q, limit, offset, sort, dir, magazyny, zRezerwacja, pokazZablokowane }));
+      ({ produkty: lista, total } = await listujProdukty({ q, limit, offset, sort, dir, magazyny, zRezerwacja, pokazZablokowane, tylkoIdy }));
       tryb = 'katalog';
     }
 

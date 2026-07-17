@@ -12,16 +12,18 @@
 </head>
 <body>
   <header>
-    <h1>WMS — Panel</h1>
+    <!-- Logo = Pulpit. Zabiera jedna pozycje z nawigacji, a "klik w logo wraca na start" to
+         odruch, ktorego nie trzeba tlumaczyc. -->
+    <a href="#pulpit" id="logo" title="Pulpit"><h1>WMS — Panel</h1></a>
+    <!-- Zakladki to <a href="#...">, wiec Cmd/srodkowy-klik otwiera panel w nowej karcie.
+         Podzakladki tez maja swoj adres (#ruchy/mm), wiec i one sa linkowalne. -->
     <nav id="zakladki">
-      <a href="#pulpit" class="tab-link aktywny" data-panel="pulpit">Pulpit</a>
       <a href="#produkty" class="tab-link" data-panel="produkty">Produkty</a>
-      <a href="#rozjazdy" class="tab-link" data-panel="rozjazdy">Rozjazdy</a>
-      <a href="#lokalizacje" class="tab-link" data-panel="lokalizacje">Lokalizacje</a>
-      <a href="#mm" class="tab-link" data-panel="mm">MM</a>
-      <a href="#uzupelnienia" class="tab-link" data-panel="uzupelnienia">Uzupełnienia</a>
+      <a href="#ruchy/mm" class="tab-link" data-panel="ruchy">Ruchy</a>
       <a href="#zwroty" class="tab-link" data-panel="zwroty">Zwroty</a>
-      <a href="#raporty" class="tab-link" data-panel="raporty">Raporty</a>
+      <a href="#sciezki" class="tab-link" data-panel="sciezki">Ścieżki</a>
+      <a href="#zestawienia/przywozka" class="tab-link" data-panel="zestawienia">Zestawienia</a>
+      <a href="#lokalizacje" class="tab-link" data-panel="lokalizacje">Lokalizacje</a>
       <a href="#log" class="tab-link" data-panel="log">Log</a>
       <a href="#uzytkownicy" class="tab-link" data-panel="uzytkownicy" id="tab-uzytkownicy" style="display:none">Użytkownicy</a>
     </nav>
@@ -31,6 +33,16 @@
 
   <main>
     <div id="komunikat" class="komunikat hidden"></div>
+
+    <!-- Podzakladki grupy "Ruchy". Kazda prowadzi do OSOBNEJ sekcji panelu (inaczej niz
+         Zestawienia, gdzie jeden panel przelacza tresc) - dlatego to linki z wlasnym adresem,
+         a nie przyciski: Cmd-klik otwiera je w nowej karcie tak samo jak zakladki glowne. -->
+    <nav id="podzakladki-ruchy" class="podzakladki hidden">
+      <a href="#ruchy/mm" class="podzakladka" data-pod="mm">MM</a>
+      <a href="#ruchy/uzupelnienia" class="podzakladka" data-pod="uzupelnienia">Uzupełnienia</a>
+      <a href="#ruchy/rozjazdy" class="podzakladka" data-pod="rozjazdy">Rozjazdy</a>
+      <a href="#ruchy/dostawy" class="podzakladka" data-pod="dostawy">Dostawy</a>
+    </nav>
 
     <!-- Panel Pulpit (Faza 5) - dashboard. Role-aware: sekcje .pulpit-admin widoczne
          tylko dla admina; magazynier widzi kolejke pracy + swoje liczby. -->
@@ -87,6 +99,15 @@
             <label><input type="checkbox" class="prod-magazyn" value="MAG"> MAG</label>
             <label><input type="checkbox" class="prod-magazyn" value="LS"> LS</label>
             <label><input type="checkbox" class="prod-magazyn" value="BRK"> BRK</label>
+            <label><input type="checkbox" class="prod-magazyn" value="K4R"> K4R</label>
+          </span>
+          <!-- Strefa = produkt ma NIEROZLOZONY dokument tego rodzaju na K4 (dostawa na palecie,
+               zwrot/przywozka w strefie). To nie jest lokalizacja ani magazyn - to zadanie. -->
+          <span class="filtr-grupa">
+            <span class="filtr-etykieta" title="Produkty z nierozłożonym dokumentem na K4">Strefa:</span>
+            <label><input type="checkbox" class="prod-strefa" value="dostawa"> Dostawa</label>
+            <label><input type="checkbox" class="prod-strefa" value="zwrot"> Zwrot</label>
+            <label><input type="checkbox" class="prod-strefa" value="przywozka"> Przywózka</label>
           </span>
           <span class="filtr-grupa">
             <span class="filtr-etykieta">Zgodność:</span>
@@ -105,6 +126,7 @@
             <option value="mag">MAG</option>
             <option value="ls">LS</option>
             <option value="brk">BRK</option>
+            <option value="k4r">K4R</option>
           </select>
           <select id="prod-dir">
             <option value="asc">↑</option>
@@ -117,7 +139,7 @@
           <thead>
             <tr>
               <th>SKU</th><th>Nazwa</th><th>EAN</th>
-              <th>K4</th><th>K4G</th><th>MAG</th><th>LS</th><th>BRK</th><th>Razem</th>
+              <th>K4</th><th>K4G</th><th>MAG</th><th>LS</th><th>BRK</th><th>K4R</th><th>Razem</th>
               <th>WMS K4</th><th>WMS K4G</th><th>K4G razem</th>
               <th>Zgodność</th>
               <th>Lokalizacja K4 z GT</th><th>Lokalizacja K4G z GT</th>
@@ -238,6 +260,14 @@
             <option value="BRK:K4G">Braki → K4G</option>
             <option value="BRK:MAG">Braki → Kajtek</option>
             <option value="BRK:LS">Braki → Leszno</option>
+            <option value="K4:K4R">K4 → Reklamacje</option>
+            <option value="K4G:K4R">K4G → Reklamacje</option>
+            <option value="MAG:K4R">Kajtek → Reklamacje</option>
+            <option value="LS:K4R">Leszno → Reklamacje</option>
+            <option value="K4R:K4">Reklamacje → K4</option>
+            <option value="K4R:K4G">Reklamacje → K4G</option>
+            <option value="K4R:MAG">Reklamacje → Kajtek</option>
+            <option value="K4R:LS">Reklamacje → Leszno</option>
           </select>
           <input type="text" id="mm-q" placeholder="SKU / EAN / nazwa...">
           <button type="button" id="btn-mm-szukaj" class="btn">Szukaj</button>
@@ -370,7 +400,111 @@
       <p id="wozki-brak" class="hint hidden">Brak wózków.</p>
     </section>
 
-    <section id="panel-raporty" class="panel hidden">
+    <!-- Panel Dostawy: faktury -> towary. Rozkladanie samo w sobie jest na Zebrze (przy towarze),
+         tu chodzi o podglad i wejscie w kartę produktu. -->
+    <section id="panel-dostawy" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2 id="dostawy-naglowek">Dostawy do rozłożenia</h2>
+        <div class="filtry">
+          <span id="dostawy-licznik" class="filtry-info"></span>
+          <button type="button" id="btn-dostawy-wstecz" class="btn hidden">← Faktury</button>
+          <button type="button" id="btn-dostawy-odswiez" class="btn">Odśwież</button>
+        </div>
+      </div>
+
+      <div id="dostawy-faktury-widok">
+        <div class="tabela-wrapper">
+          <table class="tabela">
+            <thead>
+              <tr><th>Faktura</th><th>Kontrahent</th><th>Przyjęcie</th><th>Data</th><th>SKU</th><th>Szt.</th><th></th></tr>
+            </thead>
+            <tbody id="dostawy-faktury-tbody"></tbody>
+          </table>
+        </div>
+        <p id="dostawy-faktury-brak" class="hint hidden">Brak dostaw do rozłożenia. 🎉</p>
+      </div>
+
+      <div id="dostawy-towary-widok" class="hidden">
+        <div class="tabela-wrapper">
+          <table class="tabela">
+            <thead>
+              <tr><th>Artykuł</th><th>Nazwa</th><th>Szt.</th><th>Lokalizacja</th><th>Stan K4</th><th>Rezerwacja</th><th></th></tr>
+            </thead>
+            <tbody id="dostawy-towary-tbody"></tbody>
+          </table>
+        </div>
+        <p id="dostawy-towary-brak" class="hint hidden">Dostawa rozłożona. 🎉</p>
+      </div>
+    </section>
+
+    <!-- Panel Zestawienia: gotowe pytania "co przywiezc / czego brakuje". Czysty odczyt z GT -
+         kazda akcja idzie przez kartę produktu, czyli tam gdzie sa inwarianty. -->
+    <section id="panel-zestawienia" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Zestawienia</h2>
+        <div class="filtry">
+          <span id="zest-licznik" class="filtry-info"></span>
+          <button type="button" id="btn-zest-odswiez" class="btn">Odśwież</button>
+        </div>
+      </div>
+      <nav class="podzakladki">
+        <a href="#zestawienia/przywozka" class="podzakladka aktywna" data-zest="przywozka">Przywózka</a>
+        <a href="#zestawienia/leszno" class="podzakladka" data-zest="leszno">Leszno</a>
+        <a href="#zestawienia/nadsprzedaz" class="podzakladka" data-zest="nadsprzedaz">Nadsprzedaż</a>
+      </nav>
+
+      <div id="zest-przywozka" class="zest-tresc">
+        <h3 class="podnaglowek">W strefie przyjęć — do rozłożenia</h3>
+        <div class="tabela-wrapper">
+          <table class="tabela">
+            <thead>
+              <tr><th>Artykuł</th><th>Nazwa</th><th>Skąd</th><th>Szt.</th><th>Lokalizacja</th><th>Stan K4</th><th>Rezerwacja</th><th></th></tr>
+            </thead>
+            <tbody id="zest-strefa-tbody"></tbody>
+          </table>
+        </div>
+        <p id="zest-strefa-brak" class="hint hidden">Nic nie czeka w strefie. 🎉</p>
+
+        <h3 class="podnaglowek">Do przywiezienia z MAG — rezerwacja przekracza stan hali</h3>
+        <div class="tabela-wrapper">
+          <table class="tabela">
+            <thead>
+              <tr><th>Artykuł</th><th>Nazwa</th><th>EAN</th><th>K4</th><th>K4G</th><th>MAG</th><th>LS</th><th>Razem</th><th></th></tr>
+            </thead>
+            <tbody id="zest-doprzywiezienia-tbody"></tbody>
+          </table>
+        </div>
+        <p id="zest-doprzywiezienia-brak" class="hint hidden">Nic do przywiezienia z MAG. 🎉</p>
+      </div>
+
+      <div id="zest-leszno" class="zest-tresc hidden">
+        <p class="hint">Stan na K4+K4G poniżej progu, a w Lesznie jest zapas.</p>
+        <div class="tabela-wrapper">
+          <table class="tabela">
+            <thead>
+              <tr><th>Artykuł</th><th>Nazwa</th><th>EAN</th><th>K4</th><th>K4G</th><th>MAG</th><th>LS</th><th>Razem</th><th></th></tr>
+            </thead>
+            <tbody id="zest-leszno-tbody"></tbody>
+          </table>
+        </div>
+        <p id="zest-leszno-brak" class="hint hidden">Nic do przywiezienia z Leszna. 🎉</p>
+      </div>
+
+      <div id="zest-nadsprzedaz" class="zest-tresc hidden">
+        <p class="hint">Rezerwacje przekraczają stan łączny (K4+K4G+MAG+LS) — obiecane więcej, niż mamy.</p>
+        <div class="tabela-wrapper">
+          <table class="tabela">
+            <thead>
+              <tr><th>Artykuł</th><th>Nazwa</th><th>EAN</th><th>K4</th><th>K4G</th><th>MAG</th><th>LS</th><th>Razem</th><th>Rezerwacje</th><th>Brakuje</th><th></th></tr>
+            </thead>
+            <tbody id="zest-nadsprzedaz-tbody"></tbody>
+          </table>
+        </div>
+        <p id="zest-nadsprzedaz-brak" class="hint hidden">Brak nadsprzedaży. 🎉</p>
+      </div>
+    </section>
+
+    <section id="panel-sciezki" class="panel hidden">
       <div class="panel-naglowek">
         <h2>Raporty</h2>
         <div class="filtry">
@@ -530,6 +664,7 @@
               <option value="MAG">Kajtek (MAG)</option>
               <option value="LS">Leszno (LS)</option>
               <option value="BRK">Braki (BRK)</option>
+              <option value="K4R">Reklamacje (K4R)</option>
             </select>
           </div>
           <div class="mm-pole mm-pole-ilosc">

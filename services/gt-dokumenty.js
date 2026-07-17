@@ -175,12 +175,42 @@ const MM_TYP = 9;
 const OKNO_DOSTAWY_DNI = 90;
 const OKNO_ZWROTY_PRZYWOZKI_DNI = Number(process.env.WMS_OKNO_DROBNICA_DNI) || 14;
 
+// DATA ODCIECIA - dokumenty starsze NIE licza sie do stref. Ustaw na dzien wdrozenia
+// (WMS_DOKUMENTY_OD w .env).
+//
+// Po co: przed wdrozeniem palety byly rozkladane POZA nowym obiegiem - albo MM-em w Subiekcie,
+// albo DWUKROKIEM (/ruchy/lok przypisuje cala dostawe na lokalizacje -> /ruchy/mm wywozi ja na
+// gore). Zaden z tych ruchow nie ma podpisu dokumentem (ruchy.zrodlo_dok), wiec dla naszego
+// rachunku takie dostawy wygladaja na NIEROZLOZONE - a po zmianie na cap stanem zjadalyby caly
+// stan K4 i wypychaly polke do zera. Pomiar na zywej OKITRADE (17.07.2026): 189 z 231 pozycji
+// dostaw (82%) pokazaloby sie jako widmo - wiersz "Rozloz 94 000 szt." przy 2 825 na magazynie.
+//
+// Dlaczego zwykla data, a nie sprytniejszy mechanizm: te dostawy sa NIEROZSTRZYGALNE - nie mamy
+// po nich sladu i miec nie bedziemy. A po wdrozeniu zrodlo widm zamyka sie STRUKTURALNIE:
+// /ruchy/rozloz podpisuje ruch dokumentem, a regula "cala ilosc bez wDrodze" w /ruchy/lok
+// blokuje dwukrok. To brak drogi, nie kwestia dyscypliny. (Rozwazany wariant "licz wywozke
+// zrobiona Subiektem" upadl: widma robi nasz wlasny WMS, a liczenie wszystkich MM z GT
+// podwojnie liczyloby rozlozenia przez /rozloz - maja i dokument w GT, i zrodlo_dok.)
+//
+// KOSZT, przyjety swiadomie: ~8 palet przyjetych tuz przed wdrozeniem jest naprawde otwartych
+// i straci wiersz "Rozloz" - wpadna do "do sprawdzenia" i magazynier obsluzy je przez "Dalej".
+//
+// STALA WYGASA: okno dostaw to 90 dni, wiec ~90 dni po wdrozeniu nie ma juz dokumentow
+// starszych od odciecia i te linie mozna usunac razem z warunkiem w zapytaniach.
+const DOKUMENTY_OD = new Date(process.env.WMS_DOKUMENTY_OD || '2026-07-18');
+
+// Poczatek okna = pozniejsza z dwoch dat: okno rodzaju albo data odciecia.
+function odKiedy(dni) {
+  const zOkna = new Date(Date.now() - dni * 24 * 60 * 60 * 1000);
+  return zOkna > DOKUMENTY_OD ? zOkna : DOKUMENTY_OD;
+}
+
 // Zapytanie ODWROTNE do pobierzDostawyK4: tam pytamy "co przyszlo na TE towary", tu "ktore
 // towary maja w ogole zwrot na K4". Potrzebne do listy zwrotow, ktora nie zna z gory zbioru
 // SKU (karta produktu zna - stad tamten kierunek).
 //
 // Zwraca sam ZBIOR KANDYDATOW (tw_Id + dane towaru do wyswietlenia), a NIE ilosci do rozlozenia.
-// Ile realnie zostalo, liczy dopiero rozbijDeficytK4 na deficycie - jedno zrodlo prawdy dla
+// Ile realnie zostalo, liczy dopiero rozbijStanK4 na stanie GT - jedno zrodlo prawdy dla
 // karty produktu i listy. Druga implementacja licznika rozjechalaby oba ekrany.
 //
 // tw_Rodzaj = 1: tylko towary (wycina zestawy/komplety rodzaju 8 i uslugi) - ten sam filtr,
@@ -190,8 +220,7 @@ const TW_RODZAJ_TOWAR = 1;
 // zrodloTyp: KFS_TYP = zwroty (okno krotkie), FZ_TYP = dostawy (okno dlugie). Okno idzie w parze
 // z typem, bo to dwa rozne zjawiska - patrz komentarz przy OKNO_* wyzej.
 async function pobierzTowaryZeZrodlemK4(zrodloTyp) {
-  const dni = zrodloTyp === FZ_TYP ? OKNO_DOSTAWY_DNI : OKNO_ZWROTY_PRZYWOZKI_DNI;
-  const od = new Date(Date.now() - dni * 24 * 60 * 60 * 1000);
+  const od = odKiedy(zrodloTyp === FZ_TYP ? OKNO_DOSTAWY_DNI : OKNO_ZWROTY_PRZYWOZKI_DNI);
   const { recordset } = await query(`
     SELECT DISTINCT o.ob_TowId AS tw_id, t.tw_Symbol AS symbol, t.tw_Nazwa AS nazwa,
            t.tw_PodstKodKresk AS ean, t.tw_Pole1 AS lok_gt
@@ -217,13 +246,64 @@ async function pobierzTowaryZeZrodlemK4(zrodloTyp) {
 const pobierzTowaryZeZwrotamiK4 = () => pobierzTowaryZeZrodlemK4(KFS_TYP);
 const pobierzTowaryZDostawamiK4 = () => pobierzTowaryZeZrodlemK4(FZ_TYP);
 
+// JEDNA mapa rodzajow stref: rodzaj -> kubelek z rozbijStanK4 + zapytanie odwrotne
+// ("ktore SKU maja w ogole taki dokument", gdy nie znamy zbioru z gory).
+//
+// Po co mapa zamiast trzech wywolan w kazdym konsumencie: nowy rodzaj wypadal juz CZTERY razy
+// po cichu (raz z /ruchy/rozloz, raz z reguly "cala ilosc" w /lok, raz z audytu, raz z Historii
+// ruchow) - za kazdym razem dlatego, ze ktos skladal liste rodzajow recznie. Dopisujac czwarty
+// rodzaj dopisz go TUTAJ, a konsumenci (filtr stref w /produkty, listy) zobacza go sami.
+const RODZAJE_STREF = {
+  dostawa:   { kubelek: 'dostawy',   kandydaci: pobierzTowaryZDostawamiK4 },
+  zwrot:     { kubelek: 'zwroty',    kandydaci: pobierzTowaryZeZwrotamiK4 },
+  przywozka: { kubelek: 'przywozki', kandydaci: pobierzTowaryZPrzywozkamiK4 },
+};
+
+// Kandydaci z PRZYWOZKA: MM z magazynu zewnetrznego na K4, wystawione POZA WMS. Osobne
+// zapytanie, bo przywozka nie ma dokumentu zrodlowego (dok_DoDokId) - sama jest dokumentem,
+// a kierunek czytamy z dok_MagId (zrodlo) + dok_OdbiorcaId (cel). Warunki takie same jak w
+// galezi UNION w pobierzDostawyK4 - musza zostac spojne, inaczej lista pokaze kandydata,
+// dla ktorego rozbicie nie znajdzie dokumentu (i odwrotnie).
+async function pobierzTowaryZPrzywozkamiK4() {
+  const od = odKiedy(OKNO_ZWROTY_PRZYWOZKI_DNI);
+  const zewnGtIds = MAGAZYNY_ZEWNETRZNE.map((k) => MAGAZYN_GT_ID[k]).filter(Boolean);
+  if (!zewnGtIds.length) return [];
+
+  const parametry = { mmTyp: MM_TYP, mag: MAG_K4, od, rodzaj: TW_RODZAJ_TOWAR };
+  const zewnPlaceholders = zewnGtIds.map((id, i) => {
+    parametry[`z${i}`] = id;
+    return `@z${i}`;
+  }).join(', ');
+
+  const { recordset } = await query(`
+    SELECT DISTINCT o.ob_TowId AS tw_id, t.tw_Symbol AS symbol, t.tw_Nazwa AS nazwa,
+           t.tw_PodstKodKresk AS ean, t.tw_Pole1 AS lok_gt
+    FROM dok__Dokument dok
+    JOIN dok_Pozycja o ON o.ob_DokMagId = dok.dok_Id
+    JOIN tw__Towar t ON t.tw_Id = o.ob_TowId AND t.tw_Rodzaj = @rodzaj
+    WHERE dok.dok_Typ = @mmTyp AND dok.dok_OdbiorcaId = @mag
+      AND dok.dok_MagId IN (${zewnPlaceholders})
+      AND ISNULL(dok.dok_Uwagi, '') NOT LIKE 'WMS-RUCH:%'
+      AND dok.dok_DataWyst >= @od
+  `, parametry);
+
+  return recordset.map((r) => ({
+    artykul_gt_id: String(r.tw_id),
+    symbol: r.symbol ? String(r.symbol).trim() : null,
+    nazwa: r.nazwa ? String(r.nazwa).trim() : null,
+    ean: r.ean ? String(r.ean).trim() : null,
+    lok_gt: r.lok_gt ? String(r.lok_gt).trim() : null,
+  }));
+}
+
 async function pobierzDostawyK4(twIds) {
   const wynik = new Map();
   if (!twIds || twIds.length === 0) return wynik;
 
-  const dni = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
-  const od = dni(OKNO_DOSTAWY_DNI);
-  const odDrobne = dni(OKNO_ZWROTY_PRZYWOZKI_DNI);
+  // Te same okna i ta sama data odciecia, co w zapytaniach odwrotnych (pobierzTowaryZ*) -
+  // rozjazd dalby kandydata, dla ktorego rozbicie nie znajdzie dokumentu, i odwrotnie.
+  const od = odKiedy(OKNO_DOSTAWY_DNI);
+  const odDrobne = odKiedy(OKNO_ZWROTY_PRZYWOZKI_DNI);
 
   // magazyny zewnetrzne (MAG/LS/BRK) jako mag_Id GT - zrodla przywozek
   const zewnGtIds = MAGAZYNY_ZEWNETRZNE.map((k) => MAGAZYN_GT_ID[k]).filter(Boolean);
@@ -320,24 +400,73 @@ function iloscRozlozonaZDokumentu(artykulGtId, magazyn, dokNr) {
   return Number(r.suma) || 0;
 }
 
-// Rozbija deficyt K4 (stan GT - suma WMS) na kubelki, ktore NIE nachodza na siebie:
+// Kolejnosc ZJADANIA stanu K4 - co schodzi, gdy stan GT spada (sprzedaz, RW, rozchod
+// zewnetrzny, MM zrobione w Subiekcie, MM na Reklamacje). Decyzja usera 2026-07-17:
+//
+//   do sprawdzenia -> POLKA -> dostawa -> zwrot -> przywozka
+//
+// Sedno: konsumentow NIE rozpoznajemy. Kazdy z nich robi dokladnie jedno - zbija st_Stan na K4.
+// Skoro polka jest RESZTA z odejmowania, kazdy zjada ja sam z siebie i nie ma listy typow
+// dokumentow do utrzymania (regula przeszla test na magazynie K4R, o ktorym nikt nie wiedzial).
+//
+// Dlaczego taka kolejnosc miedzy strefami (gdy polka = 0, a strefy sa dwie):
+//   dostawa 1. - duza, prosta paleta; przy pustej polce towar jest tam, gdzie ona stoi.
+//                Pomylka jest GLOSNA: zasada 6 sprawdzi stan i rzuci bledem przy rozkladaniu.
+//   zwrot   2. - "zawsze niepewny", wiec chroniony w srodku. Zjedzony po cichu kasuje zadanie
+//                "odnies na regal" i sztuki zostaja w strefie, o ktorych nikt sie nie dowie.
+//   przywozka 3. - nie sprowadza sie towaru z MAG/LS, gdy stan jest na K4, wiec remis z paleta
+//                  praktycznie nie zachodzi. Ostatnie miejsce jest dla niej bezpieczne.
+// W obrebie rodzaju: FIFO - najstarszy dokument zjadany pierwszy (najdluzej wisi = najwieksza
+// szansa, ze to widmo).
+//
+// !!! W PETLI PRZYDZIELAMY BUDZET, wiec kolejnosc jest ODWROTNA do kolejnosci zjadania:
+// kto schodzi PIERWSZY, dostaje resztowke, czyli musi byc w petli OSTATNI. Latwo napisac na
+// odwrot i dostac wynik, ktory wyglada sensownie. Test to pilnuje.
+const PRIORYTET_PRZYDZIALU = { przywozka: 0, zwrot: 1, dostawa: 2 };
+
+// Nieznany rodzaj ladowal dotad na kubelku `dostawa` (`kubelki[d.rodzaj] || kubelki.dostawa`),
+// czyli po zmianie wskoczylby od razu na PIERWSZE miejsce zjadania i jego zadanie znikaloby
+// najszybciej. Dajemy mu priorytet -1 = przydzial pierwszy = zjadany ostatni: widoczny wiersz
+// jest mniejszym zlem niz cicho skasowane zadanie. Prawdziwym zabezpieczeniem jest test
+// sprawdzajacy, ze RODZAJE_STREF i PRIORYTET_PRZYDZIALU maja te same klucze.
+const priorytet = (rodzaj) => PRIORYTET_PRZYDZIALU[rodzaj] ?? -1;
+
+// Rozbija stan K4 na rozlaczne czesci, ktore NIE nachodza na siebie:
 //   dostawy    - PZ<-FZ, paleta od dostawcy (rozkladana dowolnie, dol/gora, w czesciach)
 //   zwroty     - PZ<-KFS, sztuki lezace w strefie zwrotow (wracaja na regal)
 //   przywozki  - MM z MAG/LS, towar w strefie przywozki (wraca na regal)
-//   reszta     - stary stan, ktorego WMS nigdy nie poznal (stara zasada 1 SKU = 1 lokalizacja)
+//   polka      - ile MOZE lezec na polce pickowej wg GT (kopia WMS bywa starsza - patrz nizej)
+//   reszta     - "do sprawdzenia": stan, o ktorym WMS nic nie wie (wszedl poza naszym obiegiem)
 //
-// Kubelek dokumentu = ilosc z PZ MINUS to, co z TEGO dokumentu juz rozlozylismy. Na koniec
-// wszystko jest capowane deficytem: gdy czesc zeszla sprzedaza (GT spada bez wiedzy WMS),
-// PZ nadal mowi 200, a deficyt juz tylko 195 - bierzemy 195. Dzieki temu rozlozone pozycje
-// znikaja same i nie wracaja jak zombie, niezaleznie od dlugosci okna.
+// Kubelek dokumentu = ilosc z PZ MINUS to, co z TEGO dokumentu juz rozlozylismy.
 //
-// Kolejnosc capowania: najpierw dostawy i zwroty (mamy na nie dokument), na koncu reszta -
-// bo to ona jest "niewyjasniona" i to ona ma absorbowac niedobor.
-function rozbijDeficytK4(deficyt, dokumenty, { artykul_gt_id, magazyn = MAG_KOD_K4 } = {}) {
-  let zostalo = Math.max(Number(deficyt) || 0, 0);
+// CAP STANEM, NIE DEFICYTEM (zmiana 2026-07-17). Wczesniej strefy byly capowane deficytem
+// (stan GT - polka), przez co sprzedaz kurczyla WIERSZ DOSTAWY zamiast polki: paleta 4080 po
+// dwoch dniach pokazywala 4075 i backend ucinal rozlozenie, zostawiajac w GT 5 szt. "na K4",
+// ktore fizycznie pojechaly na gore. Teraz strefy ogranicza tylko sam stan (strefa nie moze
+// trzymac wiecej sztuk, niz w ogole lezy na K4), a polka bierze to, co zostanie - czyli to ona
+// absorbuje sprzedaz. To jest regula #3 usera: "zejscie ze stanu jest zawsze z lokalizacji
+// zapisanej, chyba ze lokalizacji nie ma lub jest zero".
+//
+// GRANICA, swiadomie zostawiona: `reszta` schodzi PRZED polka, bo jest definiowana jako
+// reszta - nie ma niezaleznej liczby, ktora dalaby sie zbic pozniej. Gdy reszta = 0 (stan
+// docelowy), regula #3 dziala dokladnie. Naprawa wymagalaby snapshotow stanu GT.
+//
+// stanGt  - st_Stan z GT (master ilosci)
+// sumaWms - suma stany_lokalizacji dla tego magazynu (kopia WMS; moze byc STARSZA od GT,
+//           bo sprzedaz w Subiekcie zbija stan bez wiedzy WMS)
+function rozbijStanK4(stanGt, sumaWms, dokumenty, { artykul_gt_id, magazyn = MAG_KOD_K4 } = {}) {
+  let zostalo = Math.max(Number(stanGt) || 0, 0);
+  const polkaKopia = Math.max(Number(sumaWms) || 0, 0);
   const kubelki = { dostawa: [], zwrot: [], przywozka: [] };
 
-  for (const d of dokumenty || []) {
+  // stabilny sort: priorytet przydzialu, a w obrebie rodzaju najnowszy pierwszy (= najstarszy
+  // dostaje resztowke = jest zjadany pierwszy). `data` to 'YYYY-MM-DD' albo null.
+  const wgPrzydzialu = [...(dokumenty || [])].sort((a, b) =>
+    priorytet(a.rodzaj) - priorytet(b.rodzaj)
+    || String(b.data ?? '').localeCompare(String(a.data ?? '')));
+
+  for (const d of wgPrzydzialu) {
     if (zostalo <= 0) break;
     const juz = artykul_gt_id ? iloscRozlozonaZDokumentu(artykul_gt_id, magazyn, d.pz_nr) : 0;
     const pozostalo = d.ilosc - juz;
@@ -346,6 +475,11 @@ function rozbijDeficytK4(deficyt, dokumenty, { artykul_gt_id, magazyn = MAG_KOD_
     (kubelki[d.rodzaj] || kubelki.dostawa).push({ ...d, ilosc });
     zostalo -= ilosc;
   }
+
+  // Polka bierze, ile zostanie po strefach. Gdy kopia WMS jest wyzsza - roznica to sprzedaz,
+  // ktorej WMS nie zauwazyl; auto-korekta w jobie rozjazdow sciagnie kopie do stanu GT.
+  const polka = Math.min(polkaKopia, zostalo);
+  zostalo -= polka;
 
   // `wszystkie` = te same pozycje w jednej liscie. Konsumenci, ktorych interesuje "ile lezy
   // w drodze" albo "czy ten dokument jest jeszcze do rozlozenia", MAJA uzywac tego pola -
@@ -358,12 +492,16 @@ function rozbijDeficytK4(deficyt, dokumenty, { artykul_gt_id, magazyn = MAG_KOD_
     przywozki: kubelki.przywozka,
     wszystkie,
     wDrodze: wszystkie.reduce((s, d) => s + d.ilosc, 0),
-    reszta: zostalo,
+    polka,                                  // ile faktycznie moze lezec na polce
+    polka_kopia: polkaKopia,                // co o tym mysli WMS
+    polka_klamie: polkaKopia - polka,       // ile sprzedazy zeszlo z polki bez wiedzy WMS
+    reszta: zostalo,                        // "do sprawdzenia"
   };
 }
 
 module.exports = {
   znajdzMM, znajdzMMpoKluczu, kluczRuchu, budujUwagiMM, pobierzZkRezerwujaceK4,
   pobierzDostawyK4, pobierzTowaryZeZwrotamiK4, pobierzTowaryZDostawamiK4,
-  rozbijDeficytK4, iloscRozlozonaZDokumentu,
+  pobierzTowaryZPrzywozkamiK4, rozbijStanK4, iloscRozlozonaZDokumentu,
+  RODZAJE_STREF, PRIORYTET_PRZYDZIALU, DOKUMENTY_OD,
 };

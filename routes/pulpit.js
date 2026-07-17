@@ -156,6 +156,16 @@ function statusy() {
   return { ...snap.wartosc, obliczono: snap.obliczono };
 }
 
+// --- liczniki kafli "do zrobienia" ze snapshotu (moze byc null) ---
+// Wymagaja GT, wiec tak jak statusy ida ze snapshotu - pulpit ma sie ladowac natychmiast
+// i dzialac, gdy Subiekt lezy. Kafel klika sie na zywa liste, wiec ewentualna godzinna
+// nieaktualnosc licznika nie wprowadza nikogo w blad na dluzej niz jedno klikniecie.
+function kafle() {
+  const snap = snapshot.odczytaj('kafle_do_zrobienia');
+  if (!snap) return null;
+  return { ...snap.wartosc, obliczono: snap.obliczono };
+}
+
 // GET /api/pulpit - caly pulpit w jednym strzale. Sekcje lokalne zawsze obecne;
 // `statusy` = null gdy snapshot jeszcze nie policzony. Front decyduje wg roli,
 // co pokazac (KPI wlasciciela vs kolejka magazyniera).
@@ -167,6 +177,7 @@ router.get('/', (req, res, next) => {
       trendy: trendy(),
       ludzie: ludzie(),
       statusy: statusy(),
+      kafle: kafle(),
       teraz: new Date().toISOString(),
     });
   } catch (err) {

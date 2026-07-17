@@ -12,7 +12,9 @@
 // udany snapshot (albo "brak danych", jesli jeszcze zadnego nie bylo).
 
 const db = require('../db/database');
-const { rozkladZgodnosci } = require('./gt-produkty');
+const { rozkladZgodnosci, listujProdukty } = require('./gt-produkty');
+const gtDokumenty = require('./gt-dokumenty');
+const doRozlozenia = require('./do-rozlozenia');
 const awarie = require('./awarie');
 
 const DOMYSLNY_INTERWAL_MS = 60 * 60 * 1000; // 1 godzina (jak job rozjazdow)
@@ -35,16 +37,57 @@ function odczytaj(klucz) {
   }
 }
 
-// Przelicza i zapisuje rozklad statusow. Zwraca liczniki albo null przy bledzie.
+// Liczniki kafli "do zrobienia" - kazdy to pytanie do GT, wiec nie moga isc na zywo:
+// /api/pulpit jest synchroniczny i ma sie ladowac natychmiast oraz dzialac przy padnietym
+// Subiekcie. Tu licza sie raz na godzine, a kafel klika sie na ZYWA liste - dokladnie jak
+// istniejacy kafel "Do zlokalizowania (t_GT)".
+//
+// Kazdy licznik ma wlasny try/catch: jedno padniete zapytanie (np. dlugi timeout GT) nie moze
+// zabrac pozostalych trzech. Brak wyniku = null -> front pokazuje kafel z "—", nie zero
+// (zero znaczy "sprawdzone, nie ma nic" i to zupelnie inna informacja).
+async function policzKafle() {
+  const wynik = {};
+  const licz = async (klucz, fn) => {
+    try { wynik[klucz] = await fn(); } catch (e) {
+      wynik[klucz] = null;
+      awarie.blad('pulpit-snapshot', `kafel ${klucz}: ${e.message}`);
+    }
+  };
+
+  await Promise.all([
+    licz('nadsprzedaz', async () => (await listujProdukty({ zestawienie: 'nadsprzedaz', limit: 1 })).total),
+    licz('leszno', async () => (await listujProdukty({ zestawienie: 'leszno', limit: 1 })).total),
+    licz('przywozka', async () => {
+      const k = await gtDokumenty.pobierzTowaryZPrzywozkamiK4();
+      return (await doRozlozenia.zbierz(k, 'przywozki')).length;
+    }),
+    licz('zwroty', async () => {
+      const k = await gtDokumenty.pobierzTowaryZeZwrotamiK4();
+      return (await doRozlozenia.zbierz(k, 'zwroty')).length;
+    }),
+  ]);
+  return wynik;
+}
+
+// Przelicza i zapisuje snapshoty. Zwraca liczniki zgodnosci albo null przy bledzie.
+// Sekcje sa niezalezne - blad jednej nie przerywa drugiej.
 async function odswiez() {
+  let statusy = null;
   try {
     const { licznik, razem } = await rozkladZgodnosci();
     STMT_ZAPIS.run({ klucz: 'statusy_zgodnosci', wartosc: JSON.stringify({ licznik, razem }) });
-    return { licznik, razem };
+    statusy = { licznik, razem };
   } catch (e) {
     awarie.blad('pulpit-snapshot', `nie policzono rozkladu zgodnosci: ${e.message}`);
-    return null;
   }
+
+  try {
+    STMT_ZAPIS.run({ klucz: 'kafle_do_zrobienia', wartosc: JSON.stringify(await policzKafle()) });
+  } catch (e) {
+    awarie.blad('pulpit-snapshot', `nie policzono kafli: ${e.message}`);
+  }
+
+  return statusy;
 }
 
 // Godzinny job + pierwszy przebieg krotko po starcie. Timery unref() - nie blokuja

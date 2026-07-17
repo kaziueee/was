@@ -855,3 +855,29 @@ main {
 .hint-inline { color: #777; font-size: 0.85em; }
 .kol-zazn { width: 32px; text-align: center; }
 .podnaglowek { margin: 24px 0 8px; font-size: 1.05em; }
+
+/* Podzakladki (Zestawienia) - drugi poziom nawigacji WEWNATRZ panelu. Wizualnie slabsze
+   niz .tab-link, zeby nie konkurowaly z glowna nawigacja. */
+.podzakladki { display: flex; gap: 4px; margin: 0 0 12px; border-bottom: 1px solid #ddd; }
+/* .hidden (linia ~218) ma te sama specyficznosc co .podzakladki, wiec BEZ tej reguly pozniejszy
+   display:flex wygrywa z display:none i pasek nie chowa sie poza grupa. Ten sam zabieg co przy
+   .modal-overlay.hidden / .pulpit-kafle.hidden. */
+.podzakladki.hidden { display: none; }
+.podzakladka {
+  padding: 8px 16px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  cursor: pointer;
+  font-size: 0.95em;
+  color: #555;
+}
+.podzakladka:hover { color: #1d3557; }
+.podzakladka.aktywna { color: #1d3557; font-weight: 600; border-bottom-color: #1d3557; }
+
+/* Logo jako link do Pulpitu - bez ozdob linka, zeby wygladalo jak naglowek, ktorym jest */
+#logo { text-decoration: none; color: inherit; }
+#logo h1 { margin: 0; }
+#logo:hover h1 { opacity: 0.85; }
+/* Podzakladki to teraz <a> (linkowalne, Cmd-klik = nowa karta) - zdejmujemy domyslny wyglad linka */
+.podzakladka { text-decoration: none; display: inline-block; }

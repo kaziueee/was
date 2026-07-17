@@ -9,7 +9,8 @@
   },
   "scripts": {
     "start": "node app.js",
-    "dev": "node --watch app.js"
+    "dev": "node --watch app.js",
+    "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {
     "dotenv": "^17.4.2",

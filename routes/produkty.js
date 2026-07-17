@@ -4,6 +4,7 @@ const { pobierzProdukt, szukajProdukty, listujProdukty, pobierzProduktyZUniwersu
 const { pobierzStatusLokalizacjiGt, pobierzPrzegladLokalizacji, ZGODNOSC } = require('../services/gt-fields');
 const { pobierzZkRezerwujaceK4, pobierzDostawyK4, rozbijStanK4, RODZAJE_STREF } = require('../services/gt-dokumenty');
 const doRozlozenia = require('../services/do-rozlozenia');
+const doSprawdzenia = require('./do-sprawdzenia');
 const { MAGAZYNY } = require('../config/magazyny');
 
 const router = express.Router();
@@ -13,8 +14,10 @@ const LIMIT_PRODUKTOW_MAX = 200;
 
 const KODY_MAGAZYNOW = new Set(MAGAZYNY.map((m) => m.kod));
 const KODY_ZGODNOSCI = new Set(Object.values(ZGODNOSC));
-// Kody stref bierzemy z RODZAJE_STREF, a nie wypisujemy - czwarty rodzaj ma sie tu pojawic sam.
-const KODY_STREF = new Set(Object.keys(RODZAJE_STREF));
+// Kody filtra "Strefa": trzy strefy z dokumentem (RODZAJE_STREF - czwarty rodzaj pojawi sie
+// sam) + 'nieznany_przychod'. NP to nie strefa (nie ma dokumentu), ale user traktuje go na
+// filtrach jako czwarta pozycje obok stref, wiec jedzie tym samym parametrem ?strefa=.
+const KODY_STREF = new Set([...Object.keys(RODZAJE_STREF), 'nieznany_przychod']);
 
 // Dokleja do listy produktow rozbicie deficytu K4 na dostawy (PZ<-FZ) i anonimowa reszte -
 // ten sam obraz, co dostaje Zebra z /api/lokalizacje/skan/:kod (zob. routes/lokalizacje.js),
@@ -40,15 +43,33 @@ async function dolaczDostawyK4(produkty, wierszeWms) {
     return;
   }
 
+  const suma = (kubelek) => kubelek.reduce((s, d) => s + d.ilosc, 0);
+
   for (const p of zeStanem) {
     const stanK4 = p.stany_gt?.K4?.ilosc ?? 0;
-    const rozbicie = rozbijStanK4(stanK4, sumaK4.get(p.artykul_gt_id) || 0, dostawyMap.get(String(p.artykul_gt_id)) || [], { artykul_gt_id: p.artykul_gt_id });
+    const wmsK4 = sumaK4.get(p.artykul_gt_id) || 0;
+    const rozbicie = rozbijStanK4(stanK4, wmsK4, dostawyMap.get(String(p.artykul_gt_id)) || [], { artykul_gt_id: p.artykul_gt_id });
     if (rozbicie.dostawy.length > 0) p.dostawy_k4 = rozbicie.dostawy;
     if (rozbicie.zwroty.length > 0) p.zwroty_k4 = rozbicie.zwroty;
     if (rozbicie.przywozki.length > 0) p.przywozki_k4 = rozbicie.przywozki;
     p.nieprzypisane_k4 = rozbicie.reszta; // zawsze - obecnosc = sygnal "rozbicie sie udalo"
     p.polka_k4 = rozbicie.polka;
     p.polka_k4_klamie = rozbicie.polka_klamie;
+
+    // Zwiezle podsumowanie strefy do kolumny "Strefa" (desktop): P/D/Z + NP. Liczymy TU,
+    // a nie na froncie, zeby definicja NP byla jedna i ta sama, co na ekranie "Do sprawdzenia".
+    //
+    // NP (nieznany przychod) = reszta rozbicia, ale TYLKO gdy WMS zna miejsce tego SKU na K4
+    // (wmsK4 > 0). Gdy WMS nie zna go w ogole (wmsK4 === 0), reszta to "do zlokalizowania" -
+    // backlog migracyjny, nie strefa - i do tej kolumny nie wchodzi (inaczej NERCHIELIT10
+    // pokazywalby NP:34669, co nie jest przychodem, tylko "nigdy nie zlokalizowane").
+    const strefa = {
+      P: suma(rozbicie.przywozki),
+      D: suma(rozbicie.dostawy),
+      Z: suma(rozbicie.zwroty),
+      NP: wmsK4 > 0 ? rozbicie.reszta : 0,
+    };
+    if (strefa.P || strefa.D || strefa.Z || strefa.NP) p.strefa_k4 = strefa;
   }
 }
 
@@ -72,6 +93,13 @@ function parsujListe(wartosc, dozwolone) {
 // a kandydaci to setki SKU (okno 90 dni na dostawy, 14 na zwroty/przywozki), nie caly katalog.
 async function idyZeStrefami(strefy) {
   const zbiory = await Promise.all(strefy.map(async (rodzaj) => {
+    // NP idzie innym torem niz strefy: nie ma dokumentu, wiec nie ma zapytania odwrotnego.
+    // Bierzemy go z tego samego zrodla, co ekran "Do sprawdzenia" (zbierz + predykat), zeby
+    // filtr i ekran nie mogly sie rozjechac. Koszt: ~800 ms, ale filtr jest okazjonalny.
+    if (rodzaj === 'nieznany_przychod') {
+      const pozycje = (await doSprawdzenia.zbierz()).filter(doSprawdzenia.RODZAJE.nieznany_przychod);
+      return pozycje.map((p) => p.artykul_gt_id);
+    }
     const { kubelek, kandydaci } = RODZAJE_STREF[rodzaj];
     const pozycje = await doRozlozenia.zbierz(await kandydaci(), kubelek);
     return pozycje.map((p) => p.artykul_gt_id);

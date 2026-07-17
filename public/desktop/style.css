@@ -180,6 +180,19 @@ main {
   white-space: nowrap;
 }
 
+/* Kolumna "Strefa": skroty P/D/Z/NP w jednej linii, monospace zeby liczby sie wyrownaly. */
+.kol-strefa {
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+}
+/* NP = nieznany przychod. Wyrozniony, bo to jedyna skladowa niewidoczna nigdzie indziej
+   (zgodnosc K4 porownuje tylko tekst lokalizacji, wiec takiemu towarowi swieci OK). */
+.strefa-np {
+  color: #b36b00;
+  font-weight: bold;
+}
+
 .lok-wpis {
   display: block;
   white-space: nowrap;

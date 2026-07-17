@@ -412,6 +412,20 @@ function komorkaStan(stanyGt, magazyn) {
   return `${stan}<br><span class="rez">rez ${rez}</span>`;
 }
 
+// Komorka "Strefa": co z K4 lezy POZA polka pickowa. Skroty jak na Zebrze/w decyzji usera:
+// P=przywozka, D=dostawa, Z=zwrot, NP=nieznany przychod (WMS zna miejsce, stan urosl poza
+// naszym obiegiem). Zerowe skladowe pomijamy; pusta strefa = "–". NP dostaje klase, bo to
+// jedyna skladowa, ktorej nie widac NIGDZIE indziej (zgodnosc K4 swieci jej OK).
+function komorkaStrefa(strefa) {
+  if (!strefa) return '–';
+  const czesci = [];
+  if (strefa.P) czesci.push(`P:${strefa.P}`);
+  if (strefa.D) czesci.push(`D:${strefa.D}`);
+  if (strefa.Z) czesci.push(`Z:${strefa.Z}`);
+  if (strefa.NP) czesci.push(`<span class="strefa-np">NP:${strefa.NP}</span>`);
+  return czesci.length ? czesci.join(' ') : '–';
+}
+
 function renderujProdukty({ produkty, total, limit, offset, tryb }) {
   const tbody = el('prod-tbody');
   tbody.innerHTML = '';
@@ -441,6 +455,7 @@ function renderujProdukty({ produkty, total, limit, offset, tryb }) {
       <td>${komorkaStan(p.stany_gt, 'K4R')}</td>
       <td>${p.razem}</td>
       <td class="kol-lok">${wmsK4}</td>
+      <td class="kol-strefa">${komorkaStrefa(p.strefa_k4)}</td>
       <td class="kol-lok">${wmsK4g}</td>
       <td>${p.k4g_razem}</td>
       <td><span class="badge ${klasa}" title="${tytul}">${stanZg}</span></td>

@@ -15,6 +15,10 @@ const db = require('../db/database');
 const { rozkladZgodnosci, listujProdukty } = require('./gt-produkty');
 const gtDokumenty = require('./gt-dokumenty');
 const doRozlozenia = require('./do-rozlozenia');
+// Sam rachunek "do sprawdzenia" mieszka w route, bo tam jest jego jedyny inny konsument.
+// Bierzemy stamtad `zbierz`, zeby nie miec drugiej implementacji - kafel i lista MUSZA
+// pokazywac te sama liczbe.
+const doSprawdzenia = require('../routes/do-sprawdzenia');
 const awarie = require('./awarie');
 
 const DOMYSLNY_INTERWAL_MS = 60 * 60 * 1000; // 1 godzina (jak job rozjazdow)
@@ -65,6 +69,23 @@ async function policzKafle() {
       const k = await gtDokumenty.pobierzTowaryZeZwrotamiK4();
       return (await doRozlozenia.zbierz(k, 'zwroty')).length;
     }),
+    // Kafel liczy TYLKO "nieznany przychod" (WMS zna miejsce, a stan GT urosl poza naszym
+    // obiegiem), a NIE cale "do sprawdzenia". Powod: druga polowa tej listy to backlog
+    // migracyjny (~2300 SKU, ktorych WMS nigdy nie poznal) - on zjedzie do zera dopiero po
+    // miesiacach lokalizowania i stalby na Pulpicie jako wielka liczba, ktora nic nie mowi
+    // o DZISIAJ. Nieznany przychod to sygnal operacyjny: w zdrowym stanie zero, a kazda
+    // niezerowa wartosc znaczy "wczoraj ktos dolozyl towar poza WMS-em".
+    // Backlog widac osobno jako kafel "Do zlokalizowania (t_GT)" - dzieki temu dwa kafle
+    // wreszcie mierza dwie ROZNE rzeczy.
+    //
+    // Predykat bierzemy z routes/do-sprawdzenia (RODZAJE), zeby kafel i zakladka "Nieznany
+    // przychod" nie mogly sie rozjechac.
+    //
+    // Liczy sie tu, a nie na zadanie, bo zbierz() to ~800 ms i przemiata WSZYSTKIE SKU ze
+    // stanem na K4 (~2800). Klikniecie kafla otwiera ZYWA liste, wiec licznik jest wskazowka
+    // "czy jest co robic", nie zrodlem prawdy.
+    licz('do_sprawdzenia', async () =>
+      (await doSprawdzenia.zbierz()).filter(doSprawdzenia.RODZAJE.nieznany_przychod).length),
   ]);
   return wynik;
 }

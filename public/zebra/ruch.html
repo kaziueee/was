@@ -24,6 +24,7 @@
       <button type="button" id="btn-go-zwroty" class="btn-menu">Zwroty<span>rozłóż wózek z korekt</span></button>
       <button type="button" id="btn-go-dostawy" class="btn-menu">Dostawy<span>rozłóż towar z faktur</span></button>
       <button type="button" id="btn-go-przywozki" class="btn-menu">Przywózka<span>rozłóż towar z MAG / Leszna</span></button>
+      <button type="button" id="btn-go-dosp" class="btn-menu">Do sprawdzenia<span>GT ma stan, WMS nie wie gdzie</span></button>
       <button type="button" id="btn-go-historia" class="btn-menu">Historia ruchów<span>ostatnie operacje na Zebrze</span></button>
       <a class="btn-menu" href="produkty.html">Test wyszukiwania (GT)<span>podgląd karty produktu</span></a>
       <button type="button" id="btn-pelny-ekran" class="btn-menu btn-menu-2">⛶ Tryb pełnoekranowy</button>
@@ -405,6 +406,25 @@
   </div>
   </div><!-- /widok-przywozki -->
 
+  <div id="widok-dosp" class="hidden">
+  <div class="ekran">
+    <header class="ekran-naglowek">
+      <div class="ekran-sku"><h1>Do sprawdzenia</h1><span id="dosp-postep" class="ekran-podpis"></span></div>
+    </header>
+    <main class="ekran-tresc">
+      <div id="dosp-komunikat" class="komunikat hidden"></div>
+      <!-- Dwie rozne prace, wiec przelacznik (patrz do-sprawdzenia.js). Liczniki w przyciskach,
+           zeby wybor nie byl skokiem w ciemno. -->
+      <div id="dosp-rodzaje" class="rodzaje"></div>
+      <div id="dosp-lista" class="lista"></div>
+      <p id="dosp-pusto" class="hint hidden">Nic tu nie czeka. 🎉</p>
+    </main>
+    <footer class="ekran-stopka">
+      <button type="button" id="dosp-wstecz" class="btn-wstecz">← Wstecz</button>
+    </footer>
+  </div>
+  </div><!-- /widok-dosp -->
+
   <script src="/shared/auth.js"></script>
   <script src="blokada-edycji.js"></script>
   <script src="fullscreen.js"></script>
@@ -417,5 +437,6 @@
   <script src="zwroty.js"></script>
   <script src="dostawy.js"></script>
   <script src="przywozki.js"></script>
+  <script src="do-sprawdzenia.js"></script>
 </body>
 </html>

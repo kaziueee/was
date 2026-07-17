@@ -871,6 +871,12 @@ main {
   cursor: pointer;
   font-size: 0.95em;
   color: #555;
+  /* Klasa siedzi i na <a> (podzakladki z wlasnym adresem, np. #ruchy/mm), i na <button>
+     (przelacznik filtru w "Do sprawdzenia" - adres go nie koduje, wiec link bylby klamstwem).
+     Przycisk nie dziedziczy kroju po stronie, wiec bez tego wychodzilby systemowa czcionka
+     obok identycznie wygladajacych zakladek-linkow. */
+  font-family: inherit;
+  text-decoration: none;
 }
 .podzakladka:hover { color: #1d3557; }
 .podzakladka.aktywna { color: #1d3557; font-weight: 600; border-bottom-color: #1d3557; }

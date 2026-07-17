@@ -72,6 +72,7 @@ const panele = {
   uzupelnienia: { sekcja: 'panel-uzupelnienia', zaladowano: false, odswiez: odswiezUzupelnienia },
   zwroty: { sekcja: 'panel-zwroty', zaladowano: false, odswiez: odswiezZwroty },
   dostawy: { sekcja: 'panel-dostawy', zaladowano: false, odswiez: odswiezDostawy },
+  'do-sprawdzenia': { sekcja: 'panel-do-sprawdzenia', zaladowano: false, odswiez: odswiezDoSprawdzenia },
   zestawienia: { sekcja: 'panel-zestawienia', zaladowano: false, odswiez: odswiezZestawienia },
   sciezki: { sekcja: 'panel-sciezki', zaladowano: false, odswiez: odswiezRaporty },
   log: { sekcja: 'panel-log', zaladowano: false, odswiez: odswiezLog },
@@ -81,7 +82,7 @@ const panele = {
 // Grupa "Ruchy" - jedna pozycja w nawigacji, cztery osobne panele pod spodem. Trzymamy je
 // jako oddzielne sekcje (a nie jeden panel z przelaczana trescia), bo istnialy wczesniej i
 // kazdy ma swoj stan; grupa dokłada tylko warstwe nawigacji.
-const GRUPY = { ruchy: { domyslny: 'mm', panele: ['mm', 'uzupelnienia', 'rozjazdy', 'dostawy'] } };
+const GRUPY = { ruchy: { domyslny: 'mm', panele: ['mm', 'uzupelnienia', 'rozjazdy', 'dostawy', 'do-sprawdzenia'] } };
 
 // panel -> grupa, do zaznaczania wlasciwej zakladki glownej i pokazania paska podzakladek
 const GRUPA_PANELU = Object.fromEntries(
@@ -226,6 +227,10 @@ function renderujPulpitKolejke(d) {
     kafle.push(kafelZadania('Nadsprzedaż', k.nadsprzedaz, '#zestawienia/nadsprzedaz', 'red'));
     kafle.push(kafelZadania('Przywózka do rozłożenia', k.przywozka, '#zestawienia/przywozka', 'amber'));
     kafle.push(kafelZadania('Zwroty do rozłożenia', k.zwroty, '#zwroty', 'amber'));
+    // Tylko "nieznany przychod", nie cale "do sprawdzenia" (patrz pulpit-snapshot.js): backlog
+    // migracyjny to osobny kafel "Do zlokalizowania (t_GT)" wyzej. Ekran otwiera sie domyslnie
+    // na tej samej zakladce, wiec liczba z kafla zgadza sie z tym, co user zobaczy po kliknieciu.
+    kafle.push(kafelZadania('Do sprawdzenia — nieznany przychód', k.do_sprawdzenia, '#ruchy/do-sprawdzenia', 'amber'));
     kafle.push(kafelZadania('Do przywiezienia z Leszna', k.leszno, '#zestawienia/leszno', 'blue'));
   }
 
@@ -1217,6 +1222,134 @@ function wypelnijKatalog(tbodyId, brakId, produkty, dodatkowe) {
   el(brakId).classList.toggle('hidden', produkty.length > 0);
   for (const p of produkty) tbody.appendChild(wierszKatalogowy(p, dodatkowe ? dodatkowe(p) : ''));
 }
+
+// === DO SPRAWDZENIA (podzakladka Ruchow) ===
+//
+// Towar, ktory GT widzi na K4, a WMS nie wie gdzie. Lista jest BACKLOGIEM (~2000 wierszy na
+// starcie), wiec paginujemy i domyslnie sortujemy po ilosci - najpierw to, co najbardziej
+// zaklamuje stan. Backend liczy `reszta` tym samym rozbiciem, co karta produktu.
+const DOSP_LIMIT = 50;
+let dospOffset = 0;
+// Domyslnie NIEZNANY PRZYCHOD (decyzja usera): "do zlokalizowania" to backlog migracyjny na
+// miesiace, a to jest to, co wydarzylo sie wczoraj - i JEDYNE miejsce w systemie, gdzie w ogole
+// widac taki towar (zgodnosc K4 porownuje tylko tekst lokalizacji, wiec swieci mu OK).
+// '' = wszystko.
+let dospRodzaj = 'nieznany_przychod';
+
+// Opis pod przelacznikiem. Kazdy rodzaj to inna praca i inne "czemu to tu jest" - bez tego
+// magazynier widzi dwie liczby i nie wie, ktora go dotyczy.
+const DOSP_OPISY = {
+  '': 'GT widzi ten towar na K4, ale WMS nie wie, gdzie leży cały jego stan. '
+    + 'Nie dopisujemy go do półki automatycznie: automat nie odróżniłby go od niewidzianej palety, '
+    + 'a wpisanie palety na półkę zrównuje GT z WMS i job rozjazdów już nigdy tego nie wykryje.',
+  nieznany_przychod: 'WMS zna miejsce tego towaru, ale stan GT urósł ponad to, co WMS wie — '
+    + 'ktoś dołożył sztuki poza naszym obiegiem (przychód z inwentury, uzupełnienie zrobione '
+    + 'w Subiekcie, powrót z Reklamacji). Uwaga: tych pozycji NIE widać nigdzie indziej. '
+    + 'Zgodność K4 porównuje tylko tekst lokalizacji, więc taki towar świeci OK, choć w GT ma '
+    + 'czterokrotnie więcej sztuk niż w WMS.',
+  do_zlokalizowania: 'WMS nie zna tego towaru na K4 w ogóle — nigdy nie dostał miejsca. '
+    + 'To backlog migracyjny: zjedzie do zera, gdy go zlokalizujesz. Widać go też w Produktach '
+    + 'jako status t_GT (albo BD, gdy GT też nie ma wpisanej lokalizacji).',
+};
+
+// Komunikat pustki per filtr - musi mówić prawdę o TYM podzbiorze, a nie o całej liście.
+const DOSP_PUSTO = {
+  '': 'Nic do sprawdzenia — WMS wie o całym stanie K4. 🎉',
+  nieznany_przychod: 'Nikt nie dołożył towaru poza WMS-em. 🎉',
+  do_zlokalizowania: 'Każdy towar ze stanem na K4 ma miejsce w WMS. 🎉',
+};
+
+async function odswiezDoSprawdzenia() {
+  const params = new URLSearchParams({
+    sort: el('dosp-sort').value,
+    limit: String(DOSP_LIMIT),
+    offset: String(dospOffset),
+  });
+  if (dospRodzaj) params.set('rodzaj', dospRodzaj);
+  try {
+    renderujDoSprawdzenia(await api(`/api/do-sprawdzenia?${params}`));
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+  }
+}
+
+function renderujDoSprawdzenia(dane) {
+  const { pozycje, razem, sztuk, offset, limit, liczniki } = dane;
+  const tbody = el('dosp-tbody');
+  tbody.innerHTML = '';
+  el('dosp-brak').classList.toggle('hidden', razem > 0);
+  // Komunikat pustki MUSI zalezec od filtru. Przy aktywnym "Nieznany przychód" zdanie
+  // "WMS wie o calym stanie K4" bylo klamstwem - obok stalo 2325 pozycji do zlokalizowania.
+  el('dosp-brak').textContent = DOSP_PUSTO[dospRodzaj] ?? DOSP_PUSTO[''];
+  el('dosp-licznik').textContent = razem > 0
+    ? `${razem} SKU · ${sztuk} szt. do przypisania`
+    : '';
+  el('dosp-opis').textContent = DOSP_OPISY[dospRodzaj] ?? '';
+
+  // Liczniki w etykietach przelacznika - ida z PELNEGO zbioru, wiec sa widoczne takze przy
+  // aktywnym filtrze (patrz routes/do-sprawdzenia.js).
+  if (liczniki) {
+    const etykiety = {
+      '': `Wszystko (${liczniki.nieznany_przychod.razem + liczniki.do_zlokalizowania.razem})`,
+      nieznany_przychod: `Nieznany przychód (${liczniki.nieznany_przychod.razem})`,
+      do_zlokalizowania: `Do zlokalizowania (${liczniki.do_zlokalizowania.razem})`,
+    };
+    el('dosp-rodzaje').querySelectorAll('.podzakladka').forEach((a) => {
+      a.textContent = etykiety[a.dataset.rodzaj] ?? a.textContent;
+      a.classList.toggle('aktywna', a.dataset.rodzaj === dospRodzaj);
+    });
+  }
+
+  for (const p of pozycje) {
+    const tr = document.createElement('tr');
+    // "Zna WMS" pokazuje, czy dokladamy do istniejacego miejsca, czy szukamy nowego -
+    // to zupelnie inna robota dla magazyniera.
+    const znaWms = p.polka_wms > 0 ? `${p.polka_wms} szt.` : '<span class="opis">nie zna</span>';
+    // Miejsce z GT to tylko PODPOWIEDZ - tw_Pole1 bywa smieciem ("RB/M2-B37 - sciana /"),
+    // wiec oznaczamy zrodlo, zeby magazynier wiedzial, czemu ma nie ufac.
+    const miejsce = p.lokalizacja_kod
+      ? `${p.lokalizacja_kod}${p.lok_zrodlo === 'GT' ? ' <span class="opis">(z GT)</span>' : ''}`
+      : '<span class="opis">brak — zeskanuj</span>';
+    tr.innerHTML = `<td><strong>${p.symbol ?? p.artykul_gt_id}</strong></td>`
+      + `<td>${p.nazwa ?? ''}</td>`
+      + `<td><strong>${p.ilosc}</strong></td>`
+      + `<td>${p.stan_k4}</td>`
+      + `<td>${znaWms}</td>`
+      + `<td>${p.w_strefach > 0 ? p.w_strefach : '–'}</td>`
+      + `<td class="kol-lok">${miejsce}</td>`
+      + `<td class="td-akcja"><button class="btn btn-small" type="button">Otwórz</button></td>`;
+    tr.querySelector('button').addEventListener('click', () =>
+      otworzProduktPoSymbolu({ artykul_gt_id: p.artykul_gt_id, artykul_symbol: p.symbol }));
+    tbody.appendChild(tr);
+  }
+
+  const od = razem === 0 ? 0 : offset + 1;
+  const doPoz = Math.min(offset + limit, razem);
+  el('dosp-zakres').textContent = razem === 0 ? '–' : `${od}–${doPoz} z ${razem}`;
+  el('btn-dosp-prev').disabled = offset === 0;
+  el('btn-dosp-next').disabled = doPoz >= razem;
+}
+
+el('btn-dosp-odswiez').addEventListener('click', () => { dospOffset = 0; odswiezDoSprawdzenia(); });
+el('dosp-sort').addEventListener('change', () => { dospOffset = 0; odswiezDoSprawdzenia(); });
+// Przelacznik rodzaju: to filtr WEWNATRZ panelu, nie osobny adres - dlatego preventDefault
+// (href jest tylko po to, zeby wygladalo i zachowywalo sie jak podzakladki obok).
+el('dosp-rodzaje').addEventListener('click', (e) => {
+  const a = e.target.closest('.podzakladka');
+  if (!a) return;
+  e.preventDefault();
+  dospRodzaj = a.dataset.rodzaj;
+  dospOffset = 0;
+  odswiezDoSprawdzenia();
+});
+el('btn-dosp-prev').addEventListener('click', () => {
+  dospOffset = Math.max(0, dospOffset - DOSP_LIMIT);
+  odswiezDoSprawdzenia();
+});
+el('btn-dosp-next').addEventListener('click', () => {
+  dospOffset += DOSP_LIMIT;
+  odswiezDoSprawdzenia();
+});
 
 async function odswiezZestawienia() {
   try {

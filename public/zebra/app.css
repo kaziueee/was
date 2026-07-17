@@ -636,6 +636,54 @@ html, body {
   cursor: pointer;
 }
 
+/* Przelacznik rodzaju na liscie "Do sprawdzenia". Dwa przyciski w rzedzie - to filtr, a nie
+   nawigacja, wiec nizsze niz btn-menu i bez strzalki. Licznik pod etykieta, zeby przy 360 px
+   nie zawijalo sie na dwie linie. */
+.rodzaje {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.btn-rodzaj {
+  flex: 1 1 0;
+  min-height: 44px;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--font-label);
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.btn-rodzaj span {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--font-body);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.btn-rodzaj.aktywny {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+}
+
+/* Ostrzezenie na przystanku obchodu: czesc stanu lezy w strefie, nie na regale. Wazniejsze
+   niz reszta karty (magazynier musi to przeczytac ZANIM zacznie liczyc), stad kolor i ramka. */
+.sciezki-strefa {
+  display: block;
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  border: 1px dashed var(--color-warning);
+  border-radius: var(--radius-medium);
+  color: var(--color-warning);
+  font-size: var(--font-label);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 /* Wyjscia z przystanku obchodu bez liczenia (Pomin / Brak). Para pod polami, NIE w stopce -
    tam sa juz Wstecz i Zatwierdz, a cztery przyciski nie mieszcza sie w 360 px szerokosci
    Zebry. Slabszy wizualnie niz btn-akcja: to wyjscia awaryjne, nie glowna sciezka. */

@@ -1629,8 +1629,19 @@ async function zatwierdz() {
   zrobione.unshift(tekst); // #5: dopisz do listy zrobionych (widoczna po powrocie na start)
   // Path 1: odswiez dane produktu; jesli cos jeszcze nieprzypisane (K4/K4G) -> ekran sukcesu da "Dalej"
   swiezeDaneProduktu = await odswiezDaneProduktu();
+  // K4: `nieprzypisane_k4` ("do sprawdzenia"), a NIE `deficyt_k4` (stan GT - suma WMS).
+  // Deficyt zawiera takze strefy - nierozlozona dostawe i zwrot czekajacy w strefie - wiec
+  // "Dalej" proponowalby przypisanie na polke sztuk, ktore fizycznie leza na palecie. Backend
+  // i tak by to odrzucil (regula "cala ilosc bez wDrodze" w /ruchy/lok), wiec magazynier
+  // dostawalby zaproszenie do operacji, ktora nie moze sie udac.
+  // Backend ustawia nieprzypisane_k4 ZAWSZE gdy rozbicie sie udalo - `?? deficyt_k4` lapie
+  // tylko przypadek "GT niedostepne, rozbicia nie ma".
+  // K4G nie ma stref (dostawy wchodza PZ-em na K4), wiec tam deficyt jest wlasciwa liczba.
   const pozostalo = swiezeDaneProduktu
-    ? { K4: swiezeDaneProduktu.deficyt_k4 || 0, K4G: swiezeDaneProduktu.deficyt_k4g || 0 }
+    ? {
+      K4: swiezeDaneProduktu.nieprzypisane_k4 ?? swiezeDaneProduktu.deficyt_k4 ?? 0,
+      K4G: swiezeDaneProduktu.deficyt_k4g || 0,
+    }
     : null;
   pokazSukces(tekst, null, pozostalo);
 }
@@ -1812,6 +1823,8 @@ function pokazWidok(nazwa, stan) {
   if (dostawy) dostawy.classList.toggle('hidden', nazwa !== 'dostawy');
   const przywozki = el('widok-przywozki');
   if (przywozki) przywozki.classList.toggle('hidden', nazwa !== 'przywozki');
+  const dosp = el('widok-dosp');
+  if (dosp) dosp.classList.toggle('hidden', nazwa !== 'dosp');
   // Wyjscie z Ruchu unieważnia powrot poprzedniego wywolujacego - inaczej sukces w zupelnie
   // innym kontekscie odeslalby na liste, ktorej juz nie ma na ekranie.
   if (nazwa !== 'ruch') powrotPoSukcesie = null;
@@ -1822,6 +1835,7 @@ function pokazWidok(nazwa, stan) {
   if (nazwa === 'zwroty' && window.zwrotyOtworz) window.zwrotyOtworz();
   if (nazwa === 'dostawy' && window.dostawyOtworz) window.dostawyOtworz(stan);
   if (nazwa === 'przywozki' && window.przywozkiOtworz) window.przywozkiOtworz();
+  if (nazwa === 'dosp' && window.doSprawdzeniaOtworz) window.doSprawdzeniaOtworz();
 }
 window.pokazWidok = pokazWidok;
 

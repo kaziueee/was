@@ -14,6 +14,7 @@ const sciezkiRouter = require('./routes/sciezki');
 const zwrotyRouter = require('./routes/zwroty');
 const dostawyRouter = require('./routes/dostawy');
 const zestawieniaRouter = require('./routes/zestawienia');
+const doSprawdzeniaRouter = require('./routes/do-sprawdzenia');
 const audytRouter = require('./routes/audyt');
 const statusRouter = require('./routes/status');
 const uzytkownicyRouter = require('./routes/uzytkownicy');
@@ -59,6 +60,7 @@ app.use('/api/sciezki', auth.wymagajSesjiNaZapisie, sciezkiRouter);
 app.use('/api/zwroty', auth.wymagajSesjiNaZapisie, auth.blokujUcznia, zwrotyRouter);
 app.use('/api/dostawy', auth.wymagajSesjiNaZapisie, auth.blokujUcznia, dostawyRouter);
 app.use('/api/zestawienia', zestawieniaRouter);  // czysty odczyt z GT - bez sesji, jak /api/produkty
+app.use('/api/do-sprawdzenia', doSprawdzeniaRouter);  // czysty odczyt (GT + kopia WMS), nie robi ruchow
 app.use('/api/magazyny', magazynyRouter);
 app.use('/api/status', statusRouter); // publiczny - pasek stanu na ekranie logowania
 app.use('/api/produkty', produktyRouter);

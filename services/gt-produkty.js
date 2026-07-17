@@ -496,6 +496,51 @@ async function pobierzK4NiskieStany({ min = 1, max = 5, maxRazem = 5 } = {}) {
   }));
 }
 
+// Ekran "Do sprawdzenia" (routes/do-sprawdzenia.js): WSZYSTKIE towary ze stanem GT na K4.
+// Kandydaci, nie wynik - ile z tego jest naprawde "do sprawdzenia", liczy dopiero
+// rozbijStanK4 (stan - strefy - kopia WMS).
+//
+// Rozni sie od pobierzK4NiskieStany dwoma rzeczami, i obie sa celowe:
+//   - BEZ progu stanu: szukamy rozjazdu wiedzy, nie niskich stanow;
+//   - BEZ warunku `tw_Pole1 <> ''`: towar, o ktorym ani WMS, ani GT nie wie, gdzie lezy,
+//     jest NAJWAZNIEJSZYM przypadkiem na tej liscie - odsianie go byloby chowaniem problemu.
+//     tw_Pole1 sluzy tu tylko za podpowiedz miejsca (`lok_gt`), a nie za filtr.
+//
+// tw_Rodzaj = 1: tylko towary. Zestawy/komplety (rodzaj 8) nie maja wlasnego fizycznego stanu
+// na polce, wiec "gdzie one leza" jest pytaniem bez sensu - ten sam filtr i ten sam powod,
+// co w sciezce "Ostatnie sztuki".
+//
+// Skala na zywej OKITRADE (17.07.2026): ~2842 SKU ze stanem na K4. To zbior KANDYDATOW -
+// jedno zapytanie, potem juz tylko Node.
+async function pobierzK4StanyDoSprawdzenia() {
+  const k4 = wyrazenieStanu('K4');
+  const rezK4 = wyrazenieRez('K4');
+
+  const { recordset } = await query(`
+    SELECT t.tw_Id, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk,
+           LTRIM(RTRIM(t.tw_Pole1)) AS lok_gt,
+           ${k4} AS stan_k4, ${rezK4} AS rez_k4
+    FROM tw__Towar t
+    JOIN tw_Stan s ON s.st_TowId = t.tw_Id
+    JOIN sl_Magazyn m ON m.mag_Id = s.st_MagId
+    WHERE t.tw_Zablokowany = 0 AND t.tw_Rodzaj = 1
+    GROUP BY t.tw_Id, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk, LTRIM(RTRIM(t.tw_Pole1))
+    HAVING ${k4} > 0
+  `);
+
+  return recordset.map((r) => ({
+    artykul_gt_id: String(r.tw_Id),
+    symbol: r.tw_Symbol ? String(r.tw_Symbol).trim() : null,
+    nazwa: r.tw_Nazwa ? String(r.tw_Nazwa).trim() : null,
+    ean: r.tw_PodstKodKresk || null,
+    // podpowiedz miejsca z GT. Bywa smieciem ("RB/M2-B37 - sciana /"), wiec front musi umiec
+    // sobie poradzic z kodem, ktorego nie da sie rozwiazac - stad to tylko podpowiedz.
+    lok_gt: r.lok_gt || null,
+    stan_k4: Number(r.stan_k4) || 0,
+    rez_k4: Number(r.rez_k4) || 0,
+  }));
+}
+
 // Sciezka "K4 z pelna rezerwacja": towary, ktore FIZYCZNIE lezą tylko w K4 (nic na
 // K4G/MAG/LS) i caly ich stan K4 jest zarezerwowany (rez_k4 >= stan_k4, stan_k4 > 0).
 // Czyli towar utknal - jest na miejscu, ale w calosci zablokowany rezerwacjami, a nie
@@ -697,6 +742,7 @@ module.exports = {
   pobierzProduktyZUniwersum,
   pobierzK4NiskieStany,
   pobierzK4PelnaRezerwacja,
+  pobierzK4StanyDoSprawdzenia,
   pobierzStanyGt,
   rozkladZgodnosci,
   dostepneWGt,

@@ -197,11 +197,43 @@ const OKNO_ZWROTY_PRZYWOZKI_DNI = Number(process.env.WMS_OKNO_DROBNICA_DNI) || 1
 //
 // STALA WYGASA: okno dostaw to 90 dni, wiec ~90 dni po wdrozeniu nie ma juz dokumentow
 // starszych od odciecia i te linie mozna usunac razem z warunkiem w zapytaniach.
-const DOKUMENTY_OD = new Date(process.env.WMS_DOKUMENTY_OD || '2026-07-18');
+//
+// DOMYSLNIE BRAK ODCIECIA - i to jest swiadomy wybor miedzy dwoma zlymi domyslnymi:
+//   brak odciecia   -> pokaza sie widma (paleta 94 000 szt., ktorej nie ma). ZLE, ale GLOSNE:
+//                      widac je na pierwszym ekranie i od razu wiadomo, ze trzeba ustawic date.
+//   odciecie "na oko"-> gdy trafi w przyszlosc, KAZDY dokument jest od niego starszy i
+//                      WSZYSTKIE listy sa puste. To jest cicha porazka: system wyglada na
+//                      dzialajacy, tylko "nic nie przychodzi" - i nikt nie wie dlaczego.
+// Pierwsza wersja miala tu na sztywno '2026-07-18' (jutro wzgledem dnia pisania) i dokladnie
+// to zrobila: user dodal FZ, MM i KFS, a w WMS nie pojawilo sie nic.
+const DOKUMENTY_OD = process.env.WMS_DOKUMENTY_OD ? new Date(process.env.WMS_DOKUMENTY_OD) : null;
 
-// Poczatek okna = pozniejsza z dwoch dat: okno rodzaju albo data odciecia.
+// Zla konfiguracja tej stalej wygasza cala funkcje, wiec musi krzyczec przy starcie - inaczej
+// objawem jest "puste listy" bez zadnej wskazowki, co je opustoszylo.
+(function ostrzezOKonfiguracji() {
+  const kiedy = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  if (!DOKUMENTY_OD) {
+    console.log(`${kiedy} [gt-dokumenty] INFO: WMS_DOKUMENTY_OD nie ustawione - brak odciecia. `
+      + 'Dostawy rozlozone przed wdrozeniem (MM w Subiekcie / dwukrok /lok+/mm) pokaza sie jako '
+      + 'widma. Ustaw na dzien wdrozenia w .env, gdy bedziesz wdrazal.');
+    return;
+  }
+  if (Number.isNaN(DOKUMENTY_OD.getTime())) {
+    console.error(`${kiedy} [gt-dokumenty] BLAD: WMS_DOKUMENTY_OD="${process.env.WMS_DOKUMENTY_OD}" `
+      + 'to nie jest data. Oczekiwany format: RRRR-MM-DD.');
+    return;
+  }
+  if (DOKUMENTY_OD > new Date()) {
+    console.error(`${kiedy} [gt-dokumenty] BLAD: WMS_DOKUMENTY_OD=${DOKUMENTY_OD.toISOString().slice(0, 10)} `
+      + 'jest W PRZYSZLOSCI - kazdy dokument jest od niego starszy, wiec dostawy, zwroty '
+      + 'i przywozki BEDA PUSTE. Ustaw date wdrozenia (przeszla).');
+  }
+})();
+
+// Poczatek okna = pozniejsza z dwoch dat: okno rodzaju albo data odciecia (gdy ustawiona).
 function odKiedy(dni) {
   const zOkna = new Date(Date.now() - dni * 24 * 60 * 60 * 1000);
+  if (!DOKUMENTY_OD || Number.isNaN(DOKUMENTY_OD.getTime())) return zOkna;
   return zOkna > DOKUMENTY_OD ? zOkna : DOKUMENTY_OD;
 }
 

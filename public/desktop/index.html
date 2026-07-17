@@ -42,6 +42,7 @@
       <a href="#ruchy/uzupelnienia" class="podzakladka" data-pod="uzupelnienia">Uzupełnienia</a>
       <a href="#ruchy/rozjazdy" class="podzakladka" data-pod="rozjazdy">Rozjazdy</a>
       <a href="#ruchy/dostawy" class="podzakladka" data-pod="dostawy">Dostawy</a>
+      <a href="#ruchy/do-sprawdzenia" class="podzakladka" data-pod="do-sprawdzenia">Do sprawdzenia</a>
     </nav>
 
     <!-- Panel Pulpit (Faza 5) - dashboard. Role-aware: sekcje .pulpit-admin widoczne
@@ -434,6 +435,56 @@
           </table>
         </div>
         <p id="dostawy-towary-brak" class="hint hidden">Dostawa rozłożona. 🎉</p>
+      </div>
+    </section>
+
+    <!-- Panel "Do sprawdzenia": towar, ktory GT widzi na K4, a WMS nie wie gdzie. To BACKLOG,
+         nie checklista - na starcie ~2000 wierszy, drenowany przez miesiace. Dlatego sort po
+         ilosci (triage: najpierw to, co najbardziej zaklamuje stan) i paginacja. Zadna akcja
+         nie dzieje sie tutaj - "Otwórz" prowadzi do karty produktu, czyli tam gdzie siedza
+         inwarianty (zasada 5: front to UX, nie autorytet). -->
+    <section id="panel-do-sprawdzenia" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Do sprawdzenia</h2>
+        <div class="filtry">
+          <span id="dosp-licznik" class="filtry-info"></span>
+          <select id="dosp-sort">
+            <option value="ilosc">Najwięcej sztuk</option>
+            <option value="lokalizacja">Kolejność obchodu</option>
+            <option value="sku">SKU</option>
+          </select>
+          <button type="button" id="btn-dosp-odswiez" class="btn">Odśwież</button>
+        </div>
+      </div>
+      <!-- Dwie rozne prace, wiec przelacznik, a nie kolumna. Liczniki w etykietach, zeby wybor
+           nie byl skokiem w ciemno. NIE uzywamy slownika zgodnosci (t_GT/NZ) - tamten opisuje
+           zgodnosc TEKSTU pola lokalizacji i tutaj po prostu nie pasuje.
+           <button>, a NIE <a> jak podzakladki obok: tamte maja wlasny adres (#ruchy/mm), wiec
+           Cmd-klik ma sens. To jest FILTR wewnatrz panelu - adres go nie koduje, wiec link
+           obiecywalby cos, czego nie dowiezie (nowa karta pokazalaby niefiltrowana liste),
+           a domyslna nawigacja bilaby sie z preventDefault. -->
+      <nav class="podzakladki" id="dosp-rodzaje">
+        <button type="button" class="podzakladka" data-rodzaj="">Wszystko</button>
+        <button type="button" class="podzakladka aktywna" data-rodzaj="nieznany_przychod">Nieznany przychód</button>
+        <button type="button" class="podzakladka" data-rodzaj="do_zlokalizowania">Do zlokalizowania</button>
+      </nav>
+      <p class="hint" id="dosp-opis"></p>
+      <div class="tabela-wrapper">
+        <table class="tabela">
+          <thead>
+            <tr>
+              <th>SKU</th><th>Nazwa</th><th>Do przypisania</th><th>Stan K4</th>
+              <th>Zna WMS</th><th>W strefach</th><th>Miejsce</th><th>Akcje</th>
+            </tr>
+          </thead>
+          <tbody id="dosp-tbody"></tbody>
+        </table>
+      </div>
+      <p id="dosp-brak" class="hint hidden">Nic do sprawdzenia — WMS wie o całym stanie K4. 🎉</p>
+      <div class="paginacja">
+        <button type="button" id="btn-dosp-prev" class="btn btn-small">← Poprzednia</button>
+        <span id="dosp-zakres">–</span>
+        <button type="button" id="btn-dosp-next" class="btn btn-small">Następna →</button>
       </div>
     </section>
 

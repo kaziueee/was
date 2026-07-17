@@ -1,9 +1,35 @@
 const express = require('express');
 const db = require('../db/database');
 const audyt = require('../services/audyt');
+const gtDokumenty = require('../services/gt-dokumenty');
 const { pobierzK4NiskieStany, pobierzK4PelnaRezerwacja, dostepneWGt, pobierzStanyGt } = require('../services/gt-produkty');
 
 const router = express.Router();
+
+// Suma kopii WMS dla K4 - do rozbicia stanu na strefy i polke (rozbijStanK4).
+const sumaWmsK4 = (artykulGtId) => Number(db.prepare(
+  `SELECT COALESCE(SUM(s.ilosc), 0) AS suma
+   FROM stany_lokalizacji s JOIN lokalizacje l ON l.id = s.lokalizacja_id
+   WHERE l.magazyn = 'K4' AND s.artykul_gt_id = ?`
+).get(String(artykulGtId)).suma) || 0;
+
+// Dokleja do pozycji obchodu `oczekiwana_polka` = stan GT - strefy oraz `w_strefach`.
+// Jedno zapytanie o dokumenty na CALA liste (nie N+1 w petli). Gdy GT z dokumentami padnie,
+// zwraca liste bez zmian - obchod ma dzialac, tylko bez odjecia stref.
+async function dolaczOczekiwanaPolke(pozycje) {
+  if (!pozycje.length) return pozycje;
+  let dokMap;
+  try {
+    dokMap = await gtDokumenty.pobierzDostawyK4(pozycje.map((p) => p.artykul_gt_id));
+  } catch {
+    return pozycje.map((p) => ({ ...p, oczekiwana_polka: p.stan, w_strefach: 0 }));
+  }
+  return pozycje.map((p) => {
+    const r = gtDokumenty.rozbijStanK4(p.stan, sumaWmsK4(p.artykul_gt_id), dokMap.get(String(p.artykul_gt_id)) || [],
+      { artykul_gt_id: p.artykul_gt_id });
+    return { ...p, oczekiwana_polka: p.stan - r.wDrodze, w_strefach: r.wDrodze };
+  });
+}
 
 // Sciezki (Faza 6) - proste zadania "obchodu" magazynu z checklista, wynik do audytu.
 // Sciezka 1: "Ostatnie sztuki" - weryfikacja niskich stanow K4 (1..5 szt.). GT = master
@@ -40,10 +66,20 @@ async function zapiszSprawdzenie(req, res, akcjaZgodne, akcjaNiezgodne) {
 
   // K4 = stan zawsze z Subiekta (GT master). Porownujemy policzone ze stanem GT, nie
   // z kopia WMS (ta bywa nieaktualna - sprzedaz w Subiekcie zbija stan bez wiedzy WMS).
-  let stan, zrodlo;
+  //
+  // ALE nie z CALYM stanem K4, tylko z tym, co moze lezec NA POLCE (stan GT - strefy).
+  // Magazynier stoi przy regale i liczy polke; sztuki z nierozlozonej dostawy albo zwrotu
+  // czekajacego w strefie sa wg GT na K4, ale fizycznie leza gdzie indziej. Bez tego odjecia
+  // SKU ze zwrotem 2 szt. i stanem GT 3 dawal FALSZYWA NIEZGODNOSC: magazynier liczy na polce
+  // 1, system oczekiwal 3. Przy zwrotach (1-2 szt.) to w pelni osiagalne - filtr stanu 1..5
+  // maskuje to tylko przy duzych dostawach.
+  let stan, zrodlo, wStrefach = 0;
   try {
     const gt = await dostepneWGt(String(artykul_gt_id), 'K4');
-    stan = Number(gt.stan);
+    const dok = (await gtDokumenty.pobierzDostawyK4([artykul_gt_id])).get(String(artykul_gt_id)) || [];
+    const r = gtDokumenty.rozbijStanK4(gt.stan, sumaWmsK4(artykul_gt_id), dok, { artykul_gt_id });
+    wStrefach = r.wDrodze;   // suma WSZYSTKICH kubelkow - nie skladamy jej recznie
+    stan = Number(gt.stan) - wStrefach;
     zrodlo = 'GT';
   } catch (err) {
     return res.status(503).json({ blad: 'Nie mozna zweryfikowac stanu GT (baza niedostepna). Sprobuj ponownie.' });
@@ -61,11 +97,13 @@ async function zapiszSprawdzenie(req, res, akcjaZgodne, akcjaNiezgodne) {
     lokalizacja: lokalizacja_kod,
     ilosc: policzone,
     wynik: zgodne ? 'zgodne' : 'niezgodne',
-    przed: { stan, zrodlo },
+    // `stan` to juz oczekiwana POLKA (stan GT - strefy). w_strefach zapisujemy osobno, zeby
+    // przy czytaniu starego raportu bylo widac, czemu oczekiwano akurat tyle.
+    przed: { stan, zrodlo, w_strefach: wStrefach },
     po: { policzone },
   });
 
-  res.status(201).json({ zgodne, stan, zrodlo, policzone, roznica });
+  res.status(201).json({ zgodne, stan, zrodlo, policzone, roznica, w_strefach: wStrefach });
 }
 
 // Wspolne "Pomin" - magazynier nie moze teraz sprawdzic pozycji (lokalizacja zastawiona,
@@ -241,18 +279,24 @@ router.get('/ostatnie-sztuki', async (req, res, next) => {
 
   const pominiete = paryPominiete('sprawdzenie_pominiete');
 
-  const pozycje = kandydaci
+  const przefiltrowane = kandydaci
     .filter((t) => !sprawdzone.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`) && !przyjete.has(t.artykul_gt_id)
       && !pominiete.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`))
     .sort((a, b) => (a.lokalizacja_kod || '').localeCompare(b.lokalizacja_kod || '')
       || (a.symbol || '').localeCompare(b.symbol || ''));
+
+  // Oczekiwana POLKA = stan GT - strefy. Magazynier liczy regal, a nierozlozona dostawa albo
+  // zwrot czekajacy w strefie leza gdzie indziej - bez tego odjecia lista mowilaby "3 szt.",
+  // a na polce jest 1 (zob. zapiszSprawdzenie). Jedno zapytanie do GT na cala liste.
+  // Gdy GT z dokumentami padnie, pokazujemy sam stan - lista dziala jak dotad.
+  const pozycje = await dolaczOczekiwanaPolke(przefiltrowane);
 
   res.json({ pozycje, razem: pozycje.length });
 });
 
 // POST /api/sciezki/ostatnie-sztuki/sprawdzenie - zapisz wynik sprawdzenia jednego przystanku.
 // Body: { artykul_gt_id, artykul_symbol, lokalizacja_kod, ilosc_policzona, operator }.
-// Porownuje policzone ze stanem GT w K4 (st_Stan). NIE robi ruchu WMS.
+// Porownuje policzone z OCZEKIWANA POLKA (stan GT - strefy). NIE robi ruchu WMS.
 router.post('/ostatnie-sztuki/sprawdzenie', (req, res) =>
   zapiszSprawdzenie(req, res, 'sprawdzenie_stanu', 'sprawdzenie_niezgodne'));
 

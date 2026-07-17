@@ -102,10 +102,18 @@
     el('sciezki-skan').closest('.pole-blok').classList.remove('hidden');
     el('sciezki-ilosc').closest('.pole-blok').classList.add('hidden'); // ilosc dopiero po skanie
     el('sciezki-pusto').classList.add('hidden');
+    // Ile sztuk NIE lezy na regale, tylko w strefie (nierozlozona dostawa / zwrot / przywozka).
+    // Bez tego magazynier szukalby ich na polce i zglaszal niezgodnosc, ktorej nie ma - backend
+    // odejmuje strefy od oczekiwanej ilosci (routes/sciezki.js), wiec ekran musi to powiedziec.
+    // Liczby oczekiwanej NIE pokazujemy - liczenie ma byc w ciemno.
+    const wStrefach = p.w_strefach > 0
+      ? `<span class="sciezki-strefa">⚠ ${p.w_strefach} szt. leży w strefie — nie szukaj ich na regale</span>`
+      : '';
     el('sciezki-karta').innerHTML =
       `<strong>${p.symbol || p.artykul_gt_id}</strong>`
       + `<span>${p.nazwa || ''}</span>`
-      + `<span>📍 ${p.lokalizacja_kod}</span>`;
+      + `<span>📍 ${p.lokalizacja_kod}</span>`
+      + wStrefach;
     // Rezerwacje na K4 (rozwijana, lazy-load) - ta sama sekcja co ekran Ruch. Pokazuje
     // sie tylko gdy rezerwacja > 0; nie zdradza liczonego stanu fizycznego (rez != stan).
     przygotujRezerwacjeZk(

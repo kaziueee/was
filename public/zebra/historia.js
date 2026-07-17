@@ -18,8 +18,10 @@
     return m ? `${m[3]}.${m[2]} ${m[4]}:${m[5]}` : (s || '');
   }
 
-  // akcje bedace fizycznym ruchem towaru (maja kierunek + ilosc)
-  const AKCJE_RUCH = new Set(['MM', 'MM-zewn', 'Uzupelnienie', 'LOK', 'przypisanie', 'przyjecie']);
+  // Akcje bedace fizycznym ruchem towaru (maja kierunek + ilosc). Biala lista, wiec KAZDA
+  // nowa akcja ruchu musi tu trafic - inaczej cicho wypada z historii (tak zniknely
+  // rozlozenia dostaw/zwrotow/przywozek, mimo ze w logu desktopu byly poprawne).
+  const AKCJE_RUCH = new Set(['MM', 'MM-zewn', 'Uzupelnienie', 'LOK', 'przypisanie', 'przyjecie', 'rozlozenie']);
 
   async function otworz() {
     komunikat('');
@@ -47,12 +49,18 @@
       const div = document.createElement('div');
       div.className = 'lista-poz' + (w.wynik && w.wynik !== 'ok' ? ' st-warn' : '');
       const meta = czasSkrot(w.czas) + (w.uzytkownik ? ` · ${w.uzytkownik}` : '');
-      // stara lokalizacja GT (zapisana przy przypisaniu z "nieprzypisane") - do odzyskania
-      let staraGt = '';
-      try { const p = w.przed && JSON.parse(w.przed); if (p && p.stara_lok_gt) staraGt = ` · stara lok GT: ${p.stara_lok_gt}`; } catch { /* przed nie-JSON */ }
+      // "przed" niesie kontekst zaleznie od akcji: przy przypisaniu stara lokalizacje GT
+      // (do odzyskania), przy rozlozeniu numer dokumentu (ktora dostawe/zwrot/przywozke).
+      let dopisek = '';
+      try {
+        const p = w.przed && JSON.parse(w.przed);
+        if (p?.stara_lok_gt) dopisek = ` · stara lok GT: ${p.stara_lok_gt}`;
+        const dok = p && (p.dostawa || p.zwrot || p.przywozka);
+        if (dok) dopisek = ` · ${dok}`;
+      } catch { /* przed nie-JSON */ }
       div.innerHTML = `<span class="poz-glowna">`
         + `<span class="poz-kod">${w.artykul_symbol || w.artykul_gt_id || '—'}</span>`
-        + `<span class="poz-podpis">${w.akcja} · ${w.lokalizacja || ''}${staraGt}</span>`
+        + `<span class="poz-podpis">${w.akcja} · ${w.lokalizacja || ''}${dopisek}</span>`
         + `<span class="hist-meta">${meta}</span>`
         + `</span>`
         + `<span class="poz-prawa"><span class="poz-ilosc">${w.ilosc ?? ''}</span><span class="poz-rez">szt.</span></span>`;

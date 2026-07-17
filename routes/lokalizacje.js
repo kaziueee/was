@@ -222,7 +222,11 @@ async function dolaczDaneGt(payload) {
         if (rozbicie.dostawy.length > 0) payload.dostawy_k4 = rozbicie.dostawy;
         if (rozbicie.zwroty.length > 0) payload.zwroty_k4 = rozbicie.zwroty;
         if (rozbicie.przywozki.length > 0) payload.przywozki_k4 = rozbicie.przywozki;
-        if (rozbicie.reszta > 0) payload.nieprzypisane_k4 = rozbicie.reszta;
+        // nieprzypisane_k4 ustawiamy ZAWSZE (takze 0) - jego obecnosc jest dla frontu sygnalem
+        // "rozbicie sie udalo, ufaj tej liczbie". Gdyby bylo pomijane przy zerze, front musialby
+        // zgadywac po obecnosci pozostalych kubelkow i przy kazdym nowym rodzaju znowu bledy
+        // (wiersz "brak lokalizacji" dublowal wtedy dokument).
+        payload.nieprzypisane_k4 = rozbicie.reszta;
       }
     } else if (payload.typ === 'lista_artykulow') {
       payload.artykuly = payload.artykuly.map(wzbogac);

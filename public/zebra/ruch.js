@@ -533,12 +533,12 @@ function pokazRozkladZrodel(dane, artykul) {
     const gtStan = artykul.stany_gt?.[mag]?.ilosc ?? 0;
     const wmsLok = dane.lokalizacje.filter((l) => l.magazyn === mag);
     const wyliczony = Math.max(gtStan - wmsLok.reduce((s, l) => s + l.ilosc, 0), 0);
-    // K4: tylko czesc deficytu NIEwyjasniona dokumentem (dostawa i zwrot maja swoje wiersze
-    // wyzej). Backend jest zrodlem prawdy - gdy zrobil rozbicie, bierzemy jego liczbe; gdy GT
-    // padl i rozbicia nie ma wcale, pokazujemy caly deficyt.
-    const jestRozbicie = dane.dostawy_k4 || dane.zwroty_k4 || dane.nieprzypisane_k4 != null;
-    const niezlok = mag === 'K4' && jestRozbicie
-      ? (dane.nieprzypisane_k4 || 0)
+    // K4: tylko czesc deficytu NIEwyjasniona dokumentem (dostawa/zwrot/przywozka maja swoje
+    // wiersze wyzej). Backend jest zrodlem prawdy i ustawia nieprzypisane_k4 ZAWSZE, gdy
+    // rozbicie sie udalo - wiec sama obecnosc pola wystarczy za sygnal. Gdy GT padl i rozbicia
+    // nie ma, pokazujemy caly wyliczony deficyt.
+    const niezlok = mag === 'K4' && dane.nieprzypisane_k4 != null
+      ? dane.nieprzypisane_k4
       : wyliczony;
     if (niezlok <= 0) continue;
     opcjeWyboru.push({

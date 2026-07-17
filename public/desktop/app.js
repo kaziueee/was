@@ -1904,11 +1904,10 @@ function dodajMagWms(tbody, mag, loki, k4Zapas, planTekst) {
   }
 
   // Reszta deficytu (stary stan) - stara zasada 1 SKU = 1 lokalizacja, calosc na miejsce.
-  // Na K4 backend podaje ja wprost (nieprzypisane_k4); dostawa i zwrot maja swoje wiersze
-  // wyzej. Gdy GT padl i rozbicia nie ma wcale - pokazujemy caly deficyt.
-  const jestRozbicie = modalProdukt.dostawy_k4 || modalProdukt.zwroty_k4 || modalProdukt.nieprzypisane_k4 != null;
-  const nieprzypisane = (mag === 'K4' && jestRozbicie)
-    ? (modalProdukt.nieprzypisane_k4 || 0)
+  // Backend ustawia nieprzypisane_k4 ZAWSZE, gdy rozbicie sie udalo (dostawa/zwrot/przywozka
+  // maja swoje wiersze wyzej), wiec sama obecnosc pola wystarczy. Gdy GT padl - caly deficyt.
+  const nieprzypisane = (mag === 'K4' && modalProdukt.nieprzypisane_k4 != null)
+    ? modalProdukt.nieprzypisane_k4
     : niezlok;
   if (nieprzypisane > 0) {
     const tr = document.createElement('tr');

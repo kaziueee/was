@@ -173,7 +173,7 @@ const MM_TYP = 9;
 //     rozlozony przed wdrozeniem tej funkcji nie ma ruchu, wiec wygladalby na nierozlozony).
 //     Krotkie okno tnie ten falszywy alarm i zalew ekranu na starcie.
 const OKNO_DOSTAWY_DNI = 90;
-const OKNO_ZWROTY_PRZYWOZKI_DNI = 14;
+const OKNO_ZWROTY_PRZYWOZKI_DNI = Number(process.env.WMS_OKNO_DROBNICA_DNI) || 14;
 
 async function pobierzDostawyK4(twIds) {
   const wynik = new Map();
@@ -305,7 +305,19 @@ function rozbijDeficytK4(deficyt, dokumenty, { artykul_gt_id, magazyn = MAG_KOD_
     zostalo -= ilosc;
   }
 
-  return { dostawy: kubelki.dostawa, zwroty: kubelki.zwrot, przywozki: kubelki.przywozka, reszta: zostalo };
+  // `wszystkie` = te same pozycje w jednej liscie. Konsumenci, ktorych interesuje "ile lezy
+  // w drodze" albo "czy ten dokument jest jeszcze do rozlozenia", MAJA uzywac tego pola -
+  // recznie skladane [...dostawy, ...zwroty] cichnie sie psuje przy kazdym nowym rodzaju
+  // (tak zniknely przywozki z weryfikacji w /ruchy/rozloz i z reguly "cala ilosc" w /lok).
+  const wszystkie = [...kubelki.dostawa, ...kubelki.zwrot, ...kubelki.przywozka];
+  return {
+    dostawy: kubelki.dostawa,
+    zwroty: kubelki.zwrot,
+    przywozki: kubelki.przywozka,
+    wszystkie,
+    wDrodze: wszystkie.reduce((s, d) => s + d.ilosc, 0),
+    reszta: zostalo,
+  };
 }
 
 module.exports = {

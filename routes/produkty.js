@@ -43,7 +43,7 @@ async function dolaczDostawyK4(produkty, wierszeWms) {
     if (rozbicie.dostawy.length > 0) p.dostawy_k4 = rozbicie.dostawy;
     if (rozbicie.zwroty.length > 0) p.zwroty_k4 = rozbicie.zwroty;
     if (rozbicie.przywozki.length > 0) p.przywozki_k4 = rozbicie.przywozki;
-    if (rozbicie.reszta > 0) p.nieprzypisane_k4 = rozbicie.reszta;
+    p.nieprzypisane_k4 = rozbicie.reszta; // zawsze - obecnosc = sygnal "rozbicie sie udalo"
   }
 }
 

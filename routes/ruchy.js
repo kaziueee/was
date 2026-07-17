@@ -299,11 +299,16 @@ router.post('/lok', async (req, res, next) => {
       try {
         const dok = (await gtDokumenty.pobierzDostawyK4([artykul_gt_id])).get(String(artykul_gt_id)) || [];
         const r = gtDokumenty.rozbijDeficytK4(deficyt, dok, { artykul_gt_id });
-        const sumaDostaw = r.dostawy.reduce((s, d) => s + d.ilosc, 0);
-        const sumaZwrotow = r.zwroty.reduce((s, d) => s + d.ilosc, 0);
-        wDrodze = sumaDostaw + sumaZwrotow;
-        if (sumaDostaw > 0) opisKubelkow.push(`${sumaDostaw} szt. z nierozlozonej dostawy`);
-        if (sumaZwrotow > 0) opisKubelkow.push(`${sumaZwrotow} szt. ze zwrotu w strefie`);
+        wDrodze = r.wDrodze; // suma WSZYSTKICH kubelkow - nie skladamy jej recznie (patrz gt-dokumenty)
+        const sumy = [
+          [r.dostawy, 'z nierozlozonej dostawy'],
+          [r.zwroty, 'ze zwrotu w strefie'],
+          [r.przywozki, 'z przywozki w strefie'],
+        ];
+        opisKubelkow = sumy
+          .map(([lista, opis]) => [lista.reduce((s, d) => s + d.ilosc, 0), opis])
+          .filter(([ile]) => ile > 0)
+          .map(([ile, opis]) => `${ile} szt. ${opis}`);
       } catch (err) {
         return res.status(503).json({ blad: 'Nie mozna sprawdzic dostaw w GT - przypisanie wstrzymane. Sprobuj ponownie.' });
       }
@@ -603,8 +608,7 @@ router.post('/rozloz', async (req, res, next) => {
   let dokDoZapisu = null;
   try {
     const dokumenty = (await gtDokumenty.pobierzDostawyK4([artykul_gt_id])).get(String(artykul_gt_id)) || [];
-    const { dostawy, zwroty } = gtDokumenty.rozbijDeficytK4(deficyt, dokumenty, { artykul_gt_id, magazyn: zrodloMag });
-    const pula = [...dostawy, ...zwroty];
+    const { wszystkie: pula } = gtDokumenty.rozbijDeficytK4(deficyt, dokumenty, { artykul_gt_id, magazyn: zrodloMag });
 
     if (zrodlo_dok) {
       const poz = pula.find((d) => d.pz_nr === String(zrodlo_dok));
@@ -619,7 +623,9 @@ router.post('/rozloz', async (req, res, next) => {
         });
       }
       dokDoZapisu = poz.pz_nr;
-      zrodloOpis = poz.rodzaj === 'zwrot' ? 'zwrot' : 'dostawa';
+      // rodzaj bierzemy WPROST z rozbicia (dostawa/zwrot/przywozka) - mapowanie recznym
+      // ifem gubilo kazdy nowy rodzaj i przywozka logowala sie jako "dostawa"
+      zrodloOpis = poz.rodzaj;
       zrodloDokumenty = { [zrodloOpis]: poz.fz_nr || poz.pz_nr };
       if (poz.kontrahent) zrodloDokumenty.kontrahent = poz.kontrahent;
     }

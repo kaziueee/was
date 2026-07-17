@@ -85,7 +85,7 @@ async function policzKafle() {
     // stanem na K4 (~2800). Klikniecie kafla otwiera ZYWA liste, wiec licznik jest wskazowka
     // "czy jest co robic", nie zrodlem prawdy.
     licz('do_sprawdzenia', async () =>
-      (await doSprawdzenia.zbierz()).filter(doSprawdzenia.RODZAJE.nieznany_przychod).length),
+      (await doSprawdzenia.zbierz()).filter(doSprawdzenia.RODZAJE.przyjecie_wewn).length),
   ]);
   return wynik;
 }

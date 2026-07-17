@@ -163,6 +163,12 @@ const PZ_TYP = 10;
 const FZ_TYP = 1;
 const KFS_TYP = 6;
 const MM_TYP = 9;
+const PW_TYP = 12;   // Przyjecie Wewnetrzne - przychod bez dokumentu zrodlowego (korekta, inwentura)
+// Automatyczna kompletacja zestawow tez wystawia PW, ale WYLACZNIE na zestawach (rodzaj 8) -
+// zmierzone 2026-07-18: 4570 dok automatu, wszystkie rodzaj 8; rodzaj 1 rusza tylko czlowiek.
+// Filtr tw_Rodzaj=1 sam ja wycina, ale odrzucamy tez po koncie - obrona przed dniem, w ktorym
+// automat zacznie skladac cos rodzaju 1.
+const KONTO_KOMPLETACJI = 'Automatyczna Kompletacja';
 
 // Dwa rozne okna, bo to dwa rozne zjawiska:
 //   DOSTAWA (24 dok./kwartal, srednio 715 szt.) - duza i rzadka, potrafi poczekac dzien-dwa
@@ -286,10 +292,38 @@ const pobierzTowaryZDostawamiK4 = () => pobierzTowaryZeZrodlemK4(FZ_TYP);
 // ruchow) - za kazdym razem dlatego, ze ktos skladal liste rodzajow recznie. Dopisujac czwarty
 // rodzaj dopisz go TUTAJ, a konsumenci (filtr stref w /produkty, listy) zobacza go sami.
 const RODZAJE_STREF = {
-  dostawa:   { kubelek: 'dostawy',   kandydaci: pobierzTowaryZDostawamiK4 },
-  zwrot:     { kubelek: 'zwroty',    kandydaci: pobierzTowaryZeZwrotamiK4 },
-  przywozka: { kubelek: 'przywozki', kandydaci: pobierzTowaryZPrzywozkamiK4 },
+  dostawa:        { kubelek: 'dostawy',    kandydaci: pobierzTowaryZDostawamiK4 },
+  zwrot:          { kubelek: 'zwroty',     kandydaci: pobierzTowaryZeZwrotamiK4 },
+  przywozka:      { kubelek: 'przywozki',  kandydaci: pobierzTowaryZPrzywozkamiK4 },
+  przyjecie_wewn: { kubelek: 'przyjecia',  kandydaci: () => pobierzTowaryZPrzyjeciamiWewnK4() },
 };
+
+// Kandydaci z PRZYJECIA WEWNETRZNEGO: PW (typ 12) na K4, rodzaj 1, NIE z automatu kompletacji.
+// To przychod BEZ dokumentu zrodlowego - korekta stanu, inwentura, reczne dolozenie. Sam PW
+// jest dokumentem (jak przywozka). Do 2026-07-18 nie lapany, przez co "nieznany przychod" na
+// karcie byl anonimowy; teraz ma nazwe i numer PW. Okno drobne (14 dni) - to drobne, czeste
+// przyjecia, jak zwroty/przywozki.
+async function pobierzTowaryZPrzyjeciamiWewnK4() {
+  const od = odKiedy(OKNO_ZWROTY_PRZYWOZKI_DNI);
+  const { recordset } = await query(`
+    SELECT DISTINCT o.ob_TowId AS tw_id, t.tw_Symbol AS symbol, t.tw_Nazwa AS nazwa,
+           t.tw_PodstKodKresk AS ean, t.tw_Pole1 AS lok_gt
+    FROM dok__Dokument dok
+    JOIN dok_Pozycja o ON o.ob_DokMagId = dok.dok_Id
+    JOIN tw__Towar t ON t.tw_Id = o.ob_TowId AND t.tw_Rodzaj = @rodzaj
+    WHERE dok.dok_Typ = @pwTyp AND o.ob_MagId = @mag
+      AND ISNULL(dok.dok_Wystawil, '') <> @automat
+      AND dok.dok_DataWyst >= @od
+  `, { pwTyp: PW_TYP, mag: MAG_K4, od, rodzaj: TW_RODZAJ_TOWAR, automat: KONTO_KOMPLETACJI });
+
+  return recordset.map((r) => ({
+    artykul_gt_id: String(r.tw_id),
+    symbol: r.symbol ? String(r.symbol).trim() : null,
+    nazwa: r.nazwa ? String(r.nazwa).trim() : null,
+    ean: r.ean ? String(r.ean).trim() : null,
+    lok_gt: r.lok_gt ? String(r.lok_gt).trim() : null,
+  }));
+}
 
 // Kandydaci z PRZYWOZKA: MM z magazynu zewnetrznego na K4, wystawione POZA WMS. Osobne
 // zapytanie, bo przywozka nie ma dokumentu zrodlowego (dok_DoDokId) - sama jest dokumentem,
@@ -341,7 +375,8 @@ async function pobierzDostawyK4(twIds) {
   const zewnGtIds = MAGAZYNY_ZEWNETRZNE.map((k) => MAGAZYN_GT_ID[k]).filter(Boolean);
 
   await Promise.all(naCzesci([...new Set(twIds.map(String))], 1000).map(async (paczka) => {
-    const parametry = { pzTyp: PZ_TYP, fzTyp: FZ_TYP, kfsTyp: KFS_TYP, mmTyp: MM_TYP, mag: MAG_K4, od, odDrobne };
+    const parametry = { pzTyp: PZ_TYP, fzTyp: FZ_TYP, kfsTyp: KFS_TYP, mmTyp: MM_TYP,
+      pwTyp: PW_TYP, rodzajTow: TW_RODZAJ_TOWAR, automat: KONTO_KOMPLETACJI, mag: MAG_K4, od, odDrobne };
     const placeholders = paczka.map((id, i) => {
       parametry[`t${i}`] = Number(id);
       return `@t${i}`;
@@ -381,13 +416,33 @@ async function pobierzDostawyK4(twIds) {
         AND o.ob_TowId IN (${placeholders})
       GROUP BY o.ob_TowId, dok.dok_Id, dok.dok_NrPelny, mz.mag_Symbol, dok.dok_DataWyst
 
+      UNION ALL
+
+      -- PRZYJECIA WEWNETRZNE: PW na K4, rodzaj 1, poza automatem kompletacji. Przychod bez
+      -- dokumentu zrodlowego - sam PW jest dokumentem (jak przywozka). Zrodlo_typ=PW rozpoznaje
+      -- rodzaj nizej.
+      SELECT o.ob_TowId, dok.dok_NrPelny AS dok_nr,
+             @pwTyp AS zrodlo_typ, dok.dok_NrPelny AS zrodlo_nr, NULL AS kontrahent,
+             NULL AS zrodlo_mag, dok.dok_DataWyst AS data, SUM(o.ob_Ilosc) AS ilosc, dok.dok_Id AS dok_id
+      FROM dok__Dokument dok
+      JOIN dok_Pozycja o ON o.ob_DokMagId = dok.dok_Id
+      JOIN tw__Towar t ON t.tw_Id = o.ob_TowId AND t.tw_Rodzaj = @rodzajTow
+      WHERE dok.dok_Typ = @pwTyp AND o.ob_MagId = @mag
+        AND ISNULL(dok.dok_Wystawil, '') <> @automat
+        AND dok.dok_DataWyst >= @odDrobne
+        AND o.ob_TowId IN (${placeholders})
+      GROUP BY o.ob_TowId, dok.dok_Id, dok.dok_NrPelny, dok.dok_DataWyst
+
       ORDER BY data DESC, dok_id DESC
     `, parametry);
 
     for (const r of recordset) {
       const klucz = String(r.ob_TowId);
       if (!wynik.has(klucz)) wynik.set(klucz, []);
-      const rodzaj = r.zrodlo_mag ? 'przywozka' : (r.zrodlo_typ === FZ_TYP ? 'dostawa' : 'zwrot');
+      const rodzaj = r.zrodlo_mag ? 'przywozka'
+        : r.zrodlo_typ === FZ_TYP ? 'dostawa'
+        : r.zrodlo_typ === PW_TYP ? 'przyjecie_wewn'
+        : 'zwrot';
       wynik.get(klucz).push({
         rodzaj,
         // dokument magazynowy - klucz atrybucji (ruchy.zrodlo_dok)
@@ -454,7 +509,10 @@ function iloscRozlozonaZDokumentu(artykulGtId, magazyn, dokNr) {
 // !!! W PETLI PRZYDZIELAMY BUDZET, wiec kolejnosc jest ODWROTNA do kolejnosci zjadania:
 // kto schodzi PIERWSZY, dostaje resztowke, czyli musi byc w petli OSTATNI. Latwo napisac na
 // odwrot i dostac wynik, ktory wyglada sensownie. Test to pilnuje.
-const PRIORYTET_PRZYDZIALU = { przywozka: 0, zwrot: 1, dostawa: 2 };
+// przyjecie_wewn (PW) wciete miedzy zwrot a przywozke: to tez drobnica lezaca w szufladzie
+// (nie na polce pickowej), wiec chroniona przed zjedzeniem jak zwrot. Wzgledna kolejnosc
+// dostawa > zwrot > przywozka zachowana (test tego pilnuje).
+const PRIORYTET_PRZYDZIALU = { przywozka: 0, przyjecie_wewn: 1, zwrot: 2, dostawa: 3 };
 
 // Nieznany rodzaj ladowal dotad na kubelku `dostawa` (`kubelki[d.rodzaj] || kubelki.dostawa`),
 // czyli po zmianie wskoczylby od razu na PIERWSZE miejsce zjadania i jego zadanie znikaloby
@@ -490,7 +548,7 @@ const priorytet = (rodzaj) => PRIORYTET_PRZYDZIALU[rodzaj] ?? -1;
 function rozbijStanK4(stanGt, sumaWms, dokumenty, { artykul_gt_id, magazyn = MAG_KOD_K4 } = {}) {
   let zostalo = Math.max(Number(stanGt) || 0, 0);
   const polkaKopia = Math.max(Number(sumaWms) || 0, 0);
-  const kubelki = { dostawa: [], zwrot: [], przywozka: [] };
+  const kubelki = { dostawa: [], zwrot: [], przywozka: [], przyjecie_wewn: [] };
 
   // stabilny sort: priorytet przydzialu, a w obrebie rodzaju najnowszy pierwszy (= najstarszy
   // dostaje resztowke = jest zjadany pierwszy). `data` to 'YYYY-MM-DD' albo null.
@@ -517,23 +575,24 @@ function rozbijStanK4(stanGt, sumaWms, dokumenty, { artykul_gt_id, magazyn = MAG
   // w drodze" albo "czy ten dokument jest jeszcze do rozlozenia", MAJA uzywac tego pola -
   // recznie skladane [...dostawy, ...zwroty] cichnie sie psuje przy kazdym nowym rodzaju
   // (tak zniknely przywozki z weryfikacji w /ruchy/rozloz i z reguly "cala ilosc" w /lok).
-  const wszystkie = [...kubelki.dostawa, ...kubelki.zwrot, ...kubelki.przywozka];
+  const wszystkie = [...kubelki.dostawa, ...kubelki.zwrot, ...kubelki.przywozka, ...kubelki.przyjecie_wewn];
   return {
     dostawy: kubelki.dostawa,
     zwroty: kubelki.zwrot,
     przywozki: kubelki.przywozka,
+    przyjecia: kubelki.przyjecie_wewn,      // PW - przychod wewnetrzny z dokumentem
     wszystkie,
     wDrodze: wszystkie.reduce((s, d) => s + d.ilosc, 0),
     polka,                                  // ile faktycznie moze lezec na polce
     polka_kopia: polkaKopia,                // co o tym mysli WMS
     polka_klamie: polkaKopia - polka,       // ile sprzedazy zeszlo z polki bez wiedzy WMS
-    reszta: zostalo,                        // "do sprawdzenia"
+    reszta: zostalo,                        // "do sprawdzenia" - przychod BEZ dokumentu
   };
 }
 
 module.exports = {
   znajdzMM, znajdzMMpoKluczu, kluczRuchu, budujUwagiMM, pobierzZkRezerwujaceK4,
   pobierzDostawyK4, pobierzTowaryZeZwrotamiK4, pobierzTowaryZDostawamiK4,
-  pobierzTowaryZPrzywozkamiK4, rozbijStanK4, iloscRozlozonaZDokumentu,
+  pobierzTowaryZPrzywozkamiK4, pobierzTowaryZPrzyjeciamiWewnK4, rozbijStanK4, iloscRozlozonaZDokumentu,
   RODZAJE_STREF, PRIORYTET_PRZYDZIALU, DOKUMENTY_OD,
 };

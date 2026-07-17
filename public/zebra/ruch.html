@@ -24,6 +24,7 @@
       <button type="button" id="btn-go-zwroty" class="btn-menu">Zwroty<span>rozłóż wózek z korekt</span></button>
       <button type="button" id="btn-go-dostawy" class="btn-menu">Dostawy<span>rozłóż towar z faktur</span></button>
       <button type="button" id="btn-go-przywozki" class="btn-menu">Przywózka<span>rozłóż towar z MAG / Leszna</span></button>
+      <button type="button" id="btn-go-pw" class="btn-menu">Przyjęcia wewn (PW)<span>rozłóż towar z korekt / inwentury</span></button>
       <button type="button" id="btn-go-dosp" class="btn-menu">Do sprawdzenia<span>GT ma stan, WMS nie wie gdzie</span></button>
       <button type="button" id="btn-go-historia" class="btn-menu">Historia ruchów<span>ostatnie operacje na Zebrze</span></button>
       <a class="btn-menu" href="produkty.html">Test wyszukiwania (GT)<span>podgląd karty produktu</span></a>
@@ -406,6 +407,20 @@
   </div>
   </div><!-- /widok-przywozki -->
 
+  <div id="widok-pw" class="hidden">
+  <div class="ekran">
+    <header class="ekran-naglowek"><div class="ekran-sku"><h1>Przyjęcia wewn</h1></div></header>
+    <main class="ekran-tresc">
+      <div id="pw-komunikat" class="komunikat hidden"></div>
+      <div id="pw-lista" class="lista"></div>
+      <p id="pw-pusto" class="hint hidden">Nic nie czeka w szufladzie przyjęć. 🎉</p>
+    </main>
+    <footer class="ekran-stopka">
+      <button type="button" id="pw-wstecz" class="btn-wstecz">← Wstecz</button>
+    </footer>
+  </div>
+  </div><!-- /widok-pw -->
+
   <div id="widok-dosp" class="hidden">
   <div class="ekran">
     <header class="ekran-naglowek">
@@ -437,6 +452,7 @@
   <script src="zwroty.js"></script>
   <script src="dostawy.js"></script>
   <script src="przywozki.js"></script>
+  <script src="przyjecia-wewn.js"></script>
   <script src="do-sprawdzenia.js"></script>
 </body>
 </html>

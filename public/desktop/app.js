@@ -230,7 +230,7 @@ function renderujPulpitKolejke(d) {
     // Tylko "nieznany przychod", nie cale "do sprawdzenia" (patrz pulpit-snapshot.js): backlog
     // migracyjny to osobny kafel "Do zlokalizowania (t_GT)" wyzej. Ekran otwiera sie domyslnie
     // na tej samej zakladce, wiec liczba z kafla zgadza sie z tym, co user zobaczy po kliknieciu.
-    kafle.push(kafelZadania('Do sprawdzenia — nieznany przychód', k.do_sprawdzenia, '#ruchy/do-sprawdzenia', 'amber'));
+    kafle.push(kafelZadania('Przyjęcia wewn (PW) do odłożenia', k.do_sprawdzenia, '#ruchy/do-sprawdzenia', 'amber'));
     kafle.push(kafelZadania('Do przywiezienia z Leszna', k.leszno, '#zestawienia/leszno', 'blue'));
   }
 
@@ -422,7 +422,11 @@ function komorkaStrefa(strefa) {
   if (strefa.P) czesci.push(`P:${strefa.P}`);
   if (strefa.D) czesci.push(`D:${strefa.D}`);
   if (strefa.Z) czesci.push(`Z:${strefa.Z}`);
-  if (strefa.NP) czesci.push(`<span class="strefa-np">NP:${strefa.NP}</span>`);
+  // PW = przyjecie wewnetrzne (przychod Z dokumentem PW). Wyroznione jak dawne NP, bo tez
+  // niewidoczne nigdzie indziej - zgodnosc K4 swieci mu OK.
+  if (strefa.PW) czesci.push(`<span class="strefa-np">PW:${strefa.PW}</span>`);
+  // NP zostaje tylko dla reszty BEZ dokumentu (zwykle 0 - w Subiekcie nie ma zmiany bez dok).
+  if (strefa.NP) czesci.push(`<span class="strefa-np" title="reszta bez dokumentu - sprawdz">NP:${strefa.NP}</span>`);
   return czesci.length ? czesci.join(' ') : '–';
 }
 
@@ -1249,19 +1253,21 @@ let dospOffset = 0;
 // miesiace, a to jest to, co wydarzylo sie wczoraj - i JEDYNE miejsce w systemie, gdzie w ogole
 // widac taki towar (zgodnosc K4 porownuje tylko tekst lokalizacji, wiec swieci mu OK).
 // '' = wszystko.
-let dospRodzaj = 'nieznany_przychod';
+let dospRodzaj = 'przyjecie_wewn';
 
 // Opis pod przelacznikiem. Kazdy rodzaj to inna praca i inne "czemu to tu jest" - bez tego
-// magazynier widzi dwie liczby i nie wie, ktora go dotyczy.
+// magazynier widzi liczby i nie wie, ktora go dotyczy.
 const DOSP_OPISY = {
   '': 'GT widzi ten towar na K4, ale WMS nie wie, gdzie leży cały jego stan. '
     + 'Nie dopisujemy go do półki automatycznie: automat nie odróżniłby go od niewidzianej palety, '
     + 'a wpisanie palety na półkę zrównuje GT z WMS i job rozjazdów już nigdy tego nie wykryje.',
-  nieznany_przychod: 'WMS zna miejsce tego towaru, ale stan GT urósł ponad to, co WMS wie — '
-    + 'ktoś dołożył sztuki poza naszym obiegiem (przychód z inwentury, uzupełnienie zrobione '
-    + 'w Subiekcie, powrót z Reklamacji). Uwaga: tych pozycji NIE widać nigdzie indziej. '
-    + 'Zgodność K4 porównuje tylko tekst lokalizacji, więc taki towar świeci OK, choć w GT ma '
-    + 'czterokrotnie więcej sztuk niż w WMS.',
+  przyjecie_wewn: 'Przyjęcia wewnętrzne (PW) — ktoś dołożył towar poza naszym obiegiem, ale '
+    + 'z dokumentem: korekta stanu, inwentura, ręczne przyjęcie. WMS zna miejsce SKU, więc to '
+    + 'domknięcie: odłóż na regał. Tych pozycji NIE widać nigdzie indziej — zgodność K4 porównuje '
+    + 'tylko tekst lokalizacji, więc taki towar świeci OK mimo nadwyżki.',
+  nieznany_przychod: 'Nadwyżka BEZ dokumentu — stan GT większy, niż WMS i wszystkie dokumenty '
+    + 'tłumaczą. W Subiekcie nie ma zmiany stanu bez dokumentu, więc to rzadkość: coś sprzed okna '
+    + 'czasowego albo starzejąca się kopia WMS. Warte sprawdzenia ręcznie.',
   do_zlokalizowania: 'WMS nie zna tego towaru na K4 w ogóle — nigdy nie dostał miejsca. '
     + 'To backlog migracyjny: zjedzie do zera, gdy go zlokalizujesz. Widać go też w Produktach '
     + 'jako status t_GT (albo BD, gdy GT też nie ma wpisanej lokalizacji).',
@@ -1270,7 +1276,8 @@ const DOSP_OPISY = {
 // Komunikat pustki per filtr - musi mówić prawdę o TYM podzbiorze, a nie o całej liście.
 const DOSP_PUSTO = {
   '': 'Nic do sprawdzenia — WMS wie o całym stanie K4. 🎉',
-  nieznany_przychod: 'Nikt nie dołożył towaru poza WMS-em. 🎉',
+  przyjecie_wewn: 'Brak przyjęć wewnętrznych do odłożenia. 🎉',
+  nieznany_przychod: 'Każda nadwyżka ma dokument. 🎉',
   do_zlokalizowania: 'Każdy towar ze stanem na K4 ma miejsce w WMS. 🎉',
 };
 
@@ -1305,8 +1312,9 @@ function renderujDoSprawdzenia(dane) {
   // aktywnym filtrze (patrz routes/do-sprawdzenia.js).
   if (liczniki) {
     const etykiety = {
-      '': `Wszystko (${liczniki.nieznany_przychod.razem + liczniki.do_zlokalizowania.razem})`,
-      nieznany_przychod: `Nieznany przychód (${liczniki.nieznany_przychod.razem})`,
+      '': `Wszystko (${liczniki.przyjecie_wewn.razem + liczniki.nieznany_przychod.razem + liczniki.do_zlokalizowania.razem})`,
+      przyjecie_wewn: `Przyjęcia wewn (PW) (${liczniki.przyjecie_wewn.razem})`,
+      nieznany_przychod: `Bez dokumentu (${liczniki.nieznany_przychod.razem})`,
       do_zlokalizowania: `Do zlokalizowania (${liczniki.do_zlokalizowania.razem})`,
     };
     el('dosp-rodzaje').querySelectorAll('.podzakladka').forEach((a) => {

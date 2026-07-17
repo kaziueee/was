@@ -109,7 +109,7 @@
             <label><input type="checkbox" class="prod-strefa" value="dostawa"> Dostawa</label>
             <label><input type="checkbox" class="prod-strefa" value="zwrot"> Zwrot</label>
             <label><input type="checkbox" class="prod-strefa" value="przywozka"> Przywózka</label>
-            <label><input type="checkbox" class="prod-strefa" value="nieznany_przychod" title="WMS zna miejsce, ale stan GT urósł poza naszym obiegiem"> Nieznany przychód</label>
+            <label><input type="checkbox" class="prod-strefa" value="przyjecie_wewn" title="Przyjęcie wewnętrzne (PW) — przychód poza naszym obiegiem, z dokumentem"> Przyjęcie wewn (PW)</label>
           </span>
           <span class="filtr-grupa">
             <span class="filtr-etykieta">Zgodność:</span>
@@ -466,7 +466,8 @@
            a domyslna nawigacja bilaby sie z preventDefault. -->
       <nav class="podzakladki" id="dosp-rodzaje">
         <button type="button" class="podzakladka" data-rodzaj="">Wszystko</button>
-        <button type="button" class="podzakladka aktywna" data-rodzaj="nieznany_przychod">Nieznany przychód</button>
+        <button type="button" class="podzakladka aktywna" data-rodzaj="przyjecie_wewn">Przyjęcia wewn (PW)</button>
+        <button type="button" class="podzakladka" data-rodzaj="nieznany_przychod">Bez dokumentu</button>
         <button type="button" class="podzakladka" data-rodzaj="do_zlokalizowania">Do zlokalizowania</button>
       </nav>
       <p class="hint" id="dosp-opis"></p>

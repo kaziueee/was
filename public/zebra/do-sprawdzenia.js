@@ -16,19 +16,17 @@
   // Ile pozycji na raz. Obchod i tak idzie po kolei, a Zebra nie uniesie calego backlogu.
   const PORCJA = 50;
 
-  // Dwie rozne prace na jednej liscie (patrz routes/do-sprawdzenia.js):
-  //   nieznany_przychod - WMS zna miejsce, ale stan urosl poza naszym obiegiem. Sygnal
-  //     operacyjny, splywa codziennie. NIE WIDZI GO NIC INNEGO w systemie.
+  // Rodzaje rozjazdu wiedzy (patrz routes/do-sprawdzenia.js). PRZYJECIA WEWNETRZNE (PW) maja
+  // od 2026-07-18 wlasny ekran-szuflade (kafelek "Przyjecia wewn"), wiec TU zostaja dwa:
   //   do_zlokalizowania - WMS nie zna SKU w ogole. Backlog migracyjny (~2000 poz.).
-  // Domyslnie NIEZNANY PRZYCHOD: backlog migracyjny to robota na miesiace, a to jest to,
-  // co wydarzylo sie wczoraj i o co user pytal wprost. Przelacznik obok, gdyby ktos chcial
-  // pochodzic po backlogu.
+  //   nieznany_przychod - nadwyzka BEZ dokumentu (rzadka - w Subiekcie nie ma zmiany bez dok).
+  // Domyslnie DO ZLOKALIZOWANIA: to glowna zawartosc tego ekranu; PW obsluguje szuflada.
   const RODZAJE = [
-    { klucz: 'nieznany_przychod', etykieta: 'Nieznany przychód' },
     { klucz: 'do_zlokalizowania', etykieta: 'Do zlokalizowania' },
+    { klucz: 'nieznany_przychod', etykieta: 'Bez dokumentu' },
   ];
 
-  let rodzaj = 'nieznany_przychod';
+  let rodzaj = 'do_zlokalizowania';
   let lista = [];
   let razem = 0;
   let liczniki = null;

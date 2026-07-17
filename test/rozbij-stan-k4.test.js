@@ -28,6 +28,7 @@ const sumy = (r) => ({
   polka: r.polka,
   reszta: r.reszta,
 });
+const sumaPw = (r) => r.przyjecia.reduce((s, d) => s + d.ilosc, 0);
 
 test('inwariant: kubelki + polka + reszta zawsze sumuja sie do stanu GT', () => {
   const przypadki = [
@@ -117,6 +118,36 @@ test('FIFO w obrebie rodzaju: najstarsza paleta schodzi pierwsza', () => {
   const rOdwrotnie = rozbijStanK4(15, 0, [nowa, stara]);
   const wgOdwrotnie = Object.fromEntries(rOdwrotnie.dostawy.map((d) => [d.pz_nr, d.ilosc]));
   assert.deepEqual(wgOdwrotnie, wg, 'wynik nie zalezy od kolejnosci wejsciowej');
+});
+
+test('PW (przyjecie wewn) widoczny mimo jednoczesnej dostawy - przypadek NERE9533', () => {
+  // Sedno fixu: PW 3 szt bylo NIEWIDOCZNE bo dostawa+polka pochlaniaja stan (reszta=0).
+  // Z kubelkiem PW (budzet PRZED polka) przychod jest widoczny co do sztuki.
+  const d = [dok('dostawa', 20, '2026-07-16'), dok('przyjecie_wewn', 3, '2026-07-17')];
+  const r = rozbijStanK4(314, 311, d);
+  assert.equal(sumaPw(r), 3, 'PW widoczny: 3 szt');
+  assert.equal(sumy(r).dostawa, 20, 'dostawa pelna');
+  assert.equal(r.polka, 291, 'polka = 314 - 20 - 3');
+  assert.equal(r.reszta, 0, 'nic niewyjasnionego');
+  // inwariant trzyma z PW
+  assert.equal(r.wDrodze + r.polka + r.reszta, 314);
+});
+
+test('PW schodzi przed przywozka, ale po dostawie i zwrocie (chroniony jak drobnica)', () => {
+  const d = [dok('dostawa', 10, '2026-07-20'), dok('zwrot', 10, '2026-07-20'),
+    dok('przyjecie_wewn', 10, '2026-07-20'), dok('przywozka', 10, '2026-07-20')];
+  // pelny stan: wszystko sie miesci
+  const pelny = rozbijStanK4(40, 0, d);
+  assert.deepEqual(
+    { ...sumy(pelny), pw: sumaPw(pelny) },
+    { dostawa: 10, zwrot: 10, przywozka: 10, polka: 0, reszta: 0, pw: 10 }
+  );
+  // brakuje 25 -> znika dostawa(10) + zwrot(10) + PW(5); przywozka nietknieta
+  const chudy = rozbijStanK4(15, 0, d);
+  assert.deepEqual(
+    { ...sumy(chudy), pw: sumaPw(chudy) },
+    { dostawa: 0, zwrot: 0, przywozka: 10, polka: 0, reszta: 0, pw: 5 }
+  );
 });
 
 test('rodzaj bije date: swieza dostawa schodzi przed starym zwrotem', () => {

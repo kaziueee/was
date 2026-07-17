@@ -66,9 +66,16 @@ const SORTY = {
 //
 // Nazwy sa WLASNE, a nie zapozyczone ze slownika zgodnosci (t_GT/NZ) - tamten opisuje
 // zgodnosc TEKSTU pola i tutaj po prostu nie pasuje. Uzycie go bylo by klamstwem.
+// Trzy rodzaje rozjazdu wiedzy na K4 (od 2026-07-18, po rozpoznaniu PW):
+//   przyjecie_wewn  - przychod Z DOKUMENTEM PW (dawny "nieznany przychod" ma teraz nazwe).
+//                     To ono zajmuje "buty NP" - glowny, spodziewany przypadek.
+//   nieznany_przychod - reszta BEZ dokumentu, a WMS zna miejsce. W Subiekcie nie ma zmiany
+//                     bez dokumentu, wiec ~0; gdy > 0 = cos spoza okna / starzejaca sie kopia.
+//   do_zlokalizowania - WMS nie zna SKU w ogole (backlog migracyjny).
 const RODZAJE = {
-  nieznany_przychod: (p) => p.polka_wms > 0,
-  do_zlokalizowania: (p) => p.polka_wms === 0,
+  przyjecie_wewn:    (p) => p.pw > 0,
+  nieznany_przychod: (p) => p.reszta > 0 && p.polka_wms > 0,
+  do_zlokalizowania: (p) => p.reszta > 0 && p.polka_wms === 0,
 };
 
 // Sumy kopii WMS dla K4 - jednym zapytaniem, nie N+1 w petli.
@@ -128,7 +135,8 @@ async function zbierz() {
     const r = gtDokumenty.rozbijStanK4(k.stan_k4, wms, dokMap.get(k.artykul_gt_id) || [], {
       artykul_gt_id: k.artykul_gt_id, magazyn: MAG,
     });
-    if (r.reszta <= 0) continue;   // WMS zna caly stan albo reszta siedzi w strefach
+    const pw = r.przyjecia.reduce((s, d) => s + d.ilosc, 0);
+    if (r.reszta <= 0 && pw <= 0) continue;   // caly stan wyjasniony (WMS + strefy) - nie ma czego sprawdzac
 
     const w = loki.get(k.artykul_gt_id);
     pozycje.push({
@@ -136,7 +144,10 @@ async function zbierz() {
       symbol: k.symbol,
       nazwa: k.nazwa,
       ean: k.ean ?? w?.ean ?? null,
-      ilosc: r.reszta,                     // ile do przypisania
+      ilosc: pw + r.reszta,                // ile do przypisania (PW + reszta bez dokumentu)
+      pw,                                  // przychod z dokumentem PW
+      pw_dok: r.przyjecia[0]?.pz_nr ?? null, // numer PW (najnowszy) - do podpisu
+      reszta: r.reszta,                    // reszta BEZ dokumentu
       stan_k4: k.stan_k4,
       rezerwacja: k.rez_k4 ?? 0,
       w_strefach: r.wDrodze,               // czesc stanu jest wyjasniona dokumentem - nie liczy sie

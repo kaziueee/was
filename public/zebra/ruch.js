@@ -1835,6 +1835,8 @@ function pokazWidok(nazwa, stan) {
   if (dostawy) dostawy.classList.toggle('hidden', nazwa !== 'dostawy');
   const przywozki = el('widok-przywozki');
   if (przywozki) przywozki.classList.toggle('hidden', nazwa !== 'przywozki');
+  const pw = el('widok-pw');
+  if (pw) pw.classList.toggle('hidden', nazwa !== 'pw');
   const dosp = el('widok-dosp');
   if (dosp) dosp.classList.toggle('hidden', nazwa !== 'dosp');
   // Wyjscie z Ruchu unieważnia powrot poprzedniego wywolujacego - inaczej sukces w zupelnie
@@ -1847,6 +1849,7 @@ function pokazWidok(nazwa, stan) {
   if (nazwa === 'zwroty' && window.zwrotyOtworz) window.zwrotyOtworz();
   if (nazwa === 'dostawy' && window.dostawyOtworz) window.dostawyOtworz(stan);
   if (nazwa === 'przywozki' && window.przywozkiOtworz) window.przywozkiOtworz();
+  if (nazwa === 'pw' && window.przyjeciaWewnOtworz) window.przyjeciaWewnOtworz();
   if (nazwa === 'dosp' && window.doSprawdzeniaOtworz) window.doSprawdzeniaOtworz();
 }
 window.pokazWidok = pokazWidok;
@@ -1873,7 +1876,7 @@ el('btn-pelny-ekran').addEventListener('click', () => {
 // stamtad do menu glownego - zamiast przeskakiwac od razu do menu glownego.
 // Widoki-SPA pushuja {v:<nazwa>} na wejsciu i przy podekranie, wiec Back cofa o jeden krok:
 // podekran -> menu widoku -> menu glowne. Nieznany/pusty stan = menu glowne.
-const WIDOKI_Z_HISTORIA = ['sciezki', 'zwroty', 'dostawy', 'przywozki'];
+const WIDOKI_Z_HISTORIA = ['sciezki', 'zwroty', 'dostawy', 'przywozki', 'pw', 'dosp'];
 window.addEventListener('popstate', (e) => {
   const v = WIDOKI_Z_HISTORIA.includes(e.state?.v) ? e.state.v : 'menu';
   pokazWidok(v, e.state);   // caly wpis, bo niesie tez podekran (np. {v:'dostawy', dok})

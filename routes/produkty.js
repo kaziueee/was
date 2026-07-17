@@ -56,20 +56,25 @@ async function dolaczDostawyK4(produkty, wierszeWms) {
     p.polka_k4 = rozbicie.polka;
     p.polka_k4_klamie = rozbicie.polka_klamie;
 
-    // Zwiezle podsumowanie strefy do kolumny "Strefa" (desktop): P/D/Z + NP. Liczymy TU,
-    // a nie na froncie, zeby definicja NP byla jedna i ta sama, co na ekranie "Do sprawdzenia".
+    // Zwiezle podsumowanie strefy do kolumny "Strefa" (desktop): P/D/Z/PW + NP. Liczymy TU,
+    // a nie na froncie, zeby definicja byla jedna i ta sama, co na ekranie "Do sprawdzenia".
     //
-    // NP (nieznany przychod) = reszta rozbicia, ale TYLKO gdy WMS zna miejsce tego SKU na K4
-    // (wmsK4 > 0). Gdy WMS nie zna go w ogole (wmsK4 === 0), reszta to "do zlokalizowania" -
-    // backlog migracyjny, nie strefa - i do tej kolumny nie wchodzi (inaczej NERCHIELIT10
-    // pokazywalby NP:34669, co nie jest przychodem, tylko "nigdy nie zlokalizowane").
+    // PW (przyjecie wewnetrzne) = przychod Z DOKUMENTEM (PW). To ono zajmuje "buty NP": dawny
+    // anonimowy "nieznany przychod" ma teraz nazwe i numer PW (decyzja usera 2026-07-18).
+    //
+    // NP (nieznany przychod) zostaje tylko dla reszty rozbicia BEZ dokumentu, i TYLKO gdy WMS
+    // zna miejsce SKU (wmsK4 > 0). W Subiekcie nie ma zmiany stanu bez dokumentu, wiec NP
+    // powinno byc ~0; gdy > 0, to sygnal "cos spoza okna albo kopia sie starzeje - sprawdz".
+    // Gdy WMS nie zna SKU (wmsK4 === 0), reszta to "do zlokalizowania" (backlog migracyjny),
+    // nie strefa - i do tej kolumny nie wchodzi.
     const strefa = {
       P: suma(rozbicie.przywozki),
       D: suma(rozbicie.dostawy),
       Z: suma(rozbicie.zwroty),
+      PW: suma(rozbicie.przyjecia),
       NP: wmsK4 > 0 ? rozbicie.reszta : 0,
     };
-    if (strefa.P || strefa.D || strefa.Z || strefa.NP) p.strefa_k4 = strefa;
+    if (strefa.P || strefa.D || strefa.Z || strefa.PW || strefa.NP) p.strefa_k4 = strefa;
   }
 }
 

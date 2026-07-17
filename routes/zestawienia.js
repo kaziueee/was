@@ -46,6 +46,18 @@ router.get('/przywozka/strefa', async (req, res) => {
   }
 });
 
+// GET /api/zestawienia/przyjecia-wewn/strefa - PW (przyjecia wewnetrzne) dla Zebry. Analog
+// przywozka/strefa: magazynier bierze z szuflady przyjec i odklada na regal (LOK, cel K4).
+router.get('/przyjecia-wewn/strefa', async (req, res) => {
+  try {
+    const kandydaci = await gtDokumenty.pobierzTowaryZPrzyjeciamiWewnK4();
+    const pozycje = (await doRozlozenia.zbierz(kandydaci, 'przyjecia')).sort(doRozlozenia.wgLokalizacji);
+    res.json({ pozycje, razem: pozycje.length });
+  } catch (err) {
+    res.status(503).json({ blad: 'Nie mozna pobrac przyjec wewnetrznych z GT (baza niedostepna). Sprobuj ponownie.' });
+  }
+});
+
 // GET /api/zestawienia/leszno - hala ponizej progu, a w LS jest zapas.
 router.get('/leszno', async (req, res) => {
   try {

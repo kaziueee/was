@@ -2344,7 +2344,6 @@ el('btn-mm-wyslij').addEventListener('click', async () => {
 // === MODAL PRODUKTU (edytowalny rozklad po magazynach) ===
 
 const MAG_LABEL = { K4: 'K4 Hala', K4G: 'K4 Góra', MAG: 'Kajtek (MAG)', LS: 'Leszno (LS)', BRK: 'Braki (BRK)', K4R: 'Reklamacje (K4R)' };
-const MAG_EXT = ['MAG', 'LS'];
 
 let modalProdukt = null;
 let modalAkcjaCtx = null;

@@ -5,6 +5,7 @@ const { podzielNaSlowa, LIMIT_WYSZUKIWANIA } = require('../services/wyszukiwanie
 const { pobierzProdukt, szukajProdukty, szukajPoLokalizacjiGt, pobierzStanyGt } = require('../services/gt-produkty');
 const { pobierzStatusLokalizacjiGt, synchronizujLokalizacje, pobierzPrzegladLokalizacji } = require('../services/gt-fields');
 const gtDokumenty = require('../services/gt-dokumenty');
+const gtZestawy = require('../services/gt-zestawy');
 const audyt = require('../services/audyt');
 const { rozbierzKod, normalizujKodLokalizacji, TYPY } = require('../services/lokalizacje-model');
 
@@ -162,10 +163,11 @@ async function dolaczDaneGt(payload) {
       return payload;
     }
 
-    const [stanyMap, statusMap, przegladMap] = await Promise.all([
+    const [stanyMap, statusMap, przegladMap, zestawyMap] = await Promise.all([
       pobierzStanyGt(idy),
       pobierzStatusLokalizacjiGt(idy),
       pobierzPrzegladLokalizacji(idy),
+      gtZestawy.wZestawachMapa(idy),
     ]);
 
     // {k4, k4g, ogolna} z enumem OK/t_GT/NZ/BD/OF (jak w tabeli desktopu) - do badge'a statusu na froncie
@@ -179,6 +181,9 @@ async function dolaczDaneGt(payload) {
       stany_gt: stanyMap.get(String(item.artykul_gt_id)),
       lokalizacja_gt: statusMap.get(String(item.artykul_gt_id)),
       zgodnosc: zgodnoscZPrzegladu(item.artykul_gt_id),
+      // Ile sztuk tego SKU jest zamrozone w zestawach zmontowanych na K4 (zob. gt-zestawy.js).
+      // Fizycznie na polce = stan GT K4 + w_zestawach - front pokazuje to jak rezerwacje.
+      w_zestawach: zestawyMap.get(String(item.artykul_gt_id)) || 0,
     });
 
     if (payload.typ === 'lokalizacja') {
@@ -187,6 +192,7 @@ async function dolaczDaneGt(payload) {
       payload.stany_gt = stanyMap.get(String(payload.artykul_gt_id));
       payload.lokalizacja_gt = statusMap.get(String(payload.artykul_gt_id));
       payload.zgodnosc = zgodnoscZPrzegladu(payload.artykul_gt_id);
+      payload.w_zestawach = zestawyMap.get(String(payload.artykul_gt_id)) || 0;
 
       // K4gora to "1 SKU = N lokalizacji" - nawet gdy artykul ma juz jakas
       // lokalizacje w K4G, w GT moze byc wiecej sztuk niz zsumowano w WMS

@@ -129,9 +129,11 @@ function naglowekHtml() {
   } else {
     // rezerwacja jest per-magazyn (GT) - pokazujemy ja jako chip ostrzegawczy, tylko gdy > 0
     const rez = a.stany_gt?.[stan.zrodlo.magazyn]?.rezerwacja ?? 0;
+    const wZest = a.w_zestawach || 0;
     kontekst = `<span class="chip chip-magazyn">${stan.zrodlo.magazyn}</span>`
       + `<span class="chip">Z: <b>${zrodloEtykieta()}</b></span>`
-      + (rez > 0 ? `<span class="chip chip-rez">rez ${rez}</span>` : '');
+      + (rez > 0 ? `<span class="chip chip-rez">rez ${rez}</span>` : '')
+      + (wZest > 0 ? `<span class="chip chip-zestaw">w zestawach ${wZest}</span>` : '');
   }
 
   return `<div class="naglowek-glowna"><h1>${a.artykul_symbol}</h1><p class="ekran-nazwa">${a.artykul_nazwa}</p></div>`
@@ -410,12 +412,16 @@ function przygotujKrokWybor() {
   el('rezerwacje-zk').innerHTML = '';
   el('rezerwacje-zk').classList.add('hidden');
   el('rezerwacje-zk').classList.remove('otwarte');
+  // "W zestawach" - tak samo per-produkt, znika razem z resztą kontekstu (jak rezerwacje).
+  el('zestawy-panel').innerHTML = '';
+  el('zestawy-panel').classList.add('hidden');
+  el('zestawy-panel').classList.remove('otwarte');
   el('input-wybor-skan').value = ''; // czyste pole; tryb 'szukaj' wypelni je z powrotem zapytaniem
   prefillWyszukiwaniaStale = false;
 }
 
 function obsluzArtykul(dane) {
-  const artykul = { artykul_gt_id: dane.artykul_gt_id, artykul_symbol: dane.artykul_symbol, artykul_nazwa: dane.artykul_nazwa, stany_gt: dane.stany_gt, lokalizacja_gt: dane.lokalizacja_gt, zgodnosc: dane.zgodnosc };
+  const artykul = { artykul_gt_id: dane.artykul_gt_id, artykul_symbol: dane.artykul_symbol, artykul_nazwa: dane.artykul_nazwa, stany_gt: dane.stany_gt, lokalizacja_gt: dane.lokalizacja_gt, zgodnosc: dane.zgodnosc, w_zestawach: dane.w_zestawach };
 
   // Kontekst rozkladania dostawy dotyczy KONKRETNEGO produktu - zerujemy go na wejsciu,
   // zanim ktorakolwiek galez ustawi swoj stan. Sciezki skrotowe nizej nie przechodza przez
@@ -590,11 +596,16 @@ function pokazRozkladZrodel(dane, artykul) {
   // Stan na Brakach/Reklamacjach widac nizej, w rozkladzie per magazyn.
   const lacznyStan = sumaRazemGt(artykul.stany_gt);
   const rezRazem = sumaRezerwacji(artykul.stany_gt);
-  el('wybor-podsumowanie').innerHTML = `<span>Łączny stan: <b>${lacznyStan} szt.</b></span>`
+  // Dopisek "w nawiasie krok wczesniej": ile sztuk tego SKU siedzi w zestawach na K4 -
+  // fizycznie na polce jest o tyle wiecej niz mowi stan GT (zob. gt-zestawy.js).
+  const wZest = artykul.w_zestawach || 0;
+  el('wybor-podsumowanie').innerHTML = `<span>Łączny stan: <b>${lacznyStan} szt.</b>`
+    + (wZest > 0 ? ` <span class="podsumowanie-zest">(+${wZest} w zestawach)</span>` : '') + `</span>`
     + `<span class="podsumowanie-sep"></span>`
     + `<span>Rezerwacje: <b>${rezRazem}</b></span>`;
   el('wybor-podsumowanie').classList.remove('hidden');
   przygotujRezerwacjeZk(artykul);
+  przygotujZestawy(artykul);
 
   el('input-wybor-skan').placeholder = 'Skanuj kod lokalizacji';
   if (opcjeWyboru.length === 0) {
@@ -686,6 +697,71 @@ function przygotujRezerwacjeZk(artykul, box = el('rezerwacje-zk')) {
     otwarte = !otwarte;
     render();
     // ladujemy przy pierwszym rozwinieciu oraz przy ponowieniu po bledzie
+    if (otwarte && (stanLadowania === 'idle' || stanLadowania === 'blad')) zaladuj();
+  }
+
+  render();
+}
+
+// Rozwijana sekcja "W zestawach" - bliznik przygotujRezerwacjeZk. Pokazuje, ile sztuk tego SKU
+// jest zamrozone w zestawach ZMONTOWANYCH na K4 (fizycznie na polce, ale zaksiegowane pod SKU
+// zestawu). Widoczna gdy artykul.w_zestawach > 0. Lazy-load /api/produkty/:id/zestawy.
+// Zob. services/gt-zestawy.js. ZW (wirtualny potencjal montazu) pomijane w calosci.
+function przygotujZestawy(artykul, box = el('zestawy-panel')) {
+  const wZest = artykul?.w_zestawach ?? 0;
+  box.innerHTML = '';
+  box.classList.remove('otwarte');
+  if (wZest <= 0 || !artykul?.artykul_gt_id) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+
+  let otwarte = false;
+  let stanLadowania = 'idle'; // idle | ladowanie | ok | blad
+  let dane = null;            // { jako_skladnik:[...], w_zestawach, jako_zestaw }
+
+  function bodyHtml() {
+    if (stanLadowania === 'ladowanie') return `<div class="rez-zk__body"><div class="rez-zk__stan">Ładowanie…</div></div>`;
+    if (stanLadowania === 'blad') return `<div class="rez-zk__body"><div class="rez-zk__stan">GT niedostępny — dotknij, aby spróbować ponownie.</div></div>`;
+    if (stanLadowania !== 'ok') return '';
+    const lista = (dane.jako_skladnik || []);
+    if (!lista.length) return `<div class="rez-zk__body"><div class="rez-zk__stan">Brak zestawów na K4 z tym składnikiem.</div></div>`;
+    const wiersze = lista.map((z) => {
+      const sub = `${z.stan_zestawu} zest. × ${z.liczba} szt`;
+      return `<div class="rez-zk__row">`
+        + `<div><div class="rez-zk__nr">${esc(z.symbol)}</div>`
+        + `<div class="rez-zk__sub">${sub}</div></div>`
+        + `<span class="rez-zk__ilosc">${z.zamraza} szt</span></div>`;
+    }).join('');
+    const foot = `Σ ${dane.w_zestawach} szt na półce zapisane w zestawach`;
+    return `<div class="rez-zk__body"><div class="rez-zk__lista">${wiersze}</div>`
+      + `<div class="rez-zk__foot">${foot}</div></div>`;
+  }
+
+  function render() {
+    box.classList.toggle('otwarte', otwarte);
+    box.innerHTML = `<button type="button" class="rez-zk__header">`
+      + `<span class="rez-zk__tytul">📦 W zestawach na K4</span>`
+      + `<span class="rez-zk__meta">${wZest} szt <span class="rez-zk__chev">${otwarte ? '▾' : '▸'}</span></span>`
+      + `</button>${otwarte ? bodyHtml() : ''}`;
+    box.querySelector('.rez-zk__header').addEventListener('click', onTap);
+  }
+
+  async function zaladuj() {
+    stanLadowania = 'ladowanie';
+    render();
+    try {
+      const res = await fetch(`/api/produkty/${encodeURIComponent(artykul.artykul_gt_id)}/zestawy`);
+      if (!res.ok) throw new Error('http ' + res.status);
+      dane = await res.json();
+      stanLadowania = 'ok';
+    } catch (e) {
+      stanLadowania = 'blad';
+    }
+    if (otwarte) render();
+  }
+
+  function onTap() {
+    otwarte = !otwarte;
+    render();
     if (otwarte && (stanLadowania === 'idle' || stanLadowania === 'blad')) zaladuj();
   }
 

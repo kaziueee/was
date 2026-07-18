@@ -459,6 +459,7 @@ function renderujProdukty({ produkty, total, limit, offset, tryb }) {
       <td>${komorkaStan(p.stany_gt, 'BRK')}</td>
       <td>${komorkaStan(p.stany_gt, 'K4R')}</td>
       <td>${p.razem}</td>
+      <td>${p.w_zestawach > 0 ? p.w_zestawach : '–'}</td>
       <td class="kol-lok">${wmsK4}</td>
       <td class="kol-strefa">${komorkaStrefa(p.strefa_k4)}</td>
       <td class="kol-lok">${wmsK4g}</td>
@@ -2333,6 +2334,10 @@ async function renderModalRozklad() {
   const rezRazem = ['K4', 'K4G', 'MAG', 'LS'].reduce((s, m) => s + (modalProdukt.stany_gt?.[m]?.rezerwacja ?? 0), 0);
   tbody.appendChild(wierszPodsumowania('Razem', modalProdukt.razem ?? '', 'rozklad-total'));
   if (rezRazem > 0) tbody.appendChild(wierszPodsumowania('Rezerwacje', rezRazem, 'rozklad-total'));
+  // "W zestawach" = sztuki tego SKU zamrozone w zestawach zmontowanych na K4 (fizycznie na
+  // polce, zaksiegowane pod SKU zestawu). Zob. services/gt-zestawy.js. Tylko gdy > 0.
+  const wZest = modalProdukt.w_zestawach ?? 0;
+  if (wZest > 0) tbody.appendChild(wierszPodsumowania('W zestawach', wZest, 'rozklad-total'));
 
   tabela.appendChild(tbody);
   cont.innerHTML = '';

@@ -1,96 +1,121 @@
 'use strict';
 
-// Jednorazowa SONDA (tylko odczyt) - rozpoznaje jak GT trzyma zestawy/komplety (rodzaj 8),
-// zeby WMS mogl pokazac "ile sztuk skladnika jest zamrozone w zestawach". Nic nie zapisuje.
+// Jednorazowa SONDA (tylko odczyt) - sklad zestawow (rodzaj 8) MAJACYCH STAN NA K4.
+// ZW poza zakresem: liczy sie wylacznie zmontowany zestaw lezacy fizycznie na K4,
+// bo tylko on zaburza liczenie polki magazynierowi. Nic nie zapisuje.
 //
-// URUCHOM NA PECECIE (ma GT_SQL_PASSWORD):   node scripts/probe-zestawy.js
-// Wynik wklej z powrotem. Dziala na bazie z .env (testowa Z_KAJTEK_IdeaERP).
+// URUCHOM:  GT_SQL_HOST=... GT_SQL_PORT=... GT_SQL_DATABASE=... node scripts/probe-zestawy.js
 
 const { query, getPool } = require('../services/gt-sql');
 
-async function bezpiecznie(opis, fn) {
-  try {
-    const r = await fn();
-    console.log(`\n===== ${opis} =====`);
-    return r;
-  } catch (err) {
-    console.log(`\n===== ${opis} =====`);
-    console.log('  BLAD:', err.message);
-    return null;
-  }
+async function sekcja(opis, fn) {
+  console.log(`\n===== ${opis} =====`);
+  try { return await fn(); } catch (err) { console.log('  BLAD:', err.message); return null; }
 }
 
 (async () => {
   try {
-    // 1. Ktore tabele wygladaja na sklad kompletu?
-    await bezpiecznie('1. Tabele-kandydaci na sklad kompletu (nazwa)', async () => {
-      const r = await query(`
-        SELECT TABLE_SCHEMA, TABLE_NAME
-        FROM INFORMATION_SCHEMA.TABLES
-        WHERE TABLE_TYPE = 'BASE TABLE'
-          AND (TABLE_NAME LIKE '%omplet%' OR TABLE_NAME LIKE '%kladnik%'
-               OR TABLE_NAME LIKE 'tw__K%' OR TABLE_NAME LIKE '%Zestaw%')
-        ORDER BY TABLE_NAME`);
-      console.table(r.recordset);
-    });
-
-    // 2. Kolumny-kandydaci (moze tabela ma inna nazwe, ale kolumny zdradzaja fk)
-    await bezpiecznie('2. Kolumny-kandydaci (skladnik / komplet / ilosc)', async () => {
-      const r = await query(`
-        SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
-        FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE COLUMN_NAME LIKE '%kladnik%' OR COLUMN_NAME LIKE '%omplet%'
-           OR COLUMN_NAME LIKE 'tk[_]%' OR COLUMN_NAME LIKE 'kmp[_]%'
-        ORDER BY TABLE_NAME, ORDINAL_POSITION`);
-      console.table(r.recordset);
-    });
-
-    // 3. Ile jest towarow rodzaj 8 i ile z nich MA stan - na jakich magazynach lezy ten stan?
-    await bezpiecznie('3. Stan zestawow (rodzaj 8) wg magazynu - GDZIE GT trzyma zmontowane', async () => {
-      const r = await query(`
-        SELECT m.mag_Symbol, COUNT(*) AS ile_zestawow_ze_stanem, SUM(s.st_Stan) AS suma_stanu
-        FROM tw__Towar t
-        JOIN tw_Stan s ON s.st_TowId = t.tw_Id AND s.st_Stan > 0
-        JOIN sl_Magazyn m ON m.mag_Id = s.st_MagId
-        WHERE t.tw_Rodzaj = 8
-        GROUP BY m.mag_Symbol
-        ORDER BY suma_stanu DESC`);
-      console.table(r.recordset);
-    });
-
-    // 4. Przyklad: jeden zestaw rodzaj 8 ze stanem na K4 (lub gdziekolwiek) + jego symbol/nazwa
-    const przyklad = await bezpiecznie('4. Przykladowy zestaw rodzaj 8 ze stanem', async () => {
-      const r = await query(`
-        SELECT TOP 5 t.tw_Id, t.tw_Symbol, t.tw_Nazwa, m.mag_Symbol, s.st_Stan, s.st_StanRez
-        FROM tw__Towar t
-        JOIN tw_Stan s ON s.st_TowId = t.tw_Id AND s.st_Stan > 0
-        JOIN sl_Magazyn m ON m.mag_Id = s.st_MagId
-        WHERE t.tw_Rodzaj = 8
-        ORDER BY s.st_Stan DESC`);
-      console.table(r.recordset);
-      return r.recordset[0];
-    });
-
-    // 5. Jesli znamy nazwe tabeli skladu z kroku 1/2 - sprobuj typowej InsERT: tw__Komplet.
-    //    Wyswietl WSZYSTKIE kolumny + kilka wierszy dla przykladowego zestawu, jesli sie da.
-    await bezpiecznie('5. tw__Komplet - kolumny', async () => {
+    // A. Wszystkie kolumny tabeli skladu - potrzebna nazwa kolumny ILOSCI
+    await sekcja('A. tw_Komplet - kolumny', async () => {
       const r = await query(`
         SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
         FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_NAME = 'tw__Komplet'
+        WHERE TABLE_NAME = 'tw_Komplet'
         ORDER BY ORDINAL_POSITION`);
-      if (!r.recordset.length) { console.log('  (brak tabeli tw__Komplet - zobacz krok 1/2)'); return; }
       console.table(r.recordset);
     });
 
-    await bezpiecznie('6. tw__Komplet - przykladowe wiersze', async () => {
-      const r = await query(`SELECT TOP 10 * FROM tw__Komplet`);
+    // B. Zestawy (rodzaj 8) ze stanem na K4 - to jedyne, ktore nas interesuja
+    const k4Zestawy = await sekcja('B. Zestawy rodzaj 8 ze stanem na K4', async () => {
+      const r = await query(`
+        SELECT t.tw_Id, t.tw_Symbol, t.tw_Nazwa, s.st_Stan, s.st_StanRez
+        FROM tw__Towar t
+        JOIN tw_Stan s ON s.st_TowId = t.tw_Id
+        JOIN sl_Magazyn m ON m.mag_Id = s.st_MagId
+        WHERE t.tw_Rodzaj = 8 AND m.mag_Symbol = 'K4' AND s.st_Stan > 0
+        ORDER BY s.st_Stan DESC`);
       console.table(r.recordset);
+      return r.recordset;
     });
 
-    if (przyklad) {
-      console.log(`\n>>> Przykladowy zestaw do recznego sprawdzenia skladu: tw_Id=${przyklad.tw_Id}  ${przyklad.tw_Symbol}  (${przyklad.mag_Symbol} stan ${przyklad.st_Stan})`);
+    const ids = (k4Zestawy || []).map((z) => z.tw_Id);
+    if (!ids.length) {
+      console.log('\n(Brak zestawow ze stanem na K4 w tej bazie - dalsze kroki pominiete.)');
+    } else {
+      const lista = ids.join(',');
+
+      // C. Surowe wiersze skladu dla tych zestawow (widac WSZYSTKIE kolumny, w tym ilosc)
+      await sekcja('C. tw_Komplet - surowe wiersze dla zestawow z K4', async () => {
+        const r = await query(`SELECT * FROM tw_Komplet WHERE kpl_IdKomplet IN (${lista}) ORDER BY kpl_IdKomplet`);
+        console.table(r.recordset);
+      });
+
+      // D. Sklad czytelnie: zestaw -> skladnik (symbol/nazwa/rodzaj) + stan skladnika na K4
+      await sekcja('D. Sklad zestawow K4 + stan skladnika na K4', async () => {
+        const r = await query(`
+          SELECT k.kpl_IdKomplet AS zestaw_id, zt.tw_Symbol AS zestaw_symbol,
+                 k.kpl_IdSkladnik AS skladnik_id, st.tw_Symbol AS skladnik_symbol,
+                 st.tw_Nazwa AS skladnik_nazwa, st.tw_Rodzaj AS skladnik_rodzaj,
+                 k.*,
+                 (SELECT s.st_Stan FROM tw_Stan s JOIN sl_Magazyn m ON m.mag_Id = s.st_MagId
+                  WHERE s.st_TowId = k.kpl_IdSkladnik AND m.mag_Symbol = 'K4') AS skladnik_stan_k4
+          FROM tw_Komplet k
+          JOIN tw__Towar zt ON zt.tw_Id = k.kpl_IdKomplet
+          JOIN tw__Towar st ON st.tw_Id = k.kpl_IdSkladnik
+          WHERE k.kpl_IdKomplet IN (${lista})
+          ORDER BY k.kpl_IdKomplet`);
+        console.table(r.recordset);
+      });
     }
+
+    // E. Kontrola odwrotna: czy skladniki tez sa rodzaj 8 (zestaw w zestawie)?
+    await sekcja('E. Rozklad rodzajow skladnikow (czy zdarza sie zestaw w zestawie)', async () => {
+      const r = await query(`
+        SELECT st.tw_Rodzaj AS skladnik_rodzaj, COUNT(*) AS ile_wierszy
+        FROM tw_Komplet k JOIN tw__Towar st ON st.tw_Id = k.kpl_IdSkladnik
+        GROUP BY st.tw_Rodzaj ORDER BY ile_wierszy DESC`);
+      console.table(r.recordset);
+    });
+
+    // F. Czy ten sam skladnik wystepuje w DWOCH wierszach tego samego kompletu? (wariant b)
+    await sekcja('F. Komplety z powtorzonym skladnikiem (ten sam kpl_IdSkladnik >1 wiersz)', async () => {
+      const r = await query(`
+        SELECT k.kpl_IdKomplet, k.kpl_IdSkladnik, COUNT(*) AS ile_wierszy, SUM(k.kpl_Liczba) AS suma_liczba
+        FROM tw_Komplet k
+        GROUP BY k.kpl_IdKomplet, k.kpl_IdSkladnik
+        HAVING COUNT(*) > 1
+        ORDER BY ile_wierszy DESC`);
+      if (!r.recordset.length) console.log('  BRAK - kazdy skladnik to jeden wiersz, wielokrotnosc siedzi w kpl_Liczba (wariant a)');
+      else console.table(r.recordset);
+    });
+
+    // G. Rozklad wartosci kpl_Liczba - czy sa 2-paki (2x ten sam) itp.
+    await sekcja('G. Rozklad kpl_Liczba (ile skladnika na zestaw)', async () => {
+      const r = await query(`
+        SELECT k.kpl_Liczba, COUNT(*) AS ile_wierszy
+        FROM tw_Komplet k GROUP BY k.kpl_Liczba ORDER BY k.kpl_Liczba`);
+      console.table(r.recordset);
+    });
+
+    // H. ZAMROZONE NA K4: ile sztuk komponentu wisi w zestawach ZMONTOWANYCH lezacych na K4.
+    //    UWAGA: liczymy stan zestawu z K4 (realne, niewyslane), NIE z ZW (ZW = wirtualny
+    //    potencjal montazu, ignorujemy). Zestaw fizycznie na K4 zamraza swoje skladniki.
+    await sekcja('H. Komponenty zamrozone w zestawach NA K4 (stan zestawu z K4)', async () => {
+      const r = await query(`
+        SELECT sk.tw_Symbol AS komponent, sk.tw_Nazwa AS nazwa,
+          MAX(k4s.st_Stan) AS stan_k4_gt,
+          SUM(k4z.st_Stan * k.kpl_Liczba) AS zamrozone_k4
+        FROM tw_Komplet k
+        JOIN tw__Towar zt ON zt.tw_Id = k.kpl_IdKomplet AND zt.tw_Rodzaj = 8
+        JOIN sl_Magazyn mk4 ON mk4.mag_Symbol = 'K4'
+        JOIN tw_Stan k4z ON k4z.st_TowId = k.kpl_IdKomplet AND k4z.st_MagId = mk4.mag_Id AND k4z.st_Stan > 0
+        JOIN tw__Towar sk ON sk.tw_Id = k.kpl_IdSkladnik AND sk.tw_Rodzaj = 1
+        LEFT JOIN tw_Stan k4s ON k4s.st_TowId = k.kpl_IdSkladnik AND k4s.st_MagId = mk4.mag_Id
+        GROUP BY sk.tw_Symbol, sk.tw_Nazwa
+        ORDER BY zamrozone_k4 DESC`);
+      console.table(r.recordset);
+      console.log('  (zamrozone_k4 = SUM stan_zestawu_na_K4 * kpl_Liczba; to co realnie zaburza liczenie polki)');
+    });
   } finally {
     try { const pool = await getPool(); await pool.close(); } catch (_) {}
   }

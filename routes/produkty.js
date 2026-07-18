@@ -3,6 +3,7 @@ const db = require('../db/database');
 const { pobierzProdukt, szukajProdukty, listujProdukty, pobierzProduktyZUniwersum, LIMIT_WYSZUKIWANIA, SORT_KLUCZE } = require('../services/gt-produkty');
 const { pobierzStatusLokalizacjiGt, pobierzPrzegladLokalizacji, ZGODNOSC } = require('../services/gt-fields');
 const { pobierzZkRezerwujaceK4, pobierzDostawyK4, rozbijStanK4, RODZAJE_STREF } = require('../services/gt-dokumenty');
+const gtZestawy = require('../services/gt-zestawy');
 const doRozlozenia = require('../services/do-rozlozenia');
 const doSprawdzenia = require('./do-sprawdzenia');
 const { MAGAZYNY } = require('../config/magazyny');
@@ -212,6 +213,13 @@ router.get('/', async (req, res, next) => {
 
     await dolaczDostawyK4(produkty, wiersze);
 
+    // "W zestawach": ile sztuk SKU zamrozone w zestawach zmontowanych na K4 (zob. gt-zestawy.js).
+    // Osobny try - awaria tej liczby nie moze wywalic listy (jest tylko informacyjna).
+    try {
+      const zMap = await gtZestawy.wZestawachMapa(ids);
+      for (const p of produkty) p.w_zestawach = zMap.get(String(p.artykul_gt_id)) || 0;
+    } catch { for (const p of produkty) p.w_zestawach = 0; }
+
     res.json({ produkty, total, limit, offset, tryb });
   } catch (err) {
     next(err);
@@ -245,6 +253,23 @@ router.get('/:artykulGtId/rezerwacje', async (req, res, next) => {
     res.json({ zk, suma: zk.reduce((s, r) => s + r.ilosc, 0) });
   } catch (err) {
     res.status(503).json({ blad: 'GT niedostępny — nie można odczytać rezerwacji ZK' });
+  }
+});
+
+// GET /api/produkty/:artykulGtId/zestawy - rozbicie "w zestawach" do panelu na karcie towaru
+// (lazy-load, analogia do /rezerwacje). Dwie strony:
+//   jako_skladnik - w jakich zestawach ZMONTOWANYCH na K4 ten towar wisi i ile sztuk zamraza
+//   jako_zestaw   - jesli ten towar sam jest zestawem na K4: jego sklad (albo flaga nieokreslony)
+// ZW (wirtualny potencjal montazu) pomijane w calosci. GT down -> 503.
+router.get('/:artykulGtId/zestawy', async (req, res, next) => {
+  const artykulGtId = Number(req.params.artykulGtId);
+  if (!Number.isInteger(artykulGtId) || artykulGtId <= 0) {
+    return res.status(400).json({ blad: 'Nieprawidłowy identyfikator towaru' });
+  }
+  try {
+    res.json(await gtZestawy.rozbicieDlaProduktu(artykulGtId));
+  } catch (err) {
+    res.status(503).json({ blad: 'GT niedostępny — nie można odczytać składu zestawów' });
   }
 });
 

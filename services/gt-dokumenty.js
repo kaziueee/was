@@ -581,6 +581,14 @@ async function pobierzDostawyK4(twIds) {
       if (!wynik.has(klucz)) wynik.set(klucz, []);
       const pwNr = r.dok_nr ? String(r.dok_nr).trim() : '';
       const rozm = r.zrodlo_typ === PW_TYP ? rozmontowania.get(`${r.ob_TowId}|${pwNr}`) : null;
+
+      // Rozmontowanie ZE STANU nie jest zadaniem dla nikogo: skladniki zostaly tam, gdzie stal
+      // zestaw. Albo dopisze je job (services/rozmontowania.js, gdy SKU ma jedna lokalizacje K4),
+      // albo - gdy WMS nie zna miejsca - maja spasc do "do zlokalizowania" razem z reszta stanu
+      // bez dokumentu. Zostawienie ich w kubelku PW robilo z 1 szt. rozmontowania zadanie
+      // ciagnace CALY nieprzypisany stan SKU (3212 szt. przy NEROPA200) - czysty szum.
+      if (rozm && !rozm.z_zwrotu) continue;
+
       const rodzaj = r.zrodlo_mag ? 'przywozka'
         : r.zrodlo_typ === FZ_TYP ? 'dostawa'
         // PW z rozmontowania zwroconego zestawu = skladniki na wozku zwrotow -> kubelek zwrotu

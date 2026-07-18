@@ -170,6 +170,13 @@ const PW_TYP = 12;   // Przyjecie Wewnetrzne - przychod bez dokumentu zrodlowego
 // automat zacznie skladac cos rodzaju 1.
 const KONTO_KOMPLETACJI = 'Automatyczna Kompletacja';
 
+// ROZMONTOWANIE ZESTAWU (zweryfikowane na RW/PW 2284/2026, baza Kajtek Idea):
+//   RW (typ 13) na zestaw rodzaj 8  +  PW (typ 12) na skladniki rodzaj 1, oba na K4,
+//   wzajemnie zlinkowane przez dok_DoDokId. Pozycje OBU przez ob_DokMagId (nie HanId!).
+// UWAGA: RW to typ 13, NIE 11 - typ 11 to WZ (zmierzone na calej bazie).
+const RW_TYP = 13;
+const TW_RODZAJ_ZESTAW = 8;
+
 // Dwa rozne okna, bo to dwa rozne zjawiska:
 //   DOSTAWA (24 dok./kwartal, srednio 715 szt.) - duza i rzadka, potrafi poczekac dzien-dwa
 //     na rozlozenie, a data FZ bywa starsza od przyjecia nawet o 35 dni -> szerokie okno.
@@ -180,6 +187,9 @@ const KONTO_KOMPLETACJI = 'Automatyczna Kompletacja';
 //     Krotkie okno tnie ten falszywy alarm i zalew ekranu na starcie.
 const OKNO_DOSTAWY_DNI = 90;
 const OKNO_ZWROTY_PRZYWOZKI_DNI = Number(process.env.WMS_OKNO_DROBNICA_DNI) || 14;
+// Okno, w ktorym szukamy KFS na ROZMONTOWANYM zestawie - decyduje, czy skladniki leza na
+// WOZKU ZWROTOW (zadanie do rozwiezienia) czy zostaly w obrebie K4. To samo okno co zwroty.
+const OKNO_ROZMONTOWANIE_KFS_DNI = OKNO_ZWROTY_PRZYWOZKI_DNI;
 
 // DATA ODCIECIA - dokumenty starsze NIE licza sie do stref. Ustaw na dzien wdrozenia
 // (WMS_DOKUMENTY_OD w .env).
@@ -281,8 +291,134 @@ async function pobierzTowaryZeZrodlemK4(zrodloTyp) {
   }));
 }
 
-const pobierzTowaryZeZwrotamiK4 = () => pobierzTowaryZeZrodlemK4(KFS_TYP);
 const pobierzTowaryZDostawamiK4 = () => pobierzTowaryZeZrodlemK4(FZ_TYP);
+
+// Fragment SQL rozpoznajacy ROZMONTOWANIE: PW --dok_DoDokId--> RW(13) z pozycja rodzaju 8.
+// Uzywany w dwoch miejscach (klasyfikacja + kandydaci), wiec jeden tekst - inaczej rozjadą sie
+// warunki i kandydat nie mialby dokumentu w rozbiciu (albo odwrotnie).
+const ROZMONTOWANIE_JOIN = `
+  JOIN dok__Dokument rw ON rw.dok_Id = pw.dok_DoDokId AND rw.dok_Typ = @rwTyp
+  CROSS APPLY (
+    SELECT TOP 1 zt.tw_Id AS zestaw_id, zt.tw_Symbol AS zestaw_symbol
+    FROM dok_Pozycja rwp
+    JOIN tw__Towar zt ON zt.tw_Id = rwp.ob_TowId AND zt.tw_Rodzaj = @rodzajZestaw
+    WHERE rwp.ob_DokMagId = rw.dok_Id
+  ) zest`;
+
+// Czy rozmontowany zestaw wrocil na KFS tuz przed rozmontowaniem = skladniki sa na WOZKU
+// ZWROTOW. KFS to dokument HANDLOWY -> pozycje przez ob_DokHanId (nie MagId!).
+const ROZMONTOWANIE_Z_ZWROTU = `
+  EXISTS (
+    SELECT 1 FROM dok__Dokument kfs
+    JOIN dok_Pozycja kp ON kp.ob_DokHanId = kfs.dok_Id
+    WHERE kfs.dok_Typ = @kfsTyp AND kp.ob_TowId = zest.zestaw_id
+      AND kfs.dok_DataWyst >= DATEADD(day, -@oknoKfs, pw.dok_DataWyst)
+      AND kfs.dok_DataWyst <= pw.dok_DataWyst
+  )`;
+
+// Klasyfikuje PW-ki rozmontowaniowe dla podanych towarow. Zwraca
+// Map<`${twId}|${pwNr}`, { zestaw_symbol, z_zwrotu }>. Bez wpisu = PW to NIE rozmontowanie.
+async function pobierzRozmontowaniaK4(twIds, od) {
+  const wynik = new Map();
+  if (!twIds || twIds.length === 0) return wynik;
+
+  await Promise.all(naCzesci([...new Set(twIds.map(String))], 1000).map(async (paczka) => {
+    const parametry = { pwTyp: PW_TYP, rwTyp: RW_TYP, kfsTyp: KFS_TYP, mag: MAG_K4,
+      rodzajZestaw: TW_RODZAJ_ZESTAW, oknoKfs: OKNO_ROZMONTOWANIE_KFS_DNI, od };
+    const placeholders = paczka.map((id, i) => {
+      parametry[`t${i}`] = Number(id);
+      return `@t${i}`;
+    }).join(', ');
+
+    const { recordset } = await query(`
+      SELECT o.ob_TowId AS tw_id, pw.dok_NrPelny AS pw_nr, zest.zestaw_symbol,
+             CASE WHEN ${ROZMONTOWANIE_Z_ZWROTU} THEN 1 ELSE 0 END AS z_zwrotu
+      FROM dok__Dokument pw
+      ${ROZMONTOWANIE_JOIN}
+      JOIN dok_Pozycja o ON o.ob_DokMagId = pw.dok_Id
+      WHERE pw.dok_Typ = @pwTyp AND o.ob_MagId = @mag
+        AND pw.dok_DataWyst >= @od
+        AND o.ob_TowId IN (${placeholders})
+    `, parametry);
+
+    for (const r of recordset) {
+      wynik.set(`${r.tw_id}|${String(r.pw_nr).trim()}`, {
+        zestaw_symbol: r.zestaw_symbol ? String(r.zestaw_symbol).trim() : null,
+        z_zwrotu: r.z_zwrotu === 1,
+      });
+    }
+  }));
+  return wynik;
+}
+
+// Skladniki z rozmontowan "ZE STANU" (zestaw NIE wrocil na KFS) od podanej daty - wejscie dla
+// auto-dopisu do polki. Nie znamy z gory zbioru towarow, wiec to zapytanie odwrotne.
+// UWAGA: wywolujacy MUSI podac date odciecia (dzien wdrozenia) - rozmontowania sa w GT od 2019 r.
+// i bez odciecia auto-dopis wrzucilby na polki ponad 150 tys. sztuk historycznych.
+async function pobierzRozmontowaniaZeStanuOd(od) {
+  if (!od) throw new Error('pobierzRozmontowaniaZeStanuOd wymaga daty odciecia');
+  const { recordset } = await query(`
+    SELECT o.ob_TowId AS tw_id, t.tw_Symbol AS symbol, t.tw_Nazwa AS nazwa,
+           t.tw_PodstKodKresk AS ean, pw.dok_NrPelny AS pw_nr, pw.dok_DataWyst AS data,
+           zest.zestaw_symbol, SUM(o.ob_Ilosc) AS ilosc
+    FROM dok__Dokument pw
+    ${ROZMONTOWANIE_JOIN}
+    JOIN dok_Pozycja o ON o.ob_DokMagId = pw.dok_Id
+    JOIN tw__Towar t ON t.tw_Id = o.ob_TowId AND t.tw_Rodzaj = @rodzaj
+    WHERE pw.dok_Typ = @pwTyp AND o.ob_MagId = @mag AND pw.dok_DataWyst >= @od
+      AND NOT ${ROZMONTOWANIE_Z_ZWROTU}
+    GROUP BY o.ob_TowId, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk,
+             pw.dok_NrPelny, pw.dok_DataWyst, zest.zestaw_symbol
+    ORDER BY pw.dok_DataWyst
+  `, { pwTyp: PW_TYP, rwTyp: RW_TYP, kfsTyp: KFS_TYP, mag: MAG_K4, od,
+       rodzaj: TW_RODZAJ_TOWAR, rodzajZestaw: TW_RODZAJ_ZESTAW, oknoKfs: OKNO_ROZMONTOWANIE_KFS_DNI });
+
+  return recordset.map((r) => ({
+    artykul_gt_id: String(r.tw_id),
+    symbol: r.symbol ? String(r.symbol).trim() : null,
+    nazwa: r.nazwa ? String(r.nazwa).trim() : null,
+    ean: r.ean ? String(r.ean).trim() : null,
+    pw_nr: String(r.pw_nr).trim(),
+    zestaw_symbol: r.zestaw_symbol ? String(r.zestaw_symbol).trim() : null,
+    data: r.data instanceof Date ? r.data.toISOString().slice(0, 10) : null,
+    ilosc: Number(r.ilosc) || 0,
+  }));
+}
+
+// Kandydaci ZWROTOW = zwykle zwroty (PZ<-KFS) + skladniki z rozmontowania zwroconego zestawu.
+// Te drugie maja PW, nie PZ, wiec same by tu nie trafily - a fizycznie leza na wozku zwrotow
+// i wymagaja rozwiezienia dokladnie tak samo jak kazdy inny zwrot.
+async function pobierzTowaryZeZwrotamiK4() {
+  const od = odKiedy(OKNO_ZWROTY_PRZYWOZKI_DNI);
+  const [zwykle, zRozmontowan] = await Promise.all([
+    pobierzTowaryZeZrodlemK4(KFS_TYP),
+    (async () => {
+      const { recordset } = await query(`
+        SELECT DISTINCT o.ob_TowId AS tw_id, t.tw_Symbol AS symbol, t.tw_Nazwa AS nazwa,
+               t.tw_PodstKodKresk AS ean, t.tw_Pole1 AS lok_gt
+        FROM dok__Dokument pw
+        ${ROZMONTOWANIE_JOIN}
+        JOIN dok_Pozycja o ON o.ob_DokMagId = pw.dok_Id
+        JOIN tw__Towar t ON t.tw_Id = o.ob_TowId AND t.tw_Rodzaj = @rodzaj
+        WHERE pw.dok_Typ = @pwTyp AND o.ob_MagId = @mag AND pw.dok_DataWyst >= @od
+          AND ${ROZMONTOWANIE_Z_ZWROTU}
+      `, { pwTyp: PW_TYP, rwTyp: RW_TYP, kfsTyp: KFS_TYP, mag: MAG_K4, od,
+           rodzaj: TW_RODZAJ_TOWAR, rodzajZestaw: TW_RODZAJ_ZESTAW, oknoKfs: OKNO_ROZMONTOWANIE_KFS_DNI });
+      return recordset.map((r) => ({
+        artykul_gt_id: String(r.tw_id),
+        symbol: r.symbol ? String(r.symbol).trim() : null,
+        nazwa: r.nazwa ? String(r.nazwa).trim() : null,
+        ean: r.ean ? String(r.ean).trim() : null,
+        lok_gt: r.lok_gt ? String(r.lok_gt).trim() : null,
+      }));
+    })(),
+  ]);
+
+  // dedup po artykule - SKU moze miec i zwykly zwrot, i rozmontowanie
+  const poId = new Map();
+  for (const k of [...zwykle, ...zRozmontowan]) if (!poId.has(k.artykul_gt_id)) poId.set(k.artykul_gt_id, k);
+  return [...poId.values()];
+}
 
 // JEDNA mapa rodzajow stref: rodzaj -> kubelek z rozbijStanK4 + zapytanie odwrotne
 // ("ktore SKU maja w ogole taki dokument", gdy nie znamy zbioru z gory).
@@ -374,6 +510,10 @@ async function pobierzDostawyK4(twIds) {
   // magazyny zewnetrzne (MAG/LS/BRK) jako mag_Id GT - zrodla przywozek
   const zewnGtIds = MAGAZYNY_ZEWNETRZNE.map((k) => MAGAZYN_GT_ID[k]).filter(Boolean);
 
+  // Ktore z tych PW to rozmontowanie zestawu ZE ZWROTU - takie skladniki leza na wozku
+  // zwrotow, wiec ida do kubelka "zwrot", a nie "przyjecie_wewn". To samo okno co PW nizej.
+  const rozmontowania = await pobierzRozmontowaniaK4(twIds, odDrobne);
+
   await Promise.all(naCzesci([...new Set(twIds.map(String))], 1000).map(async (paczka) => {
     const parametry = { pzTyp: PZ_TYP, fzTyp: FZ_TYP, kfsTyp: KFS_TYP, mmTyp: MM_TYP,
       pwTyp: PW_TYP, rodzajTow: TW_RODZAJ_TOWAR, automat: KONTO_KOMPLETACJI, mag: MAG_K4, od, odDrobne };
@@ -439,9 +579,12 @@ async function pobierzDostawyK4(twIds) {
     for (const r of recordset) {
       const klucz = String(r.ob_TowId);
       if (!wynik.has(klucz)) wynik.set(klucz, []);
+      const pwNr = r.dok_nr ? String(r.dok_nr).trim() : '';
+      const rozm = r.zrodlo_typ === PW_TYP ? rozmontowania.get(`${r.ob_TowId}|${pwNr}`) : null;
       const rodzaj = r.zrodlo_mag ? 'przywozka'
         : r.zrodlo_typ === FZ_TYP ? 'dostawa'
-        : r.zrodlo_typ === PW_TYP ? 'przyjecie_wewn'
+        // PW z rozmontowania zwroconego zestawu = skladniki na wozku zwrotow -> kubelek zwrotu
+        : r.zrodlo_typ === PW_TYP ? (rozm?.z_zwrotu ? 'zwrot' : 'przyjecie_wewn')
         : 'zwrot';
       wynik.get(klucz).push({
         rodzaj,
@@ -594,5 +737,6 @@ module.exports = {
   znajdzMM, znajdzMMpoKluczu, kluczRuchu, budujUwagiMM, pobierzZkRezerwujaceK4,
   pobierzDostawyK4, pobierzTowaryZeZwrotamiK4, pobierzTowaryZDostawamiK4,
   pobierzTowaryZPrzywozkamiK4, pobierzTowaryZPrzyjeciamiWewnK4, rozbijStanK4, iloscRozlozonaZDokumentu,
+  pobierzRozmontowaniaK4, pobierzRozmontowaniaZeStanuOd,
   RODZAJE_STREF, PRIORYTET_PRZYDZIALU, DOKUMENTY_OD,
 };

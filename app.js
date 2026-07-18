@@ -23,6 +23,7 @@ const blokady = require('./services/blokady');
 const auth = require('./services/auth');
 const ruchyRetry = require('./services/ruchy-retry');
 const rozjazdyJob = require('./services/rozjazdy');
+const rozmontowaniaJob = require('./services/rozmontowania');
 const backupJob = require('./services/backup');
 const reconciliacjaMM = require('./services/reconciliacja-mm');
 const pulpitSnapshot = require('./services/pulpit-snapshot');
@@ -77,6 +78,7 @@ app.listen(PORT, () => {
 
 ruchyRetry.start();
 rozjazdyJob.start();
+rozmontowaniaJob.start();
 backupJob.start();
 reconciliacjaMM.start();
 pulpitSnapshot.start();

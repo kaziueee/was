@@ -324,8 +324,12 @@ router.get('/wozki/:id', (req, res) => {
 // POST /api/zwroty/wozki/:id/zdejmij - "to nie mialo tu trafic". Body: { artykul_gt_id, zrodlo_dok }
 //
 // Odwrotnosc dokladania, nie zalatwienie zadania: pozycja wraca na liste wolnych zwrotow i
-// dalej czeka na odniesienie. Rozni sie tym od /brak ("wozek obiecuje towar, ktorego na nim
-// nie ma") - tam pozycja ZOSTAJE, bo sprawa wymaga wyjasnienia.
+// dalej czeka na odniesienie.
+//
+// Oba wyjscia z wozka (to i /brak) zdejmuja pozycje - roznia sie SLADEM. Tu jest korekta
+// pomylki przy dokladaniu, wiec audyt 'wozek_zdjeto' z wynikiem ok i czysty powrot na liste.
+// Tam jest zgloszenie "wozek obiecuje towar, ktorego na nim nie ma", wiec pozycja wraca
+// oznaczona jako nie znaleziona i wisi jako sprawa, dopoki ktos jej nie domknie.
 router.post('/wozki/:id/zdejmij', (req, res) => {
   const { artykul_gt_id, zrodlo_dok } = req.body ?? {};
   if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });

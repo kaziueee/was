@@ -233,7 +233,7 @@ function renderujPulpitKolejke(d) {
     // Tylko "nieznany przychod", nie cale "do sprawdzenia" (patrz pulpit-snapshot.js): backlog
     // migracyjny to osobny kafel "Do zlokalizowania (t_GT)" wyzej. Ekran otwiera sie domyslnie
     // na tej samej zakladce, wiec liczba z kafla zgadza sie z tym, co user zobaczy po kliknieciu.
-    kafle.push(kafelZadania('Nieznane PW do rozwiązania', k.do_sprawdzenia, '#ruchy/do-sprawdzenia', 'amber'));
+    kafle.push(kafelZadania('Przychód poza obiegiem (PW i bez dok.)', k.do_sprawdzenia, '#ruchy/do-sprawdzenia', 'amber'));
     kafle.push(kafelZadania('Do przywiezienia z Leszna', k.leszno, '#zestawienia/leszno', 'blue'));
   }
 
@@ -1416,10 +1416,11 @@ const DOSP_OPISY = {
   '': 'GT widzi ten towar na K4, ale WMS nie wie, gdzie leży cały jego stan. '
     + 'Nie dopisujemy go do półki automatycznie: automat nie odróżniłby go od niewidzianej palety, '
     + 'a wpisanie palety na półkę zrównuje GT z WMS i job rozjazdów już nigdy tego nie wykryje.',
-  przyjecie_wewn: 'Przyjęcia wewnętrzne (PW) — ktoś dołożył towar poza naszym obiegiem, ale '
-    + 'z dokumentem: korekta stanu, inwentura, ręczne przyjęcie. WMS zna miejsce SKU, więc to '
-    + 'domknięcie: odłóż na regał. Tych pozycji NIE widać nigdzie indziej — zgodność K4 porównuje '
-    + 'tylko tekst lokalizacji, więc taki towar świeci OK mimo nadwyżki.',
+  przyjecie_wewn: 'Ktoś dołożył towar poza naszym obiegiem — z dokumentem PW (korekta stanu, '
+    + 'inwentura, ręczne przyjęcie) ALBO bez żadnego dokumentu. Jedno i drugie znaczy to samo przy '
+    + 'regale: odłóż na miejsce. WMS zna miejsce SKU, więc to domknięcie. Tych pozycji NIE widać '
+    + 'nigdzie indziej — zgodność K4 porównuje tylko tekst lokalizacji, więc taki towar świeci OK '
+    + 'mimo nadwyżki. Zakładka obok zawęża do samych bezdokumentowych.',
   nieznany_przychod: 'Nadwyżka BEZ dokumentu — stan GT większy, niż WMS i wszystkie dokumenty '
     + 'tłumaczą. W Subiekcie nie ma zmiany stanu bez dokumentu, więc to rzadkość: coś sprzed okna '
     + 'czasowego albo starzejąca się kopia WMS. Warte sprawdzenia ręcznie.',
@@ -1431,7 +1432,7 @@ const DOSP_OPISY = {
 // Komunikat pustki per filtr - musi mówić prawdę o TYM podzbiorze, a nie o całej liście.
 const DOSP_PUSTO = {
   '': 'Nic do sprawdzenia — WMS wie o całym stanie K4. 🎉',
-  przyjecie_wewn: 'Brak przyjęć wewnętrznych do odłożenia. 🎉',
+  przyjecie_wewn: 'Nic nie przyszło poza obiegiem — ani z PW, ani bez dokumentu. 🎉',
   nieznany_przychod: 'Każda nadwyżka ma dokument. 🎉',
   do_zlokalizowania: 'Każdy towar ze stanem na K4 ma miejsce w WMS. 🎉',
 };
@@ -1467,9 +1468,11 @@ function renderujDoSprawdzenia(dane) {
   // aktywnym filtrze (patrz routes/do-sprawdzenia.js).
   if (liczniki) {
     const etykiety = {
-      '': `Wszystko (${liczniki.przyjecie_wewn.razem + liczniki.nieznany_przychod.razem + liczniki.do_zlokalizowania.razem})`,
-      przyjecie_wewn: `Przyjęcia wewn (PW) (${liczniki.przyjecie_wewn.razem})`,
-      nieznany_przychod: `Bez dokumentu (${liczniki.nieznany_przychod.razem})`,
+      // "Wszystko" z backendu, NIE suma zakladek - PW obejmuje bezdokumentowe, wiec zakladki
+      // sie nakladaja i suma liczylaby je dwa razy.
+      '': `Wszystko (${liczniki[''].razem})`,
+      przyjecie_wewn: `Poza obiegiem — PW i bez dok. (${liczniki.przyjecie_wewn.razem})`,
+      nieznany_przychod: `w tym: bez dokumentu (${liczniki.nieznany_przychod.razem})`,
       do_zlokalizowania: `Do zlokalizowania (${liczniki.do_zlokalizowania.razem})`,
     };
     el('dosp-rodzaje').querySelectorAll('.podzakladka').forEach((a) => {

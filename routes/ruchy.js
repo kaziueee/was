@@ -915,9 +915,10 @@ router.delete('/:id', async (req, res, next) => {
     const z = db.prepare('SELECT magazyn FROM lokalizacje WHERE id = ?').get(ruch.lok_zrodlo_id);
     if (z) magazyny.add(z.magazyn);
   }
+  let magCel = null;
   if (ruch.lok_cel_id) {
     const c = db.prepare('SELECT magazyn FROM lokalizacje WHERE id = ?').get(ruch.lok_cel_id);
-    if (c) magazyny.add(c.magazyn);
+    if (c) { magazyny.add(c.magazyn); magCel = c.magazyn; }
   }
 
   db.exec('BEGIN');
@@ -945,6 +946,12 @@ router.delete('/:id', async (req, res, next) => {
         if (poCofnieciu > 0) {
           db.prepare('UPDATE stany_lokalizacji SET ilosc = ?, ostatnia_zmiana = CURRENT_TIMESTAMP WHERE id = ?')
             .run(poCofnieciu, stanC.id);
+        } else if (magCel === 'K4') {
+          // Tak samo jak MM oprozniajace polke (wyzej): K4 to STALE miejsce SKU - wiersz
+          // zostaje z zerem, nie kasujemy domu. Inaczej cofniecie nieudanego uzupelnienia
+          // na pusta polke kasowalo lokalizacje i w WMS, i w GT (sync ponizej wpisalby "").
+          db.prepare('UPDATE stany_lokalizacji SET ilosc = 0, ostatnia_zmiana = CURRENT_TIMESTAMP WHERE id = ?')
+            .run(stanC.id);
         } else {
           db.prepare('DELETE FROM stany_lokalizacji WHERE id = ?').run(stanC.id);
         }

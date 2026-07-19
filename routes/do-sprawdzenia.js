@@ -3,7 +3,8 @@
 const express = require('express');
 const db = require('../db/database');
 const gtDokumenty = require('../services/gt-dokumenty');
-const { pobierzK4StanyDoSprawdzenia } = require('../services/gt-produkty');
+const { pobierzK4StanyDoSprawdzenia, pobierzStanyGt } = require('../services/gt-produkty');
+const gtFields = require('../services/gt-fields');
 
 const router = express.Router();
 
@@ -77,6 +78,26 @@ const RODZAJE = {
   nieznany_przychod: (p) => p.reszta > 0 && p.polka_wms > 0,
   do_zlokalizowania: (p) => p.reszta > 0 && p.polka_wms === 0,
 };
+
+// UI-owe "Przyjecie wewn (PW)" = przychod na K4, ktorego NIE tlumaczy dostawa/zwrot/przywozka:
+// z dokumentem PW ALBO bez zadnego (decyzja usera 2026-07-19). Dla magazyniera to jedna sprawa -
+// "cos tu przyszlo poza obiegiem" - a to, czy ktos wystawil PW, jest szczegolem ksiegowym.
+//
+// do_zlokalizowania celowo NIE wchodzi: to backlog migracyjny (~2000 SKU, ktorych WMS nigdy nie
+// poznal). Wrzucony tutaj zamienilby sygnal "dzis cos przyszlo" w wielka stala liczbe, ktora
+// nic nie mowi o dzisiaj - dokladnie tego unikal podzial kafli na Pulpicie.
+//
+// Filtr stref (routes/produkty.js) i kafel Pulpitu (services/pulpit-snapshot.js) MUSZA uzywac
+// TEGO SAMEGO predykatu - inaczej licznik na kaflu pokaze co innego niz lista po kliknieciu,
+// a zauwazy to dopiero ktos po tygodniu.
+const PRZYJECIE_LUB_BEZ_DOKUMENTU = (p) => RODZAJE.przyjecie_wewn(p) || RODZAJE.nieznany_przychod(p);
+
+// Predykaty ZAKLADEK ekranu - to, co user faktycznie zobaczy po kliknieciu. Rozni sie od
+// RODZAJE dokladnie w jednym miejscu: zakladka "PW" pokazuje tez bezdokumentowe. Liczniki
+// zakladek MUSZA isc z tej mapy, nie z RODZAJE - inaczej zakladka pokazywalaby inna liczbe,
+// niz ma wierszy, a kafel Pulpitu (ktory otwiera wlasnie te zakladke) klamalby o robocie.
+// "nieznany_przychod" zostaje osobno jako wezszy widok - tylko to, czego nikt nie udokumentowal.
+const PREDYKAT_ZAKLADKI = { ...RODZAJE, przyjecie_wewn: PRZYJECIE_LUB_BEZ_DOKUMENTU };
 
 // Sumy kopii WMS dla K4 - jednym zapytaniem, nie N+1 w petli.
 function sumyWmsK4() {
@@ -171,7 +192,7 @@ router.get('/', async (req, res) => {
   }
 
   const sort = SORTY[req.query.sort] ? req.query.sort : 'lokalizacja';
-  const rodzaj = RODZAJE[req.query.rodzaj] ? req.query.rodzaj : null;   // null = wszystkie
+  const rodzaj = PREDYKAT_ZAKLADKI[req.query.rodzaj] ? req.query.rodzaj : null;   // null = wszystkie
   const limit = Math.min(Math.max(Number(req.query.limit) || LIMIT_DOMYSLNY, 1), LIMIT_MAX);
   const offset = Math.max(Number(req.query.offset) || 0, 0);
 
@@ -179,13 +200,17 @@ router.get('/', async (req, res) => {
   // zawezeniu ekran nie umialby powiedziec, ile jest w drugiej grupie, i przelacznik bylby
   // skokiem w ciemno.
   const liczniki = Object.fromEntries(
-    Object.entries(RODZAJE).map(([k, pasuje]) => {
+    Object.entries(PREDYKAT_ZAKLADKI).map(([k, pasuje]) => {
       const grupa = wszystkie.filter(pasuje);
       return [k, { razem: grupa.length, sztuk: grupa.reduce((s, p) => s + p.ilosc, 0) }];
     })
   );
 
-  const pozycje = rodzaj ? wszystkie.filter(RODZAJE[rodzaj]) : wszystkie;
+  // "Wszystko" liczymy z PELNEGO zbioru, a nie jako sume zakladek: zakladka PW obejmuje teraz
+  // bezdokumentowe, wiec zakladki sie NAKLADAJA i sumowanie liczyloby czesc pozycji dwa razy.
+  liczniki[''] = { razem: wszystkie.length, sztuk: wszystkie.reduce((s, p) => s + p.ilosc, 0) };
+
+  const pozycje = rodzaj ? wszystkie.filter(PREDYKAT_ZAKLADKI[rodzaj]) : wszystkie;
   pozycje.sort(SORTY[sort]);
 
   res.json({
@@ -208,6 +233,121 @@ router.get('/licznik', async (req, res) => {
   }
 });
 
+// GET /api/do-sprawdzenia/nz - SKU z niezgodnym polem lokalizacyjnym (status NZ z kolumny
+// "Zgodnosc" na desktopie), posortowane po lokalizacji = kolejnosc obchodu.
+//
+// OSOBNY endpoint, a nie kolejny `rodzaj` w GET / - bo NZ liczy sie zupelnie inaczej niz
+// reszta tego ekranu: nie z rozbicia stanu K4 (zbierz), tylko z porownania pol lokalizacyjnych
+// GT z kopia WMS. I co wazniejsze: obejmuje TAKZE K4G, ktorego `zbierz()` nie widzi w ogole
+// (MAG = 'K4' na gorze tego pliku).
+//
+// DLACZEGO TO JEDYNE WEJSCIE DO NADWYZKI NA K4G:
+//   - services/rozjazdy.js lapie wylacznie GT < WMS (nadmiar w kopii); przy GT > WMS robi continue,
+//   - ekran "Do sprawdzenia" (GET /) jest K4-only,
+//   - kafle Pulpitu licza kubelki stanu K4.
+// Zostawala kolumna "Zgodnosc" w tabeli Produkty na desktopie - czyli trzeba bylo na to trafic.
+//
+// UWAGA na pulapke, w ktora sam wpadlem przy audycie: zbior liczymy per SKU i sumujemy WMS
+// przez COALESCE(SUM(...), 0), a NIE grupujemy stany_lokalizacji po (SKU, magazyn). SKU bez
+// ANI JEDNEGO wiersza dla danego magazynu nie tworzy grupy, wiec przy grupowaniu znika z
+// wyniku - a to najwiekszy kawalek luki (na danych testowych: polowa).
+// Pola GT to PODPOWIEDZI, nie adresy. tw_Pole8 (K4G) trzyma skompresowana LISTE
+// ("M2-A2(20); M2-B27-P3(2010); M5-A01-P1(5)"), a tw_Pole1 bywa smieciem z ukosnikiem
+// ("D10 /", "C2/C2P3" - kod/zapas). Na obchod bierzemy PIERWSZY kod: reszta nie zmiesci sie
+// w wierszu na 360 px, a sortowanie po calym ciagu ustawialoby liste w kolejnosci losowej
+// wzgledem hali. Front i tak oznacza takie miejsce jako "(z GT - sprawdz)".
+function pierwszyKodZPola(tekst) {
+  const kod = String(tekst || '').split(';')[0].replace(/\(.*$/, '').split('/')[0].trim();
+  return kod || null;
+}
+
+router.get('/nz', async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || LIMIT_DOMYSLNY, 1), LIMIT_MAX);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+  const sku = db.prepare(
+    `SELECT s.artykul_gt_id AS id, MAX(s.artykul_symbol) AS symbol, MAX(s.artykul_nazwa) AS nazwa,
+            MAX(s.artykul_ean) AS ean
+     FROM stany_lokalizacji s GROUP BY s.artykul_gt_id`
+  ).all();
+  if (!sku.length) return res.json({ pozycje: [], razem: 0, sztuk: 0, limit, offset });
+
+  // Sumy WMS per magazyn - brak wiersza ma dac 0, nie "pomin SKU" (zob. uwaga wyzej).
+  const sumaWms = new Map();
+  for (const w of db.prepare(
+    `SELECT s.artykul_gt_id AS id, l.magazyn, SUM(s.ilosc) AS suma
+     FROM stany_lokalizacji s JOIN lokalizacje l ON l.id = s.lokalizacja_id
+     GROUP BY s.artykul_gt_id, l.magazyn`
+  ).all()) sumaWms.set(`${w.id}|${w.magazyn}`, Number(w.suma) || 0);
+
+  // Kod lokalizacji do obchodu: WMS jest masterem lokalizacji, GT tylko podpowiedzia.
+  // Trzymamy OSOBNO per magazyn, bo obchod ma isc tam, gdzie brakuje towaru - patrz nizej.
+  const lokWms = { K4: new Map(), K4G: new Map() };
+  for (const w of db.prepare(
+    `SELECT s.artykul_gt_id AS id, l.magazyn, l.kod FROM stany_lokalizacji s
+     JOIN lokalizacje l ON l.id = s.lokalizacja_id ORDER BY l.kod`
+  ).all()) if (lokWms[w.magazyn] && !lokWms[w.magazyn].has(w.id)) lokWms[w.magazyn].set(w.id, w.kod);
+
+  let przeglad, stany;
+  try {
+    [przeglad, stany] = await Promise.all([
+      gtFields.pobierzPrzegladLokalizacji(sku.map((s) => s.id)),
+      pobierzStanyGt(sku.map((s) => s.id)),
+    ]);
+  } catch (err) {
+    return res.status(503).json({ blad: 'Nie mozna pobrac danych z GT (baza niedostepna). Sprobuj ponownie.' });
+  }
+
+  const pozycje = [];
+  for (const s of sku) {
+    const z = przeglad.get(String(s.id));
+    if (z?.ogolna !== gtFields.ZGODNOSC.NIEZGODNE) continue;
+
+    const sg = stany.get(String(s.id)) || {};
+    const mag = (kod) => {
+      const gt = sg[kod]?.ilosc ?? 0;
+      const wms = sumaWms.get(`${s.id}|${kod}`) ?? 0;
+      return { gt, wms, brak: Math.max(0, gt - wms) };
+    };
+    const k4 = mag('K4');
+    const k4g = mag('K4G');
+
+    // Miejsce obchodu - kandydaci od najtrafniejszego. Przy luce wylacznie na K4G kod polki
+    // pickowej wyslalby czlowieka w zle miejsce (towaru brakuje na gorze), wiec magazyn bez
+    // luki jest OSTATNI, a nie pierwszy. `magazyn` opisuje ZAWSZE to, co realnie pokazujemy -
+    // etykieta "K4G" przy kodzie polki K4 bylaby kłamstwem o tym, na co czlowiek patrzy.
+    const gora = k4g.brak > 0 && k4.brak === 0;
+    const magLuki = gora ? 'K4G' : 'K4';
+    const drugi = gora ? 'K4' : 'K4G';
+    const miejsce = [
+      { mag: magLuki, kod: lokWms[magLuki].get(s.id), zrodlo: 'WMS' },
+      { mag: magLuki, kod: pierwszyKodZPola(gora ? z.k4g.gt_tekst : z.k4.gt_tekst), zrodlo: 'GT' },
+      { mag: drugi, kod: lokWms[drugi].get(s.id), zrodlo: 'WMS' },
+    ].find((k) => k.kod) ?? { mag: magLuki, kod: null, zrodlo: null };
+
+    pozycje.push({
+      artykul_gt_id: s.id, symbol: s.symbol, nazwa: s.nazwa, ean: s.ean,
+      zgodnosc: { k4: z.k4.stan, k4g: z.k4g.stan, ogolna: z.ogolna },
+      k4, k4g,
+      ilosc: k4.brak + k4g.brak,      // ile sztuk WMS nie umie umiejscowic (obu magazynow)
+      stan_k4: k4.gt, polka_wms: k4.wms,   // zgodne z reszta ekranu (render wspoldzielony)
+      magazyn: miejsce.mag,                // magazyn POKAZANEGO miejsca, nie magazyn luki
+      lokalizacja_kod: miejsce.kod ?? null,
+      lok_zrodlo: miejsce.zrodlo,
+    });
+  }
+
+  pozycje.sort((a, b) => (a.lokalizacja_kod || '￿').localeCompare(b.lokalizacja_kod || '￿')
+    || (a.symbol || '').localeCompare(b.symbol || ''));
+
+  res.json({
+    pozycje: pozycje.slice(offset, offset + limit),
+    razem: pozycje.length,
+    sztuk: pozycje.reduce((s, p) => s + p.ilosc, 0),
+    limit, offset,
+  });
+});
+
 module.exports = router;
 module.exports.zbierz = zbierz;
 // RODZAJE eksportujemy, bo kafel Pulpitu liczy TEN SAM podzbior co zakladka "Nieznany przychod".
@@ -215,3 +355,4 @@ module.exports.zbierz = zbierz;
 // pierwszej zmianie definicji - a kafel jest jedynym miejscem, gdzie ktos to zauwazy dopiero
 // po tygodniu.
 module.exports.RODZAJE = RODZAJE;
+module.exports.PRZYJECIE_LUB_BEZ_DOKUMENTU = PRZYJECIE_LUB_BEZ_DOKUMENTU;

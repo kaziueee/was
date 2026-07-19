@@ -73,23 +73,22 @@ async function policzKafle() {
       const k = await gtDokumenty.pobierzTowaryZDostawamiK4();
       return (await doRozlozenia.zbierz(k, 'dostawy')).length;
     }),
-    // Kafel liczy TYLKO "nieznany przychod" (WMS zna miejsce, a stan GT urosl poza naszym
-    // obiegiem), a NIE cale "do sprawdzenia". Powod: druga polowa tej listy to backlog
-    // migracyjny (~2300 SKU, ktorych WMS nigdy nie poznal) - on zjedzie do zera dopiero po
-    // miesiacach lokalizowania i stalby na Pulpicie jako wielka liczba, ktora nic nie mowi
-    // o DZISIAJ. Nieznany przychod to sygnal operacyjny: w zdrowym stanie zero, a kazda
-    // niezerowa wartosc znaczy "wczoraj ktos dolozyl towar poza WMS-em".
-    // Backlog widac osobno jako kafel "Do zlokalizowania (t_GT)" - dzieki temu dwa kafle
-    // wreszcie mierza dwie ROZNE rzeczy.
+    // Kafel liczy przychod poza obiegiem: z dokumentem PW ALBO bez zadnego dokumentu
+    // (PRZYJECIE_LUB_BEZ_DOKUMENTU, decyzja usera 2026-07-19). NIE liczy calego
+    // "do sprawdzenia" - trzecia czesc tej listy to backlog migracyjny (~2300 SKU, ktorych
+    // WMS nigdy nie poznal). On zjedzie do zera dopiero po miesiacach lokalizowania i stalby
+    // na Pulpicie jako wielka liczba, ktora nic nie mowi o DZISIAJ. Ten kafel ma byc sygnalem
+    // operacyjnym: w zdrowym stanie zero, a kazda niezerowa wartosc znaczy "ktos dolozyl
+    // towar poza WMS-em". Backlog widac osobno jako "Do zlokalizowania (t_GT)".
     //
-    // Predykat bierzemy z routes/do-sprawdzenia (RODZAJE), zeby kafel i zakladka "Nieznany
-    // przychod" nie mogly sie rozjechac.
+    // Predykat bierzemy z routes/do-sprawdzenia, WSPOLNY z filtrem stref na liscie produktow -
+    // inaczej kafel pokazalby inna liczbe niz lista, ktora otwiera.
     //
     // Liczy sie tu, a nie na zadanie, bo zbierz() to ~800 ms i przemiata WSZYSTKIE SKU ze
     // stanem na K4 (~2800). Klikniecie kafla otwiera ZYWA liste, wiec licznik jest wskazowka
     // "czy jest co robic", nie zrodlem prawdy.
     licz('do_sprawdzenia', async () =>
-      (await doSprawdzenia.zbierz()).filter(doSprawdzenia.RODZAJE.przyjecie_wewn).length),
+      (await doSprawdzenia.zbierz()).filter(doSprawdzenia.PRZYJECIE_LUB_BEZ_DOKUMENTU).length),
   ]);
   return wynik;
 }

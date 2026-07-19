@@ -21,15 +21,51 @@
   //   do_zlokalizowania - WMS nie zna SKU w ogole. Backlog migracyjny (~2000 poz.).
   //   nieznany_przychod - nadwyzka BEZ dokumentu (rzadka - w Subiekcie nie ma zmiany bez dok).
   // Domyslnie DO ZLOKALIZOWANIA: to glowna zawartosc tego ekranu; PW obsluguje szuflada.
+  // Wiersz kontekstu rozni sie per zakladka: przy stanie K4 liczy sie "co WMS juz wie",
+  // przy NZ - KTORY magazyn sie nie zgadza i o ile.
+  const KONTEKST_STAN = (p) => (p.polka_wms > 0
+    ? `WMS zna ${p.polka_wms} szt. · stan GT ${p.stan_k4}`
+    : `WMS nie zna tego towaru · stan GT ${p.stan_k4}`);
+
+  // NZ NIE zawsze znaczy roznice ilosci: na K4 pola porownywane sa TEKSTEM, wiec "C2 w WMS
+  // vs D3 w GT" tez jest NZ przy zgodnych stanach. Wtedy oba `brak` sa zerowe i mowimy wprost,
+  // ze rozjechal sie sam zapis - inaczej wiersz bylby pusty i wygladal na blad.
+  const KONTEKST_NZ = (p) => {
+    const czesci = [];
+    if (p.k4?.brak > 0) czesci.push(`K4: GT ${p.k4.gt} · WMS ${p.k4.wms} → brakuje ${p.k4.brak}`);
+    if (p.k4g?.brak > 0) czesci.push(`K4G: GT ${p.k4g.gt} · WMS ${p.k4g.wms} → brakuje ${p.k4g.brak}`);
+    return czesci.join(' · ') || `zapis lokalizacji rozjechany z GT (K4 ${p.zgodnosc?.k4} / K4G ${p.zgodnosc?.k4g})`;
+  };
+
   const RODZAJE = [
-    { klucz: 'do_zlokalizowania', etykieta: 'Do zlokalizowania' },
-    { klucz: 'nieznany_przychod', etykieta: 'Bez dokumentu' },
+    { klucz: 'do_zlokalizowania', etykieta: 'Do zlokalizowania', kontekst: KONTEKST_STAN },
+    { klucz: 'nieznany_przychod', etykieta: 'Bez dokumentu', kontekst: KONTEKST_STAN },
+    // NZ = status z kolumny "Zgodnosc" na desktopie. JEDYNE miejsce na Zebrze, gdzie widac
+    // nadwyzke GT na K4G: rozjazdy lapia tylko GT < WMS, a pozostale zakladki tego ekranu
+    // licza wylacznie stan K4. Wlasny endpoint - liczy sie inaczej niz reszta (porownanie pol,
+    // nie rozbicie stanu), wiec nie da sie go wcisnac jako kolejny `rodzaj`.
+    { klucz: 'nz', etykieta: 'NZ (pola GT)', endpoint: '/api/do-sprawdzenia/nz', kontekst: KONTEKST_NZ },
   ];
 
   let rodzaj = 'do_zlokalizowania';
   let lista = [];
   let razem = 0;
   let liczniki = null;
+  // Licznik NZ znamy dopiero po wejsciu w zakladke: jego policzenie to osobne, kosztowne
+  // zapytanie (porownanie pol GT dla calego zbioru WMS), a nie chcemy go doplacac do KAZDEGO
+  // otwarcia ekranu. Puste = "nie wiem", nie "zero" - zob. "brak cichych porazek".
+  let licznikNz = null;
+
+  // Odpowiedz bledu bywa HTML-em (404 z Expressa, ekran proxy), a nie JSON-em. Gdy res.json()
+  // idzie PRZED sprawdzeniem statusu, magazynier dostaje "Unexpected token '<'" zamiast bledu.
+  // Status czytamy pierwszy, tresc best-effort (tak samo w public/zebra/sciezki.js).
+  async function odczytaj(res) {
+    const tekst = await res.text();
+    let dane = null;
+    try { dane = tekst ? JSON.parse(tekst) : null; } catch { /* nie-JSON: zostaje sam status */ }
+    if (!res.ok) throw new Error(dane?.blad || `Błąd ${res.status}`);
+    return dane ?? {};
+  }
 
   function komunikat(t, typ) {
     const box = el('dosp-komunikat');
@@ -45,16 +81,25 @@
     box.innerHTML = '<p class="hint">Ładuję…</p>';
     el('dosp-pusto').classList.add('hidden');
     try {
-      // sort=lokalizacja = kolejnosc obchodu (patrz komentarz na gorze)
-      const res = await fetch(`/api/do-sprawdzenia?sort=lokalizacja&rodzaj=${rodzaj}&limit=${PORCJA}`);
-      const dane = await res.json();
-      if (!res.ok) throw new Error(dane?.blad || `Błąd ${res.status}`);
+      // sort=lokalizacja = kolejnosc obchodu (patrz komentarz na gorze). NZ ma wlasny
+      // endpoint - juz sortuje po lokalizacji i nie zna parametru `rodzaj`.
+      const def = RODZAJE.find((r) => r.klucz === rodzaj);
+      const res = await fetch(def.endpoint
+        ? `${def.endpoint}?limit=${PORCJA}`
+        : `/api/do-sprawdzenia?sort=lokalizacja&rodzaj=${rodzaj}&limit=${PORCJA}`);
+      const dane = await odczytaj(res);
       lista = dane.pozycje || [];
       razem = dane.razem || 0;
-      liczniki = dane.liczniki || null;
+      if (dane.liczniki) liczniki = dane.liczniki;   // NZ ich nie zwraca - nie kasuj tych, ktore mamy
+      if (def.endpoint) licznikNz = razem;
       render();
     } catch (err) {
+      // Bez tego przelacznik i naglowek zostaja z POPRZEDNIEJ zakladki - wyglada, jakby
+      // klikniecie nic nie zrobilo, a blad dotyczyl czegos zupelnie innego.
+      lista = []; razem = 0;
       box.innerHTML = '';
+      el('dosp-postep').textContent = '';
+      renderPrzelacznik();
       komunikat(err.message, 'blad');
     }
   }
@@ -64,7 +109,7 @@
     const box = el('dosp-rodzaje');
     box.innerHTML = '';
     for (const r of RODZAJE) {
-      const ile = liczniki?.[r.klucz]?.razem;
+      const ile = r.endpoint ? licznikNz : liczniki?.[r.klucz]?.razem;
       const b = document.createElement('button');
       b.type = 'button';
       b.className = `btn-rodzaj${r.klucz === rodzaj ? ' aktywny' : ''}`;
@@ -95,11 +140,10 @@
       const miejsce = p.lokalizacja_kod
         ? `📍 ${p.lokalizacja_kod}${p.lok_zrodlo === 'GT' ? ' (z GT — sprawdź)' : ''}`
         : '📍 brak miejsca — zeskanuj nowe';
-      // Gdy WMS juz cos wie o tym SKU na K4, to jest dokladanie do istniejacego miejsca,
-      // a nie szukanie nowego - zupelnie inna robota, wiec mowimy to wprost.
-      const kontekst = p.polka_wms > 0
-        ? `WMS zna ${p.polka_wms} szt. · stan GT ${p.stan_k4}`
-        : `WMS nie zna tego towaru · stan GT ${p.stan_k4}`;
+      // Kontekst per zakladka (zob. KONTEKST_STAN / KONTEKST_NZ na gorze): przy stanie K4
+      // liczy sie "dokladam do znanego miejsca czy szukam nowego", przy NZ - ktory magazyn
+      // sie rozjechal. To zupelnie inna robota, wiec wiersz musi mowic co innego.
+      const kontekst = (RODZAJE.find((r) => r.klucz === rodzaj)?.kontekst ?? KONTEKST_STAN)(p);
       div.innerHTML =
         `<span class="poz-glowna">`
         + `<span class="poz-kod">${p.symbol || p.artykul_gt_id}</span>`

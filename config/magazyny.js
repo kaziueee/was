@@ -4,7 +4,10 @@
 const MAGAZYNY = [
   { kod: 'K4', nazwa: 'K4 Hala', typ: 'wms', gtId: 4 },
   { kod: 'K4G', nazwa: 'K4 Góra', typ: 'wms', gtId: 8 },
-  { kod: 'MAG', nazwa: 'Kajtek', typ: 'zewnetrzny', gtId: 1 },
+  // zapasDlaK4: false - stan w Kajtku NIE jest powodem, zeby trzymac slot na K4 (decyzja
+  // usera 2026-07-19, sciezka "Czysc zera"). Do sumy "Razem" nadal sie liczy - to dwa rozne
+  // pytania: "ile mam" (liczy sie) vs "czy ten towar wroci na regal zbioru" (nie wroci).
+  { kod: 'MAG', nazwa: 'Kajtek', typ: 'zewnetrzny', gtId: 1, zapasDlaK4: false },
   { kod: 'LS', nazwa: 'Leszno', typ: 'zewnetrzny', gtId: 6 },
   { kod: 'BRK', nazwa: 'Braki', typ: 'zewnetrzny', gtId: 10, liczDoRazem: false },
   // Reklamacje: jak BRK - towar niepelnowartosciowy, wlasna kolumna i MM w obie strony,
@@ -29,5 +32,11 @@ const MAGAZYNY_ZEWNETRZNE = MAGAZYNY.filter((m) => m.typ === 'zewnetrzny').map((
 // Magazyny wliczane do stanu "Razem" (K4+K4G+MAG+LS). BRK (braki) wykluczone -
 // towar niepelnowartosciowy nie zawyza sumy "ile mam".
 const MAGAZYNY_RAZEM = MAGAZYNY.filter((m) => m.liczDoRazem !== false).map((m) => m.kod);
+// Magazyny, ktorych stan uzasadnia TRZYMANIE slotu na K4 (sciezka "Czysc zera") = K4+K4G+LS.
+// Wezsze niz MAGAZYNY_RAZEM o MAG. Skladane z liczDoRazem, wiec BRK i K4R (towar
+// niepelnowartosciowy) wypadaja same - nie trzeba ich powtarzac przy kazdej nowej fladze.
+const MAGAZYNY_ZAPAS_K4 = MAGAZYNY
+  .filter((m) => m.liczDoRazem !== false && m.zapasDlaK4 !== false)
+  .map((m) => m.kod);
 
-module.exports = { MAGAZYNY, MAGAZYNY_WMS, MAGAZYNY_ZEWNETRZNE, MAGAZYNY_RAZEM, MAGAZYN_GT_ID };
+module.exports = { MAGAZYNY, MAGAZYNY_WMS, MAGAZYNY_ZEWNETRZNE, MAGAZYNY_RAZEM, MAGAZYNY_ZAPAS_K4, MAGAZYN_GT_ID };

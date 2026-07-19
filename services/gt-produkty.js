@@ -7,7 +7,7 @@
 
 const { query, naCzesci } = require('./gt-sql');
 const db = require('../db/database');
-const { MAGAZYNY, MAGAZYNY_RAZEM } = require('../config/magazyny');
+const { MAGAZYNY, MAGAZYNY_RAZEM, MAGAZYNY_ZAPAS_K4 } = require('../config/magazyny');
 const { escapeLike, podzielNaSlowa, LIMIT_WYSZUKIWANIA } = require('./wyszukiwanie');
 const { pobierzPrzegladLokalizacji } = require('./gt-fields');
 
@@ -327,6 +327,13 @@ function stanyGtZWiersza(row) {
 // z wyrazeniem SQL SORT_WYRAZENIA.razem uzywanym w trybie katalogowym.
 function sumaRazem(stany_gt) {
   return MAGAZYNY_RAZEM.reduce((suma, kod) => suma + (stany_gt[kod]?.ilosc ?? 0), 0);
+}
+
+// Suma zapasu, ktory uzasadnia trzymanie slotu na K4 = K4+K4G+LS (bez MAG - zob.
+// MAGAZYNY_ZAPAS_K4). Osobna od sumaRazem, bo odpowiada na INNE pytanie: nie "ile mam",
+// tylko "czy ten towar ma jeszcze wrocic na regal zbioru". Uzywa sciezka "Czysc zera".
+function sumaZapasK4(stany_gt) {
+  return MAGAZYNY_ZAPAS_K4.reduce((suma, kod) => suma + (stany_gt[kod]?.ilosc ?? 0), 0);
 }
 
 // Paginowana lista towarow z GT - do tabeli kontrolnej "Produkty" (desktop).
@@ -746,6 +753,8 @@ module.exports = {
   pobierzStanyGt,
   rozkladZgodnosci,
   dostepneWGt,
+  sumaRazem,
+  sumaZapasK4,
   LIMIT_WYSZUKIWANIA,
   SORT_KLUCZE,
 };

@@ -56,7 +56,10 @@ const DNI_POMIN_PRZYJECIE = 30;
 // Wspolny zapis sprawdzenia przystanku (obie sciezki). Porownuje policzone ze stanem K4
 // z GT (Subiekt = master stanow), zapisuje do audytu pod podanymi akcjami. NIE robi ruchu WMS.
 async function zapiszSprawdzenie(req, res, akcjaZgodne, akcjaNiezgodne) {
-  const { artykul_gt_id, artykul_symbol, lokalizacja_kod, ilosc_policzona, operator } = req.body ?? {};
+  const { artykul_gt_id, artykul_symbol, lokalizacja_kod, ilosc_policzona } = req.body ?? {};
+  // "Kto" bierzemy z SESJI, nie z body: pole w body klient moze pominac albo podstawic cudze
+  // imie (CLAUDE.md zasada 5 - backend jedynym zrodlem prawdy). Tak samo robi routes/zwroty.js.
+  const operator = req.uzytkownik?.imie ?? null;
   if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });
   if (!lokalizacja_kod) return res.status(400).json({ blad: 'Pole "lokalizacja_kod" jest wymagane' });
   const policzone = Number(ilosc_policzona);
@@ -89,7 +92,7 @@ async function zapiszSprawdzenie(req, res, akcjaZgodne, akcjaNiezgodne) {
   const roznica = policzone - stan;
 
   audyt.zapisz({
-    uzytkownik: operator ?? null,
+    uzytkownik: operator,
     akcja: zgodne ? akcjaZgodne : akcjaNiezgodne,
     artykul_gt_id: String(artykul_gt_id),
     artykul_symbol: artykul_symbol ?? null,
@@ -113,11 +116,12 @@ async function zapiszSprawdzenie(req, res, akcjaZgodne, akcjaNiezgodne) {
 //  - ma wlasne, krotkie okno wykluczenia (DNI_POMIN_POMINIETE), niezalezne od sprawdzonych.
 // Skan nie jest wymagany - magazynier wlasnie mowi, ze do towaru nie dotarl.
 function zapiszPominiecie(req, res, akcja) {
-  const { artykul_gt_id, artykul_symbol, lokalizacja_kod, operator } = req.body ?? {};
+  const { artykul_gt_id, artykul_symbol, lokalizacja_kod } = req.body ?? {};
+  const operator = req.uzytkownik?.imie ?? null;   // z sesji, nie z body (zob. zapiszSprawdzenie)
   if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });
   if (!lokalizacja_kod) return res.status(400).json({ blad: 'Pole "lokalizacja_kod" jest wymagane' });
   audyt.zapisz({
-    uzytkownik: operator ?? null,
+    uzytkownik: operator,
     akcja,
     artykul_gt_id: String(artykul_gt_id),
     artykul_symbol: artykul_symbol ?? null,
@@ -188,11 +192,12 @@ async function raportNiezgodnosci(res, akcjaZgodne, akcjaNiezgodne, akcjaZamknie
 // zamykalo ja zgodne policzenie. NIE robi ruchu WMS, nie dotyka GT (rozjazd naprawia sie
 // gdzie indziej, np. korekta w Subiekcie; tu tylko odnotowujemy, ze ktos to ogarnal).
 function zamknijNiezgodnosc(req, res, akcjaZamkniecia) {
-  const { artykul_gt_id, artykul_symbol, lokalizacja_kod, notatka, operator } = req.body ?? {};
+  const { artykul_gt_id, artykul_symbol, lokalizacja_kod, notatka } = req.body ?? {};
+  const operator = req.uzytkownik?.imie ?? null;   // z sesji, nie z body (zob. zapiszSprawdzenie)
   if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });
   if (!lokalizacja_kod) return res.status(400).json({ blad: 'Pole "lokalizacja_kod" jest wymagane' });
   audyt.zapisz({
-    uzytkownik: operator ?? null,
+    uzytkownik: operator,
     akcja: akcjaZamkniecia,
     artykul_gt_id: String(artykul_gt_id),
     artykul_symbol: artykul_symbol ?? null,
@@ -295,7 +300,7 @@ router.get('/ostatnie-sztuki', async (req, res, next) => {
 });
 
 // POST /api/sciezki/ostatnie-sztuki/sprawdzenie - zapisz wynik sprawdzenia jednego przystanku.
-// Body: { artykul_gt_id, artykul_symbol, lokalizacja_kod, ilosc_policzona, operator }.
+// Body: { artykul_gt_id, artykul_symbol, lokalizacja_kod, ilosc_policzona } - "kto" z sesji.
 // Porownuje policzone z OCZEKIWANA POLKA (stan GT - strefy). NIE robi ruchu WMS.
 router.post('/ostatnie-sztuki/sprawdzenie', (req, res) =>
   zapiszSprawdzenie(req, res, 'sprawdzenie_stanu', 'sprawdzenie_niezgodne'));

@@ -1,5 +1,5 @@
 // kreator.js - wspolne fundamenty ekranow-kreatorow Zebry (skan -> kroki -> komunikaty).
-// Laduj w HTML PRZED <ekran>.js. Wymaga elementu #komunikat; #input-operator jest opcjonalne.
+// Laduj w HTML PRZED <ekran>.js (i PO shared/auth.js). Wymaga elementu #komunikat.
 // Zob. ruch.js, produkty.js - kazdy korzysta z tych helperow zamiast trzymac wlasne kopie.
 
 const el = (id) => document.getElementById(id);
@@ -14,18 +14,12 @@ function ukryjKomunikat() {
   komunikat.className = 'komunikat hidden';
 }
 
-// --- operator (zapamietany w localStorage; pole opcjonalne na danym ekranie) ---
-const inputOperator = el('input-operator');
-if (inputOperator) {
-  inputOperator.value = localStorage.getItem('wms_operator') || '';
-  inputOperator.addEventListener('change', () => {
-    localStorage.setItem('wms_operator', inputOperator.value.trim());
-  });
-}
-
-// biezacy operator albo null - do pola operator w ruchach
+// --- operator: zalogowany profil z shared/auth.js (dawniej pole #input-operator + localStorage
+// 'wms_operator' - pole zniklo przy przejsciu na logowanie profilem, wiec czytanie tego klucza
+// zwracalo juz zawsze null). Backend i tak NADPISUJE req.body.operator imieniem z sesji
+// (services/auth.js, wymagajSesji), wiec to jest tylko podpowiedz dla UI - nie autorytet.
 function operator() {
-  return (inputOperator && inputOperator.value.trim()) || null;
+  return (window.WMS?.user() || {}).imie || null;
 }
 
 // --- skan/Enter na polu tekstowym: trim + uppercase, czysci pole, ignoruje puste ---

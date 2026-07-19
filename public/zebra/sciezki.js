@@ -33,9 +33,8 @@
     el('sciezki-zatwierdz').classList.add('hidden');
   }
 
-  function operator() {
-    return localStorage.getItem('wms_operator') || null;
-  }
+  // operator() = globalny helper z kreator.js (zalogowany profil). Wlasnej kopii tu nie
+  // trzymamy - poprzednia czytala martwy klucz localStorage 'wms_operator' i dawala null.
 
   // krotki sygnal: ok = wyzszy ton, blad = nizszy (rozne, by nie pomylic - "brak cichych porazek")
   let audioCtx = null;

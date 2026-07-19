@@ -359,17 +359,11 @@ function obsluzLokalizacje({ lokalizacja, zawartosc }) {
     pokazKomunikat(`Lokalizacja ${lokalizacja.kod} jest pusta`, 'blad');
     return;
   }
-  if (zawartosc.length === 1) {
-    const poz = zawartosc[0];
-    // t_GT: towar stoi tu wg GT, ale nie ma stanu WMS na tej lokalizacji - kierujemy do
-    // rozkladu produktu (obsluga "wg GT"), nie robimy MM wprost z pustej lokalizacji WMS.
-    if (poz.tylko_gt) { wykonajSkan(poz.artykul_symbol); return; }
-    stan.artykul = { artykul_gt_id: poz.artykul_gt_id, artykul_symbol: poz.artykul_symbol, artykul_nazwa: poz.artykul_nazwa, stany_gt: poz.stany_gt, lokalizacja_gt: poz.lokalizacja_gt };
-    stan.zrodlo = { lokalizacja_id: lokalizacja.id, kod: lokalizacja.kod, magazyn: lokalizacja.magazyn, ilosc: poz.ilosc };
-    przejdzDoCelu();
-    return;
-  }
 
+  // Jeden produkt na lokalizacji NIE skraca drogi - lista pokazuje sie tak samo jak przy
+  // kilku. Skrot "od razu Dokad i ile?" zabieral ilosc, rezerwacje i status zgodnosci
+  // akurat wtedy, gdy nie bylo ich skad doczytac. Nie jest to dodatkowy tap: pole skanu
+  // na liscie przyjmuje SKU/EAN (onScan nizej), a ten kod magazynier ma w rece.
   opcjeWyboru = zawartosc.map((poz) => ({
     klucz: poz.artykul_symbol,
     artykul: { artykul_gt_id: poz.artykul_gt_id, artykul_symbol: poz.artykul_symbol, artykul_nazwa: poz.artykul_nazwa, stany_gt: poz.stany_gt, lokalizacja_gt: poz.lokalizacja_gt },
@@ -420,7 +414,15 @@ function przygotujKrokWybor() {
   prefillWyszukiwaniaStale = false;
 }
 
-function obsluzArtykul(dane) {
+// Wejscie w produkt ZAWSZE laduje na rozkladzie zrodel - tez przy jednej lokalizacji i przy
+// zerowej. Rozklad to JEDYNE miejsce z panelem "Rezerwacje na K4" (ktore ZK trzymaja towar),
+// lacznym stanem i sztukami zamrozonymi w zestawach; skrot prosto w "Dokad i ile?" zabieral te
+// informacje akurat przy najprostszych przypadkach, gdzie decyzja zapada najszybciej.
+//
+// `skrotPrzypisania` = wejscie z "➕ Dalej" po zapisie (kontynuujTenSamProdukt), nie ze skanu:
+// rozklad widzielismy sekunde wczesniej, a rozkladanie palety to petla - nie dokladamy do niej
+// tapa na wiersz BRAK LOKALIZACJI (jedyny wiersz listy bez kodu, ktory da sie zeskanowac).
+function obsluzArtykul(dane, { skrotPrzypisania = false } = {}) {
   const artykul = { artykul_gt_id: dane.artykul_gt_id, artykul_symbol: dane.artykul_symbol, artykul_nazwa: dane.artykul_nazwa, stany_gt: dane.stany_gt, lokalizacja_gt: dane.lokalizacja_gt, zgodnosc: dane.zgodnosc, w_zestawach: dane.w_zestawach };
 
   // Kontekst rozkladania dostawy dotyczy KONKRETNEGO produktu - zerujemy go na wejsciu,
@@ -440,7 +442,7 @@ function obsluzArtykul(dane) {
   // od razu w goly ekran "Dokad i ile?" i wiersz kubelka byl nieosiagalny.
   const maKubelekWPuli = (dane.dostawy_k4?.length || dane.zwroty_k4?.length
     || dane.przywozki_k4?.length || dane.przyjecia_k4?.length) > 0;
-  if (dane.lokalizacje.length === 0 && !maStanZewn && !maKubelekWPuli) {
+  if (skrotPrzypisania && dane.lokalizacje.length === 0 && !maStanZewn && !maKubelekWPuli) {
     // produkt ma stan w GT, ale nie ma jeszcze zadnej lokalizacji w WMS - przypisz pierwsza
     stan.artykul = artykul;
     stan.zrodlo = null;
@@ -450,18 +452,8 @@ function obsluzArtykul(dane) {
     return;
   }
 
-  if (dane.lokalizacje.length === 1 && !(dane.deficyt_k4g > 0) && !(dane.deficyt_k4 > 0) && !maStanZewn) {
-    stan.artykul = artykul;
-    stan.zrodlo = dane.lokalizacje[0];
-    stan.iloscSugestia = null;
-    stan.celMagazynNowejLokalizacji = null;
-    przejdzDoCelu();
-    return;
-  }
-
-  // 2+ lokalizacje, albo 1 lokalizacja, ale w K4gora wciaz brakuje czesci ilosci
-  // w WMS (deficyt_k4g) - pokaz rozklad zrodel (mobilny blizniak desktopowego
-  // okna rozkladu): wiersz per lokalizacja + wiersz "BRAK LOKALIZACJI" gdy deficyt.
+  // Rozklad zrodel (mobilny blizniak desktopowego okna rozkladu): wiersz per lokalizacja,
+  // wiersz per dokument do rozlozenia, wiersz "BRAK LOKALIZACJI" gdy stan GT > suma WMS.
   pokazRozkladZrodel(dane, artykul);
 }
 
@@ -1837,12 +1829,15 @@ function pokazSukces(tekst, wariant, pozostalo) {
 }
 
 // Path 1: zostan w tym samym produkcie i rozloz reszte (bez re-skanu SKU). Otwiera swieze
-// dane TA SAMA logika co po skanie -> pokaze rozklad (co na K4, co na K4G, co niezlokalizowane).
+// dane -> rozklad (co na K4, co na K4G, co niezlokalizowane).
 function kontynuujTenSamProdukt() {
   const dane = swiezeDaneProduktu;
   if (!dane) { reset(); return; }
   ukryjKomunikat();
-  obsluzArtykul(dane); // rozklad zrodel albo przypisanie - dokladnie jak po zeskanowaniu SKU
+  // skrotPrzypisania: to kontynuacja, nie nowe wejscie w produkt - gdy do rozlozenia zostala
+  // sama nieprzypisana pula (zero lokalizacji WMS), wchodzimy prosto w "Dokad i ile?".
+  // Petla rozkladania palety ma zostac bez dodatkowego tapa.
+  obsluzArtykul(dane, { skrotPrzypisania: true });
 }
 
 // Dokad wyjsc po zamknieciu sukcesu. Domyslnie: reset kreatora (wejscie z kafla "Ruch" =
@@ -1913,6 +1908,8 @@ function pokazWidok(nazwa, stan) {
   if (zwroty) zwroty.classList.toggle('hidden', nazwa !== 'zwroty');
   const dostawy = el('widok-dostawy');
   if (dostawy) dostawy.classList.toggle('hidden', nazwa !== 'dostawy');
+  const przyjecia = el('widok-przyjecia');
+  if (przyjecia) przyjecia.classList.toggle('hidden', nazwa !== 'przyjecia');
   const przywozki = el('widok-przywozki');
   if (przywozki) przywozki.classList.toggle('hidden', nazwa !== 'przywozki');
   const pw = el('widok-pw');
@@ -1956,7 +1953,7 @@ el('btn-pelny-ekran').addEventListener('click', () => {
 // stamtad do menu glownego - zamiast przeskakiwac od razu do menu glownego.
 // Widoki-SPA pushuja {v:<nazwa>} na wejsciu i przy podekranie, wiec Back cofa o jeden krok:
 // podekran -> menu widoku -> menu glowne. Nieznany/pusty stan = menu glowne.
-const WIDOKI_Z_HISTORIA = ['sciezki', 'zwroty', 'dostawy', 'przywozki', 'pw', 'dosp'];
+const WIDOKI_Z_HISTORIA = ['sciezki', 'zwroty', 'dostawy', 'przyjecia', 'przywozki', 'pw', 'dosp'];
 window.addEventListener('popstate', (e) => {
   const v = WIDOKI_Z_HISTORIA.includes(e.state?.v) ? e.state.v : 'menu';
   pokazWidok(v, e.state);   // caly wpis, bo niesie tez podekran (np. {v:'dostawy', dok})

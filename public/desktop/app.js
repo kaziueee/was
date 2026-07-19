@@ -82,7 +82,9 @@ const panele = {
 // Grupa "Ruchy" - jedna pozycja w nawigacji, cztery osobne panele pod spodem. Trzymamy je
 // jako oddzielne sekcje (a nie jeden panel z przelaczana trescia), bo istnialy wczesniej i
 // kazdy ma swoj stan; grupa dokłada tylko warstwe nawigacji.
-const GRUPY = { ruchy: { domyslny: 'mm', panele: ['mm', 'uzupelnienia', 'rozjazdy', 'dostawy', 'do-sprawdzenia'] } };
+// Kolejnosc = kolejnosc podzakladek w index.html, od najczestszej pracy do najrzadszej;
+// pierwszy jest domyslny (wejscie na sam #ruchy).
+const GRUPY = { ruchy: { domyslny: 'uzupelnienia', panele: ['uzupelnienia', 'dostawy', 'do-sprawdzenia', 'rozjazdy', 'mm'] } };
 
 // panel -> grupa, do zaznaczania wlasciwej zakladki glownej i pokazania paska podzakladek
 const GRUPA_PANELU = Object.fromEntries(
@@ -112,17 +114,17 @@ function pokazPanel(nazwa, pod) {
     a.classList.toggle('aktywna', a.dataset.pod === nazwa);
   });
 
-  // Zestawienia maja wlasne podzakladki (jeden panel, przelaczana tresc) - adres nimi steruje.
-  // Zmiana podzakladki uniewaznia "zaladowano", zeby przeladowanie poszlo RAZ, ponizej -
-  // inaczej ustawZestawienie i panel.odswiez() strzelalyby oba.
-  if (nazwa === 'zestawienia' && ustawZestawienie(pod || zestAktywne)) {
-    panele.zestawienia.zaladowano = false;
-  }
+  // Zestawienia to jedna strona - adres #zestawienia/<raport> nie przelacza tresci, tylko
+  // wskazuje sekcje do przewiniecia. Zapamietujemy ja tu, bo przewijac mozna dopiero PO
+  // zaladowaniu danych (puste tabele maja inne pozycje niz wypelnione).
+  if (nazwa === 'zestawienia') zestKotwica = pod ?? null;
 
   const panel = panele[nazwa];
   if (!panel.zaladowano) {
     panel.zaladowano = true;
-    panel.odswiez();
+    panel.odswiez();                                  // async - przewija samo odswiezZestawienia
+  } else if (nazwa === 'zestawienia') {
+    przewinDoZestawienia();                           // dane juz sa, przewijamy od razu
   }
 }
 
@@ -847,9 +849,13 @@ async function renderModalHistoria() {
 // liste, sortuje po lokalizacji (kolejnosc obchodu), pozwala domknac sprawe recznie
 // ("Zalatwione" - wpis audytu, backend usuwa pare z raportu). NIE robi ruchu WMS.
 
+// Zrodla otwartych spraw. Nie tylko sciezki: zwroty maja ten sam wzorzec zgloszenia i
+// domkniecia (/raport + /niezgodnosc/zamknij), wiec siedza w tej samej tabeli zamiast we
+// wlasnym, osobnym ekranie do recznego pilnowania.
 const SCIEZKI_RAPORTOW = [
   { klucz: 'ostatnie-sztuki', nazwa: 'Ostatnie sztuki', baza: '/api/sciezki/ostatnie-sztuki' },
   { klucz: 'k4-rezerwacja', nazwa: 'K4 pełna rezerwacja', baza: '/api/sciezki/k4-rezerwacja' },
+  { klucz: 'zwroty', nazwa: 'Nie znaleziono na wózku', baza: '/api/zwroty' },
 ];
 
 let raportyDane = [];
@@ -866,16 +872,21 @@ function dniTemu(czas) {
 
 async function odswiezRaporty() {
   el('raporty-tbody').innerHTML = '';
-  try {
-    const wyniki = await Promise.all(SCIEZKI_RAPORTOW.map(async (s) => {
+  // kazde zrodlo osobno: padniete (np. GT chwilowo niedostepny) nie moze wygasic calej tabeli
+  // i zabrac widoku spraw, ktore odpowiedzialy
+  const bledy = [];
+  const wyniki = await Promise.all(SCIEZKI_RAPORTOW.map(async (s) => {
+    try {
       const { pozycje } = await api(`${s.baza}/raport`);
       return (pozycje || []).map((p) => ({ ...p, sciezka: s.klucz, sciezka_nazwa: s.nazwa, sciezka_baza: s.baza }));
-    }));
-    raportyDane = wyniki.flat();
-    renderujRaporty();
-  } catch (err) {
-    pokazKomunikat(err.message, 'blad');
-  }
+    } catch (err) {
+      bledy.push(`${s.nazwa}: ${err.message}`);
+      return [];
+    }
+  }));
+  raportyDane = wyniki.flat();
+  renderujRaporty();
+  if (bledy.length) pokazKomunikat(bledy.join(' · '), 'blad');
 }
 
 function renderujRaporty() {
@@ -892,8 +903,11 @@ function renderujRaporty() {
     const roznica = (w.policzone != null && w.stan != null) ? (w.policzone - w.stan) : null;
     const roznicaTxt = roznica != null ? `${roznica > 0 ? '+' : ''}${roznica}` : '—';
     const tr = document.createElement('tr');
+    // dokument dopisany pod symbolem: przy zwrotach to on identyfikuje sprawe (jeden SKU moze
+    // miec kilka korekt), a osobna kolumna byla by pusta dla wszystkich pozostalych zrodel
+    const dokTxt = w.zrodlo_dok ? `<br><span class="hint-inline">${w.zrodlo_dok}</span>` : '';
     tr.innerHTML =
-        `<td><strong>${w.artykul_symbol || w.artykul_gt_id || '—'}</strong></td>`
+        `<td><strong>${w.artykul_symbol || w.artykul_gt_id || '—'}</strong>${dokTxt}</td>`
       + `<td>${w.lokalizacja_kod || '—'}</td>`
       + `<td>${w.sciezka_nazwa}</td>`
       + `<td>${w.stan ?? '—'}</td>`
@@ -925,7 +939,15 @@ async function zalatwSprawe(w, tr) {
     await api(`${w.sciezka_baza}/niezgodnosc/zamknij`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ artykul_gt_id: w.artykul_gt_id, artykul_symbol: w.artykul_symbol, lokalizacja_kod: w.lokalizacja_kod }),
+      body: JSON.stringify({
+        artykul_gt_id: w.artykul_gt_id,
+        artykul_symbol: w.artykul_symbol,
+        lokalizacja_kod: w.lokalizacja_kod,
+        // klucz sprawy zalezy od zrodla: sciezki domykaja pare (artykul+lokalizacja), zwroty
+        // (artykul+dokument). Wysylamy oba - kazdy endpoint czyta swoje, nadmiar ignoruje.
+        zrodlo_dok: w.zrodlo_dok,
+        wozek_id: w.wozek_id,
+      }),
     });
     raportyDane = raportyDane.filter((s) => s !== w);
     tr.remove();
@@ -960,80 +982,244 @@ el('raporty-sciezka').addEventListener('change', renderujRaporty);
 // (zasada 5: front to UX, nie autorytet).
 
 let zwrotyDane = [];
-let zwrotyNaWozkach = 0;
+let zwrotyWozki = [];            // wozki w obiegu - pasek filtrow (z backendu, nie zgadywane)
+let zwrotyAktywny = null;        // wozek, na ktory ida kolejne pozycje (null = trzeba zalozyc)
+let zwrotyNastepnyNumer = 1;
+let zwrotyFiltr = 'wszystkie';   // 'wszystkie' | 'wolne' | id wozka
 const zaznaczone = new Set();
 const kluczZwrotu = (z) => `${z.artykul_gt_id}|${z.zrodlo_dok}`;
+const wolnaPozycja = (z) => !z.wozek;
+// dopelniacz do zdan "dodaj do ...", "zdjete z ..." - lowercase samej etykiety dawal
+// "dodaj do wozek 5"
+const doWozka = (w) => `wózka ${w.numer ?? w.id}`;
 
 async function odswiezZwroty() {
   try {
-    const [lista, wozki] = await Promise.all([api('/api/zwroty'), api('/api/zwroty/wozki')]);
-    zwrotyDane = lista.pozycje || [];
-    // zaznaczenia pozycji, ktorych juz nie ma (ktos rozlozyl w miedzyczasie), musza zniknac -
-    // inaczej "Stworz wozek" wyslalby duchy i dostal 409
+    const dane = await api('/api/zwroty');
+    zwrotyDane = dane.pozycje || [];
+    zwrotyWozki = dane.wozki || [];
+    zwrotyAktywny = dane.aktywny_wozek || null;
+    zwrotyNastepnyNumer = dane.nastepny_numer || 1;
+    // zaznaczenia pozycji, ktorych juz nie ma (ktos rozlozyl albo dolozyl na wozek w
+    // miedzyczasie), musza zniknac - inaczej "Dodaj do wozka" wyslalby duchy i dostal 409
     for (const k of [...zaznaczone]) {
-      if (!zwrotyDane.some((z) => kluczZwrotu(z) === k)) zaznaczone.delete(k);
+      if (!zwrotyDane.some((z) => kluczZwrotu(z) === k && wolnaPozycja(z))) zaznaczone.delete(k);
     }
-    zwrotyNaWozkach = lista.na_wozkach || 0;
+    // filtr wskazujacy wozek, ktory wypadl z obiegu (rozlozony) - pokazalby pusta tabele bez
+    // wyjasnienia
+    if (typeof zwrotyFiltr === 'number' && !zwrotyWozki.some((w) => w.id === zwrotyFiltr)) {
+      zwrotyFiltr = 'wszystkie';
+    }
     renderujZwroty();
-    renderujWozki(wozki.wozki || []);
   } catch (err) {
     pokazKomunikat(err.message, 'blad');
   }
 }
 
+function pozycjeWidoczne() {
+  if (zwrotyFiltr === 'wolne') return zwrotyDane.filter(wolnaPozycja);
+  if (zwrotyFiltr === 'braki') return zwrotyDane.filter((z) => z.brak);
+  if (typeof zwrotyFiltr === 'number') return zwrotyDane.filter((z) => z.wozek?.id === zwrotyFiltr);
+  return zwrotyDane;
+}
+
 function renderujZwroty() {
+  renderujPasekWozkow();
+  const widoczne = pozycjeWidoczne();
   const tbody = el('zwroty-tbody');
   tbody.innerHTML = '';
-  el('zwroty-brak').classList.toggle('hidden', zwrotyDane.length > 0);
-  el('zwroty-licznik').textContent = zwrotyDane.length
-    ? `${zwrotyDane.length} do rozłożenia${zwrotyNaWozkach ? ` · ${zwrotyNaWozkach} na wózkach` : ''}`
-    : (zwrotyNaWozkach ? `${zwrotyNaWozkach} na wózkach` : '');
+  el('zwroty-brak').classList.toggle('hidden', widoczne.length > 0);
+  // pusta tabela znaczy co innego przy kazdym filtrze - "brak zwrotow" przy filtrze wozka
+  // bylby nieprawda
+  el('zwroty-brak').textContent = !zwrotyDane.length ? 'Brak zwrotów do rozłożenia. 🎉'
+    : zwrotyFiltr === 'wolne' ? 'Wszystko leży już na wózkach.'
+    : typeof zwrotyFiltr === 'number' ? 'Ten wózek nie ma już nic do rozłożenia.'
+    : 'Brak zwrotów do rozłożenia. 🎉';
 
-  for (const z of zwrotyDane) {
+  const naWozkach = zwrotyDane.length - zwrotyDane.filter(wolnaPozycja).length;
+  el('zwroty-licznik').textContent = zwrotyDane.length
+    ? `${zwrotyDane.length} do rozłożenia${naWozkach ? ` · ${naWozkach} na wózkach` : ''}`
+    : '';
+
+  for (const z of widoczne) {
     const tr = document.createElement('tr');
+    tr.classList.toggle('na-wozku', !wolnaPozycja(z));
     // lokalizacja z GT (tw_Pole1) to tylko podpowiedz - WMS jej nie potwierdza, wiec oznaczamy
     const lokTxt = z.lokalizacja_kod
       ? `${z.lokalizacja_kod}${z.lok_zrodlo === 'GT' ? ' <span class="hint-inline">(z GT)</span>' : ''}`
       : '<span class="hint-inline">nieznana</span>';
+    // czesciowo rozlozona pozycja wozka: pokazujemy, ile ZOSTALO, ze snapshotem w tle
+    const zostalo = z.zostalo ?? z.ilosc;
+    const iloscTxt = zostalo !== z.ilosc ? `${zostalo} <span class="hint-inline">z ${z.ilosc}</span>` : `${zostalo}`;
+    // "nie znaleziono na wozku" - zgloszone z Zebry, pozycja spadla z wozka i czeka na
+    // wyjasnienie. Bez tej chorągiewki wygladalaby jak zwykly zwrot do rozlozenia.
+    const brakTxt = z.brak
+      ? ` <span class="znacznik-brak" title="Zgłoszone z Zebry: nie znaleziono na wózku${
+          z.brak.wozek_numer ? ` ${z.brak.wozek_numer}` : ''}${z.brak.uzytkownik ? ` · ${z.brak.uzytkownik}` : ''}">nie znaleziono</span>`
+      : '';
     tr.innerHTML =
-        `<td class="kol-zazn"><input type="checkbox"></td>`
-      + `<td><strong>${z.symbol || z.artykul_gt_id}</strong><br><span class="hint-inline">${z.nazwa || ''}</span></td>`
+        `<td class="kol-zazn"></td>`
+      + `<td><strong>${z.symbol || z.artykul_gt_id}</strong>${brakTxt}<br><span class="hint-inline">${z.nazwa || ''}</span></td>`
       + `<td>${z.dok_zrodlowy || '—'}</td>`
       + `<td>${z.data || '—'}</td>`
-      + `<td>${z.ilosc}</td>`
+      + `<td>${iloscTxt}</td>`
       + `<td>${lokTxt}</td>`
       + `<td>${z.stan_k4 ?? '—'}</td>`
+      + `<td>${z.wozek ? z.wozek.etykieta : '<span class="hint-inline">—</span>'}</td>`
       + `<td class="td-akcja"></td>`;
 
-    const chk = tr.querySelector('input[type=checkbox]');
-    chk.checked = zaznaczone.has(kluczZwrotu(z));
-    chk.addEventListener('change', () => {
-      if (chk.checked) zaznaczone.add(kluczZwrotu(z)); else zaznaczone.delete(kluczZwrotu(z));
-      odswiezPrzyciskWozka();
-    });
+    // zaznaczyc mozna tylko WOLNA pozycje - lezacej juz na wozku nie ma gdzie dokladac
+    if (wolnaPozycja(z)) {
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.checked = zaznaczone.has(kluczZwrotu(z));
+      chk.addEventListener('change', () => {
+        if (chk.checked) zaznaczone.add(kluczZwrotu(z)); else zaznaczone.delete(kluczZwrotu(z));
+        odswiezPrzyciskWozka();
+      });
+      tr.querySelector('.kol-zazn').appendChild(chk);
+    }
 
     const tdAkcja = tr.querySelector('.td-akcja');
-    const bUsun = document.createElement('button');
-    bUsun.className = 'btn btn-small';
-    bUsun.textContent = 'Usuń ze zwrotów';
-    bUsun.title = 'Odkłada na lokalizację podstawową - pozycja znika z listy zwrotów';
-    bUsun.addEventListener('click', () => usunZeZwrotow(z, bUsun));
+    if (wolnaPozycja(z)) {
+      const bUsun = document.createElement('button');
+      bUsun.className = 'btn btn-small';
+      bUsun.textContent = 'Usuń ze zwrotów';
+      bUsun.title = 'Odkłada na lokalizację podstawową - pozycja znika z listy zwrotów';
+      bUsun.addEventListener('click', () => usunZeZwrotow(z, bUsun));
+      tdAkcja.appendChild(bUsun);
+    } else {
+      const bZdejmij = document.createElement('button');
+      bZdejmij.className = 'btn btn-small';
+      bZdejmij.textContent = 'Zdejmij z wózka';
+      bZdejmij.title = 'To nie miało tu trafić - pozycja wraca na listę wolnych zwrotów';
+      bZdejmij.addEventListener('click', () => zdejmijZWozka(z, bZdejmij));
+      tdAkcja.appendChild(bZdejmij);
+    }
+    // Zgloszony brak domyka sie sam, gdy ktos pozycje rozlozy. "Załatwione" jest dla drugiego
+    // przypadku: towaru naprawde nie ma (zniszczony, poszedl na K4R/BRK z karty) i nikt go juz
+    // nie rozlozy - bez tego chorągiewka wisialaby w nieskonczonosc.
+    if (z.brak) {
+      const bZalatw = document.createElement('button');
+      bZalatw.className = 'btn btn-small btn-sprawy-zalatw';
+      bZalatw.textContent = 'Załatwione';
+      bZalatw.title = 'Zamyka zgłoszenie "nie znaleziono" - znacznik znika';
+      bZalatw.addEventListener('click', () => zalatwBrakZwrotu(z, bZalatw));
+      tdAkcja.appendChild(bZalatw);
+    }
     const bProd = document.createElement('button');
     bProd.className = 'btn btn-small';
     bProd.textContent = 'Edytuj';
     bProd.title = 'Otwiera kartę - stąd zrobisz normalną operację, np. przeniesienie na K4R/BRK';
     bProd.addEventListener('click', () => otworzProduktPoSymbolu({ artykul_gt_id: z.artykul_gt_id, artykul_symbol: z.symbol }));
-    tdAkcja.append(bUsun, bProd);
+    tdAkcja.appendChild(bProd);
     tbody.appendChild(tr);
   }
   odswiezPrzyciskWozka();
-  el('zwroty-zazn-wszystkie').checked = zwrotyDane.length > 0 && zaznaczone.size === zwrotyDane.length;
+  const wolneWidoczne = widoczne.filter(wolnaPozycja);
+  el('zwroty-zazn-wszystkie').checked = wolneWidoczne.length > 0
+    && wolneWidoczne.every((z) => zaznaczone.has(kluczZwrotu(z)));
 }
 
+// Pasek wozkow = filtr ("pokaz, co lezy na Wozku 2") + akcje wozka. Zastapil osobna tabele:
+// wozek nie jest bytem do przegladania, tylko przegroda na tej samej liscie zwrotow.
+function renderujPasekWozkow() {
+  const pasek = el('zwroty-wozki-pasek');
+  pasek.innerHTML = '';
+  // otwarty najpierw - to na niego ida kolejne zwroty
+  const wozki = [...zwrotyWozki].sort((a, b) =>
+    (a.status === 'otwarty' ? 0 : 1) - (b.status === 'otwarty' ? 0 : 1)
+    || (a.numer ?? a.id) - (b.numer ?? b.id));
+  const wolnych = zwrotyDane.filter(wolnaPozycja).length;
+
+  const chip = (klucz, tekst, licznik, klasa) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `wozek-chip${klasa ? ` ${klasa}` : ''}${zwrotyFiltr === klucz ? ' aktywny' : ''}`;
+    b.innerHTML = `${tekst} <span class="wozek-chip__licznik">${licznik}</span>`;
+    b.addEventListener('click', () => { zwrotyFiltr = klucz; renderujZwroty(); });
+    return b;
+  };
+
+  pasek.append(chip('wszystkie', 'Wszystkie', zwrotyDane.length));
+  pasek.append(chip('wolne', 'Wolne', wolnych));
+  // chip pokazuje sie tylko, gdy jest co pokazac - pusty "Nie znaleziono 0" bylby szumem
+  const braki = zwrotyDane.filter((z) => z.brak).length;
+  if (braki) pasek.append(chip('braki', 'Nie znaleziono', braki, 'brak'));
+  for (const w of wozki) {
+    const grupa = document.createElement('span');
+    grupa.className = 'wozek-grupa';
+    grupa.appendChild(chip(w.id, w.etykieta, w.pozycji, w.status === 'otwarty' ? 'otwarty' : ''));
+    if (w.status === 'otwarty') {
+      const bZamknij = document.createElement('button');
+      bZamknij.type = 'button';
+      bZamknij.className = 'btn wozek-zamknij';
+      bZamknij.textContent = 'Zamknij';
+      bZamknij.title = 'Odwożę ten wózek - kolejne zwroty pójdą na następny';
+      bZamknij.addEventListener('click', () => zamknijWozek(w));
+      grupa.appendChild(bZamknij);
+    }
+    pasek.appendChild(grupa);
+  }
+}
+
+// Przycisk mowi WPROST, dokad pojdzie towar - inaczej "z automatu na otwarty wozek" jest
+// niewidoczne i wyglada jak zgubione zaznaczenie.
 function odswiezPrzyciskWozka() {
   const b = el('btn-zwroty-wozek');
   b.disabled = zaznaczone.size === 0;
-  b.textContent = zaznaczone.size ? `Stwórz wózek (${zaznaczone.size})` : 'Stwórz wózek';
+  const cel = zwrotyAktywny ? `do ${doWozka(zwrotyAktywny)}` : `na nowy wózek ${zwrotyNastepnyNumer}`;
+  b.textContent = zaznaczone.size ? `Dodaj ${cel} (${zaznaczone.size})` : `Dodaj ${cel}`;
+}
+
+async function zamknijWozek(w) {
+  if (!confirm(`Zamknąć ${w.etykieta}?\n\nKolejne zwroty pójdą na następny wózek.`)) return;
+  try {
+    await api(`/api/zwroty/wozki/${w.id}/zamknij`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    odswiezZwroty();
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+  }
+}
+
+async function zalatwBrakZwrotu(z, btn) {
+  if (!confirm(`Zamknąć zgłoszenie „nie znaleziono"?\n${z.symbol} · ${z.zrodlo_dok}`)) return;
+  btn.disabled = true;
+  try {
+    await api('/api/zwroty/niezgodnosc/zamknij', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        artykul_gt_id: z.artykul_gt_id,
+        artykul_symbol: z.symbol,
+        zrodlo_dok: z.zrodlo_dok,
+        wozek_id: z.brak?.wozek_id ?? null,
+      }),
+    });
+    pokazKomunikat(`${z.symbol}: zgłoszenie zamknięte.`, 'ok');
+    odswiezZwroty();
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+    btn.disabled = false;
+  }
+}
+
+async function zdejmijZWozka(z, btn) {
+  btn.disabled = true;
+  try {
+    await api(`/api/zwroty/wozki/${z.wozek.id}/zdejmij`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ artykul_gt_id: z.artykul_gt_id, zrodlo_dok: z.zrodlo_dok }),
+    });
+    pokazKomunikat(`${z.symbol}: zdjęte z ${doWozka(z.wozek)}.`, 'ok');
+    odswiezZwroty();
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+    btn.disabled = false;
+  }
 }
 
 // "Usun ze zwrotow" = POST /ruchy/rozloz z celem = lokalizacja podstawowa. NIE jest to osobny
@@ -1077,62 +1263,30 @@ async function usunZeZwrotow(z, btn) {
   }
 }
 
-async function stworzWozek() {
-  const wybor = zwrotyDane.filter((z) => zaznaczone.has(kluczZwrotu(z)));
+// Bez pytania o nazwe: wozek nazywa sie numerem fizycznego wozka, a backend sam wybiera cel
+// (aktywny wozek albo nowy). Zaznaczam -> klikam -> towar lezy na wozku.
+async function dodajDoWozka() {
+  const wybor = zwrotyDane.filter((z) => wolnaPozycja(z) && zaznaczone.has(kluczZwrotu(z)));
   if (!wybor.length) return;
-  const nazwa = prompt(`Nazwa wózka (${wybor.length} SKU) — możesz zostawić puste:`, '');
-  if (nazwa === null) return;
   try {
     const r = await api('/api/zwroty/wozki', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        nazwa: nazwa || null,
+        wozek_id: zwrotyAktywny?.id ?? null,
         pozycje: wybor.map((z) => ({ artykul_gt_id: z.artykul_gt_id, zrodlo_dok: z.zrodlo_dok })),
       }),
     });
     zaznaczone.clear();
     const odrzucone = (r.odrzucone || []).length;
     pokazKomunikat(
-      `Wózek ${r.wozek_id}: ${r.pozycji} SKU.` + (odrzucone ? ` ${odrzucone} pominięto (rozłożone w międzyczasie).` : ''),
+      `${r.etykieta}: ${r.utworzony ? 'założony, ' : ''}+${r.dodane} SKU (razem ${r.pozycji}).`
+      + (odrzucone ? ` ${odrzucone} pominięto (rozłożone w międzyczasie).` : ''),
       'ok'
     );
     odswiezZwroty();
   } catch (err) {
     pokazKomunikat(err.message, 'blad');
-  }
-}
-
-function renderujWozki(wozki) {
-  const tbody = el('wozki-tbody');
-  tbody.innerHTML = '';
-  el('wozki-brak').classList.toggle('hidden', wozki.length > 0);
-  for (const w of wozki) {
-    const tr = document.createElement('tr');
-    // "rozlozony" wynika z pozycji (do_rozlozenia=0), nie z osobnej flagi - patrz stanPozycjiWozka
-    const gotowy = w.do_rozlozenia === 0;
-    tr.innerHTML =
-        `<td><strong>${w.nazwa || `Wózek ${w.id}`}</strong></td>`
-      + `<td>${w.status}${gotowy ? ' <span class="hint-inline">· rozłożony</span>' : ''}</td>`
-      + `<td>${w.pozycji}</td>`
-      + `<td>${w.do_rozlozenia}</td>`
-      + `<td>${w.utworzyl || '—'}</td>`
-      + `<td>${dniTemu(w.utworzono)}</td>`
-      + `<td class="td-akcja"></td>`;
-    if (w.status === 'otwarty') {
-      const b = document.createElement('button');
-      b.className = 'btn btn-small';
-      b.textContent = 'Zamknij';
-      b.title = 'Zamknięty wózek nie przyjmuje nowych pozycji - kolejne zwroty pójdą na następny';
-      b.addEventListener('click', async () => {
-        try {
-          await api(`/api/zwroty/wozki/${w.id}/zamknij`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-          odswiezZwroty();
-        } catch (err) { pokazKomunikat(err.message, 'blad'); }
-      });
-      tr.querySelector('.td-akcja').appendChild(b);
-    }
-    tbody.appendChild(tr);
   }
 }
 
@@ -1211,11 +1365,10 @@ async function wczytajTowaryFaktury(dok) {
 el('btn-dostawy-odswiez').addEventListener('click', odswiezDostawy);
 el('btn-dostawy-wstecz').addEventListener('click', () => { dostawyFaktura = null; odswiezDostawy(); });
 
-// === ZESTAWIENIA (przywozka / leszno / nadsprzedaz) ===
+// === ZESTAWIENIA (jedna strona: MAG / nadsprzedaz / Leszno / strefa przyjec) ===
 
-// Kolejnosc = kolejnosc podzakladek; pierwszy jest domyslny (przy pustym/nieznanym adresie).
-const ZESTAWIENIA = ['przywozka', 'leszno', 'nadsprzedaz'];
-let zestAktywne = 'przywozka';
+// Sekcja z adresu #zestawienia/<raport>, do przewiniecia po zaladowaniu danych.
+let zestKotwica = null;
 
 // Wiersz "katalogowy" - ten sam zestaw kolumn co tabela Produktow (stan + rezerwacja w jednej
 // komorce przez komorkaStan), zeby czytalo sie tak samo w calym panelu.
@@ -1376,72 +1529,102 @@ el('btn-dosp-next').addEventListener('click', () => {
   odswiezDoSprawdzenia();
 });
 
-async function odswiezZestawienia() {
-  try {
-    if (zestAktywne === 'przywozka') {
-      const d = await api('/api/zestawienia/przywozka');
-      const tbody = el('zest-strefa-tbody');
-      tbody.innerHTML = '';
-      el('zest-strefa-brak').classList.toggle('hidden', d.strefa.length > 0);
-      for (const p of d.strefa) {
-        const tr = document.createElement('tr');
-        tr.innerHTML =
-            `<td><strong>${p.symbol || p.artykul_gt_id}</strong></td>`
-          + `<td>${p.nazwa || ''}</td>`
-          + `<td>${p.zrodlo_mag || '—'}</td>`
-          + `<td>${p.ilosc}</td>`
-          + `<td>${p.lokalizacja_kod || '<span class="hint-inline">nieznana</span>'}</td>`
-          + `<td>${p.stan_k4 ?? '—'}</td>`
-          + `<td class="${p.rezerwacja ? 'sprawy-rez' : ''}">${p.rezerwacja ?? 0}</td>`
-          + `<td class="td-akcja"><button class="btn btn-small" type="button">Edytuj</button></td>`;
-        tr.querySelector('button').addEventListener('click', () =>
-          otworzProduktPoSymbolu({ artykul_gt_id: p.artykul_gt_id, artykul_symbol: p.symbol }));
-        tbody.appendChild(tr);
-      }
-      wypelnijKatalog('zest-doprzywiezienia-tbody', 'zest-doprzywiezienia-brak', d.do_przywiezienia);
-      el('zest-licznik').textContent = `${d.razem_strefa} w strefie · ${d.razem_do_przywiezienia} do przywiezienia`;
-    } else if (zestAktywne === 'leszno') {
-      const d = await api('/api/zestawienia/leszno');
-      wypelnijKatalog('zest-leszno-tbody', 'zest-leszno-brak', d.produkty);
-      el('zest-licznik').textContent = d.razem ? `${d.razem} do przywiezienia` : '';
-    } else {
-      const d = await api('/api/zestawienia/nadsprzedaz');
-      // Backend liczy rezerwacje ze SWIEZYCH ZK (okno WMS_NADSPRZEDAZ_DNI) - i te sama liczbe
-      // pokazujemy. NIE sumujemy st_StanRez ze stany_gt: tamto liczy takze zombie ZK sprzed
-      // roku, wiec kolumna klocilaby sie z warunkiem, ktory wiersz tu wpuscil.
-      wypelnijKatalog('zest-nadsprzedaz-tbody', 'zest-nadsprzedaz-brak', d.produkty,
-        (p) => `<td class="sprawy-rez">${p.rezerwacja_swieza ?? '—'}</td>`
-             + `<td class="sprawy-roznica">${(p.rezerwacja_swieza ?? 0) - p.razem}</td>`);
-      el('zest-licznik').textContent = d.razem ? `${d.razem} pozycji` : '';
-    }
-  } catch (err) {
-    pokazKomunikat(err.message, 'blad');
+// Licznik przy naglowku sekcji. Pusto zamiast "0", bo pod spodem stoi juz komunikat "Nic do
+// przywiezienia 🎉" - dwa razy to samo w dwoch miejscach tylko szumi.
+function licznikSekcji(id, n) {
+  el(id).textContent = n ? `(${n})` : '';
+}
+
+function wypelnijStrefe(pozycje) {
+  const tbody = el('zest-strefa-tbody');
+  tbody.innerHTML = '';
+  el('zest-strefa-brak').classList.toggle('hidden', pozycje.length > 0);
+  for (const p of pozycje) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+        `<td><strong>${p.symbol || p.artykul_gt_id}</strong></td>`
+      + `<td>${p.nazwa || ''}</td>`
+      + `<td>${p.zrodlo_mag || '—'}</td>`
+      + `<td>${p.ilosc}</td>`
+      + `<td>${p.lokalizacja_kod || '<span class="hint-inline">nieznana</span>'}</td>`
+      + `<td>${p.stan_k4 ?? '—'}</td>`
+      + `<td class="${p.rezerwacja ? 'sprawy-rez' : ''}">${p.rezerwacja ?? 0}</td>`
+      + `<td class="td-akcja"><button class="btn btn-small" type="button">Edytuj</button></td>`;
+    tr.querySelector('button').addEventListener('click', () =>
+      otworzProduktPoSymbolu({ artykul_gt_id: p.artykul_gt_id, artykul_symbol: p.symbol }));
+    tbody.appendChild(tr);
   }
 }
 
-// Przelacza podzakladke Zestawien. Zwraca `true`, gdy faktycznie sie zmienila - pokazPanel
-// uzywa tego, zeby przeladowac dane RAZ. Sam nie pobiera: podzakladki sa linkami (#zestawienia/
-// leszno), wiec steruje nimi adres, a nie handler klikniecia - dzieki temu Cmd-klik otwiera
-// konkretna podzakladke w nowej karcie.
-function ustawZestawienie(pod) {
-  if (!ZESTAWIENIA.includes(pod)) pod = ZESTAWIENIA[0];
-  const zmiana = pod !== zestAktywne;
-  zestAktywne = pod;
-  document.querySelectorAll('.podzakladka[data-zest]').forEach((a) => {
-    a.classList.toggle('aktywna', a.dataset.zest === pod);
-  });
-  for (const t of document.querySelectorAll('.zest-tresc')) {
-    t.classList.toggle('hidden', t.id !== `zest-${pod}`);
+// Wszystkie raporty naraz - strona pokazuje je jednoczesnie, wiec i pobieramy jednoczesnie.
+// allSettled, a NIE all: raporty sa niezalezne, wiec jeden padniety endpoint ma zabrac swoja
+// sekcje, a nie wygasic cala strone.
+async function odswiezZestawienia() {
+  const [przywozka, nadsprzedaz, leszno] = await Promise.allSettled([
+    api('/api/zestawienia/przywozka'),
+    api('/api/zestawienia/nadsprzedaz'),
+    api('/api/zestawienia/leszno'),
+  ]);
+
+  if (przywozka.status === 'fulfilled') {
+    const d = przywozka.value;
+    wypelnijStrefe(d.strefa);
+    licznikSekcji('zest-licznik-strefa', d.razem_strefa);
+    wypelnijKatalog('zest-doprzywiezienia-tbody', 'zest-doprzywiezienia-brak', d.do_przywiezienia);
+    licznikSekcji('zest-licznik-mag', d.razem_do_przywiezienia);
   }
-  return zmiana;
+  if (nadsprzedaz.status === 'fulfilled') {
+    const d = nadsprzedaz.value;
+    // Backend liczy rezerwacje ze SWIEZYCH ZK (okno WMS_NADSPRZEDAZ_DNI) - i te sama liczbe
+    // pokazujemy. NIE sumujemy st_StanRez ze stany_gt: tamto liczy takze zombie ZK sprzed
+    // roku, wiec kolumna klocilaby sie z warunkiem, ktory wiersz tu wpuscil.
+    wypelnijKatalog('zest-nadsprzedaz-tbody', 'zest-nadsprzedaz-brak', d.produkty,
+      (p) => `<td class="sprawy-rez">${p.rezerwacja_swieza ?? '—'}</td>`
+           + `<td class="sprawy-roznica">${(p.rezerwacja_swieza ?? 0) - p.razem}</td>`);
+    licznikSekcji('zest-licznik-nadsprzedaz', d.razem);
+  }
+  if (leszno.status === 'fulfilled') {
+    const d = leszno.value;
+    wypelnijKatalog('zest-leszno-tbody', 'zest-leszno-brak', d.produkty);
+    licznikSekcji('zest-licznik-leszno', d.razem);
+  }
+
+  const bledy = [przywozka, nadsprzedaz, leszno].filter((r) => r.status === 'rejected');
+  if (bledy.length) pokazKomunikat(bledy[0].reason.message, 'blad');
+
+  przewinDoZestawienia();
+}
+
+// Adres #zestawienia/<raport> nie przelacza juz tresci - przewija do sekcji. Dzieki temu kafle
+// Pulpitu ("Nadsprzedaż 5" -> #zestawienia/nadsprzedaz) dalej laduja na konkretnym raporcie,
+// a zakladki zapisane w przegladarce nie prowadza donikad.
+const ZEST_KOTWICE = {
+  przywozka: 'zest-sekcja-strefa',        // stara nazwa podzakladki = strefa przyjec
+  strefa: 'zest-sekcja-strefa',
+  mag: 'zest-sekcja-mag',
+  nadsprzedaz: 'zest-sekcja-nadsprzedaz',
+  leszno: 'zest-sekcja-leszno',
+};
+
+function przewinDoZestawienia() {
+  const id = ZEST_KOTWICE[zestKotwica];
+  zestKotwica = null;                                 // jednorazowe - nie przewijaj przy Odswiez
+  // Skok, a NIE `behavior:'smooth'`: to wejscie z ZEWNATRZ (kafel Pulpitu, zakladka w
+  // przegladarce), wiec ma dzialac jak zwykla kotwica - raport od razu pod reka, bez animacji
+  // przez pol strony. Animacje da sie tez zgubic, gdy cos przewinie strone w tym samym takcie.
+  if (id) el(id).scrollIntoView({ block: 'start' });
 }
 el('btn-zest-odswiez').addEventListener('click', odswiezZestawienia);
 
 el('btn-zwroty-odswiez').addEventListener('click', odswiezZwroty);
-el('btn-zwroty-wozek').addEventListener('click', stworzWozek);
+el('btn-zwroty-wozek').addEventListener('click', dodajDoWozka);
+// "zaznacz wszystkie" dotyczy tego, co WIDAC i da sie dolozyc - inaczej przy filtrze wozka
+// zaznaczaloby pozycje spoza ekranu
 el('zwroty-zazn-wszystkie').addEventListener('change', (e) => {
   zaznaczone.clear();
-  if (e.target.checked) for (const z of zwrotyDane) zaznaczone.add(kluczZwrotu(z));
+  if (e.target.checked) {
+    for (const z of pozycjeWidoczne()) if (wolnaPozycja(z)) zaznaczone.add(kluczZwrotu(z));
+  }
   renderujZwroty();
 });
 

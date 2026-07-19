@@ -869,6 +869,48 @@ main {
 .kol-zazn { width: 32px; text-align: center; }
 .podnaglowek { margin: 24px 0 8px; font-size: 1.05em; }
 
+/* --- Pasek wozkow (Zwroty) - filtr "co lezy na ktorym wozku" + akcje wozka.
+   Zastapil osobna tabele wozkow: wozek nie jest bytem do przegladania, tylko przegroda na tej
+   samej liscie zwrotow. Klik w chip = podglad zawartosci wozka. --- */
+.wozki-pasek { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 12px; }
+.wozek-grupa { display: inline-flex; align-items: center; gap: 4px; }
+.wozek-chip {
+  padding: 5px 12px;
+  border: 1px solid #ccc;
+  border-radius: 999px;
+  background: #fff;
+  color: #444;
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.wozek-chip:hover { border-color: #1d3557; color: #1d3557; }
+.wozek-chip.aktywny { background: #1d3557; border-color: #1d3557; color: #fff; }
+/* Otwarty wozek = ten, na ktory ida kolejne zwroty. Musi byc rozpoznawalny bez czytania
+   statusu, bo od niego zalezy, dokad trafi "Dodaj do wozka". */
+.wozek-chip.otwarty { border-color: #16803a; color: #16803a; }
+.wozek-chip.otwarty.aktywny { background: #16803a; border-color: #16803a; color: #fff; }
+.wozek-chip__licznik { opacity: 0.75; }
+.wozek-zamknij { padding: 3px 8px; font-size: 0.8rem; border-color: #16803a; color: #16803a; }
+.wozek-zamknij:hover { background: #e7f6eb; }
+/* Wiersz pozycji lezacej juz na wozku - odrozniony od wolnej, bo nie da sie jej zaznaczyc */
+.tabela tr.na-wozku td { background: #fafbfc; }
+/* "nie znaleziono na wozku" - zgloszenie z Zebry. Czerwien jak przy rezerwacji w Sprawach:
+   to sprawa do wyjasnienia, nie zwykly zwrot czekajacy na regal. */
+.znacznik-brak {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #fdecec;
+  color: #9b2226;
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.wozek-chip.brak { border-color: #9b2226; color: #9b2226; }
+.wozek-chip.brak.aktywny { background: #9b2226; border-color: #9b2226; color: #fff; }
+
 /* Podzakladki (Zestawienia) - drugi poziom nawigacji WEWNATRZ panelu. Wizualnie slabsze
    niz .tab-link, zeby nie konkurowaly z glowna nawigacja. */
 .podzakladki { display: flex; gap: 4px; margin: 0 0 12px; border-bottom: 1px solid #ddd; }

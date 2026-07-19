@@ -624,6 +624,45 @@ html, body {
    miejsce. Kazdy fakt (nazwa / miejsce / ilosc) ma wlasna linie. */
 .karta-info span { font-size: var(--font-label); color: var(--color-text-muted); display: block; }
 
+/* Lokalizacja jako PIERWSZA linia karty przystanku - "dokad ide" jest pytaniem numer jeden,
+   a maly pin w trzeciej linii ginal miedzy nazwa a metadanymi. Rozmiar wiekszy niz symbol
+   (--font-sku), bo symbol czyta sie dopiero przy towarze; kod lokalizacji - z drugiego konca
+   alejki. Selektor dwuklasowy, bo `.karta-info span` inaczej wygrywa specyficznoscia. */
+.karta-info .karta-lok {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--color-primary);
+  letter-spacing: 0.5px;
+  margin-bottom: var(--space-2);
+}
+/* Brak miejsca w WMS to nie kod - nie udajemy go rozmiarem, tylko mowimy wprost co zrobic. */
+.karta-info .karta-lok--brak {
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--color-warning);
+  letter-spacing: normal;
+}
+
+/* "Zatwierdz bez EAN" pod polem skanu - droga na wypadek, gdy kod sie nie czyta. Wyglada jak
+   kazdy inny przycisk poboczny: dashed i emotka robily z niego wyjatek, choc to przewidziana
+   sciezka. Na srodku, bo wysrodkowany pod polem skanu czyta sie jako jego alternatywa, a nie
+   jako doklejka z boku. */
+.btn-bez-skanu {
+  align-self: center;
+  min-height: 44px;
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--font-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-bez-skanu:active { background: var(--color-border); }
+
 /* krok "wybor": odstepy miedzy blokami w obrebie kroku (gap .ekran-tresc dziala
    tylko miedzy sekcjami) - rozdziela tytul/podsumowanie/pole skanu/liste.
    :not(.hidden) - bez tego id-selektor wygrywa z .hidden i sekcja sie nie chowa. */

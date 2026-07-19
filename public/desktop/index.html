@@ -19,10 +19,10 @@
          Podzakladki tez maja swoj adres (#ruchy/mm), wiec i one sa linkowalne. -->
     <nav id="zakladki">
       <a href="#produkty" class="tab-link" data-panel="produkty">Produkty</a>
-      <a href="#ruchy/mm" class="tab-link" data-panel="ruchy">Ruchy</a>
+      <a href="#ruchy/uzupelnienia" class="tab-link" data-panel="ruchy">Ruchy</a>
       <a href="#zwroty" class="tab-link" data-panel="zwroty">Zwroty</a>
       <a href="#sciezki" class="tab-link" data-panel="sciezki">Ścieżki</a>
-      <a href="#zestawienia/przywozka" class="tab-link" data-panel="zestawienia">Zestawienia</a>
+      <a href="#zestawienia" class="tab-link" data-panel="zestawienia">Zestawienia</a>
       <a href="#lokalizacje" class="tab-link" data-panel="lokalizacje">Lokalizacje</a>
       <a href="#log" class="tab-link" data-panel="log">Log</a>
       <a href="#uzytkownicy" class="tab-link" data-panel="uzytkownicy" id="tab-uzytkownicy" style="display:none">Użytkownicy</a>
@@ -38,11 +38,11 @@
          Zestawienia, gdzie jeden panel przelacza tresc) - dlatego to linki z wlasnym adresem,
          a nie przyciski: Cmd-klik otwiera je w nowej karcie tak samo jak zakladki glowne. -->
     <nav id="podzakladki-ruchy" class="podzakladki hidden">
-      <a href="#ruchy/mm" class="podzakladka" data-pod="mm">MM</a>
       <a href="#ruchy/uzupelnienia" class="podzakladka" data-pod="uzupelnienia">Uzupełnienia</a>
-      <a href="#ruchy/rozjazdy" class="podzakladka" data-pod="rozjazdy">Rozjazdy</a>
       <a href="#ruchy/dostawy" class="podzakladka" data-pod="dostawy">Dostawy</a>
-      <a href="#ruchy/do-sprawdzenia" class="podzakladka" data-pod="do-sprawdzenia">Do sprawdzenia</a>
+      <a href="#ruchy/do-sprawdzenia" class="podzakladka" data-pod="do-sprawdzenia">PW do sprawdzenia</a>
+      <a href="#ruchy/rozjazdy" class="podzakladka" data-pod="rozjazdy">Rozjazdy WMS/GT</a>
+      <a href="#ruchy/mm" class="podzakladka" data-pod="mm">MM</a>
     </nav>
 
     <!-- Panel Pulpit (Faza 5) - dashboard. Role-aware: sekcje .pulpit-admin widoczne
@@ -162,7 +162,7 @@
 
     <section id="panel-rozjazdy" class="panel hidden">
       <div class="panel-naglowek">
-        <h2>Rozjazdy GT ⇄ WMS</h2>
+        <h2>Rozjazdy WMS/GT</h2>
         <div class="filtry">
           <select id="rozjazdy-status">
             <option value="nowy" selected>Nowe</option>
@@ -365,42 +365,34 @@
 
     <!-- Panel Sprawy: otwarte niezgodnosci ze sciezek (do triazu), reczne "Zalatwione" -->
     <!-- Panel Zwroty: co wrocilo korekta (PZ<-KFS) i czeka na odniesienie na regal.
-         Zaznaczasz to, co realnie kladziesz na wozek -> "Stworz wozek". Reszta ma "Usun ze
-         zwrotow" (idzie na lokalizacje podstawowa) albo "Produkt" -> normalna operacja
-         (np. przeniesienie na K4R/BRK, gdy towar jest uszkodzony). -->
+         JEDNA tabela - wolne zwroty i te lezace juz na wozkach, z kolumna "Wozek". Pasek nad
+         tabela filtruje po wozku (= podglad, co na nim jest) i tam sa akcje wozka.
+         Zaznaczasz to, co realnie kladziesz na wozek -> "Dodaj do wozka" (idzie na aktywny,
+         albo zaklada nowy). Reszta ma "Usun ze zwrotow" (idzie na lokalizacje podstawowa)
+         albo "Edytuj" -> normalna operacja (np. na K4R/BRK, gdy towar jest uszkodzony). -->
     <section id="panel-zwroty" class="panel hidden">
       <div class="panel-naglowek">
         <h2>Zwroty do rozłożenia</h2>
         <div class="filtry">
           <span id="zwroty-licznik" class="filtry-info"></span>
-          <button type="button" id="btn-zwroty-wozek" class="btn btn-primary" disabled>Stwórz wózek</button>
+          <button type="button" id="btn-zwroty-wozek" class="btn btn-primary" disabled>Dodaj do wózka</button>
           <button type="button" id="btn-zwroty-odswiez" class="btn">Odśwież</button>
         </div>
       </div>
+      <div id="zwroty-wozki-pasek" class="wozki-pasek"></div>
       <div class="tabela-wrapper">
         <table class="tabela">
           <thead>
             <tr>
-              <th class="kol-zazn"><input type="checkbox" id="zwroty-zazn-wszystkie" title="Zaznacz wszystkie"></th>
+              <th class="kol-zazn"><input type="checkbox" id="zwroty-zazn-wszystkie" title="Zaznacz wszystkie wolne"></th>
               <th>Artykuł</th><th>Korekta</th><th>Data</th><th>Szt.</th>
-              <th>Lokalizacja</th><th>Stan K4</th><th></th>
+              <th>Lokalizacja</th><th>Stan K4</th><th>Wózek</th><th></th>
             </tr>
           </thead>
           <tbody id="zwroty-tbody"></tbody>
         </table>
       </div>
       <p id="zwroty-brak" class="hint hidden">Brak zwrotów do rozłożenia. 🎉</p>
-
-      <h3 class="podnaglowek">Wózki</h3>
-      <div class="tabela-wrapper">
-        <table class="tabela">
-          <thead>
-            <tr><th>Wózek</th><th>Status</th><th>SKU</th><th>Do rozłożenia</th><th>Kto</th><th>Kiedy</th><th></th></tr>
-          </thead>
-          <tbody id="wozki-tbody"></tbody>
-        </table>
-      </div>
-      <p id="wozki-brak" class="hint hidden">Brak wózków.</p>
     </section>
 
     <!-- Panel Dostawy: faktury -> towary. Rozkladanie samo w sobie jest na Zebrze (przy towarze),
@@ -497,29 +489,16 @@
       <div class="panel-naglowek">
         <h2>Zestawienia</h2>
         <div class="filtry">
-          <span id="zest-licznik" class="filtry-info"></span>
           <button type="button" id="btn-zest-odswiez" class="btn">Odśwież</button>
         </div>
       </div>
-      <nav class="podzakladki">
-        <a href="#zestawienia/przywozka" class="podzakladka aktywna" data-zest="przywozka">Przywózka</a>
-        <a href="#zestawienia/leszno" class="podzakladka" data-zest="leszno">Leszno</a>
-        <a href="#zestawienia/nadsprzedaz" class="podzakladka" data-zest="nadsprzedaz">Nadsprzedaż</a>
-      </nav>
 
-      <div id="zest-przywozka" class="zest-tresc">
-        <h3 class="podnaglowek">W strefie przyjęć — do rozłożenia</h3>
-        <div class="tabela-wrapper">
-          <table class="tabela">
-            <thead>
-              <tr><th>Artykuł</th><th>Nazwa</th><th>Skąd</th><th>Szt.</th><th>Lokalizacja</th><th>Stan K4</th><th>Rezerwacja</th><th></th></tr>
-            </thead>
-            <tbody id="zest-strefa-tbody"></tbody>
-          </table>
-        </div>
-        <p id="zest-strefa-brak" class="hint hidden">Nic nie czeka w strefie. 🎉</p>
-
-        <h3 class="podnaglowek">Do przywiezienia z MAG — rezerwacja przekracza stan hali</h3>
+      <!-- Wszystkie raporty pod soba, bez podzakladek: to cztery odpowiedzi na jedno pytanie
+           "co dzis przywiezc / czego brakuje", wiec czyta sie je jednym przewinieciem, a nie
+           klikajac po zakladkach. Adres #zestawienia/<raport> zostal - teraz PRZEWIJA do sekcji
+           (patrz ZEST_KOTWICE), zeby kafle Pulpitu dalej ladowaly na konkretnym raporcie. -->
+      <section id="zest-sekcja-mag">
+        <h3 class="podnaglowek">Do przywiezienia z MAG <span id="zest-licznik-mag" class="hint-inline"></span></h3>
         <div class="tabela-wrapper">
           <table class="tabela">
             <thead>
@@ -529,22 +508,10 @@
           </table>
         </div>
         <p id="zest-doprzywiezienia-brak" class="hint hidden">Nic do przywiezienia z MAG. 🎉</p>
-      </div>
+      </section>
 
-      <div id="zest-leszno" class="zest-tresc hidden">
-        <p class="hint">Stan na K4+K4G poniżej progu, a w Lesznie jest zapas.</p>
-        <div class="tabela-wrapper">
-          <table class="tabela">
-            <thead>
-              <tr><th>Artykuł</th><th>Nazwa</th><th>EAN</th><th>K4</th><th>K4G</th><th>MAG</th><th>LS</th><th>Razem</th><th></th></tr>
-            </thead>
-            <tbody id="zest-leszno-tbody"></tbody>
-          </table>
-        </div>
-        <p id="zest-leszno-brak" class="hint hidden">Nic do przywiezienia z Leszna. 🎉</p>
-      </div>
-
-      <div id="zest-nadsprzedaz" class="zest-tresc hidden">
+      <section id="zest-sekcja-nadsprzedaz">
+        <h3 class="podnaglowek">Nadsprzedaż <span id="zest-licznik-nadsprzedaz" class="hint-inline"></span></h3>
         <p class="hint">Rezerwacje przekraczają stan łączny (K4+K4G+MAG+LS) — obiecane więcej, niż mamy.</p>
         <div class="tabela-wrapper">
           <table class="tabela">
@@ -555,7 +522,34 @@
           </table>
         </div>
         <p id="zest-nadsprzedaz-brak" class="hint hidden">Brak nadsprzedaży. 🎉</p>
-      </div>
+      </section>
+
+      <section id="zest-sekcja-leszno">
+        <h3 class="podnaglowek">Leszno <span id="zest-licznik-leszno" class="hint-inline"></span></h3>
+        <p class="hint">Stan na K4+K4G poniżej progu, a w Lesznie jest zapas.</p>
+        <div class="tabela-wrapper">
+          <table class="tabela">
+            <thead>
+              <tr><th>Artykuł</th><th>Nazwa</th><th>EAN</th><th>K4</th><th>K4G</th><th>MAG</th><th>LS</th><th>Razem</th><th></th></tr>
+            </thead>
+            <tbody id="zest-leszno-tbody"></tbody>
+          </table>
+        </div>
+        <p id="zest-leszno-brak" class="hint hidden">Nic do przywiezienia z Leszna. 🎉</p>
+      </section>
+
+      <section id="zest-sekcja-strefa">
+        <h3 class="podnaglowek">W strefie przyjęć <span id="zest-licznik-strefa" class="hint-inline"></span></h3>
+        <div class="tabela-wrapper">
+          <table class="tabela">
+            <thead>
+              <tr><th>Artykuł</th><th>Nazwa</th><th>Skąd</th><th>Szt.</th><th>Lokalizacja</th><th>Stan K4</th><th>Rezerwacja</th><th></th></tr>
+            </thead>
+            <tbody id="zest-strefa-tbody"></tbody>
+          </table>
+        </div>
+        <p id="zest-strefa-brak" class="hint hidden">Nic nie czeka w strefie. 🎉</p>
+      </section>
     </section>
 
     <section id="panel-sciezki" class="panel hidden">
@@ -563,9 +557,10 @@
         <h2>Raporty</h2>
         <div class="filtry">
           <select id="raporty-sciezka">
-            <option value="">Wszystkie ścieżki</option>
+            <option value="">Wszystkie źródła</option>
             <option value="ostatnie-sztuki">Ostatnie sztuki</option>
             <option value="k4-rezerwacja">K4 pełna rezerwacja</option>
+            <option value="zwroty">Nie znaleziono na wózku</option>
           </select>
           <span id="raporty-licznik" class="filtry-info"></span>
           <button type="button" id="btn-raporty-odswiez" class="btn">Odśwież</button>
@@ -575,7 +570,7 @@
         <table class="tabela">
           <thead>
             <tr>
-              <th>Artykuł</th><th>Lokalizacja</th><th>Ścieżka</th><th>Stan GT</th>
+              <th>Artykuł</th><th>Lokalizacja</th><th>Źródło</th><th>Stan GT</th>
               <th>Policzono</th><th>Różnica</th><th>Rezerwacja</th><th>Kto</th><th>Kiedy</th><th></th>
             </tr>
           </thead>

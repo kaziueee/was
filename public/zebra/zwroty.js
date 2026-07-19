@@ -16,6 +16,7 @@
   let idx = 0;
   let potwierdzony = false;
   let lokCel = null;     // { id, kod } - ustalana skanem albo podpowiedzia
+  let zgloszoneBraki = 0; // "Brak na wozku" w tym przejsciu - do podsumowania na koncu
 
   function komunikat(t, typ) {
     const box = el('zwroty-komunikat');
@@ -78,7 +79,7 @@
       div.className = 'lista-poz';
       div.innerHTML =
         `<span class="poz-glowna">`
-        + `<span class="poz-kod">${w.nazwa || `Wózek ${w.id}`}</span>`
+        + `<span class="poz-kod">${w.etykieta}</span>`
         + `<span class="poz-podpis">${w.do_rozlozenia} z ${w.pozycji} SKU · ${w.status}</span>`
         + `</span>`
         + `<span class="poz-prawa"><span class="poz-rez">rozłóż ›</span></span>`;
@@ -96,7 +97,8 @@
       wozek = dane.wozek;
       lista = (dane.pozycje || []).filter((p) => p.zostalo > 0);
       idx = 0;
-      el('zwroty-tytul').textContent = wozek.nazwa || `Wózek ${wozek.id}`;
+      zgloszoneBraki = 0;
+      el('zwroty-tytul').textContent = wozek.etykieta;
       pokazPod('zwroty-poz');
       history.pushState({ v: 'zwroty' }, ''); // Back z rozkladania -> lista wozkow
       renderPozycja();
@@ -118,10 +120,7 @@
       el('zwroty-karta').innerHTML = '';
       el('zwroty-skan').closest('.pole-blok').classList.add('hidden');
       el('zwroty-wyjscia').classList.add('hidden');
-      el('zwroty-sukces-ikona').textContent = '🎉';
-      el('zwroty-sukces-tekst').innerHTML = '<strong>Wózek rozłożony</strong>';
-      el('zwroty-sukces').classList.remove('hidden');
-      el('zwroty-sukces').dataset.koniec = '1';
+      pokazKoniecWozka();
       return;
     }
 
@@ -142,14 +141,51 @@
   //   przed skanem  - pelna: nazwa i miejsce pomagaja znalezc towar na wozku,
   //   po potwierdzeniu - zwiniana: tozsamosc jest juz potwierdzona skanem, wiec nazwa to szum,
   //     a miejsce dubluje pole "Lokalizacja" ponizej. Zostaje symbol + ile i z czego.
-  function rysujKarte(p, potwierdzona) {
+  // Wyjatek: przy potwierdzeniu recznym (bez skanu) nazwa ZOSTAJE - jest wtedy jedyna
+  // weryfikacja tozsamosci, jaka magazynier ma pod reka.
+  function rysujKarte(p, potwierdzona, bezSkanu) {
+    // Miejsce na gorze i duze: to jedyna informacja, ktora prowadzi magazyniera przez hale.
+    // Pusta podpowiedz nie udaje kodu - mowi, co zrobic zamiast tego.
+    const miejsce = p.lok_podpowiedz
+      ? `<span class="karta-lok">${p.lok_podpowiedz}</span>`
+      : `<span class="karta-lok karta-lok--brak">Brak miejsca w WMS — zeskanuj lokalizację</span>`;
     el('zwroty-karta').innerHTML = potwierdzona
-      ? `<strong>✓ ${p.artykul_symbol || p.artykul_gt_id}</strong>`
+      ? `<strong>${bezSkanu ? '⚠' : '✓'} ${p.artykul_symbol || p.artykul_gt_id}${bezSkanu ? ' — bez skanu' : ''}</strong>`
+        + (bezSkanu ? `<span>${p.artykul_nazwa || ''}</span>` : '')
         + `<span class="hist-meta">${p.zostalo} szt. · ${p.zrodlo_dok}</span>`
-      : `<strong>${p.artykul_symbol || p.artykul_gt_id}</strong>`
+      : miejsce
+        + `<strong>${p.artykul_symbol || p.artykul_gt_id}</strong>`
         + `<span>${p.artykul_nazwa || ''}</span>`
-        + `<span>📍 ${p.lok_podpowiedz || '— brak miejsca w WMS, zeskanuj —'}</span>`
         + `<span class="hist-meta">${p.zostalo} szt. · ${p.zrodlo_dok}</span>`;
+  }
+
+  // Koniec listy pozycji to NIE to samo co "wozek rozlozony": pominiecia zostawiaja towar na
+  // wozku, a wozek na liscie do rozlozenia. Falszywe 🎉 kazalo szukac bledu w liczniku, ktory
+  // liczyl dobrze - klamal ekran.
+  //
+  // Zgloszony brak to trzeci przypadek: backend zdejmuje taka pozycje z wozka (wraca oznaczona
+  // na liste zwrotow), wiec NIE liczy sie do "zostalo" - inaczej ekran obiecywalby towar,
+  // ktorego na wozku juz nie ma.
+  function pokazKoniecWozka() {
+    const naWozku = lista.filter((p) => p.zostalo > 0 && !p.zdjeteJakoBrak).length;
+    const odlozono = lista.filter((p) => p.zostalo <= 0).length;
+    const box = el('zwroty-sukces');
+    if (!naWozku && !zgloszoneBraki) {
+      el('zwroty-sukces-ikona').textContent = '🎉';
+      el('zwroty-sukces-tekst').innerHTML = '<strong>Wózek rozłożony</strong>';
+    } else {
+      el('zwroty-sukces-ikona').textContent = '⚠';
+      box.classList.add('ostrzezenie');
+      el('zwroty-sukces-tekst').innerHTML =
+        `<strong>Koniec wózka</strong><br>`
+        + `Odłożono ${odlozono} z ${lista.length}`
+        + (zgloszoneBraki ? ` · ${zgloszoneBraki} zgłoszone jako brak (zdjęte z wózka)` : '')
+        + (naWozku ? ` · zostało ${naWozku}` : '')
+        + `.<br>`
+        + (naWozku ? 'Wózek czeka dalej na liście.' : 'Wózek zjechał z listy.');
+    }
+    box.classList.remove('hidden');
+    box.dataset.koniec = '1';
   }
 
   // skan towaru potwierdza tozsamosc (symbol albo EAN) - dopiero potem lokalizacja
@@ -164,12 +200,21 @@
       komunikat(`Zeskanowano „${cel}", a oczekiwano ${symbol}. To inna pozycja.`, 'blad');
       return;
     }
+    przejdzDoLokalizacji(false);
+  }
+
+  // Krok po potwierdzeniu tozsamosci - skanem albo recznie ("Nie skanuje sie", gdy EAN sie nie
+  // czyta, a klepanie symbolu na Zebrze to droga przez meke). Przy potwierdzeniu recznym karta
+  // mowi o tym wprost - nie udajemy, ze cos zweryfikowalismy.
+  function przejdzDoLokalizacji(bezSkanu) {
+    const p = lista[idx];
+    if (!p) return;
     potwierdzony = true;
     komunikat('');
     // skan zrobil swoje - zwijamy pole i karte, zeby lokalizacja i ilosc zmiescily sie
     // na ekranie bez scrolla. Kolejny skan (lokalizacji) laduje juz w polu ponizej.
     el('zwroty-skan').closest('.pole-blok').classList.add('hidden');
-    rysujKarte(p, true);
+    rysujKarte(p, true, bezSkanu);
     el('zwroty-blok-lok').classList.remove('hidden');
     // Podpowiedz z WMS/GT wpisujemy od razu: w 99% przypadkow towar wraca na swoje miejsce,
     // wiec skan lokalizacji jest potwierdzeniem, nie praca. Pusta = trzeba zeskanowac.
@@ -265,7 +310,8 @@
   }
 
   // "Brak na wozku" - lista obiecuje towar, ktorego na wozku nie ma. To NIE jest stan zero
-  // (GT o wozkach nic nie wie), wiec wlasna akcja i zaden ruch WMS. Pozycja zostaje na wozku.
+  // (GT o wozkach nic nie wie), wiec wlasna akcja i zaden ruch WMS. Backend zdejmuje pozycje
+  // z wozka i zwraca ja na liste zwrotow oznaczona jako "nie znaleziono" (routes/zwroty.js).
   async function brak() {
     const p = lista[idx];
     if (!p || !wozek) return;
@@ -278,11 +324,14 @@
       });
       const dane = await res.json();
       if (!res.ok) throw new Error(dane?.blad || `Błąd ${res.status}`);
+      zgloszoneBraki += 1;
+      p.zdjeteJakoBrak = true;   // backend zdjal ja z wozka - patrz pokazKoniecWozka
       beep(false);
       el('zwroty-sukces-ikona').textContent = '≠';
       el('zwroty-sukces').classList.add('ostrzezenie');
       el('zwroty-sukces-tekst').innerHTML =
-        `<strong>${p.artykul_symbol}</strong> — zgłoszone.<br>Nie znaleziono na wózku (${p.zostalo} szt.).`;
+        `<strong>${p.artykul_symbol}</strong> — zgłoszone (${p.zostalo} szt.).<br>`
+        + `Zdjęte z wózka, wróciło na listę zwrotów.`;
       el('zwroty-sukces').classList.remove('hidden');
     } catch (err) {
       komunikat(err.message, 'blad');
@@ -314,6 +363,7 @@
   el('zwroty-sukces').addEventListener('click', zamknijSukces);
   el('zwroty-pomin').addEventListener('click', pomin);
   el('zwroty-brak').addEventListener('click', brak);
+  el('zwroty-bez-skanu').addEventListener('click', () => przejdzDoLokalizacji(true));
   el('zwroty-wstecz').addEventListener('click', () => history.back());
 
   el('zwroty-ilosc-minus').addEventListener('click', () => {

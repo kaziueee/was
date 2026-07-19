@@ -165,6 +165,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS wozki (
   zamknal TEXT
 )`);
 
+// numer = etykieta fizycznego wozka ("Wozek 3"), NIE klucz. Numery sie RECYKLUJA: rozlozony
+// wozek oddaje swoj numer do puli, bo fizycznie stoi juz pusty i mozna go zaladowac na nowo.
+// Dlatego kluczem w URL-ach i audycie zostaje `id` - numer 3 na przestrzeni miesiaca oznacza
+// wiele roznych wozkow. Backfill: stare wozki dostaja numer = id (byly tak wyswietlane).
+const kolumnyWozkow = db.prepare('PRAGMA table_info(wozki)').all();
+if (!kolumnyWozkow.some((k) => k.name === 'numer')) {
+  db.exec('ALTER TABLE wozki ADD COLUMN numer INTEGER');
+  db.exec('UPDATE wozki SET numer = id WHERE numer IS NULL');
+}
+
 // Pozycja wozka. ilosc = SNAPSHOT z chwili tworzenia, NIE biezacy stan kubelka.
 //
 // Po co snapshot, skoro wszedzie indziej liczymy na zywo: kubelek zwrotu widzi tylko okno

@@ -13,6 +13,10 @@
   let lista = [];   // przystanki obchodu
   let idx = 0;      // biezacy przystanek
   let potwierdzony = false; // czy zeskanowano wlasciwy towar na tym przystanku
+  // Licznik przystankow zamknietych liczeniem vs pominietych - podsumowanie na koncu obchodu
+  // musi je rozroznic, inaczej "pomin wszystko" konczy sie falszywym "Sprawdzono N pozycji".
+  let sprawdzone = 0;
+  let pominiete = 0;
   // Aktualna sciezka - parametryzuje endpointy (lista / sprawdzenie / raport). Ustawiana z menu.
   let sciezkaBaza = '/api/sciezki/ostatnie-sztuki';
   let sciezkaNazwa = 'Ostatnie sztuki';
@@ -70,6 +74,8 @@
       if (!res.ok) throw new Error(dane?.blad || `Błąd ${res.status}`);
       lista = dane.pozycje || [];
       idx = 0;
+      sprawdzone = 0;
+      pominiete = 0;
       renderPrzystanek();
     } catch (err) {
       el('sciezki-karta').innerHTML = '';
@@ -90,9 +96,13 @@
       el('sciezki-skan').closest('.pole-blok').classList.add('hidden');
       el('sciezki-ilosc').closest('.pole-blok').classList.add('hidden');
       el('sciezki-wyjscia').classList.add('hidden');
-      el('sciezki-pusto').textContent = lista.length
-        ? `Sprawdzono ${lista.length} ${lista.length === 1 ? 'pozycję' : 'pozycji'}. 🎉`
-        : 'Brak produktów do sprawdzenia. 🎉';
+      // Uczciwe podsumowanie: pominiecie to nie sprawdzenie. Przy samych pominieciach
+      // ekran ma mowic, ze robota czeka - nie gratulowac obchodu, ktorego nie bylo.
+      el('sciezki-pusto').textContent = !lista.length
+        ? 'Brak produktów do sprawdzenia. 🎉'
+        : (pominiete === 0
+          ? `Sprawdzono ${sprawdzone} ${odmianaPozycji(sprawdzone)}. 🎉`
+          : `Koniec listy — sprawdzono ${sprawdzone} z ${lista.length}, pominięto ${pominiete}. Pominięte wrócą na listę za tydzień.`);
       el('sciezki-pusto').classList.remove('hidden');
       return;
     }
@@ -102,18 +112,7 @@
     el('sciezki-skan').closest('.pole-blok').classList.remove('hidden');
     el('sciezki-ilosc').closest('.pole-blok').classList.add('hidden'); // ilosc dopiero po skanie
     el('sciezki-pusto').classList.add('hidden');
-    // Ile sztuk NIE lezy na regale, tylko w strefie (nierozlozona dostawa / zwrot / przywozka).
-    // Bez tego magazynier szukalby ich na polce i zglaszal niezgodnosc, ktorej nie ma - backend
-    // odejmuje strefy od oczekiwanej ilosci (routes/sciezki.js), wiec ekran musi to powiedziec.
-    // Liczby oczekiwanej NIE pokazujemy - liczenie ma byc w ciemno.
-    const wStrefach = p.w_strefach > 0
-      ? `<span class="sciezki-strefa">⚠ ${p.w_strefach} szt. leży w strefie — nie szukaj ich na regale</span>`
-      : '';
-    el('sciezki-karta').innerHTML =
-      `<strong>${p.symbol || p.artykul_gt_id}</strong>`
-      + `<span>${p.nazwa || ''}</span>`
-      + `<span>📍 ${p.lokalizacja_kod}</span>`
-      + wStrefach;
+    rysujKarte(p, null);
     // Rezerwacje na K4 (rozwijana, lazy-load) - ta sama sekcja co ekran Ruch. Pokazuje
     // sie tylko gdy rezerwacja > 0; nie zdradza liczonego stanu fizycznego (rez != stan).
     przygotujRezerwacjeZk(
@@ -121,7 +120,9 @@
       el('sciezki-rez-zk')
     );
     el('sciezki-wyjscia').classList.remove('hidden');
-    el('sciezki-skan-hint').textContent = 'Zeskanuj towar, aby potwierdzić że jesteś przy właściwej pozycji.';
+    // krotko i w jednej linii - etykieta pola mowi juz "Zeskanuj towar z polki", a kazda
+    // zawinieta linia zjada wysokosc potrzebna wyjsciom (Pomin / Brak) przy 536 px
+    el('sciezki-skan-hint').textContent = 'Potwierdź, że to właściwa pozycja.';
     el('sciezki-skan').value = '';
     el('sciezki-ilosc').value = '';
     el('sciezki-skan').focus();
@@ -147,6 +148,7 @@
       });
       const dane = await res.json();
       if (!res.ok) throw new Error(dane?.blad || `Błąd ${res.status}`);
+      pominiete += 1;
       idx += 1;
       renderPrzystanek();
     } catch (err) {
@@ -177,6 +179,7 @@
       });
       const dane = await res.json();
       if (!res.ok) throw new Error(dane?.blad || `Błąd ${res.status}`);
+      sprawdzone += 1;   // zero to tez wynik liczenia, nie pominiecie
       // Zgodne = GT tez ma 0 (pusta polka potwierdzona). Niezgodne = GT ma stan, ktorego
       // na polce nie ma - to najwazniejszy sygnal tej sciezki, wiec zatrzymanie z komunikatem.
       if (dane.zgodne) {
@@ -195,6 +198,44 @@
     }
   }
 
+  // Karta przystanku. Lokalizacja NAJPIERW i duza: na obchodzie pierwsza decyzja to "dokad
+  // ide", a symbol czyta sie dopiero przy towarze. Ostrzezenie o strefie zostaje w kazdym
+  // stanie - jest potrzebne wlasnie przy liczeniu.
+  //   stan null       - przed potwierdzeniem: pelna karta (nazwa pomaga znalezc towar),
+  //   stan 'skan'     - tozsamosc potwierdzona skanem: nazwa to juz szum,
+  //   stan 'bez-skanu' - potwierdzil czlowiek: nazwa ZOSTAJE, bo jest jedyna weryfikacja.
+  function rysujKarte(p, stan) {
+    // Ile sztuk NIE lezy na regale, tylko w strefie (nierozlozona dostawa / zwrot / przywozka).
+    // Bez tego magazynier szukalby ich na polce i zglaszal niezgodnosc, ktorej nie ma - backend
+    // odejmuje strefy od oczekiwanej ilosci (routes/sciezki.js), wiec ekran musi to powiedziec.
+    // Liczby oczekiwanej NIE pokazujemy - liczenie ma byc w ciemno.
+    const wStrefach = p.w_strefach > 0
+      ? `<span class="sciezki-strefa">⚠ ${p.w_strefach} szt. leży w strefie — nie szukaj ich na regale</span>`
+      : '';
+    const znacznik = stan === 'skan' ? '✓ ' : (stan === 'bez-skanu' ? '⚠ ' : '');
+    el('sciezki-karta').innerHTML =
+      `<span class="karta-lok">${p.lokalizacja_kod}</span>`
+      + `<strong>${znacznik}${p.symbol || p.artykul_gt_id}${stan === 'bez-skanu' ? ' — bez skanu' : ''}</strong>`
+      + (stan === 'skan' ? '' : `<span>${p.nazwa || ''}</span>`)
+      + wStrefach;
+  }
+
+  // Odblokowanie kroku liczenia. Tozsamosc potwierdza skan albo - gdy EAN sie nie czyta -
+  // sam magazynier ("Nie skanuje sie"). Pole skanu zwijamy razem z przyciskiem: zrobilo swoje,
+  // a krok liczenia (ilosc + Zgadza sie + wyjscia) musi zmiescic sie bez scrolla na 536 px.
+  function odblokujLiczenie(bezSkanu) {
+    const p = lista[idx];
+    if (!p) return;
+    potwierdzony = true;
+    komunikat('');
+    el('sciezki-skan').closest('.pole-blok').classList.add('hidden');
+    rysujKarte(p, bezSkanu ? 'bez-skanu' : 'skan');
+    el('sciezki-ilosc').closest('.pole-blok').classList.remove('hidden');
+    el('sciezki-zatwierdz').classList.remove('hidden');
+    el('sciezki-ilosc').focus();
+    el('sciezki-ilosc').select();
+  }
+
   // skan potwierdza tozsamosc towaru (symbol lub EAN); dopiero wtedy pole ilosci
   function obsluzSkanObchod(kod) {
     const p = lista[idx];
@@ -203,13 +244,7 @@
     const symbol = String(p.symbol || '').toUpperCase();
     const ean = String(p.ean || '').toUpperCase();
     if (cel === symbol || (ean && cel === ean)) {
-      potwierdzony = true;
-      komunikat('');
-      el('sciezki-skan-hint').textContent = '✓ Zgodny towar — wpisz policzoną ilość.';
-      el('sciezki-ilosc').closest('.pole-blok').classList.remove('hidden');
-      el('sciezki-zatwierdz').classList.remove('hidden');
-      el('sciezki-ilosc').focus();
-      el('sciezki-ilosc').select();
+      odblokujLiczenie(false);
     } else {
       beep(false);
       komunikat(`Zeskanowano „${cel}", a oczekiwano ${symbol}. To inna pozycja.`, 'blad');
@@ -239,6 +274,7 @@
       });
       const dane = await res.json();
       if (!res.ok) throw new Error(dane?.blad || `Błąd ${res.status}`);
+      sprawdzone += 1;
       if (dane.zgodne) {
         beep(true);
         komunikat('Zgadza się ✓', 'ok');
@@ -291,6 +327,13 @@
       box.innerHTML = '';
       komunikat(err.message, 'blad');
     }
+  }
+
+  // Odmiana "pozycje/pozycji" wg liczby (do podsumowania obchodu; 1 obsluzone osobno).
+  function odmianaPozycji(n) {
+    if (n === 1) return 'pozycję';
+    const o = n % 10, d = n % 100;
+    return (o >= 2 && o <= 4 && (d < 12 || d > 14)) ? 'pozycje' : 'pozycji';
   }
 
   // Odmiana "sprawa/sprawy/spraw" wg liczby (do licznika w naglowku raportu).
@@ -398,6 +441,7 @@
   el('sciezki-sukces').addEventListener('click', zamknijSukces);
   el('sciezki-pomin').addEventListener('click', pominPrzystanek);
   el('sciezki-brak').addEventListener('click', zglosBrak);
+  el('sciezki-bez-skanu').addEventListener('click', () => { if (lista[idx]) odblokujLiczenie(true); });
 
   // Wstecz: z podekranu obchodu/raportu -> menu scizek; z menu scizek -> menu glowne.
   // history.back() cofa dokladnie o jeden wpis (patrz pushState w startObchod/otworzRaport

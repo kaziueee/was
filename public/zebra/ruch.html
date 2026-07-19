@@ -20,12 +20,9 @@
     <main class="ekran-tresc">
       <button type="button" id="btn-go-ruch" class="btn-menu">Ruch towaru<span>MM / zmiana lokalizacji</span></button>
       <button type="button" id="btn-go-uzup" class="btn-menu">Uzupełnienia K4<span>K4G → K4 wg rezerwacji</span></button>
-      <button type="button" id="btn-go-sciezki" class="btn-menu">Ścieżki<span>zadania obchodu magazynu</span></button>
-      <button type="button" id="btn-go-zwroty" class="btn-menu">Zwroty<span>rozłóż wózek z korekt</span></button>
+      <button type="button" id="btn-go-sciezki" class="btn-menu">Ścieżki<span>obchód magazynu · zwroty</span></button>
       <button type="button" id="btn-go-dostawy" class="btn-menu">Dostawy<span>rozłóż towar z faktur</span></button>
-      <button type="button" id="btn-go-przywozki" class="btn-menu">Przywózka<span>rozłóż towar z MAG / Leszna</span></button>
-      <button type="button" id="btn-go-pw" class="btn-menu">Przyjęcia wewn (PW)<span>rozłóż towar z korekt / inwentury</span></button>
-      <button type="button" id="btn-go-dosp" class="btn-menu">Do sprawdzenia<span>GT ma stan, WMS nie wie gdzie</span></button>
+      <button type="button" id="btn-go-przyjecia" class="btn-menu">Przyjęcia<span>PW · do sprawdzenia · przywózka</span></button>
       <button type="button" id="btn-go-historia" class="btn-menu">Historia ruchów<span>ostatnie operacje na Zebrze</span></button>
       <a class="btn-menu" href="produkty.html">Test wyszukiwania (GT)<span>podgląd karty produktu</span></a>
       <button type="button" id="btn-pelny-ekran" class="btn-menu btn-menu-2">⛶ Tryb pełnoekranowy</button>
@@ -250,6 +247,9 @@
         <button type="button" id="btn-sciezka-raport" class="btn-menu btn-menu-2">Raport: Ostatnie sztuki<span>niezgodności do sprawdzenia</span></button>
         <button type="button" id="btn-sciezka-rez" class="btn-menu">K4 pełna rezerwacja<span>towar tylko w K4, cały zarezerwowany</span></button>
         <button type="button" id="btn-sciezka-rez-raport" class="btn-menu btn-menu-2">Raport: K4 rezerwacja<span>niezgodności do sprawdzenia</span></button>
+        <!-- Zwroty to tez obchod z checklista (wozek zamiast alejki), wiec siedza tu, a nie
+             w menu glownym. Otwieraja wlasny widok - Back wraca do tego menu. -->
+        <button type="button" id="btn-go-zwroty" class="btn-menu">Zwroty<span>rozłóż wózek z korekt</span></button>
       </section>
 
       <!-- podekran: obchod "Ostatnie sztuki" (jeden przystanek na ekran) -->
@@ -263,6 +263,10 @@
             <input type="text" id="sciezki-skan" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj SKU / EAN">
           </div>
           <p id="sciezki-skan-hint" class="pole-hint"></p>
+          <!-- Wyjscie awaryjne dla towaru bez czytelnego EAN-u: alternatywa to reczne klepanie
+               symbolu na Zebrze, wiec i tak nikt by nie skanowal. Lepiej dac jeden tap i
+               zostawic slad "bez skanu" niz udawac, ze tozsamosc potwierdzono. -->
+          <button type="button" id="sciezki-bez-skanu" class="btn-bez-skanu">Zatwierdź bez EAN</button>
         </div>
         <div class="pole-blok">
           <label class="pole-etykieta" for="sciezki-ilosc">Policzona ilość</label>
@@ -326,6 +330,7 @@
             <input type="text" id="zwroty-skan" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj SKU / EAN">
           </div>
           <p id="zwroty-skan-hint" class="pole-hint"></p>
+          <button type="button" id="zwroty-bez-skanu" class="btn-bez-skanu">Zatwierdź bez EAN</button>
         </div>
         <div class="pole-blok hidden" id="zwroty-blok-lok">
           <label class="pole-etykieta" for="zwroty-lok">Lokalizacja</label>
@@ -391,6 +396,23 @@
   </div>
   </div><!-- /widok-dostawy -->
 
+  <!-- Przyjecia: rozdzielacz nad trzema szufladami przychodu (PW, do sprawdzenia, przywozka).
+       Same ekrany zostaja osobnymi widokami - to tylko jeden poziom mniej w menu glownym,
+       zeby nie siedzialy w nim trzy kafle o tej samej robocie. -->
+  <div id="widok-przyjecia" class="hidden">
+  <div class="ekran">
+    <header class="ekran-naglowek"><div class="ekran-sku"><h1>Przyjęcia</h1></div></header>
+    <main class="ekran-tresc">
+      <button type="button" id="btn-go-pw" class="btn-menu">Przyjęcia wewn (PW)<span>rozłóż towar z korekt / inwentury</span></button>
+      <button type="button" id="btn-go-dosp" class="btn-menu">Do sprawdzenia<span>GT ma stan, WMS nie wie gdzie</span></button>
+      <button type="button" id="btn-go-przywozki" class="btn-menu">Przywózka<span>rozłóż towar z MAG / Leszna</span></button>
+    </main>
+    <footer class="ekran-stopka">
+      <button type="button" id="przyjecia-wstecz" class="btn-wstecz">← Wstecz</button>
+    </footer>
+  </div>
+  </div><!-- /widok-przyjecia -->
+
   <!-- Przywozki: MM z MAG/Leszna na K4, wystawione poza WMS, lezace w strefie przyjec.
        Plaska lista - przywozki sa drobne (141 dok./kwartal, srednio 1-2 szt.), wiec poziom
        dokumentu tylko dokladalby klikniec. -->
@@ -452,6 +474,7 @@
   <script src="sciezki.js"></script>
   <script src="zwroty.js"></script>
   <script src="dostawy.js"></script>
+  <script src="przyjecia.js"></script>
   <script src="przywozki.js"></script>
   <script src="przyjecia-wewn.js"></script>
   <script src="do-sprawdzenia.js"></script>

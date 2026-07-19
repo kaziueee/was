@@ -77,7 +77,10 @@ async function wykonajSpojnoscWagiGabarytowej() {
 
   if (poprawione) {
     audyt.zapisz({
-      uzytkownik: null,
+      // 'system:<job>' to UMOWA, nie ozdobnik: po tym prefiksie log odrozniapracę automatu
+      // od pracy czlowieka i domyslnie chowa te pierwsza (routes/audyt.js). Nowy job MUSI
+      // sie tak podpisac, inaczej jego wpisy zasypia widok "kto to zmienil".
+      uzytkownik: 'system:waga-gabarytowa',
       akcja: 'waga_gab_przeliczona',
       wynik: 'poprawione',
       ilosc: poprawione,

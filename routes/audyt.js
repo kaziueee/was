@@ -16,6 +16,19 @@ router.get('/', (req, res) => {
   if (artykul_gt_id) { warunki.push('a.artykul_gt_id = ?'); param.push(String(artykul_gt_id)); }
   if (uzytkownik) { warunki.push('a.uzytkownik = ?'); param.push(uzytkownik); }
   if (akcja) { warunki.push('a.akcja = ?'); param.push(akcja); }
+
+  // Domyslnie log pokazuje TYLKO prace czlowieka. Wpisy jobow (uzytkownik 'system:<job>')
+  // sa szumem przy pytaniu "kto to zmienil" - jest ich duzo, powstaja same i nikt za nie
+  // nie odpowiada. Wchodza w dwoch przypadkach:
+  //   - ?automaty=1 - przelacznik "U+A" w filtrze na desktopie,
+  //   - gdy pytamy WPROST o akcje automatu (?akcja=korekta_auto) - proszenie o cos i
+  //     dostawanie pustki byloby cicha porazka.
+  // Rozpoznajemy po PREFIKSIE uzytkownika, a nie po liscie akcji: lista wymagalaby dopisania
+  // przy kazdym nowym jobie i pierwszy zapomniany zasypywalby widok bez ostrzezenia.
+  // NULL zostaje po stronie czlowieka - to akcja bez podanego operatora, nie automat.
+  if (req.query.automaty !== '1' && !akcja) {
+    warunki.push("(a.uzytkownik IS NULL OR a.uzytkownik NOT LIKE 'system:%')");
+  }
   if (q) {
     warunki.push('(a.artykul_symbol LIKE ? OR a.lokalizacja LIKE ? OR a.artykul_gt_id LIKE ?)');
     const wzor = `%${q}%`;

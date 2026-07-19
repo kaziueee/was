@@ -10,6 +10,7 @@
 
 const db = require('../db/database');
 const { pobierzStanyGt } = require('./gt-produkty');
+const audyt = require('./audyt');
 
 // K4 = pick floor z zywa sprzedaza (Sellasist zbija stan GT bez wiedzy WMS), wiec kopia WMS
 // szybko sie starzeje. Job scala WMS do GT - im czesciej, tym mniejsze okno rozjazdu na K4.
@@ -61,7 +62,14 @@ function autoKorektaK4(artykulGtId, iloscGt) {
   db.prepare('UPDATE stany_lokalizacji SET ilosc = ?, ostatnia_zmiana = CURRENT_TIMESTAMP, operator = ? WHERE id = ?')
     .run(nowaIlosc, 'system:rozjazdy', wiersz.id);
 
-  return `Auto-korekta K4 ${wiersz.kod}: ${wiersz.ilosc} -> ${nowaIlosc} szt. (wg stanu GT)`;
+  // Zwracamy LICZBY, nie sam opis: wpis do logu ma pokazac "99 -> 74", a nie kazac
+  // czytelnikowi parsowac zdanie.
+  return {
+    opis: `Auto-korekta K4 ${wiersz.kod}: ${wiersz.ilosc} -> ${nowaIlosc} szt. (wg stanu GT)`,
+    kod: wiersz.kod,
+    przed: wiersz.ilosc,
+    po: nowaIlosc,
+  };
 }
 
 // zapisuje nowy albo aktualizuje istniejacy otwarty ('nowy') rozjazd K4G dla artykulu.
@@ -118,13 +126,31 @@ async function wykonajDetekcjeRozjazdow() {
 
     if (wiersz.magazyn === 'K4') {
       if (roznica < 0) {
-        const opis = autoKorektaK4(wiersz.artykul_gt_id, iloscGt);
-        if (opis) {
+        const korekta = autoKorektaK4(wiersz.artykul_gt_id, iloscGt);
+        if (korekta) {
           korektyK4++;
           db.prepare(`
             INSERT INTO rozjazdy (artykul_gt_id, artykul_symbol, magazyn, ilosc_gt, ilosc_wms, roznica, status, opis, wyjasniony)
             VALUES (?, ?, 'K4', ?, ?, ?, 'wyjasniony', ?, CURRENT_TIMESTAMP)
-          `).run(wiersz.artykul_gt_id, wiersz.artykul_symbol, iloscGt, wiersz.ilosc_wms, roznica, opis);
+          `).run(wiersz.artykul_gt_id, wiersz.artykul_symbol, iloscGt, wiersz.ilosc_wms, roznica, korekta.opis);
+
+          // Wpis do LOGU ZMIAN (audyt). Rozjazd zostaje 'wyjasniony' - korekta jest normalnym
+          // oddechem systemu (sprzedaz w Subiekcie zbija stan bez wiedzy WMS), wiec nie ma po
+          // co otwierac zadania. Ale sama korekta ma byc DO OBEJRZENIA: to jedyne miejsce,
+          // gdzie widac, ze kopia polki byla zawyzona i o ile. Wlasna akcja = wlasna pozycja
+          // w filtrze logu, wiec da sie wyklikac same korekty automatu.
+          audyt.zapisz({
+            uzytkownik: 'system:rozjazdy',
+            akcja: 'korekta_auto',
+            artykul_gt_id: wiersz.artykul_gt_id,
+            artykul_symbol: wiersz.artykul_symbol,
+            magazyn: 'K4',
+            lokalizacja: korekta.kod,
+            ilosc: korekta.przed - korekta.po,     // o ile zawyzona byla kopia
+            wynik: 'skorygowano',
+            przed: { ilosc: korekta.przed },
+            po: { ilosc: korekta.po },
+          });
         }
       }
       continue;

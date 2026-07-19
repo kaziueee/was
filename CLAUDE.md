@@ -71,6 +71,13 @@ Lista magazynów: `config/magazyny.js`. Wyprowadza dwie **różne** sumy, obie z
 
 **„Lokalizacja Zapas" jest nieużywana (2026-07-19).** Overflow lokalizacji K4G ponad limit `tw_Pole8` zostaje **wyłącznie w WMS** — służy już tylko do oflagowania `ZGODNOSC.OBCIETE` („pole GT za krótkie, żeby pokazać wszystkie wpisy"). Wcześniej kod czytał ten overflow z `pwd_Tekst09` i doklejał go do tekstu lokalizacji K4G. To było podwójnie błędne: pole „Lokalizacja Zapas" siedzi w GT na **`pwd_Tekst08`**, a `pwd_Tekst09` trzyma dziś **„Waga gabarytowa DHL"** — więc do lokalizacji doklejała się waga (`K4G: M2-C6-P2(3); 0,61`). Odczyt usunięty z `gt-fields.js`; werdykty zgodności nigdy na tym nie ucierpiały, bo `zgodneZWms` liczy wyłącznie z `tw_Pole1`/`tw_Pole8`.
 
+**Adnotacja stref w `tw_Pole1` (2026-07-19).** Do adresu K4 dopisywana jest informacja, ile sztuk leży POZA półką: `M2-J14-P2 +D20 +Z3` = 20 szt. z dostawy i 3 ze zwrotu czekają w strefie. Skróty **te same co kolumna „Strefa" na desktopie** (P=przywózka, D=dostawa, Z=zwrot, PW=przyjęcie wewn.) — magazynier nie uczy się drugiego alfabetu. Powód: pole „Miejsce na magazynie" to jedyne, co widzi człowiek szukający towaru z poziomu GT (wydruk, wyszukiwanie w Subiekcie); przy pustej półce mówiło tylko adres pustej półki, a strefy istniały wyłącznie w WMS.
+
+- **To DOPISEK, nie część adresu.** Kto czyta `tw_Pole1` jako **kod do rozwiązania** (cel MM w uzupełnieniach, `pierwszyKodZPola` w „Do sprawdzenia", porównanie zgodności) MUSI przepuścić go przez `bezAdnotacjiStref()`. Kto tylko wyświetla — zostawia. Czyste funkcje w `services/adnotacja-stref.js` (osobny plik, żeby dało się je testować bez SQLite i GT), re-eksport z `gt-fields`.
+- **Zgodność celowo IGNORUJE adnotację** — dopisuje ją job z danych GT, nie WMS, więc porównywanie jej wywalałoby na `NZ` każde SKU z otwartą dostawą mimo zgodnego adresu.
+- **Pisze job** `services/strefy-w-gt-job.js` (co 10 min, `WMS_STREFY_INTERWAL_MIN`), bo strefa zmienia się, gdy w GT pojawi się dokument — czyli wtedy, gdy WMS nic nie robi i nie ma się od czego odpalić. Zapis **tylko przy zmianie** (inaczej setki UPDATE-ów co przebieg) i **tylko dla SKU, którym WMS zna dom na K4** — dopisek ozdabia adres, a pisanie w `tw_Pole1` towarów spoza naszego obiegu jest niebezpieczne (patrz akapit niżej o książkach i meblach). Pole z adresem innym niż w WMS job zostawia nietknięte — poprawianie adresu to robota `synchronizujLokalizacje` przy ruchu.
+- Ruch na SKU chwilowo zdejmuje dopisek (`synchronizujLokalizacje` pisze sam adres); job przywraca go przy najbliższym przebiegu. Świadome: po ruchu strefa i tak się zmieniła, a nieaktualne „+Z3" jest gorsze niż jego brak.
+
 `tw_Pole1`/`tw_Pole8` to standardowe pola dodatkowe (varchar 50) — w innych kategoriach towarów (książki, meble) mają inne znaczenie (autor, pomieszczenie), ale te towary nie mają stanu w K4/K4G, więc się nie nakładają.
 
 Format atomowy w WMS: `M2-J14-P2`. Format skrócony do GT: `M2-J14-P2/3; M2-J15-P1`. Limit pola: ~50 znaków. Overflow do drugiego pola. Jeśli nie mieści się w 100 znakach łącznie — reszta tylko w WMS, GT dostaje tyle ile może + `...`.
@@ -180,6 +187,10 @@ GET  /api/artykul/:id
 POST /api/inwentaryzacja/rw
 POST /api/inwentaryzacja/pw
 ```
+
+## Log zmian (audyt)
+
+Wpisy jobów podpisują się `uzytkownik: 'system:<job>'` (np. `system:rozjazdy`, `system:waga-gabarytowa`) i są **domyślnie ukryte** w Logu zmian — przy pytaniu „kto to zmienił" są szumem, bo powstają same i nikt za nie nie odpowiada. Widać je po wybraniu **„Wszystkie + automaty (U+A)"** albo konkretnej akcji automatu. Rozpoznanie idzie po **prefiksie użytkownika, nie po liście akcji** — lista wymagałaby dopisania przy każdym nowym jobie, a pierwszy zapomniany zasypałby widok. `uzytkownik = NULL` liczy się jako człowiek (akcja bez podanego operatora). Egzekwowane w `routes/audyt.js` (`?automaty=1`).
 
 ## Obsługa rozjazdów
 

@@ -257,7 +257,9 @@ router.get('/licznik', async (req, res) => {
 // w wierszu na 360 px, a sortowanie po calym ciagu ustawialoby liste w kolejnosci losowej
 // wzgledem hali. Front i tak oznacza takie miejsce jako "(z GT - sprawdz)".
 function pierwszyKodZPola(tekst) {
-  const kod = String(tekst || '').split(';')[0].replace(/\(.*$/, '').split('/')[0].trim();
+  // najpierw sciagamy dopisek stref (" +D20 +Z3") - to nie czesc adresu, tylko informacja,
+  // ile lezy poza polka; dalej jak dotad: pierwszy wpis, bez ilosci i bez czlonu "zapas"
+  const kod = gtFields.bezAdnotacjiStref(tekst).split(';')[0].replace(/\(.*$/, '').split('/')[0].trim();
   return kod || null;
 }
 

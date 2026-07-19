@@ -12,6 +12,7 @@
 const { query, naCzesci } = require('./gt-sql');
 const db = require('../db/database');
 const { kanalZK } = require('./kanaly');
+const { bezAdnotacjiStref } = require('./gt-fields');
 
 const MAG_K4 = 4;
 const MAG_GORA = 8;
@@ -89,7 +90,10 @@ async function pobierzUzupelnienia() {
       artykul_gt_id: String(r.tw_Id),
       symbol: r.tw_Symbol,
       nazwa: r.tw_Nazwa,
-      lokalizacja_k4: r.tw_Pole1 || null,    // tekst z GT (Miejsce na magazynie)
+      // BEZ dopisku stref: Zebra podaje to dalej jako `lok_cel_kod` MM (public/zebra/
+      // uzupelnienia.js), wiec musi byc samym kodem - "M2-J14-P2 +Z3" nie rozwiaze sie
+      // na zadna lokalizacje.
+      lokalizacja_k4: bezAdnotacjiStref(r.tw_Pole1) || null,   // tekst z GT (Miejsce na magazynie)
       lokalizacja_gora: r.tw_Pole8 || null,  // tekst z GT (Lokalizacja Gorna)
       stan_k4: r.stan_k4,
       stan_gora: r.stan_gora,

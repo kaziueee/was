@@ -24,6 +24,7 @@ const auth = require('./services/auth');
 const ruchyRetry = require('./services/ruchy-retry');
 const rozjazdyJob = require('./services/rozjazdy');
 const wagaGabJob = require('./services/waga-gabarytowa-job');
+const strefyWGtJob = require('./services/strefy-w-gt-job');
 const rozmontowaniaJob = require('./services/rozmontowania');
 const backupJob = require('./services/backup');
 const reconciliacjaMM = require('./services/reconciliacja-mm');
@@ -88,6 +89,7 @@ app.listen(PORT, () => {
 ruchyRetry.start();
 rozjazdyJob.start();
 wagaGabJob.start();
+strefyWGtJob.start();
 rozmontowaniaJob.start();
 backupJob.start();
 reconciliacjaMM.start();

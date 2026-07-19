@@ -23,6 +23,11 @@ function formatWpis(kod, ilosc) {
   return `${kod}(${Number(ilosc)})`;
 }
 
+// Adnotacja stref w tw_Pole1 ("M2-J14-P2 +D20 +Z3") - czyste funkcje mieszkaja w osobnym
+// module, zeby dalo sie je testowac bez SQLite i GT. Re-eksport nizej, bo wolajacy i tak
+// przychodza po nie do gt-fields.
+const { bezAdnotacjiStref, zbudujAdnotacjeStref, SKROTY_STREF } = require('./adnotacja-stref');
+
 // pozycje: [{kod, ilosc}] - zwraca {gorna, zapas}, oba "" gdy brak lokalizacji
 function kompresujLokalizacjeGorne(pozycje) {
   const wpisy = pozycje.map((p) => formatWpis(p.kod, p.ilosc));
@@ -205,7 +210,10 @@ function formatujAktualnePola(polaGt) {
 // albo recznie zmienione pole w GT.
 function zgodneZWms(artykulGtId, polaGt) {
   const oczekiwane = obliczPolaLokalizacji(artykulGtId);
-  return (polaGt?.tw_Pole1 || '').trim() === oczekiwane.miejsce_na_magazynie
+  // Adnotacja stref (" +D20 +Z3") jest DOPISKIEM, nie lokalizacja - dopisuje ja osobny job
+  // z danych GT, a nie WMS. Porownywanie jej tutaj wywalaloby na NZ kazde SKU z otwarta
+  // dostawa, mimo ze adres zgadza sie co do znaku.
+  return bezAdnotacjiStref(polaGt?.tw_Pole1) === oczekiwane.miejsce_na_magazynie
     && (polaGt?.tw_Pole8 || '').trim() === oczekiwane.lokalizacja_gorna;
 }
 
@@ -296,7 +304,7 @@ async function pobierzPrzegladLokalizacji(artykulGtIds) {
     const polaGt = polaMap.get(id);
     const oczekiwane = oczekiwaneMap.get(id);
 
-    const gtK4 = (polaGt?.tw_Pole1 || '').trim();
+    const gtK4 = bezAdnotacjiStref(polaGt?.tw_Pole1);   // dopisek stref nie jest adresem
     const gtK4gTekst = (polaGt?.tw_Pole8 || '').trim();
 
     // K4: porownanie TEKSTU lokalizacji. Ilosc w K4 zmienia sie przez sprzedaz w GT
@@ -334,5 +342,8 @@ module.exports = {
   pobierzStatusLokalizacjiGt,
   pobierzAktualnePolaLokalizacji,
   pobierzPrzegladLokalizacji,
+  bezAdnotacjiStref,
+  zbudujAdnotacjeStref,
+  SKROTY_STREF,
   ZGODNOSC,
 };

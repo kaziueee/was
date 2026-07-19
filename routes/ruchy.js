@@ -646,6 +646,15 @@ router.post('/rozloz', async (req, res, next) => {
     }
   } catch { /* GT niedostepne - log bez opisu dokumentu, ruch idzie dalej */ }
 
+  // Uczen rozklada WYLACZNIE zwroty. /rozloz obsluguje tez dostawy, przywozki i PW, wiec mount
+  // w app.js jedynie go przepuszcza - regula domyka sie tutaj, na rodzaju rozpoznanym WLASNYM
+  // rozbiciem GT (klient podaje tylko numer dokumentu, wiec payloadem tego nie obejdzie).
+  // Domyslnie ODMAWIAMY: gdy rodzaju nie udalo sie ustalic - brak zrodlo_dok albo catch wyzej
+  // polknal blad GT - zrodloOpis zostaje '(nieprzypisane)' i uczen nie przechodzi.
+  if (req.uzytkownik?.rola === 'uczen' && zrodloOpis !== 'zwrot') {
+    return res.status(403).json({ blad: 'Rola „uczen" moze rozkladac tylko zwroty' });
+  }
+
   const symbolDoWpisu = artykul_symbol
     ?? db.prepare("SELECT artykul_symbol FROM stany_lokalizacji WHERE artykul_gt_id = ? LIMIT 1").get(artykul_gt_id)?.artykul_symbol
     ?? String(artykul_gt_id);

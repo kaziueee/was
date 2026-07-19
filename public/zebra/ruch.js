@@ -171,23 +171,23 @@ function wstecz() {
   ukryjKomunikat();
   ukryjPotwierdzenie();
   if (!kroki.cel.classList.contains('hidden')) {
-    // z kroku "cel": wroc do listy wyboru jesli byla, inaczej do czystego skanu
+    // z kroku "cel": wroc do listy wyboru jesli byla, inaczej wyjdz z kreatora
     if (opcjeWyboru.length > 0 || ostatniaListaArtykulow) {
       pokazKrok('wybor');
       fokusBezKlawiatury(el('input-wybor-skan'));
     } else {
-      reset(); // brak listy -> czysty skan (czysci stan i naglowek)
+      wyjdzZKreatora(); // brak listy -> zrodlo albo czysty skan (czysci stan i naglowek)
     }
   } else if (!kroki.wybor.classList.contains('hidden')) {
     // z rozkladu produktu otwartego z zawartosci lokalizacji (t_GT) -> wroc do tej zawartosci;
     // z rozkladu otwartego z wynikow wyszukiwania -> wroc do wynikow;
-    // z samej listy / rozkladu po skanie -> czysty skan
+    // z samej listy / rozkladu po skanie -> wyjscie z kreatora
     if (powrotDoLokalizacji && ostatniaZawartoscLok) {
       obsluzLokalizacje(ostatniaZawartoscLok);
     } else if (powrotDoWyszukiwania && ostatniaListaArtykulow) {
       obsluzListaArtykulow(ostatniaListaArtykulow, false);
     } else {
-      reset();
+      wyjdzZKreatora();
     }
   } else {
     // na kroku startowym: Wstecz wraca do widoku menu (bez przeladowania -> pelny ekran trzyma)
@@ -1840,21 +1840,29 @@ function kontynuujTenSamProdukt() {
   obsluzArtykul(dane, { skrotPrzypisania: true });
 }
 
-// Dokad wyjsc po zamknieciu sukcesu. Domyslnie: reset kreatora (wejscie z kafla "Ruch" =
-// nowy ruch od zera). Ekran, ktory wchodzi tu ze SWOJEJ listy (Dostawy), podaje wlasny
-// powrot przez ruchOtworzArtykul(kod, {powrot}) - wtedy sukces oddaje go na te liste,
+// Dokad wyjsc z kreatora. Domyslnie: reset (wejscie z kafla "Ruch" = nowy ruch od zera).
+// Ekran, ktory wchodzi tu ze SWOJEJ listy (Dostawy, Przywozka, PW, Do sprawdzenia), podaje
+// wlasny powrot przez ruchOtworzArtykul(kod, {powrot}) - wtedy oddajemy go na te liste,
 // zamiast wyrzucac do pustego skanu.
 //
 // Callback jest zerowany przy KAZDYM wyjsciu z widoku Ruch (pokazWidok) i tuz przed
 // wywolaniem - inaczej wyciekalby na kolejny, niezwiazany produkt. Tak juz raz powstal blad
 // z kontekstem dostawy, wiec kasujemy go w jednym miejscu i bezwarunkowo.
-let powrotPoSukcesie = null;
+let powrotDoZrodla = null;
+
+// Wyjscie z kreatora, gdy nie ma juz kroku wstecz W OBREBIE Ruchu. Dotyczy tak samo sukcesu,
+// jak i Wstecz: przy wejsciu z cudzej listy krok wyboru jest PIERWSZYM ekranem, wiec zejscie
+// na "czysty skan" nie bylo krokiem wstecz, tylko zgubieniem kontekstu - trzeba bylo cofac
+// dwa razy, zeby wrocic na liste, z ktorej sie przyszlo.
+function wyjdzZKreatora() {
+  const powrot = powrotDoZrodla;
+  powrotDoZrodla = null;
+  if (powrot) powrot(); else reset();
+}
 
 function wyjdzZSukcesu() {
   el('sukces-overlay').classList.add('hidden');
-  const powrot = powrotPoSukcesie;
-  powrotPoSukcesie = null;
-  if (powrot) powrot(); else reset();
+  wyjdzZKreatora();
 }
 
 // ekran sukcesu znika po dotknieciu i resetuje kreator do nowego ruchu
@@ -1918,7 +1926,7 @@ function pokazWidok(nazwa, stan) {
   if (dosp) dosp.classList.toggle('hidden', nazwa !== 'dosp');
   // Wyjscie z Ruchu unieważnia powrot poprzedniego wywolujacego - inaczej sukces w zupelnie
   // innym kontekscie odeslalby na liste, ktorej juz nie ma na ekranie.
-  if (nazwa !== 'ruch') powrotPoSukcesie = null;
+  if (nazwa !== 'ruch') powrotDoZrodla = null;
   if (nazwa === 'ruch') { zrobione = []; reset(); } // #5: swieze wejscie czysci liste zrobionych
   if (nazwa === 'uzupelnienia' && window.uzupOtworz) window.uzupOtworz();
   if (nazwa === 'historia' && window.historiaOtworz) window.historiaOtworz();
@@ -1936,7 +1944,7 @@ window.pokazWidok = pokazWidok;
 // Ustawiamy PO pokazWidok, bo pokazWidok('ruch') czysci kontekst poprzedniego wejscia.
 window.ruchOtworzArtykul = (kod, opcje) => {
   pokazWidok('ruch');
-  powrotPoSukcesie = opcje?.powrot ?? null;
+  powrotDoZrodla = opcje?.powrot ?? null;
   history.pushState({ v: 'ruch' }, '');
   if (kod) wykonajSkan(String(kod));
 };

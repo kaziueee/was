@@ -88,14 +88,28 @@ function wymagajAdmin(req, res, next) {
   next();
 }
 
-// Rola 'uczen' = dostep tylko do Sciezek. Blokuje zapisy na innych trasach (403).
-// Dziala na uwierzytelnionych zadaniach - req.uzytkownik ustawia wymagajSesji* (przy zapisach).
-// GET sa otwarte dla wszystkich (read-only), wiec tu nie ma req.uzytkownika i nie blokujemy.
-function blokujUcznia(req, res, next) {
-  if (req.uzytkownik && req.uzytkownik.rola === 'uczen') {
-    return res.status(403).json({ blad: 'Rola „uczen" ma dostep tylko do Sciezek' });
-  }
-  next();
+// Rola 'uczen' = Sciezki + zwroty. Zwrot to tez obchod z checklista (wozek zamiast alejki),
+// dlatego kafel Zwroty siedzi w menu Sciezek na Zebrze, a nie w menu glownym.
+//
+// UWAGA - blokuje TAKZE odczyty, wbrew temu co mowil tu wczesniejszy komentarz. Na GET
+// wymagajSesjiNaZapisie woła opcjonalnaSesja, a ta USTAWIA req.uzytkownik, wiec zalogowany
+// uczen jest tu widoczny rowniez na GET. Zostawiamy to tak (domyslnie zamkniete) i po prostu
+// przepuszczamy imiennie te odczyty, ktorych uczen potrzebuje do pracy.
+//
+// Uzycie: blokujUcznia() - cala trasa zamknieta; blokujUcznia(['/rozloz']) - wymieniona
+// podsciezka przepuszczona. Dopasowanie dokladne albo prefiksowe, wiec '/kod' lapie tez
+// '/kod/M2-J14-P2'. req.path jest liczony WZGLEDEM MOUNTA (app.use strzyga prefiks), wiec
+// podajemy '/rozloz', a nie '/api/ruchy/rozloz'.
+//
+// Przepuszczona trasa MUSI sama dociagnac regule, jesli obsluguje wiecej niz jeden przypadek
+// - patrz POST /ruchy/rozloz, gdzie uczen moze rozlozyc WYLACZNIE kubelek 'zwrot'.
+function blokujUcznia(przepusc = []) {
+  return function (req, res, next) {
+    if (!req.uzytkownik || req.uzytkownik.rola !== 'uczen') return next();
+    const sciezka = req.path.replace(/\/+$/, '') || '/';
+    if (przepusc.some((p) => sciezka === p || sciezka.startsWith(p + '/'))) return next();
+    return res.status(403).json({ blad: 'Rola „uczen" ma dostep tylko do Sciezek i zwrotow' });
+  };
 }
 
 // sprzatanie wygaslych sesji (wolane z joba)

@@ -54,12 +54,18 @@ app.use('/api/blokady', blokadyRouter);
 
 // Na zapisach (POST/PUT/DELETE) wymagamy sesji i WSTRZYKUJEMY operatora z tokenu do req.body
 // (backend = zrodlo prawdy dla "kto"; handlery w routes/* nie musza byc zmieniane). GET otwarte.
-app.use('/api/lokalizacje', auth.wymagajSesjiNaZapisie, auth.blokujUcznia, lokalizacjeRouter);
-app.use('/api/ruchy', auth.wymagajSesjiNaZapisie, auth.blokujUcznia, blokady.middlewareRuch, ruchyRouter);
-app.use('/api/uzupelnienia', auth.wymagajSesjiNaZapisie, auth.blokujUcznia, uzupelnieniaRouter);
+// blokujUcznia(...) to FABRYKA - kazde uzycie musi byc wywolane. Podanie samej funkcji
+// (bez nawiasow) przekazaloby Expressowi fabryke jako middleware i trasa sypalaby 500.
+// Uczen ma dostep do Sciezek i zwrotow; ponizsze wyjatki to dokladnie to, czego wymaga
+// ekran Zwrotow na Zebrze (public/zebra/zwroty.js) - nic ponadto:
+//   /lokalizacje/kod/:kod - GET, rozwiazanie zeskanowanego kodu lokalizacji docelowej
+//   /ruchy/rozloz         - samo odlozenie; handler dodatkowo zaweza ucznia do kubelka 'zwrot'
+app.use('/api/lokalizacje', auth.wymagajSesjiNaZapisie, auth.blokujUcznia(['/kod']), lokalizacjeRouter);
+app.use('/api/ruchy', auth.wymagajSesjiNaZapisie, auth.blokujUcznia(['/rozloz']), blokady.middlewareRuch, ruchyRouter);
+app.use('/api/uzupelnienia', auth.wymagajSesjiNaZapisie, auth.blokujUcznia(), uzupelnieniaRouter);
 app.use('/api/sciezki', auth.wymagajSesjiNaZapisie, sciezkiRouter);
-app.use('/api/zwroty', auth.wymagajSesjiNaZapisie, auth.blokujUcznia, zwrotyRouter);
-app.use('/api/dostawy', auth.wymagajSesjiNaZapisie, auth.blokujUcznia, dostawyRouter);
+app.use('/api/zwroty', auth.wymagajSesjiNaZapisie, zwrotyRouter);   // uczen: zwroty to jego robota
+app.use('/api/dostawy', auth.wymagajSesjiNaZapisie, auth.blokujUcznia(), dostawyRouter);
 app.use('/api/zestawienia', zestawieniaRouter);  // czysty odczyt z GT - bez sesji, jak /api/produkty
 app.use('/api/do-sprawdzenia', doSprawdzeniaRouter);  // czysty odczyt (GT + kopia WMS), nie robi ruchow
 app.use('/api/magazyny', magazynyRouter);

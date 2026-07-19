@@ -316,38 +316,135 @@ const ROZMONTOWANIE_Z_ZWROTU = `
       AND kfs.dok_DataWyst <= pw.dok_DataWyst
   )`;
 
+// PRZYDZIAL ILOSCIOWY zwrotow do rozmontowan (zamiast flagi "czy istnieje jakikolwiek KFS").
+//
+// Po co: sam EXISTS odpowiadal wspolnie dla CALEGO SKU w oknie, wiec jeden zwrocony egzemplarz
+// "uzyczal" flagi kazdemu kolejnemu rozmontowaniu tego zestawu - takze wzietemu ze stanu.
+// Zmierzone na bazie: 34 ze 137 zestawow mialo wiecej rozmontowan oznaczonych "z zwrotu", niz
+// kiedykolwiek wrocilo (NERCHIELIT100: 152 szt. oznaczone vs 65 zwroconych).
+//
+// Model: kazda zwrocona sztuka jest wazna przez OKNO_ROZMONTOWANIE_KFS_DNI od daty KFS i moze
+// byc zuzyta RAZ. Rozmontowania ida chronologicznie i konsumuja najstarsze wazne sztuki.
+// Rozmontowanie, ktore skonsumowalo cokolwiek = "z zwrotu".
+//
+// Czesciowe pokrycie (rozmontowano 6, wrocila 1) tez liczymy jako "z zwrotu" - bledy nie sa
+// symetryczne: falszywe "z zwrotu" to tylko zbedne zadanie (magazynier i tak odlozy towar na
+// polke i stan wyjdzie dobrze), a falszywe "ze stanu" kaze auto-dopisowi WPISAC nieprawde
+// o lokalizacji. W watpliwosci wybieramy zadanie.
+function przydzielZwroty(rozmontowania, zwroty) {
+  const oknoMs = OKNO_ROZMONTOWANIE_KFS_DNI * 24 * 3600 * 1000;
+  const pulaPoZestawie = new Map();
+  for (const z of zwroty) {
+    if (!pulaPoZestawie.has(z.zestaw_id)) pulaPoZestawie.set(z.zestaw_id, []);
+    pulaPoZestawie.get(z.zestaw_id).push({ czas: z.data.getTime(), pozostalo: z.ilosc });
+  }
+  for (const lista of pulaPoZestawie.values()) lista.sort((a, b) => a.czas - b.czas);
+
+  // chronologicznie - inaczej pozniejsze rozmontowanie zjadloby sztuke nalezna wczesniejszemu
+  const wszystkie = [...rozmontowania].sort((a, b) => a.data.getTime() - b.data.getTime());
+  for (const r of wszystkie) {
+    const pula = pulaPoZestawie.get(r.zestaw_id) || [];
+    const czas = r.data.getTime();
+    let potrzeba = r.zestawow;
+    let zuzyto = 0;
+    for (const sztuki of pula) {
+      if (potrzeba <= 0) break;
+      // wazne: zwrot musi byc PRZED rozmontowaniem i nie starszy niz okno
+      if (sztuki.pozostalo <= 0 || sztuki.czas > czas || sztuki.czas < czas - oknoMs) continue;
+      const bierz = Math.min(sztuki.pozostalo, potrzeba);
+      sztuki.pozostalo -= bierz;
+      potrzeba -= bierz;
+      zuzyto += bierz;
+    }
+    r.z_zwrotu = zuzyto > 0;
+  }
+  return wszystkie;
+}
+
+// Wczytuje WSZYSTKIE rozmontowania podanych zestawow + ich zwroty i robi przydzial.
+// Zwraca Map<pw_nr, { zestaw_id, zestaw_symbol, data, zestawow, z_zwrotu }>.
+//
+// Czemu wszystkie, a nie tylko te "widoczne": przydzial musi dac ten sam wynik niezaleznie od
+// tego, czyj ekran o niego pyta. Liczac tylko po widocznych, ten sam PW raz bylby zwrotem,
+// a raz nie. Stad tez margines czasowy - rozmontowanie sprzed `od` tez zuzylo swoja sztuke.
+async function przydzielDlaZestawow(zestawIds, od) {
+  const wynik = new Map();
+  if (!zestawIds.length) return wynik;
+
+  const oknoMs = OKNO_ROZMONTOWANIE_KFS_DNI * 24 * 3600 * 1000;
+  const odRozm = new Date(od.getTime() - oknoMs);       // rozmontowania, ktore juz zjadly pule
+  const odZwrot = new Date(od.getTime() - 2 * oknoMs);  // zwroty widziane przez tamte
+
+  const parametry = { pwTyp: PW_TYP, rwTyp: RW_TYP, kfsTyp: KFS_TYP, mag: MAG_K4,
+    rodzajZestaw: TW_RODZAJ_ZESTAW, odRozm, odZwrot };
+  const inZest = zestawIds.map((id, i) => { parametry[`z${i}`] = Number(id); return `@z${i}`; }).join(', ');
+
+  const [rozm, zwr] = await Promise.all([
+    query(`
+      SELECT pw.dok_NrPelny AS pw_nr, pw.dok_DataWyst AS data,
+             zest.zestaw_id, zest.zestaw_symbol, SUM(rwp2.ob_Ilosc) AS zestawow
+      FROM dok__Dokument pw
+      ${ROZMONTOWANIE_JOIN}
+      JOIN dok_Pozycja rwp2 ON rwp2.ob_DokMagId = rw.dok_Id AND rwp2.ob_TowId = zest.zestaw_id
+      WHERE pw.dok_Typ = @pwTyp AND pw.dok_DataWyst >= @odRozm
+        AND zest.zestaw_id IN (${inZest})
+      GROUP BY pw.dok_NrPelny, pw.dok_DataWyst, zest.zestaw_id, zest.zestaw_symbol
+    `, parametry),
+    query(`
+      SELECT kp.ob_TowId AS zestaw_id, kfs.dok_DataWyst AS data, SUM(kp.ob_Ilosc) AS ilosc
+      FROM dok__Dokument kfs
+      JOIN dok_Pozycja kp ON kp.ob_DokHanId = kfs.dok_Id
+      WHERE kfs.dok_Typ = @kfsTyp AND kfs.dok_DataWyst >= @odZwrot
+        AND kp.ob_TowId IN (${inZest})
+      GROUP BY kp.ob_TowId, kfs.dok_DataWyst
+    `, parametry),
+  ]);
+
+  const przydzielone = przydzielZwroty(
+    rozm.recordset.map((r) => ({
+      pw_nr: String(r.pw_nr).trim(), data: r.data, zestaw_id: r.zestaw_id,
+      zestaw_symbol: r.zestaw_symbol ? String(r.zestaw_symbol).trim() : null,
+      zestawow: Number(r.zestawow) || 0,
+    })),
+    zwr.recordset.map((z) => ({ zestaw_id: z.zestaw_id, data: z.data, ilosc: Number(z.ilosc) || 0 })),
+  );
+  for (const r of przydzielone) wynik.set(r.pw_nr, r);
+  return wynik;
+}
+
 // Klasyfikuje PW-ki rozmontowaniowe dla podanych towarow. Zwraca
 // Map<`${twId}|${pwNr}`, { zestaw_symbol, z_zwrotu }>. Bez wpisu = PW to NIE rozmontowanie.
 async function pobierzRozmontowaniaK4(twIds, od) {
   const wynik = new Map();
   if (!twIds || twIds.length === 0) return wynik;
 
+  // 1) ktore PW dotykaja tych towarow i jakich zestawow dotycza
+  const pary = [];
+  const zestawIds = new Set();
   await Promise.all(naCzesci([...new Set(twIds.map(String))], 1000).map(async (paczka) => {
-    const parametry = { pwTyp: PW_TYP, rwTyp: RW_TYP, kfsTyp: KFS_TYP, mag: MAG_K4,
-      rodzajZestaw: TW_RODZAJ_ZESTAW, oknoKfs: OKNO_ROZMONTOWANIE_KFS_DNI, od };
-    const placeholders = paczka.map((id, i) => {
-      parametry[`t${i}`] = Number(id);
-      return `@t${i}`;
-    }).join(', ');
-
+    const parametry = { pwTyp: PW_TYP, rwTyp: RW_TYP, mag: MAG_K4, rodzajZestaw: TW_RODZAJ_ZESTAW, od };
+    const placeholders = paczka.map((id, i) => { parametry[`t${i}`] = Number(id); return `@t${i}`; }).join(', ');
     const { recordset } = await query(`
-      SELECT o.ob_TowId AS tw_id, pw.dok_NrPelny AS pw_nr, zest.zestaw_symbol,
-             CASE WHEN ${ROZMONTOWANIE_Z_ZWROTU} THEN 1 ELSE 0 END AS z_zwrotu
+      SELECT DISTINCT o.ob_TowId AS tw_id, pw.dok_NrPelny AS pw_nr, zest.zestaw_id
       FROM dok__Dokument pw
       ${ROZMONTOWANIE_JOIN}
       JOIN dok_Pozycja o ON o.ob_DokMagId = pw.dok_Id
       WHERE pw.dok_Typ = @pwTyp AND o.ob_MagId = @mag
-        AND pw.dok_DataWyst >= @od
-        AND o.ob_TowId IN (${placeholders})
+        AND pw.dok_DataWyst >= @od AND o.ob_TowId IN (${placeholders})
     `, parametry);
-
     for (const r of recordset) {
-      wynik.set(`${r.tw_id}|${String(r.pw_nr).trim()}`, {
-        zestaw_symbol: r.zestaw_symbol ? String(r.zestaw_symbol).trim() : null,
-        z_zwrotu: r.z_zwrotu === 1,
-      });
+      pary.push({ tw_id: r.tw_id, pw_nr: String(r.pw_nr).trim() });
+      zestawIds.add(r.zestaw_id);
     }
   }));
+  if (!pary.length) return wynik;
+
+  // 2) przydzial liczony po CALYM obrazie tych zestawow
+  const przydzial = await przydzielDlaZestawow([...zestawIds], od);
+  for (const p of pary) {
+    const r = przydzial.get(p.pw_nr);
+    if (r) wynik.set(`${p.tw_id}|${p.pw_nr}`, { zestaw_symbol: r.zestaw_symbol, z_zwrotu: r.z_zwrotu });
+  }
   return wynik;
 }
 
@@ -357,37 +454,51 @@ async function pobierzRozmontowaniaK4(twIds, od) {
 // i bez odciecia auto-dopis wrzucilby na polki ponad 150 tys. sztuk historycznych.
 async function pobierzRozmontowaniaZeStanuOd(od) {
   if (!od) throw new Error('pobierzRozmontowaniaZeStanuOd wymaga daty odciecia');
+
+  // Wszystkie skladniki rozmontowan od odciecia - bez klasyfikacji, ta idzie z przydzialu nizej
+  // (ten sam rachunek, co widzi ekran; osobny warunek SQL rozjechalby job z lista).
   const { recordset } = await query(`
     SELECT o.ob_TowId AS tw_id, t.tw_Symbol AS symbol, t.tw_Nazwa AS nazwa,
            t.tw_PodstKodKresk AS ean, pw.dok_NrPelny AS pw_nr, pw.dok_DataWyst AS data,
-           zest.zestaw_symbol, SUM(o.ob_Ilosc) AS ilosc
+           zest.zestaw_id, zest.zestaw_symbol, SUM(o.ob_Ilosc) AS ilosc
     FROM dok__Dokument pw
     ${ROZMONTOWANIE_JOIN}
     JOIN dok_Pozycja o ON o.ob_DokMagId = pw.dok_Id
     JOIN tw__Towar t ON t.tw_Id = o.ob_TowId AND t.tw_Rodzaj = @rodzaj
     WHERE pw.dok_Typ = @pwTyp AND o.ob_MagId = @mag AND pw.dok_DataWyst >= @od
-      AND NOT ${ROZMONTOWANIE_Z_ZWROTU}
     GROUP BY o.ob_TowId, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk,
-             pw.dok_NrPelny, pw.dok_DataWyst, zest.zestaw_symbol
+             pw.dok_NrPelny, pw.dok_DataWyst, zest.zestaw_id, zest.zestaw_symbol
     ORDER BY pw.dok_DataWyst
-  `, { pwTyp: PW_TYP, rwTyp: RW_TYP, kfsTyp: KFS_TYP, mag: MAG_K4, od,
-       rodzaj: TW_RODZAJ_TOWAR, rodzajZestaw: TW_RODZAJ_ZESTAW, oknoKfs: OKNO_ROZMONTOWANIE_KFS_DNI });
+  `, { pwTyp: PW_TYP, rwTyp: RW_TYP, mag: MAG_K4, od,
+       rodzaj: TW_RODZAJ_TOWAR, rodzajZestaw: TW_RODZAJ_ZESTAW });
+  if (recordset.length === 0) return [];
 
-  return recordset.map((r) => ({
-    artykul_gt_id: String(r.tw_id),
-    symbol: r.symbol ? String(r.symbol).trim() : null,
-    nazwa: r.nazwa ? String(r.nazwa).trim() : null,
-    ean: r.ean ? String(r.ean).trim() : null,
-    pw_nr: String(r.pw_nr).trim(),
-    zestaw_symbol: r.zestaw_symbol ? String(r.zestaw_symbol).trim() : null,
-    data: r.data instanceof Date ? r.data.toISOString().slice(0, 10) : null,
-    ilosc: Number(r.ilosc) || 0,
-  }));
+  const przydzial = await przydzielDlaZestawow([...new Set(recordset.map((r) => r.zestaw_id))], od);
+
+  return recordset
+    .filter((r) => przydzial.get(String(r.pw_nr).trim())?.z_zwrotu === false)
+    .map((r) => ({
+      artykul_gt_id: String(r.tw_id),
+      symbol: r.symbol ? String(r.symbol).trim() : null,
+      nazwa: r.nazwa ? String(r.nazwa).trim() : null,
+      ean: r.ean ? String(r.ean).trim() : null,
+      pw_nr: String(r.pw_nr).trim(),
+      zestaw_symbol: r.zestaw_symbol ? String(r.zestaw_symbol).trim() : null,
+      data: r.data instanceof Date ? r.data.toISOString().slice(0, 10) : null,
+      ilosc: Number(r.ilosc) || 0,
+    }));
 }
 
 // Kandydaci ZWROTOW = zwykle zwroty (PZ<-KFS) + skladniki z rozmontowania zwroconego zestawu.
 // Te drugie maja PW, nie PZ, wiec same by tu nie trafily - a fizycznie leza na wozku zwrotow
 // i wymagaja rozwiezienia dokladnie tak samo jak kazdy inny zwrot.
+//
+// UWAGA: tu zostaje permisywny EXISTS (czy zestaw ma jakikolwiek KFS w oknie), a nie przydzial
+// ilosciowy z przydzielZwroty. To CELOWE i bezpieczne: kandydaci to tylko wstepne sito, a
+// o zawartosci kubelka decyduje pobierzDostawyK4 (juz z przydzialem). EXISTS jest szerszy, wiec
+// kandydaci sa NADZBIOREM - SKU bez wpisu w kubelku po prostu nie wygeneruje wiersza. Zwezenie
+// tego warunku do przydzialu wymagaloby liczenia go dwa razy, a pomylka w druga strone (sito
+// wezsze niz kubelek) UKRYLABY zwroty. Nie "naprawiac" bez przeczytania tego akapitu.
 async function pobierzTowaryZeZwrotamiK4() {
   const od = odKiedy(OKNO_ZWROTY_PRZYWOZKI_DNI);
   const [zwykle, zRozmontowan] = await Promise.all([
@@ -745,6 +856,6 @@ module.exports = {
   znajdzMM, znajdzMMpoKluczu, kluczRuchu, budujUwagiMM, pobierzZkRezerwujaceK4,
   pobierzDostawyK4, pobierzTowaryZeZwrotamiK4, pobierzTowaryZDostawamiK4,
   pobierzTowaryZPrzywozkamiK4, pobierzTowaryZPrzyjeciamiWewnK4, rozbijStanK4, iloscRozlozonaZDokumentu,
-  pobierzRozmontowaniaK4, pobierzRozmontowaniaZeStanuOd,
+  pobierzRozmontowaniaK4, pobierzRozmontowaniaZeStanuOd, przydzielDlaZestawow, przydzielZwroty,
   RODZAJE_STREF, PRIORYTET_PRZYDZIALU, DOKUMENTY_OD,
 };

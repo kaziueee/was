@@ -681,6 +681,8 @@
         <!-- Zakladka 2: parametry (wymiary + waga; waga gabarytowa TYLKO do odczytu -
              liczy ja backend z wymiarow, PUT ignoruje ta wartosc od klienta) -->
         <div class="modal-tab-panel hidden" data-mpanel="parametry">
+          <!-- Wymiary w jednym rzedzie (3 kolumny), waga OSOBNO pod nimi. Cztery pola obok
+               siebie rozpychaly modal i wymuszaly przewijanie w poziomie. -->
           <div class="par-siatka">
             <label class="par-pole">
               <span>Długość (cm)</span>
@@ -694,11 +696,11 @@
               <span>Wysokość (cm)</span>
               <input type="number" id="mpar-wysokosc" inputmode="decimal" min="0" step="any" placeholder="np. 5,5">
             </label>
-            <label class="par-pole">
-              <span>Waga produktu (kg)</span>
-              <input type="number" id="mpar-waga" inputmode="decimal" min="0" step="any" placeholder="np. 0,45">
-            </label>
           </div>
+          <label class="par-pole par-pole-waga">
+            <span>Waga produktu (kg)</span>
+            <input type="number" id="mpar-waga" inputmode="decimal" min="0" step="any" placeholder="np. 0,45">
+          </label>
           <div class="modal-stany">
             Waga gabarytowa DHL: <strong id="mpar-waga-gab">—</strong>
             <span class="opis">— dł × szer × wys ÷ 4000, wyliczana automatycznie</span>

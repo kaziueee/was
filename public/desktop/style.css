@@ -972,26 +972,38 @@ main {
 /* Podzakladki to teraz <a> (linkowalne, Cmd-klik = nowa karta) - zdejmujemy domyslny wyglad linka */
 .podzakladka { text-decoration: none; display: inline-block; }
 
-/* --- Zakladka "Parametry" w modalu produktu --- */
+/* --- Zakladka "Parametry" w modalu produktu ---
+   Trzy wymiary w rzedzie, waga osobno pod nimi. `minmax(0, 1fr)` zamiast `1fr` jest
+   tu istotne: domyslny minimalny rozmiar elementu gridu to jego zawartosc, wiec pola
+   number nie daly sie sciesnic i rozpychaly modal w poziomie. */
 .par-siatka {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.6rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.6rem;
 }
 .par-pole {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  min-width: 0;
   font-size: 0.85rem;
   color: #555;
 }
 .par-pole input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 0.45rem 0.6rem;
   border: 1px solid #ccc;
   border-radius: 4px;
   font-size: 0.95rem;
 }
-@media (max-width: 700px) {
-  .par-siatka { grid-template-columns: repeat(2, 1fr); }
+.par-pole-waga {
+  max-width: 14rem;      /* waga to jedna liczba - pole na cala szerokosc wygladaloby na pomylke */
+  margin-bottom: 0.75rem;
+}
+/* Waski ekran: wymiary zawijaja sie do dwoch kolumn zamiast wymuszac przewijanie. */
+@media (max-width: 640px) {
+  .par-siatka { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

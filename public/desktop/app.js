@@ -1637,6 +1637,32 @@ function pokazZakladkeAdmina() {
 if (window.WMS) WMS.gotowe.then(pokazZakladkeAdmina);
 window.addEventListener('wms-zalogowano', pokazZakladkeAdmina);
 
+// Rola „uczen" pracuje na Zebrze - panel desktopowy nie jest dla niej.
+// To ZASLONA, nie zamek: desktop leci przez express.static, a token siedzi w localStorage
+// i doklejamy go tylko do /api/, wiec samo wejscie na strone nie niesie tozsamosci i serwer
+// nie ma czego sprawdzic. Realna ochrona zostaje w backendzie (auth.blokujUcznia -> 403 na
+// kazdym zapisie); tutaj tylko zdejmujemy panel z oczu, zeby nikt nie klikal w cos, co i tak
+// odbije bledem. Odwracalna (zdejmujemy przy innej roli) i wpieta w OBA sygnaly - gotowe to
+// Promise rozwiazywany RAZ, a wylogowanie nie przeladowuje strony, wiec po zmianie profilu
+// zaslona inaczej zostalaby na ekranie magazyniera.
+function zaslonPanelUczniowi() {
+  const uczen = (window.WMS?.user() || {}).rola === 'uczen';
+  const istniejaca = el('wms-uczen-zaslona');
+  if (!uczen) { istniejaca?.remove(); return; }
+  if (istniejaca) return;
+  const ov = document.createElement('div');
+  ov.id = 'wms-uczen-zaslona';
+  ov.innerHTML = `<div>
+    <h2>Panel dla magazynierów</h2>
+    <p>Twoja rola pracuje na kolektorze — otwórz <a href="/zebra/ruch.html">ekran Zebry</a>.</p>
+    <button type="button" id="wms-uczen-wyloguj">Zaloguj się jako kto inny</button>
+  </div>`;
+  document.body.appendChild(ov);
+  el('wms-uczen-wyloguj').addEventListener('click', () => window.WMS?.wyloguj());
+}
+if (window.WMS) WMS.gotowe.then(zaslonPanelUczniowi);
+window.addEventListener('wms-zalogowano', zaslonPanelUczniowi);
+
 async function odswiezUzytkownicy() {
   try { renderujUzytkownicy(await api('/api/uzytkownicy')); }
   catch (err) { pokazKomunikat(err.message, 'blad'); }

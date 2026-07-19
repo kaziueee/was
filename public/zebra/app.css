@@ -214,10 +214,17 @@ html, body {
   cursor: pointer;
 }
 .btn-menu span { font-size: var(--font-label); font-weight: 400; color: var(--color-text-muted); }
+/* wariant wtorny: TYLKO rozmiar i tlo. Wyrownanie dziedziczy z .btn-menu (do lewej),
+   zeby kafel z podtytulem wygladal tak samo jak sasiedzi - raporty w menu Sciezek stoja
+   w jednym rzedzie ze sciezkami i centrowany tekst je z tego rzedu wybijal. */
 .btn-menu-2 {
   min-height: 60px;
   font-size: var(--font-body);
   background: var(--color-background);
+}
+/* wysrodkowanie to osobna decyzja, nie czesc wariantu wtornego - dla kafli bez podtytulu,
+   ktore sa sama etykieta akcji (np. „Tryb pelnoekranowy"). */
+.btn-menu-srodek {
   align-items: center;
   text-align: center;
 }

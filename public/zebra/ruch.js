@@ -1962,12 +1962,34 @@ window.addEventListener('popstate', (e) => {
 (async () => { await initMagazyny(); })();
 pokazWidok('menu');
 
-// Rola „uczen" = tylko Sciezki: po zalogowaniu chowamy pozostale kafle menu.
-if (window.WMS?.gotowe) {
-  window.WMS.gotowe.then(() => {
-    if ((window.WMS.user() || {}).rola === 'uczen') {
-      for (const id of ['btn-go-ruch', 'btn-go-uzup', 'btn-go-historia']) el(id)?.classList.add('hidden');
-      document.querySelector('a[href="produkty.html"]')?.classList.add('hidden');
-    }
-  });
+// Rola „uczen" = tylko Sciezki. ALLOW-lista, nie deny-lista: chowamy KAZDY kafel menu poza
+// wymienionymi ponizej. Dzieki temu nowy kafel jest domyslnie niewidoczny dla ucznia i nikt
+// nie musi pamietac o dopisaniu id (deny-lista zostala kiedys przy Dostawach i Przyjeciach).
+const MENU_DLA_UCZNIA = ['btn-go-sciezki', 'btn-pelny-ekran'];   // pelny ekran = nie funkcja magazynowa
+
+// Uwaga: selektor celuje w POTOMKOW #widok-menu, wiec (a) nie rusza klasy .hidden samego
+// kontenera - pokazWidok przelacza nia caly widok, (b) nie dotyka kafli w podmenu innych
+// widokow (btn-go-zwroty w #widok-sciezki, btn-go-pw/dosp/przywozki w #widok-przyjecia).
+// Link „Test wyszukiwania" ma dzis klase btn-menu, ale wymieniamy go tez z nazwy na wypadek
+// gdyby ja stracil - querySelectorAll przy selektorze z przecinkiem zwraca kazdy element raz.
+function zastosujRoleWMenu() {
+  const uczen = (window.WMS?.user() || {}).rola === 'uczen';
+  for (const kafel of document.querySelectorAll('#widok-menu .btn-menu, #widok-menu a[href="produkty.html"]')) {
+    kafel.classList.toggle('hidden', uczen && !MENU_DLA_UCZNIA.includes(kafel.id));
+  }
+  // Punktowe wyjatki w PODmenu (dzis: raporty w Sciezkach). Tu allow-lista byla by zla:
+  // w menu glownym „nowy kafel = ukryty" jest bezpiecznym domyslnym, ale w Sciezkach nowa
+  // sciezka MA byc dla ucznia widoczna - ukrywamy tylko to, co jawnie oznaczone.
+  for (const kafel of document.querySelectorAll('[data-bez-ucznia]')) {
+    kafel.classList.toggle('hidden', uczen);
+  }
 }
+
+// Podpinamy OBA sygnaly, bo WMS.gotowe to Promise - rozwiazuje sie RAZ na zaladowanie strony,
+// a wyloguj() nie przeladowuje Zebry (SPA: pelny ekran ma sie trzymac). Samo gotowe znaczylo,
+// ze po zmianie profilu menu zostawalo z rola POPRZEDNIEGO uzytkownika: uczen po magazynierze
+// widzial wszystko, a magazynier po uczniu tylko Sciezki. Do tego toggle zamiast add, zeby
+// stan sie cofal - jednokierunkowe add zostawialo klasy nastepnemu zalogowanemu.
+// Ten sam wzorzec co pokazZakladkeAdmina na desktopie (public/desktop/app.js).
+if (window.WMS?.gotowe) window.WMS.gotowe.then(zastosujRoleWMenu);
+window.addEventListener('wms-zalogowano', zastosujRoleWMenu);

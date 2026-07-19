@@ -25,7 +25,7 @@
       <button type="button" id="btn-go-przyjecia" class="btn-menu">Przyjęcia<span>PW · do sprawdzenia · przywózka</span></button>
       <button type="button" id="btn-go-historia" class="btn-menu">Historia ruchów<span>ostatnie operacje na Zebrze</span></button>
       <a class="btn-menu" href="produkty.html">Test wyszukiwania (GT)<span>podgląd karty produktu</span></a>
-      <button type="button" id="btn-pelny-ekran" class="btn-menu btn-menu-2">⛶ Tryb pełnoekranowy</button>
+      <button type="button" id="btn-pelny-ekran" class="btn-menu btn-menu-2 btn-menu-srodek">⛶ Tryb pełnoekranowy</button>
     </main>
   </div>
 
@@ -242,11 +242,16 @@
       <div id="sciezki-komunikat" class="komunikat hidden"></div>
 
       <!-- podekran: menu scizek -->
+      <!-- data-bez-ucznia: kafel niewidoczny dla roli „uczen" (obsluga: zastosujRoleWMenu
+           w ruch.js, dziala w KAZDYM widoku). Raporty maja go z dwoch powodow: to funkcja
+           nadzorcza, a przy okazji jedyne miejsce w Sciezkach, ktore prowadzi do ekranu Ruch
+           (tap w wiersz -> ruchOtworzArtykul), a tam ucznia nie chcemy. Dopisujesz raport
+           albo cokolwiek poza obchodem - dopisz ten atrybut. -->
       <section id="sciezki-menu">
         <button type="button" id="btn-sciezka-ostatnie" class="btn-menu">Ostatnie sztuki<span>weryfikacja stanów K4 ≤ 5 szt.</span></button>
-        <button type="button" id="btn-sciezka-raport" class="btn-menu btn-menu-2">Raport: Ostatnie sztuki<span>niezgodności do sprawdzenia</span></button>
+        <button type="button" id="btn-sciezka-raport" class="btn-menu btn-menu-2" data-bez-ucznia>Raport: Ostatnie sztuki<span>niezgodności do sprawdzenia</span></button>
         <button type="button" id="btn-sciezka-rez" class="btn-menu">K4 pełna rezerwacja<span>towar tylko w K4, cały zarezerwowany</span></button>
-        <button type="button" id="btn-sciezka-rez-raport" class="btn-menu btn-menu-2">Raport: K4 rezerwacja<span>niezgodności do sprawdzenia</span></button>
+        <button type="button" id="btn-sciezka-rez-raport" class="btn-menu btn-menu-2" data-bez-ucznia>Raport: K4 rezerwacja<span>niezgodności do sprawdzenia</span></button>
         <!-- Zwroty to tez obchod z checklista (wozek zamiast alejki), wiec siedza tu, a nie
              w menu glownym. Otwieraja wlasny widok - Back wraca do tego menu. -->
         <button type="button" id="btn-go-zwroty" class="btn-menu">Zwroty<span>rozłóż wózek z korekt</span></button>

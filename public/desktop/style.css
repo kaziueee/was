@@ -586,6 +586,35 @@ main {
 
 /* --- modal produktu --- */
 
+/* Zaslona dla roli „uczen" - panel desktopowy nie jest dla niej (praca na Zebrze).
+   Nieprzezroczysta, bo ma zakryc panel, a nie go przyciemnic.
+   z-index 2000 celowo: PONAD warstwami panelu (modale maja 1000 i 1100 - przy rownej
+   wartosci decydowalaby kolejnosc w DOM, czyli trzymaloby sie przypadkiem), ale PONIZEJ
+   badge'a uzytkownika (9000, zeby zostalo drugie wyjscie „Wyloguj") i ekranu wyboru
+   profilu (100000, ktory musi sie pokazac NAD zaslona po klikniecu wylogowania). */
+#wms-uczen-zaslona {
+  position: fixed;
+  inset: 0;
+  background: #1d3557;
+  color: #fff;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  text-align: center;
+}
+#wms-uczen-zaslona h2 { margin: 0 0 0.75rem; font-size: 1.5rem; }
+#wms-uczen-zaslona p { margin: 0 0 1.25rem; opacity: 0.85; }
+#wms-uczen-zaslona a { color: #fff; }
+#wms-uczen-zaslona button {
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 1.4rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;

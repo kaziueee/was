@@ -587,7 +587,8 @@
         <div class="filtry">
           <input type="text" id="log-q" placeholder="SKU / lokalizacja...">
           <select id="log-akcja">
-            <option value="">Wszystkie akcje</option>
+            <option value="">Wszystkie akcje (użytkownik)</option>
+            <option value="__ua">Wszystkie + automaty (U+A)</option>
             <option value="MM">MM</option>
             <option value="LOK">Zmiana lokalizacji</option>
             <option value="przypisanie">Przypisanie</option>
@@ -599,6 +600,8 @@
             <option value="lokalizacja_edycja">Edycja lokalizacji</option>
             <option value="lokalizacja_usuniecie">Usunięcie lokalizacji</option>
             <option value="zapas_k4">Zapas K4</option>
+            <option value="korekta_auto">Korekta auto (job rozjazdów)</option>
+            <option value="waga_gab_przeliczona">Waga gab. przeliczona (job)</option>
           </select>
           <button type="button" id="btn-log-odswiez" class="btn">Odśwież</button>
           <span id="log-licznik" class="opis"></span>
@@ -661,6 +664,7 @@
 
         <div class="modal-taby" role="tablist">
           <button type="button" class="modal-tab aktywny" data-mtab="edycja" role="tab">Edycja</button>
+          <button type="button" class="modal-tab" data-mtab="parametry" role="tab">Parametry</button>
           <button type="button" class="modal-tab" data-mtab="zamowienia" role="tab">Zamówienia</button>
           <button type="button" class="modal-tab" data-mtab="historia" role="tab">Historia</button>
         </div>
@@ -674,12 +678,42 @@
           <datalist id="zapas-lok-list"></datalist>
         </div>
 
-        <!-- Zakladka 2: zamowienia (otwarte ZK rezerwujace na K4) -->
+        <!-- Zakladka 2: parametry (wymiary + waga; waga gabarytowa TYLKO do odczytu -
+             liczy ja backend z wymiarow, PUT ignoruje ta wartosc od klienta) -->
+        <div class="modal-tab-panel hidden" data-mpanel="parametry">
+          <div class="par-siatka">
+            <label class="par-pole">
+              <span>Długość (cm)</span>
+              <input type="number" id="mpar-dlugosc" inputmode="decimal" min="0" step="any" placeholder="np. 25,5">
+            </label>
+            <label class="par-pole">
+              <span>Szerokość (cm)</span>
+              <input type="number" id="mpar-szerokosc" inputmode="decimal" min="0" step="any" placeholder="np. 17,5">
+            </label>
+            <label class="par-pole">
+              <span>Wysokość (cm)</span>
+              <input type="number" id="mpar-wysokosc" inputmode="decimal" min="0" step="any" placeholder="np. 5,5">
+            </label>
+            <label class="par-pole">
+              <span>Waga produktu (kg)</span>
+              <input type="number" id="mpar-waga" inputmode="decimal" min="0" step="any" placeholder="np. 0,45">
+            </label>
+          </div>
+          <div class="modal-stany">
+            Waga gabarytowa DHL: <strong id="mpar-waga-gab">—</strong>
+            <span class="opis">— dł × szer × wys ÷ 4000, wyliczana automatycznie</span>
+          </div>
+          <div class="modal-akcje">
+            <button type="button" id="btn-mpar-zapisz" class="btn btn-primary">Zapisz parametry</button>
+          </div>
+        </div>
+
+        <!-- Zakladka 3: zamowienia (otwarte ZK rezerwujace na K4) -->
         <div class="modal-tab-panel hidden" data-mpanel="zamowienia">
           <div id="modal-prod-zk" class="modal-zk"></div>
         </div>
 
-        <!-- Zakladka 3: historia ruchow SKU (dawne osobne okno pod "H") -->
+        <!-- Zakladka 4: historia ruchow SKU (dawne osobne okno pod "H") -->
         <div class="modal-tab-panel hidden" data-mpanel="historia">
           <div class="tabela-wrapper">
             <table class="tabela">

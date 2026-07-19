@@ -971,3 +971,27 @@ main {
 #logo:hover h1 { opacity: 0.85; }
 /* Podzakladki to teraz <a> (linkowalne, Cmd-klik = nowa karta) - zdejmujemy domyslny wyglad linka */
 .podzakladka { text-decoration: none; display: inline-block; }
+
+/* --- Zakladka "Parametry" w modalu produktu --- */
+.par-siatka {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+.par-pole {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: #555;
+}
+.par-pole input {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.95rem;
+}
+@media (max-width: 700px) {
+  .par-siatka { grid-template-columns: repeat(2, 1fr); }
+}

@@ -717,6 +717,11 @@ const AKCJA_ETYKIETA = {
   'MM-zewn': 'MM zewn.', Uzupelnienie: 'Uzupełnienie', usuniecie_ruchu: 'Usunięcie ruchu',
   lokalizacja_nowa: 'Nowa lok.', lokalizacja_edycja: 'Edycja lok.', lokalizacja_usuniecie: 'Usunięcie lok.',
   zapas_k4: 'Zapas K4', plan_lok: 'Plan lok.', import_lokalizacji: 'Import lok.',
+  // Akcje AUTOMATOW (uzytkownik 'system:<job>'). Domyslnie ukryte w logu - widac je po
+  // wybraniu "U+A" albo tej konkretnej akcji. Etykieta mowi wprost, ze to job, zeby nikt
+  // nie szukal winnego czlowieka.
+  korekta_auto: 'Korekta auto (job)',
+  waga_gab_przeliczona: 'Waga gab. przeliczona (job)',
 };
 
 // "przed"/"po" sa JSON-em (lub null) - kompaktowy zapis "k:v, k:v"
@@ -813,7 +818,10 @@ async function odswiezLog() {
   const q = el('log-q').value.trim();
   const akcja = el('log-akcja').value;
   if (q) params.set('q', q);
-  if (akcja) params.set('akcja', akcja);
+  // '__ua' to nie akcja, tylko przelacznik zakresu: dolacz prace automatow (jobow) do pracy
+  // czlowieka. Domyslnie backend je chowa - zob. routes/audyt.js.
+  if (akcja === '__ua') params.set('automaty', '1');
+  else if (akcja) params.set('akcja', akcja);
   try {
     const { wiersze, total } = await api(`/api/audyt?${params.toString()}`);
     const tbody = el('log-tbody');
@@ -2381,6 +2389,7 @@ let modalHeartbeat = null;
 // Zakladki modalu ladowane leniwie - flagi resetowane przy kazdym otwarciu produktu.
 let modalZkZaladowane = false;
 let modalHistZaladowane = false;
+let modalParametryZaladowane = false;
 
 // Przelacza zakladke w modalu produktu i doczytuje jej tresc przy pierwszym wejsciu.
 // Historia = szeroka tabela (8 kolumn) -> poszerzamy modal na czas tej zakladki.
@@ -2388,6 +2397,7 @@ function modalPokazTab(nazwa) {
   document.querySelectorAll('#modal-produkt .modal-tab').forEach((b) => b.classList.toggle('aktywny', b.dataset.mtab === nazwa));
   document.querySelectorAll('#modal-produkt .modal-tab-panel').forEach((p) => p.classList.toggle('hidden', p.dataset.mpanel !== nazwa));
   el('modal-produkt').querySelector('.modal-box').classList.toggle('modal-szeroki', nazwa === 'historia');
+  if (nazwa === 'parametry' && !modalParametryZaladowane) { modalParametryZaladowane = true; renderModalParametry(); }
   if (nazwa === 'zamowienia' && !modalZkZaladowane) { modalZkZaladowane = true; renderModalZk(); }
   if (nazwa === 'historia' && !modalHistZaladowane) { modalHistZaladowane = true; renderModalHistoria(); }
 }
@@ -2449,11 +2459,94 @@ async function otworzModalProdukt(p) {
   // zakladki: start na "Edycja", tresc pozostalych doczytywana leniwie przy wejsciu
   modalZkZaladowane = false;
   modalHistZaladowane = false;
+  modalParametryZaladowane = false;
   modalPokazTab('edycja');
   // odswiezaj lock co 30s, dopoki modal otwarty
   modalHeartbeat = setInterval(() => {
     api(`/api/blokady/${encodeURIComponent(p.artykul_gt_id)}/heartbeat`, { method: 'POST' }).catch(() => {});
   }, 30000);
+}
+
+// --- Zakladka "Parametry" w modalu produktu -------------------------------------------
+// Wymiary i waga produktu w polach wlasnych GT. Waga gabarytowa jest TYLKO do odczytu:
+// liczy ja backend z wymiarow (PUT /api/produkty/:id/atrybuty ignoruje ta wartosc od
+// klienta), a podglad tutaj uzywa tego samego wzoru wylacznie po to, zeby bylo widac
+// skutek wpisu przed zapisem. Modal trzyma juz lock edycji produktu, wiec dwie osoby
+// nie nadpisza sobie parametrow.
+const PAR_DZIELNIK_DHL = 4000;
+const PAR_WAGA_GAB_MIN = 0.01;
+
+function parLiczba(v) {
+  const t = String(v ?? '').trim().replace(',', '.');
+  if (t === '') return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parOdswiezWageGab() {
+  const d = parLiczba(el('mpar-dlugosc').value);
+  const s = parLiczba(el('mpar-szerokosc').value);
+  const w = parLiczba(el('mpar-wysokosc').value);
+  const komplet = [d, s, w].every((n) => n !== null && n > 0);
+  el('mpar-waga-gab').textContent = komplet
+    ? `${Math.max((d * s * w) / PAR_DZIELNIK_DHL, PAR_WAGA_GAB_MIN).toFixed(2).replace('.', ',')} kg`
+    : '—';
+}
+
+async function renderModalParametry() {
+  if (!modalProdukt) return;
+  for (const id of ['mpar-dlugosc', 'mpar-szerokosc', 'mpar-wysokosc', 'mpar-waga']) el(id).value = '';
+  el('mpar-waga-gab').textContent = '—';
+  try {
+    const d = await api(`/api/produkty/${encodeURIComponent(modalProdukt.artykul_gt_id)}/atrybuty`);
+    if (d.dlugosc !== null) el('mpar-dlugosc').value = d.dlugosc;
+    if (d.szerokosc !== null) el('mpar-szerokosc').value = d.szerokosc;
+    if (d.wysokosc !== null) el('mpar-wysokosc').value = d.wysokosc;
+    if (d.waga !== null) el('mpar-waga').value = String(d.waga).replace(',', '.');
+    parOdswiezWageGab();
+  } catch (err) {
+    pokazKomunikatEl('modal-komunikat', err.message, 'blad');
+  }
+}
+
+async function zapiszModalParametry() {
+  if (!modalProdukt) return;
+  const d = parLiczba(el('mpar-dlugosc').value);
+  const s = parLiczba(el('mpar-szerokosc').value);
+  const w = parLiczba(el('mpar-wysokosc').value);
+  const waga = parLiczba(el('mpar-waga').value);
+
+  const cialo = { artykul_symbol: modalProdukt.symbol };
+  if ([d, s, w].some((n) => n !== null)) {
+    // Walidacja tu jest tylko dla UX - autorytatywna jest ta w routes/produkty.js.
+    if ([d, s, w].some((n) => n === null || n <= 0)) {
+      return pokazKomunikatEl('modal-komunikat', 'Podaj wszystkie trzy wymiary, każdy większy od zera.', 'blad');
+    }
+    cialo.wymiary = { dlugosc: d, szerokosc: s, wysokosc: w };
+  }
+  if (waga !== null) cialo.waga = waga;
+  if (!('wymiary' in cialo) && !('waga' in cialo)) {
+    return pokazKomunikatEl('modal-komunikat', 'Wpisz wymiary lub wagę.', 'blad');
+  }
+
+  el('btn-mpar-zapisz').disabled = true;
+  try {
+    const dane = await api(`/api/produkty/${encodeURIComponent(modalProdukt.artykul_gt_id)}/atrybuty`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cialo),
+    });
+    if (dane.waga_gabarytowa) el('mpar-waga-gab').textContent = `${dane.waga_gabarytowa} kg`;
+    const ostrz = (dane.ostrzezenia || []).join(' ');
+    pokazKomunikatEl('modal-komunikat', ostrz ? `Zapisano parametry — ${ostrz}` : 'Zapisano parametry.', ostrz ? 'info' : 'ok');
+  } catch (err) {
+    pokazKomunikatEl('modal-komunikat', err.message, 'blad');
+  } finally {
+    el('btn-mpar-zapisz').disabled = false;
+  }
+}
+
+el('btn-mpar-zapisz').addEventListener('click', zapiszModalParametry);
+for (const id of ['mpar-dlugosc', 'mpar-szerokosc', 'mpar-wysokosc']) {
+  el(id).addEventListener('input', parOdswiezWageGab);
 }
 
 function zamknijModal() {

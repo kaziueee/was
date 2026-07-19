@@ -330,7 +330,10 @@ router.post('/lok', async (req, res, next) => {
     try {
       const pola = await gtFields.pobierzAktualnePolaLokalizacji([artykul_gt_id]);
       const p = pola.get(String(artykul_gt_id));
-      const stara = ((cel.magazyn === 'K4' ? p?.tw_Pole1 : p?.tw_Pole8) || '').trim();
+      // bez dopisku stref - do audytu idzie POPRZEDNIA LOKALIZACJA, a " +Z3" nia nie jest
+      const stara = cel.magazyn === 'K4'
+        ? gtFields.bezAdnotacjiStref(p?.tw_Pole1)
+        : (p?.tw_Pole8 || '').trim();
       if (stara) staraLokGt = stara;
     } catch { /* GT niedostepne - bez zapisu starej lok, nie blokujemy ruchu */ }
   }
@@ -621,9 +624,12 @@ router.post('/rozloz', async (req, res, next) => {
   let zrodloOpis = '(nieprzypisane)';
   let zrodloDokumenty = null;
   let dokDoZapisu = null;
+  let reszta = null;   // ile stanu NIE tlumaczy zaden dokument; null = GT nie odpowiedzial
   try {
     const dokumenty = (await gtDokumenty.pobierzDostawyK4([artykul_gt_id])).get(String(artykul_gt_id)) || [];
-    const { wszystkie: pula } = gtDokumenty.rozbijStanK4(gtZrodla.stan, sumaWms, dokumenty, { artykul_gt_id, magazyn: zrodloMag });
+    const rozbicie = gtDokumenty.rozbijStanK4(gtZrodla.stan, sumaWms, dokumenty, { artykul_gt_id, magazyn: zrodloMag });
+    const pula = rozbicie.wszystkie;
+    reszta = rozbicie.reszta;
 
     if (zrodlo_dok) {
       const poz = pula.find((d) => d.pz_nr === String(zrodlo_dok));
@@ -645,6 +651,28 @@ router.post('/rozloz', async (req, res, next) => {
       if (poz.kontrahent) zrodloDokumenty.kontrahent = poz.kontrahent;
     }
   } catch { /* GT niedostepne - log bez opisu dokumentu, ruch idzie dalej */ }
+
+  // BEZ podpisu dokumentem wolno wziac najwyzej `reszta` - czyli stan, ktorego ZADEN dokument
+  // nie tlumaczy. Kazda sztuka ponad to nalezy do konkretnej dostawy/zwrotu/przywozki, a wziecie
+  // jej anonimowo zostawia kubelek tego dokumentu zawyzony: przy nastepnym rozkladaniu system
+  // obieca sztuki, ktore dawno zjechaly. Tak powstal rozjazd na NERE8308 - 16-07 poszlo 25 szt.
+  // z puli na K4G bez podpisu, wiec 19-07 kubelek wciaz pokazywal pelne 50 i magazynier zaklepal
+  // 50 przy 25 realnie dostepnych (WMS 99 vs GT 74, posprzatane dopiero auto-korekta).
+  //
+  // To NIE jest przywrocenie usunietego `ilo <= deficyt` (2026-07-17). Tamten warunek blokowal
+  // rozlozenie PELNEJ palety, gdy czesc zdazyla sie sprzedac (4080 przy deficycie 4075) - i
+  // slusznie zniknal. Tu limit dziala WYLACZNIE na ruchy bez dokumentu; z podpisem obowiazuje
+  // dalej "ilosc <= ile zostalo z dokumentu" (wyzej), wiec paleta przechodzi w calosci.
+  //
+  // reszta == null (GT z dokumentami nie odpowiedzial) -> nie blokujemy: przy padnietym zrodle
+  // dokumentow nie umiemy odroznic anonimowego naduzycia od zwyklego rozkladania.
+  if (!zrodlo_dok && reszta != null && ilo > reszta) {
+    return res.status(409).json({
+      blad: reszta > 0
+        ? `Bez wskazania dokumentu mozna rozlozyc najwyzej ${reszta} szt. Reszta stanu nalezy do konkretnej dostawy/zwrotu - wybierz jej wiersz na karcie produktu.`
+        : `Caly stan w ${zrodloMag} nalezy do dokumentow - wybierz wiersz dostawy/zwrotu na karcie produktu zamiast rozkladac z puli.`,
+    });
+  }
 
   // Uczen rozklada WYLACZNIE zwroty. /rozloz obsluguje tez dostawy, przywozki i PW, wiec mount
   // w app.js jedynie go przepuszcza - regula domyka sie tutaj, na rodzaju rozpoznanym WLASNYM

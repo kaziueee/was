@@ -12,3 +12,10 @@ settings.local.json
 
 # backupy bazy (np. wms-przed-resetem-*.db) - dane, nie do repo
 db/*.db
+
+# Dane robocze i backupy wsadow do GT (scripts/) - dane, nie kod.
+# wymiary.json odtwarza sie z eksportu BaseLinkera, backupy sa jednorazowe,
+# raporty opisuja konkretny przebieg. Same skrypty i poprawki-wymiarow.json sa w repo.
+scripts/wymiary.json
+scripts/backup-*.json
+scripts/raport-*.json

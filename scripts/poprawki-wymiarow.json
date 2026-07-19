@@ -1,0 +1,44 @@
+{
+  "_opis": "Nadpisania wymiarow dla SKU, ktorych dane w eksporcie z BaseLinkera sa bledne. Skrypt wsadu MUSI zastosowac te wartosci zamiast tego, co jest w arkuszu - inaczej blad wroci na produkcje. Wymiary w cm, format dlugosc x szerokosc x wysokosc.",
+  "_zrodlo_arkusza": "BL_Produkty_Wymiary_2026-07-16_00_37.xlsx",
+  "_data": "2026-07-19",
+  "_zastosowane_na": ["Z_KAJTEK_IdeaERP"],
+  "_do_zastosowania_na": ["OKITRADE"],
+
+  "poprawki": [
+    {
+      "symbol": "LEG21141",
+      "w_arkuszu": "262x161,5x61",
+      "poprawne": "26,2x19,1x6,1",
+      "powod": "Arkusz podaje MILIMETRY, nie centymetry. Dwie osie zgadzaly sie z Bricksetem co do mm (262 -> 26,2 cm; 61 -> 6,1 cm), wiec jednostka jest pewna. Srodkowa os wzieta z Bricksetu (19,1) zamiast naszej (16,15) - to dane producenta.",
+      "zrodlo": "https://brickset.com/sets/21141-1 (LEGO 21141 The Zombie Cave, opakowanie 26.2 x 19.1 x 6.1 cm, waga 0,39 kg)",
+      "kontrola": "waga gabarytowa 0,76 kg przy rzeczywistej 0,39 kg = wspolczynnik 1,9 (norma). Przed poprawka: 645 kg."
+    },
+    {
+      "symbol": "SPIN6066127U",
+      "w_arkuszu": "21x0x8",
+      "poprawne": "21x22,5x8",
+      "powod": "Brakowala srodkowa os (zero). Zachowane nasze zmierzone 21 i 8, uzupelniona tylko dziura - sklepowych 22,5x22,5x6,5 NIE udalo sie potwierdzic na stronie produktu (404/403), wiec nie nadpisujemy nimi wlasnych pomiarow.",
+      "zrodlo": "Spin Master 6066127 Purse Pets 'Hedwiga' (Harry Potter); sufiks U = uszkodzony, wymiary jak wersja podstawowa",
+      "kontrola": "waga gabarytowa 0,94 kg"
+    },
+    {
+      "symbol": "PLA86483",
+      "w_arkuszu": "0x65x53",
+      "poprawne": "65x53x1",
+      "powod": "To NIE byl blad pomiaru: 65x53 to realny rozmiar torby, a zero to grubosc, ktorej nikt nie mierzyl (plaska torba na zakupy). Dopisana grubosc zlozonej torby 1 cm.",
+      "zrodlo": "https://www.klickypedia.com/sets/86483-reusable-shopping-bag-xxl/ (Playmobil Reusable Shopping Bag XXL, 65x53 cm)",
+      "kontrola": "waga gabarytowa 0,86 kg"
+    }
+  ],
+
+  "_do_sprawdzenia_osobno": [
+    {
+      "symbol": "XSH36610",
+      "problem": "Waga 0,1 kg przy wymiarach 70x30x7,5 (X-Shot Insanity Berzerko) - wspolczynnik gab/rzeczywista 39. Wyglada na bledna WAGE, nie wymiary: 100 g dla blastera 70 cm to za malo.",
+      "status": "nie poprawione - brak potwierdzonego zrodla"
+    }
+  ],
+
+  "_ograniczenie_detektora": "Bledy jednostek wykrywamy przez stosunek wagi gabarytowej do rzeczywistej (>100 = podejrzane). Dziala TYLKO dla SKU majacych obie wartosci - na 2026-07-19 bylo to 1206 z 9409. LEG21141 nie wyszedl w tym tescie, bo nie ma wagi w GT. Produkt zapisany w mm, ktory po zlej interpretacji daje wiarygodne centymetry (np. 80x60x40 mm -> 8x6x4 cm), jest NIEWYKRYWALNY. Po zebraniu brakujacych wag sciezka 'Brak parametrow' warto przelecieic test ponownie."
+}

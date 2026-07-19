@@ -4,6 +4,8 @@ const { pobierzProdukt, szukajProdukty, listujProdukty, pobierzProduktyZUniwersu
 const { pobierzStatusLokalizacjiGt, pobierzPrzegladLokalizacji, ZGODNOSC } = require('../services/gt-fields');
 const { pobierzZkRezerwujaceK4, pobierzDostawyK4, rozbijStanK4, RODZAJE_STREF } = require('../services/gt-dokumenty');
 const gtZestawy = require('../services/gt-zestawy');
+const gtAtrybuty = require('../services/gt-atrybuty');
+const audyt = require('../services/audyt');
 const doRozlozenia = require('../services/do-rozlozenia');
 const doSprawdzenia = require('./do-sprawdzenia');
 const { MAGAZYNY } = require('../config/magazyny');
@@ -98,13 +100,22 @@ function parsujListe(wartosc, dozwolone) {
 //
 // Koszt: para zapytan do GT na kazda zaznaczona strefe. Filtr jest uzywany okazjonalnie,
 // a kandydaci to setki SKU (okno 90 dni na dostawy, 14 na zwroty/przywozki), nie caly katalog.
+// Strefy liczone PREDYKATEM (a nie zapytaniem odwrotnym po dokumencie): przychod bez dokumentu
+// nie ma czego szukac w GT, wiec bierzemy go z tego samego zrodla co ekran "Do sprawdzenia"
+// (zbierz + predykat) - inaczej filtr i ekran rozjechalyby sie przy pierwszej zmianie definicji.
+// PW obejmuje TEZ bezdokumentowe - predykat wspolny z kaflem Pulpitu, zob. routes/do-sprawdzenia.
+const STREFY_Z_PREDYKATEM = {
+  nieznany_przychod: doSprawdzenia.RODZAJE.nieznany_przychod,
+  przyjecie_wewn: doSprawdzenia.PRZYJECIE_LUB_BEZ_DOKUMENTU,
+};
+
 async function idyZeStrefami(strefy) {
   const zbiory = await Promise.all(strefy.map(async (rodzaj) => {
-    // NP idzie innym torem niz strefy: nie ma dokumentu, wiec nie ma zapytania odwrotnego.
-    // Bierzemy go z tego samego zrodla, co ekran "Do sprawdzenia" (zbierz + predykat), zeby
-    // filtr i ekran nie mogly sie rozjechac. Koszt: ~800 ms, ale filtr jest okazjonalny.
-    if (rodzaj === 'nieznany_przychod') {
-      const pozycje = (await doSprawdzenia.zbierz()).filter(doSprawdzenia.RODZAJE.nieznany_przychod);
+    // Koszt predykatowej sciezki: ~800 ms (przemiata wszystkie SKU ze stanem na K4),
+    // ale filtr jest okazjonalny.
+    const predykat = STREFY_Z_PREDYKATEM[rodzaj];
+    if (predykat) {
+      const pozycje = (await doSprawdzenia.zbierz()).filter(predykat);
       return pozycje.map((p) => p.artykul_gt_id);
     }
     const { kubelek, kandydaci } = RODZAJE_STREF[rodzaj];
@@ -271,6 +282,91 @@ router.get('/:artykulGtId/zestawy', async (req, res, next) => {
   } catch (err) {
     res.status(503).json({ blad: 'GT niedostępny — nie można odczytać składu zestawów' });
   }
+});
+
+// GET /api/produkty/:artykulGtId/atrybuty - wymiary, waga i waga gabarytowa z pol wlasnych GT.
+// Dwuczlonowa sciezka, wiec nie koliduje z catch-all /:identyfikator ponizej.
+router.get('/:artykulGtId/atrybuty', async (req, res) => {
+  const artykulGtId = Number(req.params.artykulGtId);
+  if (!Number.isInteger(artykulGtId) || artykulGtId <= 0) {
+    return res.status(400).json({ blad: 'Nieprawidłowy identyfikator towaru' });
+  }
+  try {
+    const mapa = await gtAtrybuty.pobierzAtrybuty([artykulGtId]);
+    const a = mapa.get(String(artykulGtId));
+    res.json({
+      artykul_gt_id: String(artykulGtId),
+      wymiary: a?.wymiary ?? null,
+      dlugosc: a?.rozbite?.dlugosc ?? null,
+      szerokosc: a?.rozbite?.szerokosc ?? null,
+      wysokosc: a?.rozbite?.wysokosc ?? null,
+      waga: a?.waga ?? null,
+      waga_gabarytowa: a?.waga_gabarytowa ?? null,
+    });
+  } catch (err) {
+    res.status(503).json({ blad: 'GT niedostępny — nie można odczytać parametrów towaru' });
+  }
+});
+
+// PUT /api/produkty/:artykulGtId/atrybuty - zapis wymiarow i/lub wagi do pol wlasnych GT.
+// Brak klucza w body = nie ruszaj pola (null = wyczysc). Waga gabarytowa NIE jest
+// przyjmowana z zewnatrz - liczy ja serwer z wymiarow, zeby nie dalo sie zapisac
+// wartosci niespojnej z wymiarami (reguła #5 CLAUDE.md - inwariant w backendzie).
+router.put('/:artykulGtId/atrybuty', async (req, res) => {
+  const artykulGtId = Number(req.params.artykulGtId);
+  if (!Number.isInteger(artykulGtId) || artykulGtId <= 0) {
+    return res.status(400).json({ blad: 'Nieprawidłowy identyfikator towaru' });
+  }
+
+  const zmiany = {};
+  const ostrzezenia = [];
+
+  if ('wymiary' in req.body) {
+    if (req.body.wymiary === null) {
+      zmiany.wymiary = null;
+    } else {
+      const wynik = gtAtrybuty.sprawdzWymiary(req.body.wymiary);
+      if (wynik.blad) return res.status(400).json({ blad: wynik.blad });
+      zmiany.wymiary = wynik.wymiary;
+      ostrzezenia.push(...wynik.ostrzezenia);
+    }
+  }
+
+  if ('waga' in req.body) {
+    if (req.body.waga === null) {
+      zmiany.waga = null;
+    } else {
+      const wynik = gtAtrybuty.sprawdzWage(req.body.waga);
+      if (wynik.blad) return res.status(400).json({ blad: wynik.blad });
+      zmiany.waga = wynik.waga;
+    }
+  }
+
+  if (Object.keys(zmiany).length === 0) {
+    return res.status(400).json({ blad: 'Podaj wymiary lub wagę.' });
+  }
+
+  let przed = null;
+  try {
+    przed = (await gtAtrybuty.pobierzAtrybuty([artykulGtId])).get(String(artykulGtId)) ?? null;
+  } catch {
+    // Stan "przed" jest tylko do audytu - brak odczytu nie blokuje zapisu.
+  }
+
+  const wynik = await gtAtrybuty.zapiszAtrybuty(artykulGtId, zmiany);
+  if (!wynik.ok) return res.status(503).json({ blad: wynik.blad });
+
+  audyt.zapisz({
+    uzytkownik: req.uzytkownik?.imie ?? null,
+    akcja: 'atrybuty_zapis',
+    artykul_gt_id: String(artykulGtId),
+    artykul_symbol: req.body.artykul_symbol ?? null,
+    przed: przed && { wymiary: przed.wymiary, waga: przed.waga, waga_gabarytowa: przed.waga_gabarytowa },
+    po: wynik.dane.zapisane,
+    wynik: 'ok',
+  });
+
+  res.json({ zapisano: true, ...wynik.dane.zapisane, ostrzezenia });
 });
 
 // GET /api/produkty/:identyfikator - szuka towaru w GT po symbolu lub EAN (1:1, do skanow).

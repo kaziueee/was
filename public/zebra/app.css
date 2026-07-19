@@ -923,3 +923,43 @@ html, body {
 
 /* #3: meta (czas/operator) w Historii ruchów */
 .hist-meta { font-size: var(--font-label); color: var(--color-text-muted); margin-top: 2px; }
+
+/* Ekran Parametry. Pola sa wpisywane palcem (nie skanem), wiec dostaja pelny cel
+   dotykowy i te sama ramke co .pole-skan - inaczej wygladaja jak nieaktywne. */
+.pola-wymiary {
+  display: flex;
+  gap: var(--space-2);
+}
+.pola-wymiary input,
+.pole-par input {
+  min-height: var(--cel-dotyk);
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-body);
+  outline: none;
+  padding: 0 var(--space-3);
+}
+.pola-wymiary input {
+  flex: 1;
+  min-width: 0;      /* bez tego trzy pola rozpychaja rzad i zawijaja sie */
+  text-align: center;
+}
+.pole-par input { width: 100%; }
+.par-wyliczone {
+  margin: 0;
+  font-size: var(--font-quantity);
+  font-weight: 600;
+  color: var(--color-primary);
+}
+/* Etykieta i wyliczona wartosc w jednym wierszu - oszczedza ~40 px pionu,
+   dzieki czemu przycisk Zapisz zostaje nad zgieciem na 360x536. */
+.par-gab {
+  display: flex;
+  flex-direction: row;   /* .pole-blok jest kolumna - bez tego etykieta i wartosc sie pietrza */
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.par-gab .pole-etykieta { margin: 0; }

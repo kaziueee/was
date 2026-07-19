@@ -2,7 +2,9 @@ const express = require('express');
 const db = require('../db/database');
 const audyt = require('../services/audyt');
 const gtDokumenty = require('../services/gt-dokumenty');
-const { pobierzK4NiskieStany, pobierzK4PelnaRezerwacja, dostepneWGt, pobierzStanyGt } = require('../services/gt-produkty');
+const { pobierzK4NiskieStany, pobierzK4PelnaRezerwacja, dostepneWGt, pobierzStanyGt, sumaRazem, sumaZapasK4 } = require('../services/gt-produkty');
+const gtFields = require('../services/gt-fields');
+const gtAtrybuty = require('../services/gt-atrybuty');
 
 const router = express.Router();
 
@@ -42,6 +44,10 @@ const STAN_MAX = 5;
 // Laczny stan (Razem = K4+K4G+MAG+LS, bez BRK) <= tego progu - odsiewa towary z niskim K4,
 // ale z zapasem na innych magazynach (setki na K4G = kandydat do uzupelnienia, nie liczenia).
 const RAZEM_MAX = 5;
+
+// Sciezka "Brak parametrow": ile pozycji naraz ciagniemy z GT. Backlog to ~1450 towarow,
+// ale obchod i tak jest jednorazowo krotki - limit chroni przed ciagnieciem calosci na kolektor.
+const LIMIT_BRAK_PARAMETROW = 500;
 // Ile dni po sprawdzeniu pary (artykul+lokalizacja) wypada z listy.
 const DNI_POMIN_SPRAWDZONE = 180;
 // Ile dni pary POMINIETEJ ("Pomin" na obchodzie) nie pokazujemy. Krotkie okno, bo pominiecie
@@ -263,7 +269,7 @@ router.get('/ostatnie-sztuki', async (req, res, next) => {
   for (const w of wmsRows) {
     const sg = stanyWmsMap.get(String(w.artykul_gt_id)) || {};
     const stanK4 = sg.K4?.ilosc ?? 0;
-    const razem = ['K4', 'K4G', 'MAG', 'LS'].reduce((s, k) => s + (sg[k]?.ilosc ?? 0), 0);
+    const razem = sumaRazem(sg);   // z MAGAZYNY_RAZEM, nie z recznej listy - BRK ma wypadac
     if (stanK4 >= STAN_MIN && stanK4 <= STAN_MAX && razem <= RAZEM_MAX) {
       kandydaci.push({ artykul_gt_id: w.artykul_gt_id, symbol: w.symbol, nazwa: w.nazwa,
         ean: w.ean, lokalizacja_kod: w.lokalizacja_kod, stan: stanK4, rezerwacja: sg.K4?.rezerwacja ?? 0, zrodlo: 'GT' });
@@ -362,5 +368,239 @@ router.post('/k4-rezerwacja/niezgodnosc/zamknij', (req, res) =>
 
 router.post('/k4-rezerwacja/pomin', (req, res) =>
   zapiszPominiecie(req, res, 'sprawdzenie_rez_pominiete'));
+
+// --- Sciezka 3: "Czysc zera" - zwalnianie slotow K4 po martwym towarze ---
+//
+// K4 to regal ZBIORU: slotow jest skonczenie wiele (~855) i kazdy zajety przez martwy
+// towar to miejsce, ktorego nie dostanie towar rotujacy. Odkad lokalizacja K4 przezywa
+// stan 0 (zob. CLAUDE.md, inwariant), zera same nie znikaja - ta sciezka jest zaworem.
+//
+// "Martwy" = stan GT na K4 zero I zapas zero, gdzie zapas = K4+K4G+LS (sumaZapasK4).
+// Zera Z ZAPASEM celowo NIE wchodza: to robota dla Uzupelnien, ktore i tak je widza.
+//
+// MAG (Kajtek) NIE liczy sie do zapasu - decyzja usera 2026-07-19: towar lezacy w Kajtku
+// nie wraca na K4 sam z siebie, wiec nie jest powodem, zeby blokowac slot na hali. To inne
+// pytanie niz "Razem" na karcie produktu (tam MAG sie liczy) - stad osobna suma, nie filtr.
+//
+// Nie ma tu warunku "od X dni bez ruchu": u nas nie ma szybkorotujacego towaru z dostaw,
+// wiec pusto na K4+K4G+LS znaczy pusto naprawde, a nie "chwilowo miedzy dostawami"
+// (decyzja usera 2026-07-19). Przed omylkowym zwolnieniem chroni ponowne sprawdzenie
+// stanu GT przy zatwierdzeniu i to, ze slot zwalnia czlowiek stojacy przy regale.
+
+// GET /api/sciezki/czysc-zera - lista slotow K4 do zwolnienia, posortowana po kodzie
+// lokalizacji = kolejnosc obchodu. Zrodlem zera jest GT (Subiekt = master stanow).
+router.get('/czysc-zera', async (req, res) => {
+  // WMS = master LOKALIZACJI: kazdy wiersz K4 to slot zajety przez SKU. Dwie roznice
+  // wobec "Ostatnich sztuk":
+  //  - NIE dedupujemy po SKU - gdy artykul trzyma dwa sloty, oba sa do zwolnienia,
+  //  - NIE filtrujemy po s.ilosc - kopia WMS bywa stale-wysoka (sprzedaz w Subiekcie zbija
+  //    stan bez wiedzy WMS), wiec o zerze decyduje wylacznie GT.
+  const wmsRows = db.prepare(
+    `SELECT s.artykul_gt_id, s.artykul_symbol AS symbol, s.artykul_nazwa AS nazwa,
+            s.artykul_ean AS ean, s.ilosc AS wms_ilosc, l.kod AS lokalizacja_kod
+     FROM stany_lokalizacji s JOIN lokalizacje l ON l.id = s.lokalizacja_id
+     WHERE l.magazyn = 'K4'`
+  ).all();
+  if (!wmsRows.length) return res.json({ pozycje: [], razem: 0 });
+
+  let stany;
+  try {
+    stany = await pobierzStanyGt(wmsRows.map((w) => w.artykul_gt_id));
+  } catch (err) {
+    return res.status(503).json({ blad: 'Nie mozna pobrac stanow GT (baza niedostepna). Sprobuj ponownie.' });
+  }
+
+  const sprawdzone = new Set(db.prepare(
+    `SELECT DISTINCT artykul_gt_id, lokalizacja FROM audyt
+     WHERE akcja IN ('zero_zwolnione','zero_niezgodne','zero_zamkniete')
+       AND czas >= datetime('now', ?)`
+  ).all(`-${DNI_POMIN_SPRAWDZONE} days`).map((r) => `${r.artykul_gt_id}|${r.lokalizacja}`));
+
+  const pominiete = paryPominiete('zero_pominiete');
+
+  const pozycje = wmsRows
+    .map((w) => {
+      const sg = stany.get(String(w.artykul_gt_id)) || {};
+      // `razem` wystawiamy obok `zapas` tylko do pokazania czlowiekowi (ile jest w Kajtku,
+      // skoro slot i tak zwalniamy). O wejsciu na liste decyduje WYLACZNIE `zapas`.
+      return { ...w, stan: sg.K4?.ilosc ?? 0, zapas: sumaZapasK4(sg), razem: sumaRazem(sg), zrodlo: 'GT' };
+    })
+    .filter((t) => t.stan === 0 && t.zapas === 0)
+    .filter((t) => !sprawdzone.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`)
+      && !pominiete.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`))
+    .sort((a, b) => (a.lokalizacja_kod || '').localeCompare(b.lokalizacja_kod || '')
+      || (a.symbol || '').localeCompare(b.symbol || ''));
+
+  res.json({ pozycje, razem: pozycje.length });
+});
+
+// POST /api/sciezki/czysc-zera/zwolnienie - potwierdzenie "pusto" na obchodzie.
+// Body: { artykul_gt_id, artykul_symbol, lokalizacja_kod, ilosc_policzona } - "kto" z sesji.
+//
+// TO JEDYNE MIEJSCE W SYSTEMIE, GDZIE WOLNO SKASOWAC DOM K4. Inwariant "Lokalizacja K4
+// przezywa stan 0" (CLAUDE.md) zabrania tego automatom, bo automat wnioskuje ze STANU, a
+// stan zero znaczy "polka pusta", nie "towaru tu juz nie ma". Czlowiek stojacy przy regale
+// ma dowod, ktorego automat nie ma - i tylko jego potwierdzenie zwalnia slot.
+// Kto to czyta i chce "naprawic" spojnosc z inwariantem: nie, to jest ten wyjatek.
+router.post('/czysc-zera/zwolnienie', async (req, res, next) => {
+  const { artykul_gt_id, artykul_symbol, lokalizacja_kod, ilosc_policzona } = req.body ?? {};
+  const operator = req.uzytkownik?.imie ?? null;   // z sesji, nie z body (zob. zapiszSprawdzenie)
+  if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });
+  if (!lokalizacja_kod) return res.status(400).json({ blad: 'Pole "lokalizacja_kod" jest wymagane' });
+  const policzone = Number(ilosc_policzona ?? 0);
+  if (!Number.isFinite(policzone) || policzone < 0) {
+    return res.status(400).json({ blad: 'Pole "ilosc_policzona" musi byc liczba >= 0' });
+  }
+
+  // Stan sprawdzamy PONOWNIE przy zatwierdzeniu, nie ufamy liscie: miedzy zbudowaniem
+  // obchodu a dojsciem do regalu mogla przyjsc dostawa albo zwrot. Zwolnienie slotu jest
+  // trudne do cofniecia (trzeba przypisac lokalizacje od nowa), wiec przy niedostepnym GT
+  // wolimy 503 niz zgadywanie.
+  let stanK4, zapas;
+  try {
+    const sg = (await pobierzStanyGt([artykul_gt_id])).get(String(artykul_gt_id)) || {};
+    stanK4 = sg.K4?.ilosc ?? 0;
+    zapas = sumaZapasK4(sg);   // K4+K4G+LS, bez MAG - ten sam rachunek co lista
+  } catch (err) {
+    return res.status(503).json({ blad: 'Nie mozna zweryfikowac stanu GT (baza niedostepna). Sprobuj ponownie.' });
+  }
+
+  // Niezgodnosc = cokolwiek przeczy "slot jest martwy": magazynier cos znalazl ALBO GT juz
+  // nie pokazuje zera. Slotu NIE zwalniamy, zdarzenie idzie do raportu.
+  if (policzone > 0 || stanK4 !== 0 || zapas !== 0) {
+    audyt.zapisz({
+      uzytkownik: operator,
+      akcja: 'zero_niezgodne',
+      artykul_gt_id: String(artykul_gt_id),
+      artykul_symbol: artykul_symbol ?? null,
+      magazyn: 'K4',
+      lokalizacja: lokalizacja_kod,
+      ilosc: policzone,
+      wynik: 'niezgodne',
+      przed: { stan: stanK4, zapas, zrodlo: 'GT' },
+      po: { policzone },
+    });
+    return res.status(200).json({ zwolnione: false, stan: stanK4, zapas, policzone, zrodlo: 'GT' });
+  }
+
+  const wiersz = db.prepare(
+    `SELECT s.id FROM stany_lokalizacji s JOIN lokalizacje l ON l.id = s.lokalizacja_id
+     WHERE s.artykul_gt_id = ? AND l.magazyn = 'K4' AND l.kod = ?`
+  ).get(String(artykul_gt_id), lokalizacja_kod);
+  if (!wiersz) {
+    return res.status(404).json({ blad: `Artykul nie ma juz wiersza WMS na lokalizacji ${lokalizacja_kod} (K4) - slot zwolniony wczesniej` });
+  }
+
+  db.prepare('DELETE FROM stany_lokalizacji WHERE id = ?').run(wiersz.id);
+
+  audyt.zapisz({
+    uzytkownik: operator,
+    akcja: 'zero_zwolnione',
+    artykul_gt_id: String(artykul_gt_id),
+    artykul_symbol: artykul_symbol ?? null,
+    magazyn: 'K4',
+    lokalizacja: lokalizacja_kod,
+    ilosc: 0,
+    wynik: 'zwolnione',
+    przed: { stan: stanK4, zapas, zrodlo: 'GT' },
+  });
+
+  // SKU stracilo (ten) dom w K4 - przeliczamy tw_Pole1. Gdy to byl jego OSTATNI wiersz K4,
+  // obliczPolaLokalizacji zwroci "" i pole w GT sie wyczysci. To jedyne miejsce, w ktorym
+  // takie wyczyszczenie jest zamierzone. Blad GT nie cofa zwolnienia (jak w DELETE /ruchy/:id) -
+  // pole dosynchronizuje sie przy kolejnym ruchu; sygnalizujemy to w odpowiedzi.
+  let lokSync = true;
+  try {
+    const wynik = await gtFields.synchronizujLokalizacje(String(artykul_gt_id), new Set(['K4']));
+    if (wynik && !(wynik.ok && wynik.dane?.sukces)) lokSync = false;
+  } catch (err) {
+    lokSync = false;
+  }
+
+  res.status(201).json({ zwolnione: true, lokalizacja_kod, lok_sync: lokSync });
+});
+
+// GET /api/sciezki/czysc-zera/raport - otwarte niezgodnosci tej sciezki (cos lezalo na
+// slocie, ktory GT uznaje za pusty - stan, o ktorym nikt nie wie).
+router.get('/czysc-zera/raport', (req, res, next) =>
+  raportNiezgodnosci(res, 'zero_zwolnione', 'zero_niezgodne', 'zero_zamkniete').catch(next));
+
+router.post('/czysc-zera/niezgodnosc/zamknij', (req, res) =>
+  zamknijNiezgodnosc(req, res, 'zero_zamkniete'));
+
+router.post('/czysc-zera/pomin', (req, res) =>
+  zapiszPominiecie(req, res, 'zero_pominiete'));
+
+// --- Sciezka "Brak parametrow" (wymiary + waga) ---
+//
+// Inny GATUNEK sciezki niz pozostale: tu sie nie LICZY, tylko UZUPELNIA dane. Nie ma wiec
+// "niezgodnosci" ani raportu - jest albo wpis, albo go nie ma. Zapis idzie przez
+// PUT /api/produkty/:id/atrybuty (jedno miejsce walidacji), a nie przez wlasny endpoint;
+// front przelacza sie na ekran Parametry (tryb 'parametry' w mapie SCIEZKI).
+//
+// Wymiary i waga w jednej liscie, bo magazynier trzyma towar w reku raz - zmierzy i zwazy
+// za jednym podejsciem. Rozdzielenie oznaczaloby dwa obchody po ten sam towar.
+router.get('/brak-parametrow', async (req, res) => {
+  let kandydaci;
+  try {
+    kandydaci = await gtAtrybuty.pobierzBrakParametrow(LIMIT_BRAK_PARAMETROW);
+  } catch (err) {
+    return res.status(503).json({ blad: 'Nie mozna pobrac danych z GT (baza niedostepna). Sprobuj ponownie.' });
+  }
+
+  // WMS = master lokalizacji: dokladamy adres, zeby bylo wiadomo GDZIE isc. Bierzemy K4
+  // ORAZ K4G - towary z najwiekszym zapasem (a wiec czolo listy) leza wlasnie na K4G, wiec
+  // ograniczenie do K4 zostawialoby prawie cala liste bez adresu. K4 ma pierwszenstwo (dom
+  // SKU), K4G jest fallbackiem.
+  const lokalizacje = new Map();
+  for (const r of db.prepare(
+    `SELECT s.artykul_gt_id, l.magazyn, MIN(l.kod) AS kod
+     FROM stany_lokalizacji s JOIN lokalizacje l ON l.id = s.lokalizacja_id
+     WHERE l.magazyn IN ('K4', 'K4G')
+     GROUP BY s.artykul_gt_id, l.magazyn`
+  ).all()) {
+    const biezaca = lokalizacje.get(r.artykul_gt_id);
+    if (!biezaca || r.magazyn === 'K4') lokalizacje.set(r.artykul_gt_id, r.kod);
+  }
+
+  const pominiete = paryPominiete('parametry_pominiete');
+  const pozycje = kandydaci
+    // Adres: WMS ma pierwszenstwo (jest masterem lokalizacji), a gdy danego SKU nie zna -
+    // kopia z pol wlasnych GT. Bez tego fallbacku obchod bylby prawie bezadresowy: WMS
+    // trzyma lokalizacje tylko dla czesci asortymentu.
+    .map((k) => ({ ...k, lokalizacja_kod: lokalizacje.get(k.artykul_gt_id) ?? k.lok_gt ?? null }))
+    // Klucz musi byc sklejany DOKLADNIE tak jak w paryPominiete (`${id}|${lokalizacja}`),
+    // lacznie z tym, ze null daje "null" - inaczej pominiecia towarow bez adresu K4
+    // nigdy by sie nie dopasowaly i wracalyby na liste.
+    .filter((k) => !pominiete.has(`${k.artykul_gt_id}|${k.lokalizacja_kod}`))
+    // Kolejnosc obchodu, nie kolejnosc waznosci: sortujemy po kodzie lokalizacji jak
+    // pozostale sciezki (GT dal nam liste posortowana po stanie - to byl tylko dobor
+    // kandydatow do limitu). Towary bez adresu ida na koniec: da sie je zmierzyc, ale
+    // nie da sie do nich celowo dojsc.
+    .sort((a, b) => {
+      if (!a.lokalizacja_kod) return b.lokalizacja_kod ? 1 : 0;
+      if (!b.lokalizacja_kod) return -1;
+      return a.lokalizacja_kod.localeCompare(b.lokalizacja_kod);
+    });
+
+  res.json({ pozycje, licznik: pozycje.length });
+});
+
+// Wlasny handler pominiecia, nie wspolny zapiszPominiecie: tam lokalizacja_kod jest
+// WYMAGANA, a na tej sciezce towar moze lezec wylacznie na K4G i nie miec adresu w K4.
+// Odrzucenie takiego pominiecia zablokowaloby przejscie dalej.
+router.post('/brak-parametrow/pomin', (req, res) => {
+  const { artykul_gt_id, artykul_symbol, lokalizacja_kod } = req.body ?? {};
+  if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });
+  audyt.zapisz({
+    uzytkownik: req.uzytkownik?.imie ?? null,
+    akcja: 'parametry_pominiete',
+    artykul_gt_id: String(artykul_gt_id),
+    artykul_symbol: artykul_symbol ?? null,
+    lokalizacja: lokalizacja_kod ?? null,
+    wynik: 'pominiete',
+  });
+  res.status(201).json({ pominiete: true });
+});
 
 module.exports = router;

@@ -56,7 +56,7 @@ wms/
 | MAG (Kajtek), LS (Leszno) | Zewnętrzne | NIE — tylko stan w GT |
 | BRK (Braki, mag 10) | Zewnętrzny, towar niepełnowartościowy | NIE — tylko stan w GT |
 
-Lista magazynów: `config/magazyny.js`. **Stan „Razem" = K4+K4G+MAG+LS, bez BRK** — braki to towar niepełnowartościowy i nie mają zawyżać sumy „ile mam". Sterowane flagą `liczDoRazem: false` na BRK → eksport `MAGAZYNY_RAZEM`, czytany w `services/gt-produkty.js` (wyrażenie SQL `SORT_WYRAZENIA.razem` + helper `sumaRazem` dla trybu Node — muszą zostać spójne). BRK ma własną kolumnę i MM w obie strony, wypada tylko z sumy zbiorczej.
+Lista magazynów: `config/magazyny.js`. Wyprowadza dwie **różne** sumy, obie z flag na definicji magazynu — nie z ręcznych list: `MAGAZYNY_RAZEM` = K4+K4G+MAG+LS („ile mam") i `MAGAZYNY_ZAPAS_K4` = K4+K4G+LS („czy towar wróci na regał zbioru", ścieżka „Czyść zera" — MAG odpada). **Stan „Razem" = K4+K4G+MAG+LS, bez BRK** — braki to towar niepełnowartościowy i nie mają zawyżać sumy „ile mam". Sterowane flagą `liczDoRazem: false` na BRK → eksport `MAGAZYNY_RAZEM`, czytany w `services/gt-produkty.js` (wyrażenie SQL `SORT_WYRAZENIA.razem` + helper `sumaRazem` dla trybu Node — muszą zostać spójne). BRK ma własną kolumnę i MM w obie strony, wypada tylko z sumy zbiorczej.
 
 ## Pola własne GT (kartoteka towaru)
 
@@ -64,9 +64,12 @@ Lista magazynów: `config/magazyny.js`. **Stan „Razem" = K4+K4G+MAG+LS, bez BR
 |---|---|---|---|
 | `Miejsce na magazynie` | `tw__Towar.tw_Pole1` | lokalizacja K4, np. `M2-I35-37` | WMS |
 | `Lokalizacja Górna` | `tw__Towar.tw_Pole8` | lokalizacje K4gora skompresowane | WMS |
-| `Lokalizacja Zapas` | `pwd_Tekst09` (dynamiczne pole własne) | overflow K4gora | WMS |
+| `Lokalizacja Zapas` | `pwd_Tekst08` | **nieużywane** — patrz niżej | nikt |
+| `Wymiary`, `Waga produktu`, `Waga gabarytowa DHL` | `pwd_Tekst07`, `pwd_Tekst06`, `pwd_Tekst09` | patrz „Parametry produktu" | WMS |
 | `Stan K4`, `Stan K4Góra` | — | kopie stanów dla multistany | NIE dotykamy |
 | `Ilość w op. zbiorczym`, `Baterie` | `pwd_Tekst04`, `pwd_Tekst05` | ręcznie | NIE dotykamy |
+
+**„Lokalizacja Zapas" jest nieużywana (2026-07-19).** Overflow lokalizacji K4G ponad limit `tw_Pole8` zostaje **wyłącznie w WMS** — służy już tylko do oflagowania `ZGODNOSC.OBCIETE` („pole GT za krótkie, żeby pokazać wszystkie wpisy"). Wcześniej kod czytał ten overflow z `pwd_Tekst09` i doklejał go do tekstu lokalizacji K4G. To było podwójnie błędne: pole „Lokalizacja Zapas" siedzi w GT na **`pwd_Tekst08`**, a `pwd_Tekst09` trzyma dziś **„Waga gabarytowa DHL"** — więc do lokalizacji doklejała się waga (`K4G: M2-C6-P2(3); 0,61`). Odczyt usunięty z `gt-fields.js`; werdykty zgodności nigdy na tym nie ucierpiały, bo `zgodneZWms` liczy wyłącznie z `tw_Pole1`/`tw_Pole8`.
 
 `tw_Pole1`/`tw_Pole8` to standardowe pola dodatkowe (varchar 50) — w innych kategoriach towarów (książki, meble) mają inne znaczenie (autor, pomieszczenie), ale te towary nie mają stanu w K4/K4G, więc się nie nakładają.
 
@@ -94,8 +97,11 @@ Format atomowy w WMS: `M2-J14-P2`. Format skrócony do GT: `M2-J14-P2/3; M2-J15-
 | Przyjęcie z zewn.: ilość ≤ stan GT magazynu MAG/LS | ✅ backend | `/ruchy/przyjecie` |
 | K4 LOK = cała ilość (nie częściowa) | ✅ backend | `/ruchy/lok` |
 | MM: ilość ≤ stan GT − rezerwacja (GT master; egzekwowane ZAWSZE, nie tylko przy rezerwacji — chroni też przed stale-wysoką kopią WMS K4) | ✅ backend | `/ruchy/mm`, `/przyjecie`, `/mm-zewnetrzny` |
+| **Lokalizacja K4 przeżywa stan 0** — dom SKU nie jest funkcją ilości, ani w WMS, ani w kopii GT | ✅ backend | `/ruchy/mm`, `DELETE /ruchy/:id`, `services/gt-fields.js` |
 
 Wszystkie inwarianty są egzekwowane w backendzie. Dodając nową regułę: najpierw `routes/`, front tylko jako UX.
+
+**„Lokalizacja K4 przeżywa stan 0" — dlaczego osobny wiersz (2026-07-19).** K4 to magazyn zbioru: SKU ma tam jedno STAŁE miejsce, a ilość spada do zera przy każdym wyczerpaniu półki. Pusta półka czeka na uzupełnienie i **nie przestaje być adresem** — po tym adresie człowiek szuka towaru w GT (wydruk / wyszukiwanie po `tw_Pole1`), czytają go `/lokalizacje/k4-dom`, uzupełnienia, rozmontowania i ścieżki. Reguła żyła wyłącznie jako komentarz w `routes/ruchy.js` i przez to była łamana w DWÓCH miejscach naraz: `obliczPolaLokalizacji` miało `AND s.ilosc > 0` (wiersz był, ale pole GT szło puste = „wyczyść"), a `DELETE /ruchy/:id` kasowało sam wiersz przy cofnięciu ruchu na K4 (np. nieudanego uzupełnienia na pustą półkę). Dwie różne drogi, jeden skutek: SKU traciło adres w GT. **K4G jest celowo odwrotne** — tam ilość jest częścią tekstu pola (`kod(ilosc)`), więc zero naprawdę znaczy „nie ma czego pokazać".
 
 ## Schemat bazy (już w 001_init.sql)
 
@@ -131,6 +137,38 @@ Proste zadania „obchodu" magazynu z checklistą, posortowane w kolejności zbi
 - `GET /ostatnie-sztuki/raport` — otwarte niezgodności: pary, dla których NAJNOWSZE sprawdzenie to `sprawdzenie_niezgodne` (późniejsze zgodne = domknięcie). Tap w raporcie → `window.ruchOtworzArtykul(symbol)` otwiera normalny ekran Ruch.
 
 UX obchodu: skan SKU/EAN potwierdza właściwą pozycję → pole ilości → zgodne = krótki beep + auto-przejście; niezgodne = beep błędu + nakładka `ostrzezenie` (dotknięcie = dalej). „Brak cichych porażek" — dźwięki zgodne/niezgodne różne.
+
+**Ścieżka 2 — „K4 pełna rezerwacja":** towar tylko w K4, cały stan zarezerwowany (`pobierzK4PelnaRezerwacja`). Endpointy `/k4-rezerwacja/*`, akcje audytu `sprawdzenie_rez*`. Mechanika identyczna jak Ścieżka 1.
+
+**Ścieżka 3 — „Czyść zera" (2026-07-19):** zwalnianie slotów K4 po martwym towarze. K4 to regał ZBIORU — slotów jest ~855 i każdy zajęty przez martwy towar to miejsce, którego nie dostanie towar rotujący. Odkąd lokalizacja K4 przeżywa stan 0 (patrz inwariant wyżej), zera same nie znikają — ta ścieżka jest zaworem.
+- Lista = wiersze WMS na K4, dla których **GT stan K4 = 0 I `zapas` = 0**, gdzie **`zapas` = K4+K4G+LS** (`sumaZapasK4`, lista `MAGAZYNY_ZAPAS_K4`). Zera **z zapasem celowo NIE wchodzą** — to robota dla Uzupełnień, które i tak je widzą. Zero czytamy z GT, nie z kopii WMS. **Bez dedupu po SKU** (inaczej niż Ścieżka 1): gdy artykuł trzyma dwa sloty, oba są do zwolnienia.
+- **MAG (Kajtek) NIE liczy się do `zapasu`** (decyzja usera 2026-07-19) — towar leżący w Kajtku nie wraca na K4 sam z siebie, więc nie jest powodem, żeby blokować slot na hali. To inne pytanie niż „Razem" na karcie produktu (tam MAG się liczy) — stąd **osobna suma, nie filtr**. Sterowane flagą `zapasDlaK4: false` w `config/magazyny.js`, składaną z `liczDoRazem`, więc BRK i K4R wypadają same.
+- **Nie ma warunku „od X dni bez ruchu"** — u nas nie ma szybkorotującego towaru z dostaw (decyzja usera 2026-07-19), więc pusto na K4+K4G+LS znaczy pusto naprawdę, a nie „chwilowo między dostawami". Przed omyłkowym zwolnieniem chroni ponowne sprawdzenie stanu GT przy zatwierdzeniu i to, że slot zwalnia człowiek stojący przy regale.
+- `POST /czysc-zera/zwolnienie` — **JEDYNE miejsce w systemie, gdzie wolno skasować dom K4.** Inwariant zabrania tego automatom, bo automat wnioskuje ze STANU, a zero znaczy „półka pusta", nie „towaru tu już nie ma". Człowiek przy regale ma dowód, którego automat nie ma. Kasuje wiersz `stany_lokalizacji` + przelicza `tw_Pole1` (przy ostatnim wierszu K4 → pole się czyści; to jedyne zamierzone czyszczenie). Stan GT sprawdzany **ponownie przy zatwierdzeniu** — lista mogła się zestarzeć; GT niedostępny → 503, nie zgadujemy.
+- Coś leży na slocie albo GT pokazuje stan → `zero_niezgodne`, slot ZOSTAJE, sprawa do raportu. Akcje audytu: `zero_zwolnione` / `zero_niezgodne` / `zero_zamkniete` / `zero_pominiete`.
+- Tożsamość potwierdza **kod lokalizacji**, nie towaru (pusta półka nie ma czego zeskanować); symbol/EAN też przyjmowany. Ukryta przed rolą `uczen` (`data-bez-ucznia`) — jako jedyna ścieżka kasuje dane, wbrew domyślnej regule podmenu.
+
+Front: ścieżki opisane mapą `SCIEZKI` w `public/zebra/sciezki.js` (endpoint, akcja, `udane(d)`, teksty). **Nowa ścieżka = wpis w tej mapie**, nie ify rozsiane po pliku.
+
+## Parametry produktu (wymiary, waga, waga gabarytowa)
+
+WMS jako warstwa **danych opisowych** nad GT. To NIE są stany — reguła #1 ich nie dotyczy; obowiązuje reguła #2 (WMS master, GT kopia). Zapis idzie **bezpośrednim SQL-em**, jak lokalizacje w `gt-fields.js` — most obsługuje wyłącznie dokumenty MM (`ZapiszLokalizacjeAsync` to niezaimplementowany stub, nigdy niepodłączony).
+
+| Dane | Pole własne GT | Kolumna |
+|---|---|---|
+| Wymiary | `Wymiary` | `pw_Dane.pwd_Tekst07`, np. `25,5x17,5x5,5` (dł×szer×wys, cm) |
+| Waga produktu | `Waga produktu` | `pw_Dane.pwd_Tekst06`, w **kg** |
+| Waga gabarytowa DHL | `Waga gabarytowa DHL` | `pw_Dane.pwd_Tekst09`, w kg, **wyliczana** |
+
+`pw_Dane` trzyma pola własne wszystkich obiektów; wiersz towaru = (`pwd_TypObiektu=-14`, `pwd_IdObiektu=tw_Id`). **Większość towarów nie ma tam wiersza** — dlatego zapis to UPSERT. `pwd_Id` NIE jest IDENTITY i GT nie ma dla niego sekwencji (`ab_Licznik` to konfiguracja przypomnień, nie generator) — aplikacja GT nadaje je jako `MAX+1`, więc robimy tak samo, pod `UPDLOCK,HOLDLOCK` w transakcji.
+
+**Waga gabarytowa = dł×szer×wys/4000** (DHL), 2 miejsca, minimum `0,01`. Liczona **zawsze serwerowo** — `PUT /api/produkty/:id/atrybuty` ignoruje tę wartość przysłaną przez klienta, więc nie da się zapisać liczby niespójnej z wymiarami. Zmiana wymiarów przelicza ją w tej samej transakcji; `services/waga-gabarytowa-job.js` (co 6 h, `WAGA_GAB_INTERWAL_MIN`) łapie ręczne zmiany wymiarów zrobione w samym Subiekcie.
+
+**Walidacja** (`sprawdzWymiary`/`sprawdzWage`, egzekwowane w `routes/produkty.js`): trzy liczby **> 0** (zero jest błędem — w danych z BaseLinkera trafiały się wpisy `0x65x53`), ostrzeżenie powyżej 150 cm, twardy limit 1000 cm.
+
+⚠️ **Jednostki wag w GT są MIESZANE historycznie**: wartości całkowite = gramy (`916`), wartości z przecinkiem = już kilogramy (`6,5`). Ślepe dzielenie wszystkiego przez 1000 psuje dane. Z UI przyjmujemy wyłącznie kg i nigdy nie zgadujemy jednostki po kształcie liczby.
+
+Ekran: **Parametry** (`public/zebra/parametry.js`, widok `#widok-parametry`), waga gabarytowa tylko do odczytu. Ścieżka **„Brak parametrów"** (`tryb: 'parametry'` w mapie `SCIEZKI`) — nowy gatunek ścieżki: **uzupełnia dane zamiast liczyć**, więc bez raportu i bez „niezgodności". Po skanie potwierdzającym otwiera ekran Parametry, po zapisie wraca i przechodzi dalej. Adres pozycji: WMS ma pierwszeństwo, fallback na `tw_Pole1`/`tw_Pole8` z GT (bez tego prawie cała lista byłaby bezadresowa — WMS zna lokalizacje tylko części asortymentu).
 
 ## Most C# — endpointy (localhost:5000)
 

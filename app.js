@@ -23,6 +23,7 @@ const blokady = require('./services/blokady');
 const auth = require('./services/auth');
 const ruchyRetry = require('./services/ruchy-retry');
 const rozjazdyJob = require('./services/rozjazdy');
+const wagaGabJob = require('./services/waga-gabarytowa-job');
 const rozmontowaniaJob = require('./services/rozmontowania');
 const backupJob = require('./services/backup');
 const reconciliacjaMM = require('./services/reconciliacja-mm');
@@ -66,11 +67,13 @@ app.use('/api/uzupelnienia', auth.wymagajSesjiNaZapisie, auth.blokujUcznia(), uz
 app.use('/api/sciezki', auth.wymagajSesjiNaZapisie, sciezkiRouter);
 app.use('/api/zwroty', auth.wymagajSesjiNaZapisie, zwrotyRouter);   // uczen: zwroty to jego robota
 app.use('/api/dostawy', auth.wymagajSesjiNaZapisie, auth.blokujUcznia(), dostawyRouter);
-app.use('/api/zestawienia', zestawieniaRouter);  // czysty odczyt z GT - bez sesji, jak /api/produkty
+app.use('/api/zestawienia', zestawieniaRouter);  // czysty odczyt z GT - bez sesji
 app.use('/api/do-sprawdzenia', doSprawdzeniaRouter);  // czysty odczyt (GT + kopia WMS), nie robi ruchow
 app.use('/api/magazyny', magazynyRouter);
 app.use('/api/status', statusRouter); // publiczny - pasek stanu na ekranie logowania
-app.use('/api/produkty', produktyRouter);
+// GET-y to czysty odczyt z GT (skany, wyszukiwanie) - otwarte. PUT /:id/atrybuty zapisuje
+// wymiary/wage do pol wlasnych GT, wiec trasa dostaje wymagajSesjiNaZapisie (operator z tokenu).
+app.use('/api/produkty', auth.wymagajSesjiNaZapisie, produktyRouter);
 app.use('/api/rozjazdy', rozjazdyRouter);
 app.use('/api/pulpit', pulpitRouter);
 app.use('/api/audyt', audytRouter);
@@ -84,6 +87,7 @@ app.listen(PORT, () => {
 
 ruchyRetry.start();
 rozjazdyJob.start();
+wagaGabJob.start();
 rozmontowaniaJob.start();
 backupJob.start();
 reconciliacjaMM.start();

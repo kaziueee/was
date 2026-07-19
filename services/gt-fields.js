@@ -8,7 +8,11 @@
 // Mapowanie na kolumny w bazie GT (potwierdzone na danych Z_KAJTEK_IdeaERP):
 //   miejsce_na_magazynie -> tw__Towar.tw_Pole1   (standardowe pole dodatkowe, varchar(50))
 //   lokalizacja_gorna    -> tw__Towar.tw_Pole8   (standardowe pole dodatkowe, varchar(50))
-//   lokalizacja_zapas    -> vwPolaWlasne_Towar.pwd_Tekst09 (dynamiczne pole wlasne, wolne)
+//   lokalizacja_zapas    -> NIGDZIE w GT. Overflow ponad limit tw_Pole8 zostaje wylacznie
+//     w WMS; sluzy juz tylko do oflagowania ZGODNOSC.OBCIETE ("pole GT za krotkie, zeby
+//     pokazac wszystkie wpisy"). Nie mylic z pwd_Tekst09 - ta kolumna trzyma dzis
+//     "Waga gabarytowa DHL" (zob. services/gt-atrybuty.js), wiec czytanie jej tutaj
+//     doklejaloby wage do tekstu lokalizacji K4G.
 
 const db = require('../db/database');
 const { query, naCzesci } = require('./gt-sql');
@@ -63,10 +67,17 @@ function kompresujLokalizacjeGorne(pozycje) {
 // w LokRequest oznacza "wyczysc pole" po stronie mostu.
 function obliczPolaLokalizacji(artykulGtId) {
   // zapas_kod = opcjonalna adnotacja nadmiaru K4 (decyzja A) -> tw_Pole1 = "zbior/zapas".
+  // K4 = STALE miejsce SKU (dom) - bierzemy je NIEZALEZNIE od ilosci. Pusta polka czeka na
+  // uzupelnienie i nie przestaje byc adresem; WMS swiadomie trzyma wiersz z zerem (routes/
+  // ruchy.js: "lokalizacja zostaje jako stale miejsce SKU"), a filtr "ilosc > 0" kasowal tu
+  // tw_Pole1 w GT (pusty string = "wyczysc pole") - czlowiek szukajacy towaru tracil adres.
+  // Wiersz ze stanem wygrywa z zerowym: przy przejsciowych dwoch wierszach K4 nie wpisujemy
+  // do GT starego, oproznionego miejsca.
   const k4 = db.prepare(`
     SELECT l.kod, s.zapas_kod FROM stany_lokalizacji s
     JOIN lokalizacje l ON l.id = s.lokalizacja_id
-    WHERE s.artykul_gt_id = ? AND l.magazyn = 'K4' AND s.ilosc > 0
+    WHERE s.artykul_gt_id = ? AND l.magazyn = 'K4'
+    ORDER BY (s.ilosc > 0) DESC, s.ostatnia_zmiana DESC
   `).get(artykulGtId);
 
   const k4g = db.prepare(`
@@ -91,8 +102,8 @@ function obliczPolaLokalizacji(artykulGtId) {
 // (UPDATE tw__Towar.tw_Pole1/tw_Pole8) - bez mostu/Sfery, lokalizacje nie sa
 // stanami magazynowymi. magazyny: Set magazynow zaangazowanych w ruch - pola
 // K4 / K4gora sa przeliczane i zapisywane tylko jesli odpowiedni magazyn
-// znajduje sie w tym zbiorze. "Lokalizacja Zapas" (pwd_Tekst09, overflow K4G)
-// jest pomijana - zostaje tylko w WMS, zob. PROGRESS.md "Otwarte".
+// znajduje sie w tym zbiorze. "Lokalizacja Zapas" (overflow K4G) nie jedzie nigdzie -
+// zostaje tylko w WMS; pole o tej nazwie w GT jest nieuzywane.
 // Zwraca null, jesli synchronizacja nie dotyczy zadnego z pol obslugiwanych
 // przez WMS (K4 / K4gora), albo {ok, dane: {sukces}} / {ok: false, blad}.
 async function synchronizujLokalizacje(artykulGtId, magazyny) {
@@ -150,7 +161,7 @@ async function synchronizujLokalizacje(artykulGtId, magazyny) {
 }
 
 // Pobiera aktualne wartosci pol lokalizacyjnych z GT (vwPolaWlasne_Towar) dla
-// podanych tw_Id. Zwraca Map<tw_Id jako string, {tw_Pole1, tw_Pole8, pwd_Tekst09}>
+// podanych tw_Id. Zwraca Map<tw_Id jako string, {tw_Pole1, tw_Pole8}>
 // - artykuly bez wlasnego wiersza w mapie traktujemy jako puste pola GT.
 // Dzieli idy na paczki (naCzesci) - SQL Server ma limit ~2100 parametrow,
 // a zbior WMS (zob. gt-produkty.js) moze przekroczyc 2000 artykulow.
@@ -167,7 +178,7 @@ async function pobierzAktualnePolaLokalizacji(artykulGtIds) {
     }).join(', ');
 
     const { recordset } = await query(
-      `SELECT tw_Id, tw_Pole1, tw_Pole8, pwd_Tekst09 FROM vwPolaWlasne_Towar WHERE tw_Id IN (${warunki})`,
+      `SELECT tw_Id, tw_Pole1, tw_Pole8 FROM vwPolaWlasne_Towar WHERE tw_Id IN (${warunki})`,
       parametry
     );
     for (const r of recordset) wynik.set(String(r.tw_Id), r);
@@ -180,9 +191,7 @@ async function pobierzAktualnePolaLokalizacji(artykulGtIds) {
 // "K4: M2-J14-P2 | K4G: M2-J14-P2/3; M2-J15-P1", "brak lokalizacji w GT" gdy puste.
 function formatujAktualnePola(polaGt) {
   const k4 = (polaGt?.tw_Pole1 || '').trim();
-  const gorna = (polaGt?.tw_Pole8 || '').trim();
-  const zapas = (polaGt?.pwd_Tekst09 || '').trim();
-  const k4g = [gorna, zapas].filter(Boolean).join('; ');
+  const k4g = (polaGt?.tw_Pole8 || '').trim();
 
   const czesci = [];
   if (k4) czesci.push(`K4: ${k4}`);
@@ -196,7 +205,6 @@ function formatujAktualnePola(polaGt) {
 // albo recznie zmienione pole w GT.
 function zgodneZWms(artykulGtId, polaGt) {
   const oczekiwane = obliczPolaLokalizacji(artykulGtId);
-  // pwd_Tekst09 (zapas K4G) pomijamy - WMS go nie zapisuje (wymaga Sfery)
   return (polaGt?.tw_Pole1 || '').trim() === oczekiwane.miejsce_na_magazynie
     && (polaGt?.tw_Pole8 || '').trim() === oczekiwane.lokalizacja_gorna;
 }
@@ -289,7 +297,7 @@ async function pobierzPrzegladLokalizacji(artykulGtIds) {
     const oczekiwane = oczekiwaneMap.get(id);
 
     const gtK4 = (polaGt?.tw_Pole1 || '').trim();
-    const gtK4gTekst = [(polaGt?.tw_Pole8 || '').trim(), (polaGt?.pwd_Tekst09 || '').trim()].filter(Boolean).join('; ');
+    const gtK4gTekst = (polaGt?.tw_Pole8 || '').trim();
 
     // K4: porownanie TEKSTU lokalizacji. Ilosc w K4 zmienia sie przez sprzedaz w GT
     // (lokalizacja to stale miejsce SKU), wiec ilosci celowo NIE porownujemy.

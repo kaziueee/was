@@ -20,8 +20,8 @@
     <main class="ekran-tresc">
       <button type="button" id="btn-go-ruch" class="btn-menu">Ruch towaru<span>MM / zmiana lokalizacji</span></button>
       <button type="button" id="btn-go-uzup" class="btn-menu">Uzupełnienia K4<span>K4G → K4 wg rezerwacji</span></button>
-      <button type="button" id="btn-go-sciezki" class="btn-menu">Ścieżki<span>obchód magazynu · zwroty</span></button>
       <button type="button" id="btn-go-dostawy" class="btn-menu">Dostawy<span>rozłóż towar z faktur</span></button>
+      <button type="button" id="btn-go-sciezki" class="btn-menu">Ścieżki<span>obchód magazynu · zwroty</span></button>
       <button type="button" id="btn-go-przyjecia" class="btn-menu">Przyjęcia<span>PW · do sprawdzenia · przywózka</span></button>
       <button type="button" id="btn-go-historia" class="btn-menu">Historia ruchów<span>ostatnie operacje na Zebrze</span></button>
       <a class="btn-menu" href="produkty.html">Test wyszukiwania (GT)<span>podgląd karty produktu</span></a>
@@ -248,13 +248,22 @@
            (tap w wiersz -> ruchOtworzArtykul), a tam ucznia nie chcemy. Dopisujesz raport
            albo cokolwiek poza obchodem - dopisz ten atrybut. -->
       <section id="sciezki-menu">
+        <!-- Zwroty to tez obchod z checklista (wozek zamiast alejki), wiec siedza tu, a nie
+             w menu glownym. Otwieraja wlasny widok - Back wraca do tego menu.
+             NA GORZE: to codzienna robota, reszta scizek jest okresowa. -->
+        <button type="button" id="btn-go-zwroty" class="btn-menu">Zwroty<span>rozłóż wózek z korekt</span></button>
         <button type="button" id="btn-sciezka-ostatnie" class="btn-menu">Ostatnie sztuki<span>weryfikacja stanów K4 ≤ 5 szt.</span></button>
         <button type="button" id="btn-sciezka-raport" class="btn-menu btn-menu-2" data-bez-ucznia>Raport: Ostatnie sztuki<span>niezgodności do sprawdzenia</span></button>
         <button type="button" id="btn-sciezka-rez" class="btn-menu">K4 pełna rezerwacja<span>towar tylko w K4, cały zarezerwowany</span></button>
         <button type="button" id="btn-sciezka-rez-raport" class="btn-menu btn-menu-2" data-bez-ucznia>Raport: K4 rezerwacja<span>niezgodności do sprawdzenia</span></button>
-        <!-- Zwroty to tez obchod z checklista (wozek zamiast alejki), wiec siedza tu, a nie
-             w menu glownym. Otwieraja wlasny widok - Back wraca do tego menu. -->
-        <button type="button" id="btn-go-zwroty" class="btn-menu">Zwroty<span>rozłóż wózek z korekt</span></button>
+        <!-- data-bez-ucznia wbrew domyslnej regule podmenu ("nowa sciezka jest dla ucznia
+             widoczna"): ta jako JEDYNA kasuje dane - potwierdzenie zwalnia slot i czysci
+             lokalizacje w GT. Wymaga kogos, kto wie, co znaczy zwolniony slot. -->
+        <button type="button" id="btn-sciezka-zera" class="btn-menu" data-bez-ucznia>Czyść zera<span>zwolnij sloty K4 po martwym towarze</span></button>
+        <button type="button" id="btn-sciezka-zera-raport" class="btn-menu btn-menu-2" data-bez-ucznia>Raport: Czyść zera<span>coś leżało na pustym slocie</span></button>
+        <!-- Bez raportu: ta sciezka niczego nie porownuje, wiec nie ma "niezgodnosci"
+             do domykania - parametr jest wpisany albo go nie ma. -->
+        <button type="button" id="btn-sciezka-parametry" class="btn-menu">Brak parametrów<span>uzupełnij wymiary i wagę</span></button>
       </section>
 
       <!-- podekran: obchod "Ostatnie sztuki" (jeden przystanek na ekran) -->
@@ -468,6 +477,45 @@
   </div>
   </div><!-- /widok-dosp -->
 
+  <div id="widok-parametry" class="hidden">
+  <div class="ekran">
+    <header class="ekran-naglowek">
+      <div class="ekran-sku"><h1 id="par-symbol">Parametry</h1><span id="par-nazwa" class="ekran-podpis"></span></div>
+    </header>
+    <main class="ekran-tresc">
+      <div id="par-komunikat" class="komunikat hidden"></div>
+
+      <div class="pole-blok">
+        <label class="pole-etykieta">Wymiary (cm)</label>
+        <div class="pola-wymiary">
+          <input type="number" id="par-dlugosc" inputmode="decimal" min="0" step="any" placeholder="dł.">
+          <input type="number" id="par-szerokosc" inputmode="decimal" min="0" step="any" placeholder="szer.">
+          <input type="number" id="par-wysokosc" inputmode="decimal" min="0" step="any" placeholder="wys.">
+        </div>
+      </div>
+
+      <div class="pole-blok">
+        <label class="pole-etykieta" for="par-waga">Waga produktu (kg)</label>
+        <div class="pole-par"><input type="number" id="par-waga" inputmode="decimal" min="0" step="any" placeholder="np. 0,45"></div>
+      </div>
+
+      <!-- Wyliczana, nie do wpisania: backend i tak liczy ja sam z wymiarow (PUT
+           /api/produkty/:id/atrybuty ignoruje te wartosc przyslana przez klienta).
+           Etykieta i wartosc w jednym wierszu - ekran musi zmiescic sie na 536 px
+           razem z przyciskiem Zapisz, a wyzsze pola zjadly zapas miejsca. -->
+      <div class="pole-blok par-gab">
+        <label class="pole-etykieta">Waga gabarytowa DHL <span class="pole-hint">(÷4000)</span></label>
+        <p id="par-waga-gab" class="par-wyliczone">—</p>
+      </div>
+
+      <button type="button" id="par-zapisz" class="btn-akcja">Zapisz ✓</button>
+    </main>
+    <footer class="ekran-stopka">
+      <button type="button" id="par-wstecz" class="btn-wstecz">← Wstecz</button>
+    </footer>
+  </div>
+  </div><!-- /widok-parametry -->
+
   <script src="/shared/auth.js"></script>
   <script src="blokada-edycji.js"></script>
   <script src="fullscreen.js"></script>
@@ -483,5 +531,6 @@
   <script src="przywozki.js"></script>
   <script src="przyjecia-wewn.js"></script>
   <script src="do-sprawdzenia.js"></script>
+  <script src="parametry.js"></script>
 </body>
 </html>

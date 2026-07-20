@@ -3,6 +3,7 @@ const db = require('../db/database');
 const audyt = require('../services/audyt');
 const gtDokumenty = require('../services/gt-dokumenty');
 const doRozlozenia = require('../services/do-rozlozenia');
+const { zostaloPozycji } = require('../services/wozek-model');
 
 const router = express.Router();
 
@@ -39,9 +40,16 @@ async function zbierzZwroty() {
 
 // Ile z pozycji wozka juz rozlozono - z RUCHOW, nie z wlasnej flagi. Dzieki temu rozlozenie
 // tego samego zwrotu z karty produktu zdejmuje pozycje takze z wozka.
+//
+// iloscRozlozonaZDokumentu jest SUMARYCZNE dla calego dokumentu, a snapshot pozycji moze byc juz
+// reszta po tym, co rozlozono PRZED dolozeniem na wozek. Dlatego liczymy od rozlozono_baza (punkt
+// zero pozycji) - inaczej reszta dolozona po czesciowym rozlozeniu znika (BKR1904, patrz
+// services/wozek-model.js).
 function stanPozycjiWozka(p) {
-  const rozlozono = gtDokumenty.iloscRozlozonaZDokumentu(p.artykul_gt_id, MAG, p.zrodlo_dok);
-  const zostalo = Math.max(Number(p.ilosc) - rozlozono, 0);
+  const rozlozonoDokument = gtDokumenty.iloscRozlozonaZDokumentu(p.artykul_gt_id, MAG, p.zrodlo_dok);
+  const zostalo = zostaloPozycji(p.ilosc, rozlozonoDokument, p.rozlozono_baza);
+  // rozlozono = ile z TEJ pozycji zeszlo (spojne z zostalo: ilosc = rozlozono + zostalo)
+  const rozlozono = Math.max(Number(p.ilosc) - zostalo, 0);
   return { ...p, rozlozono, zostalo };
 }
 
@@ -267,10 +275,14 @@ router.post('/wozki', async (req, res) => {
     }
     const ins = db.prepare(`
       INSERT INTO pozycje_wozka (wozek_id, artykul_gt_id, artykul_symbol, artykul_nazwa,
-                                 artykul_ean, zrodlo_dok, ilosc, lok_podpowiedz)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+                                 artykul_ean, zrodlo_dok, ilosc, lok_podpowiedz, rozlozono_baza)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     for (const p of doWozka) {
-      ins.run(wozek.id, p.artykul_gt_id, p.symbol, p.nazwa, p.ean, p.zrodlo_dok, p.ilosc, p.lokalizacja_kod);
+      // punkt zero pozycji: ile z tego dokumentu bylo juz rozlozone, GDY trafil na wozek. Bez
+      // tego snapshot dolozony po czesciowym rozlozeniu ma odjete to samo rozlozenie drugi raz
+      // i pozycja znika z listy (BKR1904, 2026-07-20). Patrz stanPozycjiWozka / wozek-model.
+      const baza = gtDokumenty.iloscRozlozonaZDokumentu(p.artykul_gt_id, MAG, p.zrodlo_dok);
+      ins.run(wozek.id, p.artykul_gt_id, p.symbol, p.nazwa, p.ean, p.zrodlo_dok, p.ilosc, p.lokalizacja_kod, baza);
     }
     db.exec('COMMIT');
   } catch (err) {

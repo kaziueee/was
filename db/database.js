@@ -181,10 +181,16 @@ if (!kolumnyWozkow.some((k) => k.name === 'numer')) {
 // WMS_OKNO_DROBNICA_DNI (14 dni). Wozek stojacy dluzej mialby kubelek pusty i wygladalby na
 // rozlozony, choc towar dalej na nim lezy. Snapshot jest odporny na okno.
 //
-// UWAGA: "ile juz rozlozono" NIE jest tu trzymane - liczy sie je z ruchow, przez
+// UWAGA: "ile juz rozlozono" NIE jest tu trzymane jako flaga - liczy sie je z ruchow, przez
 // iloscRozlozonaZDokumentu(artykul, 'K4', zrodlo_dok). Wlasna flaga "rozlozone" rozjechalaby
 // sie z rzeczywistoscia, gdy ktos rozlozy ten sam zwrot z karty produktu (zakladka Ruch).
 // Snapshot mowi "ile tego bylo", ruchy mowia "ile zrobiono" - prawda o zrobieniu ma jedno zrodlo.
+//
+// rozlozono_baza = ile z dokumentu bylo rozlozone W CHWILI dolozenia pozycji na wozek. Nie jest
+// to druga prawda o "zrobieniu" (ta wciaz plynie z ruchow), tylko PUNKT ZERO tej pozycji:
+// stanPozycjiWozka liczy rozlozenia dopiero OD niego. Bez tego reszta dolozona po czesciowym
+// rozlozeniu (snapshot juz pomniejszony) miala odjete to samo rozlozenie drugi raz i znikala z
+// listy (BKR1904, 2026-07-20). Patrz services/wozek-model.js.
 db.exec(`CREATE TABLE IF NOT EXISTS pozycje_wozka (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   wozek_id INTEGER NOT NULL REFERENCES wozki(id) ON DELETE CASCADE,
@@ -195,9 +201,19 @@ db.exec(`CREATE TABLE IF NOT EXISTS pozycje_wozka (
   zrodlo_dok TEXT NOT NULL,
   ilosc DECIMAL NOT NULL,
   lok_podpowiedz TEXT,
+  rozlozono_baza DECIMAL NOT NULL DEFAULT 0,
   UNIQUE (wozek_id, artykul_gt_id, zrodlo_dok)
 )`);
 db.exec('CREATE INDEX IF NOT EXISTS idx_pozycje_wozka_wozek ON pozycje_wozka(wozek_id)');
+
+// migracja: rozlozono_baza dla istniejacych baz (CREATE IF NOT EXISTS wyzej jej nie doda).
+// Stare wiersze dostaja 0 = zachowanie sprzed poprawki, poprawne dla pozycji dolozonych, gdy z
+// dokumentu nic jeszcze nie zeszlo (najczestszy przypadek). Patrz services/wozek-model.js.
+const kolumnyPozWozka = db.prepare('PRAGMA table_info(pozycje_wozka)').all();
+if (!kolumnyPozWozka.some((k) => k.name === 'rozlozono_baza')) {
+  db.exec('ALTER TABLE pozycje_wozka ADD COLUMN rozlozono_baza DECIMAL NOT NULL DEFAULT 0');
+  console.log('Migracja: dodano kolumne rozlozono_baza do pozycje_wozka');
+}
 
 // Uzytkownicy + logowanie (Faza A#4). PIN opcjonalny (pin_hash/pin_salt NULL = bez PIN).
 // Rola: 'admin' (zarzadza userami) | 'magazynier'. Dezaktywacja (aktywny=0) zamiast

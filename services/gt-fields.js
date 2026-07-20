@@ -26,7 +26,7 @@ function formatWpis(kod, ilosc) {
 // Adnotacja stref w tw_Pole1 ("M2-J14-P2 +D20 +Z3") - czyste funkcje mieszkaja w osobnym
 // module, zeby dalo sie je testowac bez SQLite i GT. Re-eksport nizej, bo wolajacy i tak
 // przychodza po nie do gt-fields.
-const { bezAdnotacjiStref, zbudujAdnotacjeStref, SKROTY_STREF } = require('./adnotacja-stref');
+const { bezAdnotacjiStref, zbudujAdnotacjeStref, zlozPole, decyzjaAdnotacji, SKROTY_STREF } = require('./adnotacja-stref');
 
 // pozycje: [{kod, ilosc}] - zwraca {gorna, zapas}, oba "" gdy brak lokalizacji
 function kompresujLokalizacjeGorne(pozycje) {
@@ -344,6 +344,8 @@ module.exports = {
   pobierzPrzegladLokalizacji,
   bezAdnotacjiStref,
   zbudujAdnotacjeStref,
+  zlozPole,
+  decyzjaAdnotacji,
   SKROTY_STREF,
   ZGODNOSC,
 };

@@ -6,7 +6,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { bezAdnotacjiStref, zbudujAdnotacjeStref, SKROTY_STREF, KOLEJNOSC_STREF } =
+const { bezAdnotacjiStref, zbudujAdnotacjeStref, zlozPole, decyzjaAdnotacji, SKROTY_STREF, KOLEJNOSC_STREF } =
   require('../services/adnotacja-stref');
 const { RODZAJE_STREF } = require('../services/gt-dokumenty');
 
@@ -83,4 +83,86 @@ test('KAZDY rodzaj strefy ma skrot (nowy rodzaj nie wypadnie po cichu)', () => {
 test('skroty sa unikalne (inaczej dwa rodzaje zlalyby sie w polu)', () => {
   const skroty = Object.values(SKROTY_STREF);
   assert.equal(new Set(skroty).size, skroty.length, `duplikat w skrotach: ${skroty.join(', ')}`);
+});
+
+// --- pole bez adresu: sam znacznik "+D20" (SKU bez domu, tylko sztuki w strefie) ---
+
+test('znacznik na PUSTYM polu ("+D20") daje sie zdjac mimo braku wiodacej spacji', () => {
+  // job trimuje odczyt, wiec " +D20" wraca jako "+D20" - musi byc strippowalne, inaczej
+  // znacznik zostalby na wieki (job pisalby go w kolko).
+  assert.equal(bezAdnotacjiStref('+D20'), '');
+  assert.equal(bezAdnotacjiStref('+D20 +Z3'), '');
+  assert.equal(bezAdnotacjiStref('+PW7'), '');
+});
+
+test('pojedynczy plus w srodku/na koncu bez cyfry NIE jest znacznikiem', () => {
+  assert.equal(bezAdnotacjiStref('A/B+C'), 'A/B+C');
+  assert.equal(bezAdnotacjiStref('PAKIET + gratis'), 'PAKIET + gratis');
+  assert.equal(bezAdnotacjiStref('+2GRATIS'), '+2GRATIS');   // po plusie cyfra, nie litera - nie nasz format
+});
+
+test('zapas na poczatku pola (bez adresu) tez przezywa - "C2P3" nie jest znacznikiem', () => {
+  assert.equal(bezAdnotacjiStref('C2P3'), 'C2P3');
+});
+
+// --- zlozPole: skladanie docelowego tw_Pole1 ---
+
+test('zlozPole: baza + adnotacja; pusta baza -> sam znacznik bez wiodacej spacji', () => {
+  assert.equal(zlozPole('M2-A7', ' +P1'), 'M2-A7 +P1');
+  assert.equal(zlozPole('M2-A7/C2P3', ' +D20'), 'M2-A7/C2P3 +D20');
+  assert.equal(zlozPole('', ' +D20'), '+D20');            // brak adresu -> "+D20", NIE " +D20"
+  assert.equal(zlozPole('', ''), '');
+  assert.equal(zlozPole('M2-A7', ''), 'M2-A7');
+});
+
+test('zlozPole + bezAdnotacjiStref: stabilna runda dla pustej bazy (brak flip-flopa)', () => {
+  const zapis = zlozPole('', zbudujAdnotacjeStref({ dostawa: 20 }));  // "+D20"
+  assert.equal(zapis, '+D20');
+  assert.equal(bezAdnotacjiStref(zapis), '');                        // baza po odczycie = "" (stabilnie)
+});
+
+// --- decyzjaAdnotacji: decyzja joba dla jednego pola ---
+
+test('decyzja: dopisanie znacznika do adresu (dom WMS)', () => {
+  const d = decyzjaAdnotacji({ base: 'M2-A7', obecne: 'M2-A7', adnotacja: ' +P1', maDomWms: true });
+  assert.deepEqual(d, { docelowe: 'M2-A7 +P1', pisz: true, akcja: 'dopisane' });
+});
+
+test('decyzja: zdjecie znacznika po rozlozeniu (strefa = 0)', () => {
+  const d = decyzjaAdnotacji({ base: 'M2-A7', obecne: 'M2-A7 +P1', adnotacja: '', maDomWms: true });
+  assert.deepEqual(d, { docelowe: 'M2-A7', pisz: true, akcja: 'zdjete' });
+});
+
+test('decyzja: korekta nieaktualnego znacznika (stary +D99 -> faktyczny +P1)', () => {
+  const d = decyzjaAdnotacji({ base: 'M2-A7', obecne: 'M2-A7 +D99', adnotacja: ' +P1', maDomWms: true });
+  assert.equal(d.docelowe, 'M2-A7 +P1');
+  assert.equal(d.pisz, true);
+});
+
+test('decyzja: nic do zrobienia, gdy pole juz zgodne', () => {
+  assert.equal(decyzjaAdnotacji({ base: 'M2-A7', obecne: 'M2-A7 +P1', adnotacja: ' +P1', maDomWms: true }).pisz, false);
+  assert.equal(decyzjaAdnotacji({ base: 'M2-A7', obecne: 'M2-A7', adnotacja: '', maDomWms: true }).pisz, false);
+});
+
+test('decyzja: dom WMS chroni pole, gdy GT trzyma INNA baze (reczna edycja / zalegly sync)', () => {
+  // baza WMS = "M2-A7", ale GT ma "CZYJES-AUTOR" - to NIE robota tego joba, zostawiamy
+  const d = decyzjaAdnotacji({ base: 'M2-A7', obecne: 'CZYJES-AUTOR', adnotacja: ' +P1', maDomWms: true });
+  assert.equal(d.pisz, false);
+  assert.equal(d.powod, 'baza-inna');
+});
+
+test('decyzja: BEZ domu straznik nie bije - dopisujemy do adresu z GT (tez smieciowego)', () => {
+  // baza = to, co w GT bez dopisku (tak liczy job dla SKU bez domu)
+  const smieciowa = 'RB/M2-B36-P1 /';
+  const d = decyzjaAdnotacji({ base: smieciowa, obecne: smieciowa, adnotacja: ' +D20', maDomWms: false });
+  assert.deepEqual(d, { docelowe: 'RB/M2-B36-P1 / +D20', pisz: true, akcja: 'dopisane' });
+  assert.equal(bezAdnotacjiStref(d.docelowe), smieciowa, 'odwracalne - zdjecie odtwarza smieciowy adres');
+});
+
+test('decyzja: BEZ domu i BEZ adresu - sam znacznik na pustym polu, potem zdejmowalny', () => {
+  const dopisz = decyzjaAdnotacji({ base: '', obecne: '', adnotacja: ' +D20', maDomWms: false });
+  assert.deepEqual(dopisz, { docelowe: '+D20', pisz: true, akcja: 'dopisane' });
+  // po zestarzeniu dokumentu (strefa=0): baza = bezAdnotacjiStref("+D20") = "", znacznik znika
+  const zdejmij = decyzjaAdnotacji({ base: '', obecne: '+D20', adnotacja: '', maDomWms: false });
+  assert.deepEqual(zdejmij, { docelowe: '', pisz: true, akcja: 'zdjete' });
 });

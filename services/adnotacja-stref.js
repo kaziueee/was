@@ -23,9 +23,15 @@ const SKROTY_STREF = { przywozka: 'P', dostawa: 'D', zwrot: 'Z', przyjecie_wewn:
 // (zmiana tekstu = kolejny UPDATE do GT bez powodu).
 const KOLEJNOSC_STREF = ['przywozka', 'dostawa', 'zwrot', 'przyjecie_wewn'];
 
-// Wszystko od " +SKROT<liczba>" do KONCA to adnotacja. Kotwica na koncu ($) sprawia, ze
-// przypadkowy plus w srodku kodu nie zje polowy adresu.
-const ADNOTACJA_RE = / \+[A-Z]{1,2}\d+(?: \+[A-Z]{1,2}\d+)*$/;
+// Wszystko od "+SKROT<liczba>" do KONCA to adnotacja. Kotwica na koncu ($) sprawia, ze
+// przypadkowy plus w srodku kodu nie zje polowy adresu. Granica z przodu = POCZATEK POLA albo
+// bialy znak, wiec lapiemy dwie formy:
+//   "M2-A7 +P1"  - dopisek do adresu (SKU z domem/adresem w GT)
+//   "+D20"       - CALE pole to znacznik (SKU bez adresu, ma tylko sztuki w strefie; job pisze
+//                  sam znacznik). Bez alternatywy ^ trim() odczytu ("+D20") rozjechalby sie ze
+//                  zdejmowaniem i znacznik zostalby na wieki.
+// Separator "/zapas" (M2-A7/C2P3) NIE ma ani spacji, ani plusa - zapas przezywa zdjecie (test).
+const ADNOTACJA_RE = /(?:^|\s)\+[A-Z]{1,2}\d+(?:\s+\+[A-Z]{1,2}\d+)*$/;
 
 function bezAdnotacjiStref(tekst) {
   return String(tekst ?? '').replace(ADNOTACJA_RE, '').trim();
@@ -47,4 +53,28 @@ function zbudujAdnotacjeStref(strefy, limit = 50) {
   return wynik;
 }
 
-module.exports = { bezAdnotacjiStref, zbudujAdnotacjeStref, SKROTY_STREF, KOLEJNOSC_STREF };
+// Sklada docelowe tw_Pole1 z bazy (adres) i adnotacji (' +D20' albo ''). Gdy bazy nie ma
+// (SKU bez adresu, tylko sztuki w strefie) zostaje sam znacznik BEZ wiodacej spacji - inaczej
+// odczyt-z-trim ("+D20") rozjechalby sie z zapisem (" +D20") i job pisalby w kolko to samo pole.
+function zlozPole(base, adnotacja) {
+  return base ? `${base}${adnotacja}` : String(adnotacja || '').trimStart();
+}
+
+// Decyzja joba dla POJEDYNCZEGO pola tw_Pole1 - czysta, testowalna bez GT/SQLite.
+//   base      - adres bazowy: prawda WMS (gdy znamy dom K4) albo GT-bez-dopisku (gdy nie znamy)
+//   obecne    - aktualne tw_Pole1 z GT (juz .trim())
+//   adnotacja - wynik zbudujAdnotacjeStref (np. ' +D20' albo '')
+//   maDomWms  - czy base pochodzi z WMS; wtedy CHRONIMY pole, gdy GT trzyma INNA baze niz WMS
+//               (reczna edycja / zalegly sync - to robota synchronizujLokalizacje, nie tego joba).
+//               Bez domu base = bezAdnotacjiStref(obecne), wiec ten straznik nigdy nie bije.
+// Zwraca { docelowe, pisz, akcja } - akcja: 'dopisane' | 'zdjete' (istotne tylko gdy pisz).
+function decyzjaAdnotacji({ base, obecne, adnotacja, maDomWms }) {
+  const docelowe = zlozPole(base, adnotacja);
+  if (obecne === docelowe) return { docelowe, pisz: false };
+  if (maDomWms && bezAdnotacjiStref(obecne) !== base) return { docelowe, pisz: false, powod: 'baza-inna' };
+  return { docelowe, pisz: true, akcja: adnotacja ? 'dopisane' : 'zdjete' };
+}
+
+module.exports = {
+  bezAdnotacjiStref, zbudujAdnotacjeStref, zlozPole, decyzjaAdnotacji, SKROTY_STREF, KOLEJNOSC_STREF,
+};

@@ -8,7 +8,10 @@ const assert = require('node:assert');
 
 const { bezAdnotacjiStref, zbudujAdnotacjeStref, zlozPole, decyzjaAdnotacji, SKROTY_STREF, KOLEJNOSC_STREF } =
   require('../services/adnotacja-stref');
-const { RODZAJE_STREF } = require('../services/gt-dokumenty');
+// Kanoniczna lista rodzajow stref z modulu BEZ zaleznosci od GT/SQLite - inaczej ten test
+// czystej logiki ciagnalby przez gt-dokumenty otwarcie db/wms.db i kolidowal rownolegle z
+// innymi plikami testowymi ("database is locked").
+const { KUBELKI_STREF } = require('../services/rozbicie-stanu');
 
 // --- budowanie ---
 
@@ -83,7 +86,7 @@ test('runda w obie strony: adres -> +adnotacja -> adres', () => {
 // --- straznik przed cichym zgubieniem rodzaju ---
 
 test('KAZDY rodzaj strefy ma skrot (nowy rodzaj nie wypadnie po cichu)', () => {
-  for (const rodzaj of Object.keys(RODZAJE_STREF)) {
+  for (const rodzaj of Object.keys(KUBELKI_STREF)) {
     assert.ok(SKROTY_STREF[rodzaj], `rodzaj "${rodzaj}" nie ma skrotu w SKROTY_STREF`);
     assert.ok(KOLEJNOSC_STREF.includes(rodzaj), `rodzaj "${rodzaj}" nie ma miejsca w KOLEJNOSC_STREF`);
   }

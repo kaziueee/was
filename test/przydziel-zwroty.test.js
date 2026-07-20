@@ -1,6 +1,6 @@
 'use strict';
 
-// Testy przydzialu zwrotow do rozmontowan - przydzielZwroty z services/gt-dokumenty.js.
+// Testy przydzialu zwrotow do rozmontowan - przydzielZwroty z services/rozbicie-stanu.js.
 // Uruchomienie: node --test test/
 //
 // Czemu ta funkcja ma testy: decyduje, czy skladniki rozmontowanego zestawu dostana ZADANIE
@@ -14,12 +14,15 @@
 // Pytanie usera, ktore to wykrylo: "jak rozmontuje jeden zwrot, a potem kolejny taki sam, to
 // on moze zlapac KFS nie od swojej sprzedazy?". Moze. Stad pula, ktora sie ZUZYWA.
 //
-// Test nie dotyka GT ani SQLite - przydzielZwroty to czysta funkcja.
+// Test nie dotyka GT ani SQLite - przydzielZwroty to czysta funkcja. Import idzie z
+// rozbicie-stanu (modul bez zaleznosci od db/GT), inaczej rownolegle pliki testowe kolidowalyby
+// na db/wms.db otwieranym przez gt-dokumenty ("database is locked"). Okno KFS (dni) jest tu
+// domyslne (14); produkcja wstrzykuje realne przez 3. argument.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { przydzielZwroty } = require('../services/gt-dokumenty');
+const { przydzielZwroty } = require('../services/rozbicie-stanu');
 
 const DZIEN = 24 * 3600 * 1000;
 const T0 = new Date('2026-07-01T00:00:00Z').getTime();

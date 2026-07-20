@@ -1,6 +1,6 @@
 'use strict';
 
-// Testy rdzenia rachunku "co lezy na K4" - rozbijStanK4 z services/gt-dokumenty.js.
+// Testy rdzenia rachunku "co lezy na K4" - rozbijStanK4 z services/rozbicie-stanu.js.
 // Uruchomienie: node --test test/
 //
 // Czemu akurat ta funkcja ma testy, a reszta nie: to JEDYNE miejsce, gdzie zapisana jest
@@ -9,15 +9,17 @@
 // przydzialu budzetu - czyli z rzeczy, ktora wyglada sensownie takze wtedy, gdy jest
 // napisana na odwrot. Bez testu nastepna osoba "poprawi" sort jednym ruchem.
 //
-// Testy nie dotykaja GT ani SQLite: rozbijStanK4 czyta baze tylko przez
-// iloscRozlozonaZDokumentu, a to wywolanie jest pomijane, gdy nie podamy artykul_gt_id.
+// Testy nie dotykaja GT ani SQLite: rozbijStanK4 czyta baze tylko przez wstrzykiwany licznik
+// iloscRozlozona (w gt-dokumenty: iloscRozlozonaZDokumentu), a tu nie podajemy go ani
+// artykul_gt_id. Import idzie z rozbicie-stanu WLASNIE dlatego, ze ten modul nie ciagnie
+// db/database (SQLite) - inaczej rownolegle pliki testowe kolidowalyby na db/wms.db.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { rozbijStanK4, RODZAJE_STREF, PRIORYTET_PRZYDZIALU } = require('../services/gt-dokumenty');
+const { rozbijStanK4, KUBELKI_STREF, PRIORYTET_PRZYDZIALU } = require('../services/rozbicie-stanu');
 
 // Wyciaga klucze najwyzszego poziomu z literalu obiektu `<nazwa> = { ... }` w tekscie zrodla.
 // Front (public/zebra/ruch.js, public/desktop/app.js) to zwykly JS przegladarki (globalne el/
@@ -193,24 +195,25 @@ test('KOLEJNOSC PRZYDZIALU jest ODWROTNA do kolejnosci zjadania', () => {
     'zwrot schodzi przed przywozka => przydzial zwrotu jest PO przywozce');
 });
 
-test('kazdy rodzaj z RODZAJE_STREF ma priorytet (czwarty rodzaj nie wypadnie po cichu)', () => {
+test('kazdy rodzaj z KUBELKI_STREF ma priorytet (czwarty rodzaj nie wypadnie po cichu)', () => {
   // Ten sam blad trafil sie juz cztery razy - za kazdym razem dlatego, ze ktos skladal
-  // liste rodzajow recznie i o jednym zapomnial.
+  // liste rodzajow recznie i o jednym zapomnial. KUBELKI_STREF to kanoniczna lista rodzajow
+  // (gt-dokumenty buduje z niej RODZAJE_STREF), wiec straznik anchoruje na niej.
   assert.deepEqual(
-    Object.keys(RODZAJE_STREF).sort(),
+    Object.keys(KUBELKI_STREF).sort(),
     Object.keys(PRIORYTET_PRZYDZIALU).sort(),
-    'RODZAJE_STREF i PRIORYTET_PRZYDZIALU musza opisywac te same rodzaje'
+    'KUBELKI_STREF i PRIORYTET_PRZYDZIALU musza opisywac te same rodzaje'
   );
 });
 
-test('RODZAJE_DOK we froncie zna te same rodzaje co RODZAJE_STREF w backendzie', () => {
+test('RODZAJE_DOK we froncie zna te same rodzaje co KUBELKI_STREF w backendzie', () => {
   // Ten sam blad ("nowy rodzaj wypadl po cichu") trafil sie >=6 razy - ostatnio PW zniknelo
   // z karty produktu i modalu. Zrodlo naprawione: payload oddaje JEDNA liste wszystkie_k4,
   // wiec front nie skleja juz kubelkow recznie. Ale front nadal MAPUJE rodzaj -> podpis i
   // domyslny cel przez RODZAJE_DOK. Gdy backend pozna rodzaj, ktorego RODZAJE_DOK nie zna,
   // wpadnie on w `|| RODZAJE_DOK.dostawa` i pokaze sie jako "Dostawa" z celem K4G - cicha
   // pomylka. Ten straznik pilnuje, ze rejestr frontu i backendu opisuja te same rodzaje.
-  const rodzajeBackend = Object.keys(RODZAJE_STREF).sort();
+  const rodzajeBackend = Object.keys(KUBELKI_STREF).sort();
   for (const wzgledny of ['../public/zebra/ruch.js', '../public/desktop/app.js']) {
     const src = fs.readFileSync(path.join(__dirname, wzgledny), 'utf8');
     const kluczeFront = kluczeObiektu(src, 'RODZAJE_DOK').sort();

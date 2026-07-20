@@ -2009,3 +2009,76 @@ function zastosujRoleWMenu() {
 // Ten sam wzorzec co pokazZakladkeAdmina na desktopie (public/desktop/app.js).
 if (window.WMS?.gotowe) window.WMS.gotowe.then(zastosujRoleWMenu);
 window.addEventListener('wms-zalogowano', zastosujRoleWMenu);
+
+// --- Stan polaczen na ekranie glownym: baza (SQL GT) + most (:5000) ---
+// Ambientowy wskaznik obok WMS. Zrodlo: /api/status (publiczny, lekki: DB_NAME() + 1 fetch do
+// mostu) - to samo co desktop (public/desktop/app.js statusSrodowiska) i ekran logowania. Poll
+// co 20 s + po zalogowaniu. Kropka: zielona = polaczono, czerwona = padlo, szara = przed 1.
+// odczytem albo gdy samo /api/status milczy (Node down - nie zgadujemy stanu mostu). Kropka nie
+// jest jedynym nosnikiem: tap pastylki pokazuje pasek instrukcji (przy awarii co zrobic).
+(function menuStatusPolaczen() {
+  const pill = el('menu-status');
+  const info = el('menu-status-info');
+  if (!pill || !info) return;
+
+  let ostatni = null;   // { gt, most } albo null = nieznany
+  let otwarte = false;
+
+  const kropka = (label, ok) => {
+    const kl = ok === true ? ' ok' : ok === false ? ' bad' : '';
+    return `<span class="ms-stat${kl}"><span class="ms-dot"></span>${label}</span>`;
+  };
+
+  function renderInfo() {
+    const gt = ostatni?.gt ?? null;
+    const most = ostatni?.most ?? null;
+    let tekst;
+    let awaria = true;
+    if (gt === false) {
+      tekst = '<b>Brak połączenia z bazą Subiekta (GT).</b> Zwykle wraca samo; jeśli nie — '
+        + 'sprawdź, czy serwer Subiekta działa, albo zadzwoń po pomoc.';
+    } else if (most === false) {
+      tekst = '<b>Most GT nie odpowiada</b> — przesunięcia MM nie zaksięgują się w Subiekcie. '
+        + 'Na pececie (konto <b>Adm</b>): dwuklik <code>MOST-RESTART</code> na pulpicie → poczekaj '
+        + 'do minuty → sprawdź, czy „Most" tu zapali się na zielono.';
+    } else if (gt === true && most === true) {
+      tekst = 'Baza i most połączone — wszystko działa.';
+      awaria = false;
+    } else {
+      tekst = 'Sprawdzam połączenie z bazą i mostem…';
+      awaria = false;
+    }
+    info.innerHTML = tekst;
+    info.classList.toggle('awaria', awaria);
+  }
+
+  function render() {
+    const gt = ostatni?.gt ?? null;
+    const most = ostatni?.most ?? null;
+    pill.innerHTML = kropka('Baza', gt) + kropka('Most', most);
+    if (otwarte) renderInfo();
+  }
+
+  pill.addEventListener('click', () => {
+    otwarte = !otwarte;
+    info.classList.toggle('hidden', !otwarte);
+    if (otwarte) renderInfo();
+  });
+
+  async function odswiez() {
+    try {
+      const res = await fetch('/api/status');
+      if (!res.ok) throw new Error('http ' + res.status);
+      const s = await res.json();
+      ostatni = { gt: !!s.gt, most: !!s.most };
+    } catch {
+      ostatni = null;   // /api/status milczy - kropki na szaro, bez falszywego alarmu
+    }
+    render();
+  }
+
+  render();     // szare "sprawdzam" od razu, zanim wroci pierwszy fetch
+  odswiez();
+  setInterval(odswiez, 20000);
+  window.addEventListener('wms-zalogowano', odswiez);
+})();

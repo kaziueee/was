@@ -247,6 +247,62 @@ html, body {
   gap: var(--space-2);
 }
 
+/* Stan polaczen na ekranie glownym (obok WMS): baza (SQL GT) + most (:5000). Zrodlo i
+   semantyka jak na desktopie (public/desktop/app.js statusSrodowiska): zielona = polaczono,
+   czerwona = padlo, szara = przed 1. odczytem / gdy /api/status milczy. Surowa forma: same
+   male kropki + neutralne napisy, bez ramki, obwodki i pulsu (swiadomie ciche). Napisy NIE
+   zmieniaja koloru - kolor niesie tylko kropka. Element jest przyciskiem: tap pokazuje
+   #menu-status-info (przy awarii co zrobic z mostem - tam status jest tekstem, nie kolorem). */
+.menu-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.menu-status .ms-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-label);
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+.menu-status .ms-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-border-strong);           /* nieznany - do pierwszego odczytu */
+}
+.menu-status .ms-stat.ok .ms-dot  { background: var(--color-success); }
+.menu-status .ms-stat.bad .ms-dot { background: var(--color-danger); }
+
+/* Pasek instrukcji pod naglowkiem menu - po tapnieciu pastylki. Zielony = potwierdzenie,
+   czerwony = awaria (co zrobic; parytet z paskiem alarmu desktopu). Chowa go globalny .hidden. */
+.menu-status-info {
+  border-radius: var(--radius-medium);
+  padding: var(--space-3);
+  font-size: var(--font-label);
+  line-height: 1.45;
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
+}
+.menu-status-info.awaria {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+.menu-status-info code {
+  font-family: ui-monospace, Consolas, monospace;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.05em 0.4em;
+  border-radius: 4px;
+}
+
 /* --- Przyciski (pelna szerokosc, w stopce) --- */
 .btn-akcja {
   width: 100%;

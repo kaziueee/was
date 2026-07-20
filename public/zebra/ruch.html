@@ -16,8 +16,9 @@
 
   <!-- WIDOK MENU (SPA: bez przeladowania - pelny ekran sie trzyma) -->
   <div id="widok-menu" class="ekran">
-    <header class="ekran-naglowek"><div class="ekran-sku"><h1>WMS</h1></div><div id="wms-badge-slot" style="margin-left:auto"></div></header>
+    <header class="ekran-naglowek"><div class="ekran-sku"><h1>WMS</h1><button type="button" id="menu-status" class="menu-status" aria-label="Stan połączeń — baza i most"></button></div><div id="wms-badge-slot" style="margin-left:auto"></div></header>
     <main class="ekran-tresc">
+      <div id="menu-status-info" class="menu-status-info hidden" role="status"></div>
       <button type="button" id="btn-go-ruch" class="btn-menu">Ruch towaru<span>MM / zmiana lokalizacji</span></button>
       <button type="button" id="btn-go-uzup" class="btn-menu">Uzupełnienia K4<span>K4G → K4 wg rezerwacji</span></button>
       <button type="button" id="btn-go-dostawy" class="btn-menu">Dostawy<span>rozłóż towar z faktur</span></button>

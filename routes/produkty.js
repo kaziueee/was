@@ -353,7 +353,9 @@ router.put('/:artykulGtId/atrybuty', async (req, res) => {
   }
 
   const wynik = await gtAtrybuty.zapiszAtrybuty(artykulGtId, zmiany);
-  if (!wynik.ok) return res.status(503).json({ blad: wynik.blad });
+  // brakWiersza = swiadoma odmowa (nie zakladamy nowego wiersza pw_Dane, zeby nie
+  // rozjezdzac licznika id GT) -> 409, nie 503 (to nie awaria GT). Front i tak pokaze blad.
+  if (!wynik.ok) return res.status(wynik.brakWiersza ? 409 : 503).json({ blad: wynik.blad });
 
   audyt.zapisz({
     uzytkownik: req.uzytkownik?.imie ?? null,

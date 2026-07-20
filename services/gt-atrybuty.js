@@ -204,31 +204,59 @@ async function zapiszAtrybuty(artykulGtId, zmiany) {
   if (pola.length === 0) return { ok: true, dane: { sukces: true, zapisane: {} } };
 
   const ustawienia = pola.map((p) => `${p.kolumna} = ${p.parametr}`);
-  const kolumnyInsert = pola.map((p) => p.kolumna);
-  const parametryInsert = pola.map((p) => p.parametr);
 
-  // Calosc w jednej transakcji: blokada na czas ustalenia pwd_Id, zeby rownolegly
-  // zapis nie wzial tego samego MAX+1.
-  const sql = `
-    SET XACT_ABORT ON;
-    BEGIN TRAN;
-      DECLARE @pwd INT;
-      SELECT @pwd = pwd_Id FROM pw_Dane WITH (UPDLOCK, HOLDLOCK)
-        WHERE pwd_TypObiektu = ${TYP_OBIEKTU_TOWAR} AND pwd_IdObiektu = @id;
-      IF @pwd IS NULL
-      BEGIN
-        SELECT @pwd = ISNULL(MAX(pwd_Id), 0) + 1 FROM pw_Dane WITH (UPDLOCK, HOLDLOCK);
-        INSERT INTO pw_Dane (pwd_Id, pwd_TypObiektu, pwd_IdObiektu, ${kolumnyInsert.join(', ')})
-          VALUES (@pwd, ${TYP_OBIEKTU_TOWAR}, @id, ${parametryInsert.join(', ')});
-      END
-      ELSE
-        UPDATE pw_Dane SET ${ustawienia.join(', ')} WHERE pwd_Id = @pwd;
-    COMMIT;
+  // UWAGA (2026-07-20): zakladanie NOWEGO wiersza pw_Dane jest domyslnie ZABLOKOWANE.
+  // Ten INSERT nadawal pwd_Id = MAX+1 z pominieciem przydzielacza identyfikatorow GT,
+  // przez co pw_Dane wyprzedzilo licznik id GT i Subiekt zaczal odrzucac zapis pol
+  // wlasnych ("Zapis spowodowalby naruszenie integralnosci danych") - patrz pamiec
+  // projektu pwdane-insert-psuje-licznik-gt. UPDATE istniejacego wiersza jest bezpieczny
+  // (nie tworzy id). Docelowo: zapis przez Sfere albo wylacznie UPDATE.
+  // Zawor awaryjny (domyslnie OFF): WMS_GT_ATRYBUTY_INSERT=1 przywraca stary INSERT -
+  // wlaczyc DOPIERO po naprawie licznika po stronie InsERT.
+  const wolnoTworzycWiersz = /^(1|true|tak)$/i.test(process.env.WMS_GT_ATRYBUTY_INSERT || '');
+
+  // Krok 1: zaktualizuj wiersz, jesli istnieje. @pwd zostaje NULL, gdy towar go nie ma.
+  const sqlUpdate = `
+    DECLARE @pwd INT;
+    SELECT @pwd = pwd_Id FROM pw_Dane WITH (UPDLOCK, HOLDLOCK)
+      WHERE pwd_TypObiektu = ${TYP_OBIEKTU_TOWAR} AND pwd_IdObiektu = @id;
+    IF @pwd IS NOT NULL
+      UPDATE pw_Dane SET ${ustawienia.join(', ')} WHERE pwd_Id = @pwd;
     SELECT @pwd AS pwd_Id;`;
 
   try {
-    const res = await query(sql, parametry);
-    return { ok: true, dane: { sukces: true, pwd_Id: res.recordset?.[0]?.pwd_Id ?? null, zapisane } };
+    let res = await query(sqlUpdate, parametry);
+    let pwd = res.recordset?.[0]?.pwd_Id ?? null;
+
+    if (pwd === null && !wolnoTworzycWiersz) {
+      // Towar bez wiersza pol wlasnych - NIE zakladamy go (patrz komentarz wyzej).
+      // Jawny brak zapisu: front pokaze powod i NIE oznaczy pozycji jako "gotowe".
+      return {
+        ok: false,
+        brakWiersza: true,
+        blad: 'Nie zapisano: ten towar nie ma jeszcze parametrow w GT, a zakladanie '
+          + 'nowych jest chwilowo wstrzymane (trwa naprawa licznika identyfikatorow GT). '
+          + 'Parametry zapisza sie dla towarow, ktore juz jakies maja; reszta wroci po naprawie.',
+      };
+    }
+
+    if (pwd === null) {
+      // Zawor awaryjny wlaczony: stary INSERT z MAX+1 (to ta sciezka rozjechala licznik).
+      const kolumnyInsert = pola.map((p) => p.kolumna);
+      const parametryInsert = pola.map((p) => p.parametr);
+      const sqlInsert = `
+        SET XACT_ABORT ON;
+        BEGIN TRAN;
+          DECLARE @nowe INT = ISNULL((SELECT MAX(pwd_Id) FROM pw_Dane WITH (UPDLOCK, HOLDLOCK)), 0) + 1;
+          INSERT INTO pw_Dane (pwd_Id, pwd_TypObiektu, pwd_IdObiektu, ${kolumnyInsert.join(', ')})
+            VALUES (@nowe, ${TYP_OBIEKTU_TOWAR}, @id, ${parametryInsert.join(', ')});
+        COMMIT;
+        SELECT @nowe AS pwd_Id;`;
+      res = await query(sqlInsert, parametry);
+      pwd = res.recordset?.[0]?.pwd_Id ?? null;
+    }
+
+    return { ok: true, dane: { sukces: true, pwd_Id: pwd, zapisane } };
   } catch (err) {
     return { ok: false, blad: `Zapis atrybutow (SQL): ${err.message}` };
   }

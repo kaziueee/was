@@ -67,6 +67,78 @@ nav {
   align-items: center;
 }
 
+/* Stan polaczen (baza / most) w naglowku. Idzie PRZED badge, wiec margin-left:auto
+   badge'a i tak dopycha wszystko w prawo - klaster siedzi tuz przy uzytkowniku. */
+.status-srodowiska {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  outline: 1px solid transparent;
+  transition: outline-color 0.2s, background 0.2s;
+}
+.status-srodowiska.ma-awarie {
+  background: rgba(229, 83, 75, 0.22);
+  outline-color: rgba(229, 83, 75, 0.55);
+}
+.status-srodowiska .stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.status-srodowiska .stat-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #9aa6b3;                 /* nieznany - do pierwszego odczytu */
+  box-shadow: 0 0 0 3px rgba(154, 166, 179, 0.25);
+}
+.status-srodowiska .stat.ok .stat-dot {
+  background: #33d17a;
+  box-shadow: 0 0 0 3px rgba(51, 209, 122, 0.25);
+}
+.status-srodowiska .stat.bad .stat-dot {
+  background: #ff5c52;
+  box-shadow: 0 0 0 3px rgba(255, 92, 82, 0.35);
+  animation: stat-puls 1.6s ease-in-out infinite;
+}
+@keyframes stat-puls {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(255, 92, 82, 0.35); }
+  50%      { box-shadow: 0 0 0 6px rgba(255, 92, 82, 0.12); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-srodowiska .stat.bad .stat-dot { animation: none; }
+}
+
+/* Pasek alarmu pod naglowkiem - tylko gdy cos padlo. */
+.srod-alert {
+  background: #fbe3e0;
+  color: #7a1c15;
+  border-bottom: 2px solid #e5534b;
+  padding: 0.7rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+.srod-alert.hidden { display: none; }
+.srod-alert .srod-ico { flex: none; width: 22px; height: 22px; color: #c0392b; }
+.srod-alert .srod-tresc { flex: 1; min-width: 240px; }
+.srod-alert .srod-tresc b { font-weight: 650; }
+.srod-alert code {
+  font-family: ui-monospace, Consolas, monospace;
+  background: rgba(192, 57, 43, 0.12);
+  padding: 0.05em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
 main {
   padding: 1.5rem;
   max-width: min(1600px, 96vw);

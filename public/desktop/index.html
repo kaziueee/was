@@ -28,8 +28,18 @@
       <a href="#uzytkownicy" class="tab-link" data-panel="uzytkownicy" id="tab-uzytkownicy" style="display:none">Użytkownicy</a>
     </nav>
     <input type="text" id="input-operator" placeholder="Operator">
+    <!-- Stan polaczen (baza GT / most) - z /api/status, odswiezany co 20 s. Kropka zielona =
+         dziala, czerwona = padlo. Gdy most padnie, pod naglowkiem schodzi pasek z instrukcja. -->
+    <div id="status-srodowiska" class="status-srodowiska" aria-live="polite">
+      <span class="stat" id="stat-baza"><span class="stat-dot"></span>Baza</span>
+      <span class="stat" id="stat-most"><span class="stat-dot"></span>Most</span>
+    </div>
     <div id="wms-badge-slot"></div>
   </header>
+
+  <!-- Pasek alarmu: pokazuje sie tylko gdy most albo baza nie odpowiada. Tresc (i co robic)
+       wstawia app.js zaleznie od tego, co padlo. -->
+  <div id="srod-alert" class="srod-alert hidden" role="status"></div>
 
   <main>
     <div id="komunikat" class="komunikat hidden"></div>

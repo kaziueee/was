@@ -3198,6 +3198,74 @@ function uzupChipsKanalow(kanaly, wybrany) {
 el('btn-uzup-odswiez').addEventListener('click', odswiezUzupelnienia);
 el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
 
+// --- stan polaczen w pasku (baza / most) + pasek instrukcji, gdy cos padnie ---
+//
+// /api/status jest PUBLICZNY i lekki (DB_NAME() + jeden fetch do mostu), wiec mozemy
+// odpytywac go co 20 s bez obciazenia. Kropka pokazuje stan ambientowo; dopiero awaria
+// rozwija pasek z konkretna instrukcja "co zrobic" - most naprawia sam operator przyciskiem
+// MOST-RESTART (zob. naprawmost.ps1), wiec ta instrukcja go tam kieruje.
+(function statusSrodowiska() {
+  const cluster = el('status-srodowiska');
+  const chipBaza = el('stat-baza');
+  const chipMost = el('stat-most');
+  const alert = el('srod-alert');
+  if (!cluster || !chipBaza || !chipMost || !alert) return;
+
+  const ICO = '<svg class="srod-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    + 'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M12 9v4"/><path d="M12 17h.01"/>'
+    + '<path d="M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>';
+
+  function ustawChip(chip, ok) {
+    chip.classList.toggle('ok', ok === true);
+    chip.classList.toggle('bad', ok === false);
+    chip.title = ok === false ? 'brak połączenia' : ok === true ? 'połączono' : 'sprawdzam…';
+  }
+
+  function pokazAlarm(s) {
+    // Baza pierwsza - bez niej nie dziala nic. Instrukcja inna niz przy moscie:
+    // to nie jest do naprawienia przyciskiem, wiec kierujemy do serwera GT / telefonu.
+    if (!s.gt) {
+      alert.innerHTML = ICO + '<div class="srod-tresc"><b>Brak połączenia z bazą Subiekta (GT).</b> '
+        + 'Panel pokazuje ostatnie znane dane, ale nie odświeży stanów ani nie wystawi dokumentów. '
+        + 'Zwykle wraca samo; jeśli nie — sprawdź, czy serwer Subiekta działa, albo zadzwoń po pomoc.</div>';
+      alert.classList.remove('hidden');
+      return;
+    }
+    if (!s.most) {
+      alert.innerHTML = ICO + '<div class="srod-tresc"><b>Most GT nie odpowiada</b> — przesunięcia MM '
+        + 'nie zaksięgują się w Subiekcie (zostaną jako niewysłane).<br>'
+        + 'Na pececie (konto <b>Adm</b>): dwuklik <code>MOST-RESTART</code> na pulpicie → poczekaj do minuty → '
+        + 'sprawdź, czy „Most" tu na górze zapali się na zielono.</div>';
+      alert.classList.remove('hidden');
+      return;
+    }
+    alert.classList.add('hidden');
+    alert.innerHTML = '';
+  }
+
+  async function odswiez() {
+    try {
+      const s = await api('/api/status');
+      ustawChip(chipBaza, s.gt);
+      ustawChip(chipMost, s.most);
+      cluster.classList.toggle('ma-awarie', !s.gt || !s.most);
+      pokazAlarm(s);
+    } catch {
+      // /api/status samo nie odpowiada (Node down / restart) - nie zgadujemy stanu mostu:
+      // kropki na "nieznany", bez faltszywego alarmu o moscie.
+      ustawChip(chipBaza, null);
+      ustawChip(chipMost, null);
+      cluster.classList.remove('ma-awarie');
+      alert.classList.add('hidden');
+    }
+  }
+
+  odswiez();
+  setInterval(odswiez, 20000);
+  window.addEventListener('wms-zalogowano', odswiez);
+})();
+
 // --- init ---
 
 przejdzZHasha();

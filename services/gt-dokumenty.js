@@ -834,10 +834,16 @@ function rozbijStanK4(stanGt, sumaWms, dokumenty, { artykul_gt_id, magazyn = MAG
   zostalo -= polka;
 
   // `wszystkie` = te same pozycje w jednej liscie. Konsumenci, ktorych interesuje "ile lezy
-  // w drodze" albo "czy ten dokument jest jeszcze do rozlozenia", MAJA uzywac tego pola -
-  // recznie skladane [...dostawy, ...zwroty] cichnie sie psuje przy kazdym nowym rodzaju
-  // (tak zniknely przywozki z weryfikacji w /ruchy/rozloz i z reguly "cala ilosc" w /lok).
-  const wszystkie = [...kubelki.dostawa, ...kubelki.zwrot, ...kubelki.przywozka, ...kubelki.przyjecie_wewn];
+  // w drodze", "co jest do rozlozenia" albo ktorzy skladaja liste pozycji na ekran, MAJA
+  // uzywac tego pola (payload oddaje je jako `wszystkie_k4`) - recznie skladane
+  // [...dostawy, ...zwroty] cichnie sie psuje przy kazdym nowym rodzaju (tak zniknely
+  // przywozki z /ruchy/rozloz i z reguly "cala ilosc" w /lok, a potem PW z karty i modalu).
+  //
+  // Object.values(kubelki) -> kolejnosc wstawienia kluczy do `kubelki` (dostawa, zwrot,
+  // przywozka, przyjecie_wewn): dostawa pierwsza (najwieksza robota), potem drobnica ze stref.
+  // Nowy rodzaj dodany do inicjalizacji `kubelki` wpada tu SAM - o to chodzi, zeby konsument
+  // wszystkie_k4 nie wymagal dotkniecia.
+  const wszystkie = Object.values(kubelki).flat();
   return {
     dostawy: kubelki.dostawa,
     zwroty: kubelki.zwrot,

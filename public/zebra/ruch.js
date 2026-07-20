@@ -440,8 +440,7 @@ function obsluzArtykul(dane, { skrotPrzypisania = false } = {}) {
   // (dostawa/zwrot/przywozka/PW): tam stan ma dwa rozne zrodla (kubelek do rozlozenia + reszta
   // na stale miejsce), wiec magazynier musi zobaczyc rozklad i wybrac, co robi. Inaczej wpadal
   // od razu w goly ekran "Dokad i ile?" i wiersz kubelka byl nieosiagalny.
-  const maKubelekWPuli = (dane.dostawy_k4?.length || dane.zwroty_k4?.length
-    || dane.przywozki_k4?.length || dane.przyjecia_k4?.length) > 0;
+  const maKubelekWPuli = (dane.wszystkie_k4?.length || 0) > 0;
   if (skrotPrzypisania && dane.lokalizacje.length === 0 && !maStanZewn && !maKubelekWPuli) {
     // produkt ma stan w GT, ale nie ma jeszcze zadnej lokalizacji w WMS - przypisz pierwsza
     stan.artykul = artykul;
@@ -482,12 +481,10 @@ function pokazRozkladZrodel(dane, artykul) {
   //
   // Roznica miedzy nimi jest tylko w podpisie i domyslnym celu - mechanika ta sama:
   // /ruchy/rozloz z numerem dokumentu, cel dowolny, w dowolnych porcjach.
-  const opcjeDokumentow = [
-    ...(dane.dostawy_k4 || []),
-    ...(dane.zwroty_k4 || []),
-    ...(dane.przywozki_k4 || []),
-    ...(dane.przyjecia_k4 || []),
-  ].map((dok) => ({
+  // JEDNA lista wszystkich pozycji do rozlozenia (backend: rozbicie.wszystkie, payload:
+  // wszystkie_k4) - juz w kolejnosci dostawa -> drobnica. Nie sklejamy jej recznie z pol per
+  // rodzaj: tak gubil sie PW (i wczesniej przywozka). Nowy rodzaj wpada tu sam.
+  const opcjeDokumentow = (dane.wszystkie_k4 || []).map((dok) => ({
     klucz: '__' + dok.rodzaj.toUpperCase() + '_' + (dok.pz_nr || dok.fz_nr) + '__',
     artykul,
     zrodlo: null,
@@ -528,7 +525,7 @@ function pokazRozkladZrodel(dane, artykul) {
   // Nieprzypisany stan WMS per magazyn (GT - suma lokalizacji WMS) -> wiersz do dzialania.
   //
   // Na K4 deficyt ma DWA rozne zrodla i kazde ma inna regule (backend rozbija go w
-  // routes/lokalizacje.js na dostawy_k4 / nieprzypisane_k4):
+  // routes/lokalizacje.js na wszystkie_k4 / nieprzypisane_k4):
   //   - DOSTAWA (PZ<-FZ): paleta wg GT lezy na K4, ale fizycznie nie ma jeszcze miejsca.
   //     Cel dowolny (dol/gora), w dowolnych porcjach - ma swoj wiersz na gorze listy.
   //   - RESZTA (stary stan, zwroty): stara zasada 1 SKU = 1 lokalizacja, calosc na D3.

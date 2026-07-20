@@ -214,13 +214,14 @@ async function dolaczDaneGt(payload) {
       const deficytK4 = stanK4 - sumaK4;
       if (deficytK4 > 0) payload.deficyt_k4 = deficytK4;
 
-      // Rozbicie stanu K4 na zrodla, bo kazde ma inna regule (zob. gt-dokumenty.js):
-      //   dostawy_k4       - PZ<-FZ, paleta od dostawcy -> wolno dzielic, cel dol albo gora
-      //   zwroty_k4        - PZ<-KFS, sztuki w strefie zwrotow -> wracaja na regal
-      //   przywozki_k4     - MM z MAG/LS, towar w strefie przywozki -> wraca na regal
-      //   przyjecia_k4     - PW, przychod wewnetrzny w szufladzie przyjec -> wraca na regal
+      // Rozbicie stanu K4 na zrodla, bo kazde ma inna regule (zob. gt-dokumenty.js). Front
+      // dostaje je JEDNA lista `wszystkie_k4` (kazda pozycja ma `rodzaj`) - dostawa (PZ<-FZ,
+      // paleta -> wolno dzielic), zwrot (PZ<-KFS, strefa zwrotow), przywozka (MM z MAG/LS,
+      // strefa przywozki), przyjecie_wewn (PW, przychod wewnetrzny). Osobne pola per rodzaj
+      // (dostawy_k4/zwroty_k4/...) skasowane: to one gubily nowy rodzaj (front sklejal je
+      // recznie i o PW zapomnial). Podpis/domyslny cel per rodzaj rozstrzyga front (RODZAJE_DOK).
       //   nieprzypisane_k4 - reszta ("do sprawdzenia") -> stara zasada 1 SKU = 1 lok K4
-      // Produkt moze miec wszystkie naraz i to poprawne: to fizycznie rozne rzeczy - paleta
+      // Produkt moze miec kilka pozycji naraz i to poprawne: to fizycznie rozne rzeczy - paleta
       // do wywiezienia, sztuki w strefach i polka do zaklepania.
       //
       // Warunek to STAN, nie deficyt (zmiana 2026-07-17 razem z capem stanem). Strefy zaleza
@@ -231,10 +232,7 @@ async function dolaczDaneGt(payload) {
         const dokumenty = (await gtDokumenty.pobierzDostawyK4([payload.artykul_gt_id]))
           .get(String(payload.artykul_gt_id)) || [];
         const rozbicie = gtDokumenty.rozbijStanK4(stanK4, sumaK4, dokumenty, { artykul_gt_id: payload.artykul_gt_id });
-        if (rozbicie.dostawy.length > 0) payload.dostawy_k4 = rozbicie.dostawy;
-        if (rozbicie.zwroty.length > 0) payload.zwroty_k4 = rozbicie.zwroty;
-        if (rozbicie.przywozki.length > 0) payload.przywozki_k4 = rozbicie.przywozki;
-        if (rozbicie.przyjecia.length > 0) payload.przyjecia_k4 = rozbicie.przyjecia;
+        if (rozbicie.wszystkie.length > 0) payload.wszystkie_k4 = rozbicie.wszystkie;
         // nieprzypisane_k4 ustawiamy ZAWSZE (takze 0) - jego obecnosc jest dla frontu sygnalem
         // "rozbicie sie udalo, ufaj tej liczbie". Gdyby bylo pomijane przy zerze, front musialby
         // zgadywac po obecnosci pozostalych kubelkow i przy kazdym nowym rodzaju znowu bledy

@@ -52,10 +52,9 @@ async function dolaczDostawyK4(produkty, wierszeWms) {
     const stanK4 = p.stany_gt?.K4?.ilosc ?? 0;
     const wmsK4 = sumaK4.get(p.artykul_gt_id) || 0;
     const rozbicie = rozbijStanK4(stanK4, wmsK4, dostawyMap.get(String(p.artykul_gt_id)) || [], { artykul_gt_id: p.artykul_gt_id });
-    if (rozbicie.dostawy.length > 0) p.dostawy_k4 = rozbicie.dostawy;
-    if (rozbicie.zwroty.length > 0) p.zwroty_k4 = rozbicie.zwroty;
-    if (rozbicie.przywozki.length > 0) p.przywozki_k4 = rozbicie.przywozki;
-    if (rozbicie.przyjecia.length > 0) p.przyjecia_k4 = rozbicie.przyjecia;
+    // JEDNO pole dla frontu (modal desktopu) - lista wszystkich pozycji z `rodzaj`. Rozbicie
+    // na osobne pola per rodzaj gubilo nowy rodzaj przy sklejaniu we froncie (patrz karta/modal).
+    if (rozbicie.wszystkie.length > 0) p.wszystkie_k4 = rozbicie.wszystkie;
     p.nieprzypisane_k4 = rozbicie.reszta; // zawsze - obecnosc = sygnal "rozbicie sie udalo"
     p.polka_k4 = rozbicie.polka;
     p.polka_k4_klamie = rozbicie.polka_klamie;

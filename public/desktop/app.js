@@ -2739,10 +2739,10 @@ function dodajMagWms(tbody, mag, loki, k4Zapas, planTekst) {
   // zadaniem (paleta stoi, zwrot lezy w strefie); reszta to tylko stan. Akcja idzie w
   // /ruchy/rozloz: cel dowolny (dol/gora) i w dowolnych porcjach, bez pompowania polki
   // pickowej po drodze - zob. routes/ruchy.js POST /rozloz.
-  const doRozlozenia = mag === 'K4'
-    ? [...(modalProdukt.dostawy_k4 || []), ...(modalProdukt.zwroty_k4 || []),
-       ...(modalProdukt.przywozki_k4 || []), ...(modalProdukt.przyjecia_k4 || [])]
-    : [];
+  // JEDNA lista pozycji do rozlozenia (backend: rozbicie.wszystkie, payload: wszystkie_k4),
+  // juz w kolejnosci dostawa -> drobnica. Bez recznego sklejania pol per rodzaj - tak gubil
+  // sie PW (i wczesniej przywozka). Nowy rodzaj wpada tu sam.
+  const doRozlozenia = mag === 'K4' ? (modalProdukt.wszystkie_k4 || []) : [];
   for (const d of doRozlozenia) {
     const r = RODZAJE_DOK[d.rodzaj] || RODZAJE_DOK.dostawa;
     const tr = document.createElement('tr');

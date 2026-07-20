@@ -14,8 +14,34 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const { rozbijStanK4, RODZAJE_STREF, PRIORYTET_PRZYDZIALU } = require('../services/gt-dokumenty');
+
+// Wyciaga klucze najwyzszego poziomu z literalu obiektu `<nazwa> = { ... }` w tekscie zrodla.
+// Front (public/zebra/ruch.js, public/desktop/app.js) to zwykly JS przegladarki (globalne el/
+// pokazWidok, IIFE) - nie da sie go `require`, wiec czytamy plik i parsujemy. Skaner liczy
+// glebokosc klamer i zbiera identyfikatory tylko na glebokosci 1 (klucze zagniezdzone pomija).
+function kluczeObiektu(src, nazwa) {
+  const start = src.indexOf(`${nazwa} = {`);
+  if (start === -1) throw new Error(`nie znaleziono "${nazwa}" w zrodle`);
+  const klucze = [];
+  let depth = 0;
+  let oczekujeKlucz = false;
+  for (let i = src.indexOf('{', start); i < src.length; i++) {
+    const c = src[i];
+    if (c === '{') { depth++; oczekujeKlucz = depth === 1; continue; }
+    if (c === '}') { depth--; if (depth === 0) break; continue; }
+    if (depth === 1 && c === ',') { oczekujeKlucz = true; continue; }
+    if (depth === 1 && oczekujeKlucz && /\S/.test(c)) {
+      const m = src.slice(i).match(/^([A-Za-z_$][\w$]*)\s*:/);
+      if (m) { klucze.push(m[1]); i += m[0].length - 1; }
+      oczekujeKlucz = false;
+    }
+  }
+  return klucze;
+}
 
 // Skrot na dokument. `data` steruje FIFO w obrebie rodzaju.
 const dok = (rodzaj, ilosc, data, pz_nr = `PZ-${rodzaj}-${data}`) => ({ rodzaj, ilosc, data, pz_nr });
@@ -175,6 +201,22 @@ test('kazdy rodzaj z RODZAJE_STREF ma priorytet (czwarty rodzaj nie wypadnie po 
     Object.keys(PRIORYTET_PRZYDZIALU).sort(),
     'RODZAJE_STREF i PRIORYTET_PRZYDZIALU musza opisywac te same rodzaje'
   );
+});
+
+test('RODZAJE_DOK we froncie zna te same rodzaje co RODZAJE_STREF w backendzie', () => {
+  // Ten sam blad ("nowy rodzaj wypadl po cichu") trafil sie >=6 razy - ostatnio PW zniknelo
+  // z karty produktu i modalu. Zrodlo naprawione: payload oddaje JEDNA liste wszystkie_k4,
+  // wiec front nie skleja juz kubelkow recznie. Ale front nadal MAPUJE rodzaj -> podpis i
+  // domyslny cel przez RODZAJE_DOK. Gdy backend pozna rodzaj, ktorego RODZAJE_DOK nie zna,
+  // wpadnie on w `|| RODZAJE_DOK.dostawa` i pokaze sie jako "Dostawa" z celem K4G - cicha
+  // pomylka. Ten straznik pilnuje, ze rejestr frontu i backendu opisuja te same rodzaje.
+  const rodzajeBackend = Object.keys(RODZAJE_STREF).sort();
+  for (const wzgledny of ['../public/zebra/ruch.js', '../public/desktop/app.js']) {
+    const src = fs.readFileSync(path.join(__dirname, wzgledny), 'utf8');
+    const kluczeFront = kluczeObiektu(src, 'RODZAJE_DOK').sort();
+    assert.deepEqual(kluczeFront, rodzajeBackend,
+      `${wzgledny}: RODZAJE_DOK musi miec te same rodzaje co RODZAJE_STREF`);
+  }
 });
 
 test('dokument rozlozony w calosci nie wraca jak zombie', () => {

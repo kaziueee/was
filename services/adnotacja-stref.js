@@ -1,7 +1,7 @@
 'use strict';
 
 // Adnotacja stref doklejana do tw_Pole1 (lokalizacja K4 w GT):
-//   "M2-J14-P2"  ->  "M2-J14-P2 +D20 +Z3"   (20 szt. z dostawy i 3 ze zwrotu leza w strefie)
+//   "M2-J14-P2"  ->  "M2-J14-P2 +StD20 +StZ3"   (20 szt. z dostawy i 3 ze zwrotu leza w strefie)
 //
 // PO CO: pole "Miejsce na magazynie" to jedyne, co widzi czlowiek szukajacy towaru z poziomu
 // GT (wydruk, wyszukiwanie w Subiekcie). Przy pustej polce mowilo tylko adres pustej polki,
@@ -15,9 +15,12 @@
 // Osobny plik (a nie gt-fields), zeby dalo sie to testowac bez otwierania SQLite i GT -
 // test/adnotacja-stref.test.js. gt-fields re-eksportuje te funkcje dla wygody wolajacych.
 
-// Skroty te same, co kolumna "Strefa" na desktopie (komorkaStrefa w public/desktop/app.js) -
-// magazynier zna je stamtad i nie musi uczyc sie drugiego alfabetu.
-const SKROTY_STREF = { przywozka: 'P', dostawa: 'D', zwrot: 'Z', przyjecie_wewn: 'PW' };
+// Skroty stref w dopisku tw_Pole1: prefiks "St" (Strefa) + litera rodzaju. Litery te same, co
+// kolumna "Strefa" na desktopie (komorkaStrefa w public/desktop/app.js: P/D/Z/PW), ale w
+// tw_Pole1 dostaja "St" - bo dopisek stoi INLINE przy adresie i samo "+P1" zlewa sie z poziomem
+// polki ("M2-A7-P1"), a "+StP1" jest jednoznaczne. Na desktopie liter nie mylisz - stoja pod
+// naglowkiem kolumny "Strefa".
+const SKROTY_STREF = { przywozka: 'StP', dostawa: 'StD', zwrot: 'StZ', przyjecie_wewn: 'StPW' };
 
 // Kolejnosc wyswietlania - STALA, zeby pole nie "migalo" przy kazdym przebiegu joba
 // (zmiana tekstu = kolejny UPDATE do GT bez powodu).
@@ -26,12 +29,15 @@ const KOLEJNOSC_STREF = ['przywozka', 'dostawa', 'zwrot', 'przyjecie_wewn'];
 // Wszystko od "+SKROT<liczba>" do KONCA to adnotacja. Kotwica na koncu ($) sprawia, ze
 // przypadkowy plus w srodku kodu nie zje polowy adresu. Granica z przodu = POCZATEK POLA albo
 // bialy znak, wiec lapiemy dwie formy:
-//   "M2-A7 +P1"  - dopisek do adresu (SKU z domem/adresem w GT)
-//   "+D20"       - CALE pole to znacznik (SKU bez adresu, ma tylko sztuki w strefie; job pisze
-//                  sam znacznik). Bez alternatywy ^ trim() odczytu ("+D20") rozjechalby sie ze
-//                  zdejmowaniem i znacznik zostalby na wieki.
+//   "M2-A7 +StP1" - dopisek do adresu (SKU z domem/adresem w GT)
+//   "+StD20"      - CALE pole to znacznik (SKU bez adresu, ma tylko sztuki w strefie; job pisze
+//                   sam znacznik). Bez alternatywy ^ trim() odczytu ("+StD20") rozjechalby sie ze
+//                   zdejmowaniem i znacznik zostalby na wieki.
+// (?:St)? - rozpoznajemy TEZ stary format bez prefiksu ("+P1", "+D20"), zeby dopiski zapisane
+//   przed zmiana skrotow (2026-07-20) dalo sie zdjac albo zmigrowac do nowego przy najblizszym
+//   przebiegu joba. Zapisujemy zawsze nowy format - SKROTY_STREF ma juz "St".
 // Separator "/zapas" (M2-A7/C2P3) NIE ma ani spacji, ani plusa - zapas przezywa zdjecie (test).
-const ADNOTACJA_RE = /(?:^|\s)\+[A-Z]{1,2}\d+(?:\s+\+[A-Z]{1,2}\d+)*$/;
+const ADNOTACJA_RE = /(?:^|\s)\+(?:St)?[A-Z]{1,2}\d+(?:\s+\+(?:St)?[A-Z]{1,2}\d+)*$/;
 
 function bezAdnotacjiStref(tekst) {
   return String(tekst ?? '').replace(ADNOTACJA_RE, '').trim();

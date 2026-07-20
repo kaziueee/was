@@ -15,15 +15,20 @@
 // identyfikowany przez (pwd_TypObiektu = -14, pwd_IdObiektu = tw_Id). Wiekszosc
 // towarow nie ma tam wiersza wcale - dlatego zapis to UPSERT, nie UPDATE.
 //
-// UWAGA na pwd_Id: nie jest IDENTITY i GT nie ma dla niego sekwencji ani procedury
-// (ab_Licznik to konfiguracja przypomnien, NIE generator id). Aplikacja GT nadaje je
-// jako MAX+1, wiec robimy tak samo - pod UPDLOCK/HOLDLOCK w transakcji, zeby dwa
-// rownolegle zapisy nie wzialy tego samego numeru.
+// pwd_Id: nie jest IDENTITY, ALE GT ma dla niego licznik - tabela ins_ident (ido_nazwa='pw_Dane',
+// ido_wartosc = nastepny wolny numer), podbijana atomowo procedura spIdentyfikator. WMS alokuje
+// pwd_Id przez spIdentyfikator (tak jak Sfera), NIGDY przez MAX(pwd_Id)+1 - MAX+1 omija ten licznik
+// i rozjezdza numeracje GT ("naruszenie integralnosci danych" przy zapisie pol wlasnych, takze
+// recznym w Subiekcie). ab_Licznik to faktycznie konfiguracja przypomnien, nie generator.
+// Historia incydentu: pamiec projektu pwdane-insert-psuje-licznik-gt.
 
 const { query } = require('./gt-sql');
 const { MAGAZYN_GT_ID, MAGAZYNY_WMS } = require('../config/magazyny');
 
 const TYP_OBIEKTU_TOWAR = -14;
+
+// Nazwa licznika w ins_ident, z ktorego spIdentyfikator alokuje kolejny pwd_Id (= nazwa tabeli).
+const IDENT_NAZWA_PW_DANE = 'pw_Dane';
 
 // Magazyny, na ktorych "towar u nas lezy" - stad bierzemy kandydatow do uzupelnienia
 // parametrow. Z konfiguracji, nie z recznej listy: dodanie magazynu WMS ma je dociagnac
@@ -204,59 +209,38 @@ async function zapiszAtrybuty(artykulGtId, zmiany) {
   if (pola.length === 0) return { ok: true, dane: { sukces: true, zapisane: {} } };
 
   const ustawienia = pola.map((p) => `${p.kolumna} = ${p.parametr}`);
+  const kolumnyInsert = pola.map((p) => p.kolumna);
+  const parametryInsert = pola.map((p) => p.parametr);
+  parametry.identNazwa = IDENT_NAZWA_PW_DANE;
 
-  // UWAGA (2026-07-20): zakladanie NOWEGO wiersza pw_Dane jest domyslnie ZABLOKOWANE.
-  // Ten INSERT nadawal pwd_Id = MAX+1 z pominieciem przydzielacza identyfikatorow GT,
-  // przez co pw_Dane wyprzedzilo licznik id GT i Subiekt zaczal odrzucac zapis pol
-  // wlasnych ("Zapis spowodowalby naruszenie integralnosci danych") - patrz pamiec
-  // projektu pwdane-insert-psuje-licznik-gt. UPDATE istniejacego wiersza jest bezpieczny
-  // (nie tworzy id). Docelowo: zapis przez Sfere albo wylacznie UPDATE.
-  // Zawor awaryjny (domyslnie OFF): WMS_GT_ATRYBUTY_INSERT=1 przywraca stary INSERT -
-  // wlaczyc DOPIERO po naprawie licznika po stronie InsERT.
-  const wolnoTworzycWiersz = /^(1|true|tak)$/i.test(process.env.WMS_GT_ATRYBUTY_INSERT || '');
-
-  // Krok 1: zaktualizuj wiersz, jesli istnieje. @pwd zostaje NULL, gdy towar go nie ma.
-  const sqlUpdate = `
-    DECLARE @pwd INT;
-    SELECT @pwd = pwd_Id FROM pw_Dane WITH (UPDLOCK, HOLDLOCK)
-      WHERE pwd_TypObiektu = ${TYP_OBIEKTU_TOWAR} AND pwd_IdObiektu = @id;
-    IF @pwd IS NOT NULL
-      UPDATE pw_Dane SET ${ustawienia.join(', ')} WHERE pwd_Id = @pwd;
+  // UPSERT w jednej transakcji. Gdy wiersza nie ma, pwd_Id alokujemy z licznika GT procedura
+  // spIdentyfikator (TAK SAMO jak Sfera), a NIGDY przez MAX(pwd_Id)+1. MAX+1 omijalo licznik
+  // ins_ident['pw_Dane'] i wypychalo pw_Dane ponad niego, przez co GT przy WLASNYM zapisie pola
+  // wlasnego trafial na zajety pwd_Id i rzucal "naruszenie integralnosci danych" (takze reczny
+  // zapis w Subiekcie, takze komplet). spIdentyfikator atomowo czyta i podbija licznik, wiec
+  // numeracja zostaje spojna. Patrz pamiec projektu pwdane-insert-psuje-licznik-gt.
+  // UPDLOCK/HOLDLOCK na SELECT serializuje dwa rownolegle zapisy tego samego towaru - inaczej oba
+  // wpadlyby w INSERT i zderzyly na indeksie unikalnym (pwd_IdObiektu, pwd_TypObiektu, pwd_IdPozycji).
+  const sql = `
+    SET XACT_ABORT ON;
+    BEGIN TRAN;
+      DECLARE @pwd INT;
+      SELECT @pwd = pwd_Id FROM pw_Dane WITH (UPDLOCK, HOLDLOCK)
+        WHERE pwd_TypObiektu = ${TYP_OBIEKTU_TOWAR} AND pwd_IdObiektu = @id;
+      IF @pwd IS NOT NULL
+        UPDATE pw_Dane SET ${ustawienia.join(', ')} WHERE pwd_Id = @pwd;
+      ELSE
+      BEGIN
+        EXEC spIdentyfikator @identNazwa, 1, @pwd OUTPUT;
+        INSERT INTO pw_Dane (pwd_Id, pwd_TypObiektu, pwd_IdObiektu, ${kolumnyInsert.join(', ')})
+          VALUES (@pwd, ${TYP_OBIEKTU_TOWAR}, @id, ${parametryInsert.join(', ')});
+      END
+    COMMIT;
     SELECT @pwd AS pwd_Id;`;
 
   try {
-    let res = await query(sqlUpdate, parametry);
-    let pwd = res.recordset?.[0]?.pwd_Id ?? null;
-
-    if (pwd === null && !wolnoTworzycWiersz) {
-      // Towar bez wiersza pol wlasnych - NIE zakladamy go (patrz komentarz wyzej).
-      // Jawny brak zapisu: front pokaze powod i NIE oznaczy pozycji jako "gotowe".
-      return {
-        ok: false,
-        brakWiersza: true,
-        blad: 'Nie zapisano: ten towar nie ma jeszcze parametrow w GT, a zakladanie '
-          + 'nowych jest chwilowo wstrzymane (trwa naprawa licznika identyfikatorow GT). '
-          + 'Parametry zapisza sie dla towarow, ktore juz jakies maja; reszta wroci po naprawie.',
-      };
-    }
-
-    if (pwd === null) {
-      // Zawor awaryjny wlaczony: stary INSERT z MAX+1 (to ta sciezka rozjechala licznik).
-      const kolumnyInsert = pola.map((p) => p.kolumna);
-      const parametryInsert = pola.map((p) => p.parametr);
-      const sqlInsert = `
-        SET XACT_ABORT ON;
-        BEGIN TRAN;
-          DECLARE @nowe INT = ISNULL((SELECT MAX(pwd_Id) FROM pw_Dane WITH (UPDLOCK, HOLDLOCK)), 0) + 1;
-          INSERT INTO pw_Dane (pwd_Id, pwd_TypObiektu, pwd_IdObiektu, ${kolumnyInsert.join(', ')})
-            VALUES (@nowe, ${TYP_OBIEKTU_TOWAR}, @id, ${parametryInsert.join(', ')});
-        COMMIT;
-        SELECT @nowe AS pwd_Id;`;
-      res = await query(sqlInsert, parametry);
-      pwd = res.recordset?.[0]?.pwd_Id ?? null;
-    }
-
-    return { ok: true, dane: { sukces: true, pwd_Id: pwd, zapisane } };
+    const res = await query(sql, parametry);
+    return { ok: true, dane: { sukces: true, pwd_Id: res.recordset?.[0]?.pwd_Id ?? null, zapisane } };
   } catch (err) {
     return { ok: false, blad: `Zapis atrybutow (SQL): ${err.message}` };
   }

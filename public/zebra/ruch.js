@@ -474,16 +474,16 @@ function pokazRozkladZrodel(dane, artykul) {
   const posortowaneLok = [...dane.lokalizacje].sort((a, b) =>
     (kolejnoscMag[a.magazyn] ?? 9) - (kolejnoscMag[b.magazyn] ?? 9) || (a.ilosc - b.ilosc));
 
-  // DOKUMENTY DO ROZLOZENIA NA SAMEJ GORZE, przed lokalizacjami: to jedyne pozycje z realnym
-  // zadaniem (paleta stoi, zwrot/przywozka lezy w strefie) - reszta listy to tylko stan. Maja
-  // wpasc w oczy pierwsze, bez scrollowania (ekran Zebry ma 360x640, kazdy wiersz nizej to
-  // ryzyko przeoczenia). Kolejnosc: dostawa (najwieksza robota), potem drobnica ze stref.
+  // Pozycje do rozlozenia (paleta stoi, zwrot/przywozka/PW lezy w strefie) - jedyne wiersze z
+  // realnym zadaniem, reszta listy to tylko stan. Budujemy je z JEDNEJ listy (backend:
+  // rozbicie.wszystkie, payload wszystkie_k4) - nie sklejamy recznie z pol per rodzaj: tak
+  // gubil sie PW (i wczesniej przywozka). Nowy rodzaj wpada tu sam.
   //
-  // Roznica miedzy nimi jest tylko w podpisie i domyslnym celu - mechanika ta sama:
+  // Rozdzielamy je nizej na dwie grupy: DOSTAWA na sam szczyt listy (najwieksza robota,
+  // paleta jedzie na gore, wpada w oczy bez scrollowania), a drobnica ze stref
+  // (zwrot/przywozka/PW) pod blok lokalizacji K4G - lezy w strefie i wraca na regal, wiec
+  // czyta sie razem ze stanem regalu, nie z paletowa robota. Mechanika obu ta sama:
   // /ruchy/rozloz z numerem dokumentu, cel dowolny, w dowolnych porcjach.
-  // JEDNA lista wszystkich pozycji do rozlozenia (backend: rozbicie.wszystkie, payload:
-  // wszystkie_k4) - juz w kolejnosci dostawa -> drobnica. Nie sklejamy jej recznie z pol per
-  // rodzaj: tak gubil sie PW (i wczesniej przywozka). Nowy rodzaj wpada tu sam.
   const opcjeDokumentow = (dane.wszystkie_k4 || []).map((dok) => ({
     klucz: '__' + dok.rodzaj.toUpperCase() + '_' + (dok.pz_nr || dok.fz_nr) + '__',
     artykul,
@@ -520,7 +520,12 @@ function pokazRozkladZrodel(dane, artykul) {
     };
   });
 
-  opcjeWyboru = [...opcjeDokumentow, ...opcjeWyboru];
+  // Dostawa na gore, drobnica ze stref pod blok K4G (opcjeWyboru = lokalizacje K4 potem K4G).
+  // Podzial po rodzaju (dostawa vs reszta), nie po liscie nazw - nowy rodzaj drobnicy zejdzie
+  // na dol sam, tak jak sam wpadl do wszystkie_k4.
+  const dokDostawy = opcjeDokumentow.filter((o) => o.dostawa.rodzaj === 'dostawa');
+  const dokStrefyDrobnica = opcjeDokumentow.filter((o) => o.dostawa.rodzaj !== 'dostawa');
+  opcjeWyboru = [...dokDostawy, ...opcjeWyboru, ...dokStrefyDrobnica];
 
   // Nieprzypisany stan WMS per magazyn (GT - suma lokalizacji WMS) -> wiersz do dzialania.
   //
@@ -799,7 +804,11 @@ function renderujRozklad(opcje, onWybierz) {
   opcje.forEach((o) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'lista-poz' + (o.brak ? ' brak' : '') + (o.dostawa ? ' dostawa' : '');
+    // Akcent koloru magazynu (plakietka + lewy pasek) TYLKO na wierszach stanu - strefy
+    // (o.dostawa) zostaja niebieskie, "brak lokalizacji" (o.brak bez dostawy) czerwony;
+    // oba maja wlasny sygnal, wiec ich nie kolorujemy magazynem (patrz mag-* w app.css).
+    const magKlasa = !o.brak && o.mag ? ' mag-' + o.mag.toLowerCase() : '';
+    btn.className = 'lista-poz' + (o.brak ? ' brak' : '') + (o.dostawa ? ' dostawa' : '') + magKlasa;
     const rez = o.rez > 0 ? `<span class="poz-rez">(${o.rez} rez.)</span>` : '';
     const glowna = o.dostawa
       ? `<span class="poz-kod">${rodzajDok(o.dostawa).naglowek}</span>`

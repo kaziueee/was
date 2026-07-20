@@ -32,6 +32,16 @@
   --color-info: #1f5f99;
   --color-info-bg: #eaf3fb;
 
+  /* Akcent magazynu w rozkladzie towaru (badge + lewy pasek). Chlodne = magazyny WMS
+     (K4 morski, K4G fiolet), cieple = zewnetrzne (MAG bursztyn, LS koral) - sam podzial
+     cieplo/zimno mowi "WMS vs zewnetrzny". Tla blade, pasek mocniejszy (grzbiet grupy do
+     wychwycenia przy przewijaniu duzej liczby palet K4G). Pasek 5px w TYM widoku nie
+     niesie statusu zgodnosci (to robi na liscie wyszukiwania), wiec jest wolny na kolor. */
+  --mag-k4-fg: #0f6e56;  --mag-k4-bg: #e1f5ee;  --mag-k4-bd: #9fe1cb;  --mag-k4-line: #1d9e75;
+  --mag-k4g-fg: #3c3489; --mag-k4g-bg: #eeedfe; --mag-k4g-bd: #cecbf6; --mag-k4g-line: #7f77dd;
+  --mag-mag-fg: #854f0b; --mag-mag-bg: #faeeda; --mag-mag-bd: #fac775; --mag-mag-line: #ba7517;
+  --mag-ls-fg: #993c1d;  --mag-ls-bg: #faece7;  --mag-ls-bd: #f5c4b3;  --mag-ls-line: #d85a30;
+
   --font-label: 14px;
   --font-body: 16px;
   --font-title: 20px;
@@ -435,6 +445,20 @@ html, body {
   color: var(--color-text-muted);
   word-break: break-word;
 }
+
+/* Akcent koloru magazynu: kolorowa plakietka + lewy pasek per magazyn. TYLKO na wierszach
+   STANU (lokalizacje K4/K4G + zewnetrzne MAG/LS). Strefy (.dostawa) zostaja niebieskie, a
+   "brak lokalizacji" (.brak) czerwony - oba niosa wlasny sygnal wazniejszy od magazynu,
+   dlatego renderujRozklad nie daje im klasy mag-*. Kod nieznanego magazynu (np. BRK) po
+   prostu nie dostaje reguly i zostaje neutralny - to nie blad. */
+.lista-poz.mag-k4  { border-left-color: var(--mag-k4-line); }
+.lista-poz.mag-k4g { border-left-color: var(--mag-k4g-line); }
+.lista-poz.mag-mag { border-left-color: var(--mag-mag-line); }
+.lista-poz.mag-ls  { border-left-color: var(--mag-ls-line); }
+.lista-poz.mag-k4  .poz-mag { color: var(--mag-k4-fg);  background: var(--mag-k4-bg);  border-color: var(--mag-k4-bd); }
+.lista-poz.mag-k4g .poz-mag { color: var(--mag-k4g-fg); background: var(--mag-k4g-bg); border-color: var(--mag-k4g-bd); }
+.lista-poz.mag-mag .poz-mag { color: var(--mag-mag-fg); background: var(--mag-mag-bg); border-color: var(--mag-mag-bd); }
+.lista-poz.mag-ls  .poz-mag { color: var(--mag-ls-fg);  background: var(--mag-ls-bg);  border-color: var(--mag-ls-bd); }
 
 /* podsumowanie stanu nad listą rozkładu: "Łączny stan: N | Rezerwacje: M" */
 .podsumowanie-stanu {

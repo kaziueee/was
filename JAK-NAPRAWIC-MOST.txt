@@ -1,0 +1,41 @@
+====================================================
+  MOST GT NIE DZIALA - JAK PRZYWROCIC
+====================================================
+
+SKAD WIESZ, ZE TO MOST:
+  - Ekran logowania WMS: pasek "Most" na CZERWONO
+  - Przesuniecia MM nie dostaja numeru dokumentu w Subiekcie
+  - WMS pisze, ze nie moze potwierdzic stanu
+
+NAPRAWA (nie wpisujesz zadnych komend):
+  1. Zaloguj sie na pecet jako  Adm
+  2. Dwuklik na pulpicie:  MOST-RESTART
+  3. Poczekaj do ~1 min i przeczytaj, co okno napisze.
+     Zamknij okno klawiszem Enter.
+
+CO NAPISZE OKNO:
+  "MOST DZIALA"          -> gotowe, wracaj do pracy
+  "port 5000 zajety"     -> uruchom pecet ponownie (restart
+                            Windows), zaloguj sie jako Adm,
+                            kliknij MOST-RESTART jeszcze raz
+  "MOST NIE WSTAL"       -> kliknij MOST-RESTART drugi raz;
+                            jak dalej nie wstaje, zadzwon
+                            i powiedz doslownie:
+                            "most nie wstaje mimo naprawy,
+                             port byl wolny"
+
+POTWIERDZ, ZE WROCILO:
+  - Ekran logowania WMS: "Most" na ZIELONO
+  - Wystaw MM na 1 szt. i cofnij - musza dostac numer
+    dokumentu (stan wroci na miejsce)
+
+----------------------------------------------------
+Dla technika:
+  Skrypt:  C:\was\naprawmost.ps1
+  Most:    Scheduled Task "WMS-Bridge", port 127.0.0.1:5000
+  Zdalnie: ssh Adm@100.107.156.67  ->
+           powershell -ExecutionPolicy Bypass -File C:\was\naprawmost.ps1
+  Sprawdzenie: curl http://100.107.156.67:3000/api/status
+               {"most":true} = dziala
+  Pelna instrukcja (z obrazkami): artefakt "Most GT - przywracanie"
+====================================================

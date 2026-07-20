@@ -1,8 +1,5 @@
 @echo off
-REM Restart mostu GT: stop + start. Dwuklik.
-schtasks /End /TN "WMS-Bridge"
-timeout /t 3 /nobreak >nul
-schtasks /Run /TN "WMS-Bridge"
-echo.
-echo Most GT zrestartowany.
-pause
+REM Restart / naprawa mostu GT (WMS). Dwuklik.
+REM Zwalnia port 5000 (tez po zawieszonym procesie) i uruchamia most na czysto.
+title Naprawa mostu GT
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\was\naprawmost.ps1"

@@ -2773,8 +2773,15 @@ function dodajMagWms(tbody, mag, loki, k4Zapas, planTekst) {
     const tr = document.createElement('tr');
     tr.appendChild(komorka(mag));
 
-    // stan z rezerwacja (na poziomie magazynu) - pokazana raz, przy pierwszym wierszu
-    const stanTxt = (!rezPokazana && gt.rezerwacja) ? `${l.ilosc}(${gt.rezerwacja})` : String(l.ilosc);
+    // stan z rezerwacja (na poziomie magazynu) - pokazana raz, przy pierwszym wierszu.
+    // K4 = 1 SKU = 1 lokalizacja: pokazujemy PRAWDZIWA polke (polka_k4 = min(kopia WMS, stan
+    // GT - strefy)), nie surowa kopie WMS, ktora klamie w gore do czasu auto-korekty joba
+    // rozjazdow. W zdrowym stanie obie liczby sa rowne. Tylko wyswietlanie - l.ilosc (edycja
+    // lokalizacji, disable przycisku, subtotal) zostaje surowa kopia.
+    const iloscPolka = mag === 'K4' && wmsLoki.length === 1 && modalProdukt.polka_k4 != null
+      ? modalProdukt.polka_k4
+      : l.ilosc;
+    const stanTxt = (!rezPokazana && gt.rezerwacja) ? `${iloscPolka}(${gt.rezerwacja})` : String(iloscPolka);
     rezPokazana = true;
     tr.appendChild(komorka(stanTxt));
 

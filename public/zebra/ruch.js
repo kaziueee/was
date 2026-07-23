@@ -503,10 +503,22 @@ function pokazRozkladZrodel(dane, artykul) {
   // rezerwacja jest na poziomie magazynu - pokazujemy ja raz, przy pierwszym
   // wierszu danego magazynu (jak w rozkladzie desktopu).
   const rezPokazana = {};
+  // K4 = 1 SKU = 1 lokalizacja: na wierszu polki pokazujemy PRAWDZIWA polke - polka_k4 z
+  // backendu = min(kopia WMS, stan GT - strefy). Surowa kopia WMS (lok.ilosc) klamie w gore,
+  // dopoki job rozjazdow nie sciagnie jej do stanu GT (sprzedaz w Subiekcie zbija stan bez
+  // wiedzy WMS). W zdrowym stanie obie liczby sa rowne, wiec ekran nie zmienia sie wcale.
+  // Podmieniamy TYLKO wyswietlanie (iloscWyswietl); ilosc/zrodlo.ilosc zostaja surowa kopia,
+  // bo operacja dziala na wierszu WMS (K4 LOK = cala ilosc wiersza), a limit i tak egzekwuje
+  // backend (stan GT - rezerwacja). Guard: dokladnie 1 wiersz K4 (inaczej polka_k4 to agregat
+  // per-SKU i nie mapuje sie na pojedynczy wiersz).
+  const liczbaWierszyK4 = posortowaneLok.filter((l) => l.magazyn === 'K4').length;
   opcjeWyboru = posortowaneLok.map((lok) => {
     const rezMag = artykul.stany_gt?.[lok.magazyn]?.rezerwacja ?? 0;
     const rez = !rezPokazana[lok.magazyn] && rezMag ? rezMag : 0;
     rezPokazana[lok.magazyn] = true;
+    const iloscWyswietl = lok.magazyn === 'K4' && liczbaWierszyK4 === 1 && dane.polka_k4 != null
+      ? dane.polka_k4
+      : lok.ilosc;
     return {
       klucz: lok.kod,
       artykul,
@@ -515,6 +527,7 @@ function pokazRozkladZrodel(dane, artykul) {
       mag: lok.magazyn,
       kod: lok.kod,
       ilosc: lok.ilosc,
+      iloscWyswietl,
       rez,
       podpis: lok.zapas_kod ? `zapas: ${lok.zapas_kod}` : '', // dodatkowe miejsce K4
     };
@@ -823,7 +836,7 @@ function renderujRozklad(opcje, onWybierz) {
         + (o.podpis ? `<span class="poz-podpis">${esc(o.podpis)}</span>` : '');
     btn.innerHTML = `<span class="poz-mag">${o.mag}</span>`
       + `<span class="poz-glowna">${glowna}</span>`
-      + `<span class="poz-prawa"><span class="poz-ilosc">${o.ilosc} szt.</span>${rez}</span>`
+      + `<span class="poz-prawa"><span class="poz-ilosc">${o.iloscWyswietl ?? o.ilosc} szt.</span>${rez}</span>`
       + `<span class="poz-strzalka">›</span>`;
     btn.addEventListener('click', () => onWybierz(o));
     lista.appendChild(btn);

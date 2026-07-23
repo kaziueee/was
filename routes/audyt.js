@@ -51,4 +51,17 @@ router.get('/', (req, res) => {
   res.json({ wiersze, total, limit, offset });
 });
 
+// GET /api/audyt/uzytkownicy - operatorzy do dropdownu filtra. WPROST z audytu (kto ma wpisy),
+// nie z tabeli `uzytkownicy`: filtr ma pokazywac dokladnie tych, ktorzy w logu wystepuja - w tym
+// juz zdezaktywowanych (slad "kto" zostaje po dezaktywacji). Automaty (system:<job>) pomijamy -
+// to nie "uzytkownik" w sensie tego filtra; ida osobno przez akcje + przelacznik U+A.
+router.get('/uzytkownicy', (req, res) => {
+  const wiersze = db.prepare(
+    `SELECT DISTINCT uzytkownik FROM audyt
+     WHERE uzytkownik IS NOT NULL AND uzytkownik <> '' AND uzytkownik NOT LIKE 'system:%'
+     ORDER BY uzytkownik COLLATE NOCASE`
+  ).all();
+  res.json(wiersze.map((w) => w.uzytkownik));
+});
+
 module.exports = router;

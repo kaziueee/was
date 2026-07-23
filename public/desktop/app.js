@@ -813,11 +813,36 @@ function wierszLog(r, { zKolumnamiSku }) {
   return tr;
 }
 
+// Opcje dropdownu "uzytkownik" bierzemy WPROST z audytu (kto ma wpisy), nie z tabeli
+// uzytkownikow - dzieki temu w filtrze sa tez operatorzy juz zdezaktywowani, ktorych slad w
+// logu zostaje. Automaty (system:<job>) tu nie wchodza. Budujemy raz; przy bledzie zostaje
+// samo "Wszyscy uzytkownicy". Nie awaitowane w odswiezLog - opcje sa na nastepna interakcje,
+// a sam log ma sie odswiezyc od razu.
+let logFiltrUzytkownikowGotowy = false;
+async function zaladujFiltrUzytkownikow() {
+  if (logFiltrUzytkownikowGotowy) return;
+  try {
+    const lista = await api('/api/audyt/uzytkownicy');
+    const sel = el('log-uzytkownik');
+    const wybrany = sel.value;
+    for (const u of lista) {
+      const o = document.createElement('option');
+      o.value = u; o.textContent = u;
+      sel.appendChild(o);
+    }
+    sel.value = wybrany;
+    logFiltrUzytkownikowGotowy = true;
+  } catch { /* brak listy - dropdown zostaje z samym "Wszyscy uzytkownicy" */ }
+}
+
 async function odswiezLog() {
+  zaladujFiltrUzytkownikow();
   const params = new URLSearchParams();
   const q = el('log-q').value.trim();
   const akcja = el('log-akcja').value;
+  const uzytkownik = el('log-uzytkownik').value;
   if (q) params.set('q', q);
+  if (uzytkownik) params.set('uzytkownik', uzytkownik);
   // '__ua' to nie akcja, tylko przelacznik zakresu: dolacz prace automatow (jobow) do pracy
   // czlowieka. Domyslnie backend je chowa - zob. routes/audyt.js.
   if (akcja === '__ua') params.set('automaty', '1');
@@ -836,6 +861,7 @@ async function odswiezLog() {
 
 el('btn-log-odswiez').addEventListener('click', odswiezLog);
 el('log-akcja').addEventListener('change', odswiezLog);
+el('log-uzytkownik').addEventListener('change', odswiezLog);
 el('log-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') odswiezLog(); });
 
 // historia pojedynczego SKU (zakladka "Historia" w modalu produktu). Lazy-load

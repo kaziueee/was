@@ -124,8 +124,29 @@ async function synchronizujLokalizacje(artykulGtId, magazyny) {
   const ustawienia = [];
   const parametry = { id: Number(artykulGtId) };
   if (dotyczyK4) {
-    ustawienia.push('tw_Pole1 = @pole1');
-    parametry.pole1 = pola.miejsce_na_magazynie;
+    // Symetrycznie do K4G nizej: nie nadpisuj tw_Pole1, dopoki caly stan GT K4 nie jest
+    // rozlozony w WMS (deficyt > 0). Przy niepelnym rozlozeniu WMS ma czastkowy obraz, a
+    // nadpisanie skasowaloby to, czego WMS nie zna - w tym ZAPAS trzymany TYLKO w GT
+    // (tw_Pole1 "A1/P5", gdzie P5 nie ma odpowiednika w WMS zapas_kod). GT niedostepny ->
+    // nie blokujemy (traktujemy jak pelne rozlozenie), jak przy K4G.
+    let pomijajK4 = false;
+    try {
+      const { pobierzStanyGt } = require('./gt-produkty');
+      const sumaK4 = db.prepare(
+        `SELECT COALESCE(SUM(s.ilosc), 0) AS suma FROM stany_lokalizacji s
+         JOIN lokalizacje l ON l.id = s.lokalizacja_id
+         WHERE s.artykul_gt_id = ? AND l.magazyn = 'K4'`
+      ).get(artykulGtId).suma;
+      const stany = await pobierzStanyGt([artykulGtId]);
+      const gtK4 = stany.get(String(artykulGtId))?.K4?.ilosc ?? sumaK4;
+      if (gtK4 - sumaK4 > 0) pomijajK4 = true;
+    } catch (err) {
+      pomijajK4 = false;
+    }
+    if (!pomijajK4) {
+      ustawienia.push('tw_Pole1 = @pole1');
+      parametry.pole1 = pola.miejsce_na_magazynie;
+    }
   }
   if (dotyczyK4G) {
     // Nie nadpisuj pola K4G (tw_Pole8) dopoki nie rozlozono calego stanu GT w WMS
@@ -153,8 +174,9 @@ async function synchronizujLokalizacje(artykulGtId, magazyny) {
   }
 
   if (ustawienia.length === 0) {
-    // tylko K4G i jest deficyt - nic nie zapisujemy, plan w GT zostaje nietkniety
-    return { ok: true, dane: { sukces: true, pominietoK4G: true } };
+    // K4 i/lub K4G ma deficyt (stan GT nierozlozony w WMS) - nic nie zapisujemy, plan i zapas
+    // w GT zostaja nietkniete do czasu pelnego rozlozenia.
+    return { ok: true, dane: { sukces: true, pominieto: true } };
   }
 
   try {

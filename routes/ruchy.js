@@ -547,7 +547,7 @@ router.post('/przyjecie', async (req, res, next) => {
 // i ruch wisi pending. Przy LOK nic z magazynu nie wychodzi, wiec rezerwacja nie ogranicza.
 router.post('/rozloz', async (req, res, next) => {
   const { artykul_gt_id, mag_zrodlo_pula, zrodlo_dok, lok_cel_id, ilosc, operator,
-          artykul_symbol, artykul_nazwa, artykul_ean } = req.body ?? {};
+          artykul_symbol, artykul_nazwa, artykul_ean, przenies_dom } = req.body ?? {};
 
   if (!artykul_gt_id) return res.status(400).json({ blad: 'Pole "artykul_gt_id" jest wymagane' });
   const zrodloMag = String(mag_zrodlo_pula ?? '').trim().toUpperCase();
@@ -716,6 +716,19 @@ router.post('/rozloz', async (req, res, next) => {
         INSERT INTO stany_lokalizacji (lokalizacja_id, artykul_gt_id, artykul_symbol, artykul_nazwa, artykul_ean, ilosc, operator)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run(lok_cel_id, artykul_gt_id, symbolDoWpisu, nazwaDoWpisu, eanDoWpisu, ilo, operator ?? null);
+    }
+    // Przeniesienie domu: SKU mial PUSTY dom K4 (stan 0) gdzie indziej, a czlowiek przy regale
+    // POTWIERDZIL zmiane lokalizacji (zwroty.js oferuje to WYLACZNIE gdy zapas K4+K4G+LS = 0).
+    // Zwalniamy stary pusty wpis, zeby zostal JEDEN dom (1 SKU = 1 lok) i tw_Pole1 wskazalo nowe
+    // miejsce (przeliczy je wykonajRuchGT nizej). Kasujemy WYLACZNIE ilosc=0 - domu ze stanem ta
+    // sciezka nie tyka (blok 1-SKU-1-lok wyzej odrzuca stan>0). To DRUGIE po "Czysc zera" miejsce
+    // zwalniajace dom K4 - autoryzowane tak samo: czlowiekiem przy polce, nie automatem.
+    if (przenies_dom && cel.magazyn === 'K4') {
+      db.prepare(
+        `DELETE FROM stany_lokalizacji
+         WHERE artykul_gt_id = ? AND ilosc = 0 AND lokalizacja_id != ?
+           AND lokalizacja_id IN (SELECT id FROM lokalizacje WHERE magazyn = 'K4')`
+      ).run(artykul_gt_id, lok_cel_id);
     }
     db.exec('COMMIT');
   } catch (err) {

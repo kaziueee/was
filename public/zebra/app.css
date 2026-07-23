@@ -731,6 +731,68 @@ html, body {
   letter-spacing: normal;
 }
 
+/* --- Zwroty: karta prowadzaca (odwrocony przeplyw 2026-07-22) ---
+   Tozsamosc zawsze na wierzchu: SKU jako maly podpis ("na tle") NAD duza nazwa - nazwa jest
+   tym, po czym magazynier poznaje sztuke na wozku (SKU sluzy do skanu, nie do rozpoznania).
+   Ilosc wyeksponowana z boku ("ile wziac"). Dwuklasowe selektory, by wygrac z `.karta-info span`. */
+.karta-zwrot .zwroty-prowadzi {
+  font-size: var(--font-label);
+  color: var(--color-text-muted);
+  display: block;
+  margin-bottom: 2px;
+}
+.karta-zwrot .zwroty-lok-ok {
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--color-success);
+  display: block;
+  margin-bottom: var(--space-2);
+}
+.karta-zwrot .zwroty-towar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+.karta-zwrot .zwroty-towar-tekst { min-width: 0; }
+.karta-zwrot .zwroty-sku {
+  font-size: var(--font-label);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0.3px;
+  display: block;
+}
+.karta-zwrot .zwroty-nazwa {
+  font-size: var(--font-title);
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--color-text);
+  display: block;
+  margin-top: 2px;
+}
+.karta-zwrot .zwroty-ilosc-duza {
+  flex: 0 0 auto;
+  text-align: center;
+  border-left: 1px solid var(--color-border);
+  padding-left: var(--space-3);
+}
+.karta-zwrot .zwroty-ilosc-liczba {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-primary);
+  display: block;
+}
+.karta-zwrot .zwroty-ilosc-jedn {
+  font-size: var(--font-label);
+  color: var(--color-text-muted);
+  display: block;
+  margin-top: 2px;
+}
+
 /* "Zatwierdz bez EAN" pod polem skanu - droga na wypadek, gdy kod sie nie czyta. Wyglada jak
    kazdy inny przycisk poboczny: dashed i emotka robily z niego wyjatek, choc to przewidziana
    sciezka. Na srodku, bo wysrodkowany pod polem skanu czyta sie jako jego alternatywa, a nie

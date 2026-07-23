@@ -325,7 +325,7 @@
        lista pozycji = to, co ktos na niego realnie polozyl przy wystawianiu korekty. -->
   <div id="widok-zwroty" class="hidden">
   <div class="ekran">
-    <header class="ekran-naglowek"><div class="ekran-sku"><h1 id="zwroty-tytul">Zwroty</h1></div></header>
+    <header id="zwroty-naglowek" class="ekran-naglowek"><div class="ekran-sku"><h1 id="zwroty-tytul">Zwroty</h1></div></header>
     <main class="ekran-tresc">
       <div id="zwroty-komunikat" class="komunikat hidden"></div>
 
@@ -338,21 +338,24 @@
       <!-- podekran: rozkladanie (jedna pozycja na ekran) -->
       <section id="zwroty-poz" class="hidden">
         <p id="zwroty-postep" class="hint"></p>
-        <div id="zwroty-karta" class="karta-info"></div>
-        <div class="pole-blok">
-          <label class="pole-etykieta" for="zwroty-skan">Zeskanuj towar z wózka</label>
-          <div class="pole-skan">
-            <input type="text" id="zwroty-skan" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj SKU / EAN">
-          </div>
-          <p id="zwroty-skan-hint" class="pole-hint"></p>
-          <button type="button" id="zwroty-bez-skanu" class="btn-bez-skanu">Zatwierdź bez EAN</button>
-        </div>
-        <div class="pole-blok hidden" id="zwroty-blok-lok">
-          <label class="pole-etykieta" for="zwroty-lok">Lokalizacja</label>
+        <div id="zwroty-karta" class="karta-info karta-zwrot"></div>
+        <div id="zwroty-rez-zk" class="rez-zk hidden"></div>
+        <div id="zwroty-zestawy" class="rez-zk rez-zk--zestawy hidden"></div>
+        <!-- Krok 1: skan lokalizacji ("jestem na miejscu"). Krok 2 (towar) chowany do czasu. -->
+        <div class="pole-blok" id="zwroty-blok-lok">
+          <label class="pole-etykieta" for="zwroty-lok">Skanuj lokalizację</label>
           <div class="pole-skan">
             <input type="text" id="zwroty-lok" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj lokalizację">
           </div>
           <p id="zwroty-lok-hint" class="pole-hint"></p>
+        </div>
+        <div class="pole-blok hidden" id="zwroty-blok-skan">
+          <label class="pole-etykieta" for="zwroty-skan">Potwierdź towar</label>
+          <div class="pole-skan">
+            <input type="text" id="zwroty-skan" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj SKU / EAN">
+          </div>
+          <p id="zwroty-skan-hint" class="pole-hint"></p>
+          <button type="button" id="zwroty-bez-skanu" class="btn-bez-skanu">Nie skanuje się — zatwierdź bez skanu</button>
         </div>
         <div class="pole-blok hidden" id="zwroty-blok-ilosc">
           <label class="pole-etykieta" for="zwroty-ilosc">Ilość</label>

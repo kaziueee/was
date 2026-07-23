@@ -66,7 +66,17 @@
       komunikat(err.message, 'blad');
     }
 
-    el('par-dlugosc').focus();
+    // Skok do wagi, gdy wymiary sa juz komplet (kazdy > 0): ta sciezka najczesciej DOKLADA
+    // sama wage, a wymiary juz sa - wtedy pole dlugosci to zbedny przystanek. Gdy wymiarow
+    // brak (albo fetch padl i pola zostaly puste), zaczynamy normalnie od dlugosci.
+    const wymiaryKomplet = ['par-dlugosc', 'par-szerokosc', 'par-wysokosc']
+      .every((id) => { const n = liczba(el(id).value); return n !== null && n > 0; });
+    if (wymiaryKomplet) {
+      el('par-waga').focus();
+      el('par-waga').select();
+    } else {
+      el('par-dlugosc').focus();
+    }
   }
 
   async function zapisz() {

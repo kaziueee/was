@@ -83,7 +83,7 @@ function wymagajSesjiNaZapisie(req, res, next) {
 function wymagajAdmin(req, res, next) {
   const s = sesjaZTokenu(tokenZadania(req));
   if (!s) return res.status(401).json({ blad: 'Wymagane logowanie' });
-  if (s.rola !== 'admin') return res.status(403).json({ blad: 'Tylko administrator moze zarzadzac uzytkownikami' });
+  if (s.rola !== 'admin') return res.status(403).json({ blad: 'Ta operacja wymaga uprawnien administratora' });
   req.uzytkownik = s;
   next();
 }

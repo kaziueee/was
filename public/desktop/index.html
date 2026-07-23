@@ -26,6 +26,7 @@
       <a href="#lokalizacje" class="tab-link" data-panel="lokalizacje">Lokalizacje</a>
       <a href="#log" class="tab-link" data-panel="log">Log</a>
       <a href="#uzytkownicy" class="tab-link" data-panel="uzytkownicy" id="tab-uzytkownicy" style="display:none">Użytkownicy</a>
+      <a href="#kartony" class="tab-link" data-panel="kartony" id="tab-kartony" style="display:none">Kartony</a>
     </nav>
     <input type="text" id="input-operator" placeholder="Operator">
     <!-- Stan polaczen (baza GT / most) - z /api/status, odswiezany co 20 s. Kropka zielona =
@@ -661,6 +662,31 @@
       <p id="user-brak" class="hint hidden">Brak użytkowników.</p>
     </section>
 
+    <!-- Panel Kartony (tylko admin) - edytowalna lista kartonow wysylkowych do doboru "w co
+         zapakowac" i liczenia wagi gabarytowej "z kartonu". Odczyt otwarty, mutacje admin-only. -->
+    <section id="panel-kartony" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Kartony wysyłkowe</h2>
+      </div>
+      <p class="hint">Lista kartonów do doboru „w co zapakować" i liczenia wagi gabarytowej z kartonu. Wymiary w centymetrach.</p>
+      <form id="form-nowy-karton" class="formularz-inline">
+        <input type="text" id="nowy-karton-kod" placeholder="Kod (np. B7)" required>
+        <input type="number" id="nowy-karton-wys" inputmode="decimal" min="0" step="any" placeholder="wys" required>
+        <input type="number" id="nowy-karton-szer" inputmode="decimal" min="0" step="any" placeholder="szer" required>
+        <input type="number" id="nowy-karton-dl" inputmode="decimal" min="0" step="any" placeholder="dł" required>
+        <button type="submit" class="btn btn-primary">+ Dodaj karton</button>
+      </form>
+      <div class="tabela-wrapper">
+        <table class="tabela">
+          <thead>
+            <tr><th title="Przeciągnij wiersz, aby zmienić kolejność">↕</th><th>Kod</th><th>Wymiary (wys × szer × dł, cm)</th><th>Waga gab.</th><th>Status</th><th>Akcje</th></tr>
+          </thead>
+          <tbody id="kartony-tbody"></tbody>
+        </table>
+      </div>
+      <p id="kartony-brak" class="hint hidden">Brak kartonów.</p>
+    </section>
+
     <!-- Modal: historia ruchow/zmian jednego SKU (ikona "H" w modalu produktu) -->
     <!-- Modal: MM / Lok dla pojedynczego produktu (z tabeli Produkty) -->
     <div id="modal-produkt" class="modal-overlay hidden">
@@ -717,6 +743,10 @@
           <div class="modal-stany">
             Waga gabarytowa DHL: <strong id="mpar-waga-gab">—</strong>
             <span class="opis">— dł × szer × wys ÷ 4000, wyliczana automatycznie</span>
+          </div>
+          <div class="modal-stany">
+            Waga gabarytowa z kartonu: <strong id="mpar-waga-gab-karton">—</strong>
+            <span class="opis" id="mpar-karton-opis">— z najmniejszego pasującego kartonu</span>
           </div>
           <div class="modal-akcje">
             <button type="button" id="btn-mpar-zapisz" class="btn btn-primary">Zapisz parametry</button>

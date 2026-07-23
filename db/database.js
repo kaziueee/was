@@ -260,6 +260,40 @@ db.exec(`CREATE TABLE IF NOT EXISTS pulpit_snapshot (
   obliczono DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// Kartony wysylkowe - dane referencyjne do doboru kartonu ("w co zapakowac") i do liczenia
+// wagi gabarytowej "z kartonu". Lista jest EDYTOWALNA w panelu admina, wiec musi zyc w bazie,
+// nie w pliku. config/kartony.js zostaje zrodlem SEEDA + czysta logika dopasowania/wagi.
+db.exec(`CREATE TABLE IF NOT EXISTS kartony (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kod TEXT NOT NULL UNIQUE,
+  wysokosc REAL NOT NULL,
+  szerokosc REAL NOT NULL,
+  dlugosc REAL NOT NULL,
+  kolejnosc INTEGER,
+  aktywny INTEGER NOT NULL DEFAULT 1,
+  utworzono DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// migracja: kolejnosc do RECZNEGO ukladania listy (drag&drop w panelu admina). Tabela sprzed
+// 2026-07-23 jej nie ma. Backfill = id zachowuje dotychczasowa kolejnosc (lista czytala ORDER BY id).
+const kolumnyKartonow = db.prepare('PRAGMA table_info(kartony)').all();
+if (!kolumnyKartonow.some((k) => k.name === 'kolejnosc')) {
+  db.exec('ALTER TABLE kartony ADD COLUMN kolejnosc INTEGER');
+  db.exec('UPDATE kartony SET kolejnosc = id WHERE kolejnosc IS NULL');
+  console.log('Migracja: dodano kolumne kolejnosc do kartony (backfill = id)');
+}
+
+// Seed z config/kartony.KARTONY gdy tabela pusta. kolejnosc = pozycja na liscie (1..N) -
+// startowo mniej wiecej wg objetosci jak plik, a admin moze ja przeciagnac gdzie chce.
+if (db.prepare('SELECT COUNT(*) AS c FROM kartony').get().c === 0) {
+  const { KARTONY } = require('../config/kartony');
+  const ins = db.prepare('INSERT INTO kartony (kod, wysokosc, szerokosc, dlugosc, kolejnosc) VALUES (?, ?, ?, ?, ?)');
+  db.exec('BEGIN');
+  KARTONY.forEach((k, i) => ins.run(k.kod, k.wysokosc, k.szerokosc, k.dlugosc, i + 1));
+  db.exec('COMMIT');
+  console.log(`Seed: wypelniono tabele kartony z config/kartony.js (${KARTONY.length} kartonow)`);
+}
+
 // Seed: pierwszy admin, gdy brak uzytkownikow (bez PIN - mozna od razu wejsc i zalozyc reszte).
 if (db.prepare('SELECT COUNT(*) AS c FROM uzytkownicy').get().c === 0) {
   db.prepare("INSERT INTO uzytkownicy (imie, rola) VALUES ('Admin', 'admin')").run();

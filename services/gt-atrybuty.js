@@ -24,6 +24,7 @@
 
 const { query } = require('./gt-sql');
 const { MAGAZYN_GT_ID, MAGAZYNY_WMS } = require('../config/magazyny');
+const kartony = require('./kartony');
 
 const TYP_OBIEKTU_TOWAR = -14;
 
@@ -39,6 +40,12 @@ const KOLUMNY = {
   wymiary: 'pwd_Tekst07',
   waga: 'pwd_Tekst06',
   waga_gabarytowa: 'pwd_Tekst09',
+  // Waga gabarytowa "z kartonu": najmniejszy pasujacy karton (fallback goly wymiar), liczona
+  // z EDYTOWALNEJ listy kartonow (services/kartony). Osobne pole OBOK waga_gabarytowa - istniejacej
+  // wagi z golych wymiarow NIE ruszamy. Pole wlasne GT "Waga gabarytowa karton DHL" = pwd_Tekst10
+  // (zalozone przez usera 2026-07-23, potwierdzone w pw_Pole). Ustawione na null = feature "uspiony"
+  // (liczymy i pokazujemy, ale nie czytamy/piszemy w GT) - bylo tak do czasu zalozenia pola.
+  waga_gabarytowa_karton: 'pwd_Tekst10',
 };
 
 // Dzielnik wolumetryczny DHL: (dl * szer * wys w cm) / 4000 = kg.
@@ -144,11 +151,19 @@ async function pobierzAtrybuty(twIds) {
        WHERE pwd_TypObiektu = ${TYP_OBIEKTU_TOWAR} AND pwd_IdObiektu IN (${paczka.join(',')})`
     );
     for (const w of res.recordset) {
+      const rozbite = rozbierzWymiary(w.wymiary);
+      // Waga gabarytowa "z kartonu" liczona NA ZYWO z wymiarow + aktualnej listy kartonow
+      // (deterministyczna, nie musi byc czytana z GT). karton_kod = w jaki karton, albo null
+      // gdy fallback na goly wymiar / brak wymiarow.
+      const karton = rozbite ? kartony.liczWageGabarytowaKarton(rozbite) : null;
       wynik.set(String(w.pwd_IdObiektu), {
         wymiary: w.wymiary || null,
-        rozbite: rozbierzWymiary(w.wymiary),
+        rozbite,
         waga: w.waga || null,
         waga_gabarytowa: w.waga_gabarytowa || null,
+        waga_gabarytowa_karton: karton?.waga ?? null,
+        karton_kod: karton?.karton_kod ?? null,
+        karton_zrodlo: karton?.zrodlo ?? null,
       });
     }
   }
@@ -190,6 +205,18 @@ async function zapiszAtrybuty(artykulGtId, zmiany) {
     pola.push({ kolumna: KOLUMNY.waga_gabarytowa, parametr: '@wagaGab' });
     parametry.wagaGab = gab ?? '';
     zapisane.waga_gabarytowa = gab;
+
+    // Waga gabarytowa "z kartonu" (najmniejszy pasujacy karton, fallback goly wymiar). Zawsze
+    // trafia do `zapisane` (API/podglad); do GT pisana tylko gdy kolumna skonfigurowana - dopoki
+    // placeholder=null, pole w GT jeszcze nie istnieje, wiec nie dokladamy go do UPSERT-a.
+    const kartonWaga = wymiary ? kartony.liczWageGabarytowaKarton(wymiary) : null;
+    zapisane.waga_gabarytowa_karton = kartonWaga?.waga ?? null;
+    zapisane.karton_kod = kartonWaga?.karton_kod ?? null;
+    zapisane.karton_zrodlo = kartonWaga?.zrodlo ?? null;
+    if (KOLUMNY.waga_gabarytowa_karton) {
+      pola.push({ kolumna: KOLUMNY.waga_gabarytowa_karton, parametr: '@wagaGabKarton' });
+      parametry.wagaGabKarton = kartonWaga?.waga ?? '';
+    }
   }
 
   if ('waga' in zmiany) {

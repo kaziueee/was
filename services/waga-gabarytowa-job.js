@@ -11,6 +11,7 @@
 const { query } = require('./gt-sql');
 const audyt = require('./audyt');
 const awarie = require('./awarie');
+const kartony = require('./kartony');
 const {
   KOLUMNY, TYP_OBIEKTU_TOWAR, rozbierzWymiary, liczWageGabarytowa,
 } = require('./gt-atrybuty');
@@ -26,14 +27,16 @@ const DOMYSLNY_INTERWAL_MS = interwalZKonfiguracji();
 // Ile rekordow naraz poprawiamy w jednym UPDATE - jak we wsadzie wymiarow.
 const PACZKA = 300;
 
-// Znajduje towary, ktorych zapisana waga gabarytowa nie zgadza sie z wymiarami, i poprawia.
-// Zwraca {sprawdzone, poprawione, bledneWymiary}.
-async function wykonajSpojnoscWagiGabarytowej() {
+// Uzgadnia JEDNA kolumne wagi gabarytowej (dhl albo kartonowa) z wymiarami: dla kazdego towaru
+// z wymiarami liczy oczekiwana wartosc funkcja `licz(rozbite)` i poprawia rozjazdy. Wspolny
+// silnik dla obu pol - zeby nie powstal drugi wzor, ktory z czasem rozjedzie sie z pierwszym.
+// Zwraca {sprawdzone, poprawione, pominieteWyscigi, bledneWymiary, przyklady}.
+async function uzgodnijKolumne(kolumna, licz) {
   const res = await query(
     `SELECT pwd_Id,
             pwd_IdObiektu,
             ${KOLUMNY.wymiary} AS wymiary,
-            ${KOLUMNY.waga_gabarytowa} AS waga_gab
+            ${kolumna} AS zapisana
      FROM pw_Dane
      WHERE pwd_TypObiektu = ${TYP_OBIEKTU_TOWAR}
        AND ${KOLUMNY.wymiary} IS NOT NULL AND ${KOLUMNY.wymiary} <> ''`
@@ -44,8 +47,8 @@ async function wykonajSpojnoscWagiGabarytowej() {
   for (const w of res.recordset) {
     const rozbite = rozbierzWymiary(w.wymiary);
     if (!rozbite) { bledneWymiary += 1; continue; }
-    const oczekiwana = liczWageGabarytowa(rozbite);
-    const zapisana = (w.waga_gab || '').trim();
+    const oczekiwana = licz(rozbite);
+    const zapisana = (w.zapisana || '').trim();
     if (oczekiwana !== null && oczekiwana !== zapisana) {
       doPoprawy.push({ pwd_Id: w.pwd_Id, tw_Id: w.pwd_IdObiektu, wymiary: w.wymiary, bylo: zapisana || null, ma: oczekiwana });
     }
@@ -66,7 +69,7 @@ async function wykonajSpojnoscWagiGabarytowej() {
       return `(${p.pwd_Id}, @w${n}, @g${n})`;
     });
     const wynikUpdate = await query(
-      `UPDATE d SET d.${KOLUMNY.waga_gabarytowa} = v.nowa
+      `UPDATE d SET d.${kolumna} = v.nowa
        FROM pw_Dane d
        JOIN (VALUES ${wiersze.join(', ')}) AS v(id, wymiary, nowa)
          ON d.pwd_Id = v.id AND d.${KOLUMNY.wymiary} = v.wymiary`,
@@ -75,23 +78,63 @@ async function wykonajSpojnoscWagiGabarytowej() {
     poprawione += wynikUpdate.rowsAffected?.[0] ?? 0;
   }
 
-  if (poprawione) {
+  return {
+    sprawdzone: res.recordset.length,
+    poprawione,
+    pominieteWyscigi: doPoprawy.length - poprawione,
+    bledneWymiary,
+    przyklady: doPoprawy.slice(0, 10),
+  };
+}
+
+// Poprawia wage gabarytowa DHL (z golych wymiarow) ORAZ - gdy skonfigurowana jest kolumna
+// pola "z kartonu" - wage gabarytowa z kartonu (ten sam mechanizm, licząca z aktualnej listy
+// kartonow). Kartonowy przebieg jest zarazem KANALEM PROPAGACJI edycji listy kartonow na
+// kartoteke: zmiana wymiarow kartonu w panelu admina zmienia oczekiwana wage czesci towarow.
+async function wykonajSpojnoscWagiGabarytowej() {
+  const dhl = await uzgodnijKolumne(KOLUMNY.waga_gabarytowa, liczWageGabarytowa);
+  if (dhl.poprawione) {
     audyt.zapisz({
-      // 'system:<job>' to UMOWA, nie ozdobnik: po tym prefiksie log odrozniapracę automatu
+      // 'system:<job>' to UMOWA, nie ozdobnik: po tym prefiksie log odroznia prace automatu
       // od pracy czlowieka i domyslnie chowa te pierwsza (routes/audyt.js). Nowy job MUSI
       // sie tak podpisac, inaczej jego wpisy zasypia widok "kto to zmienil".
       uzytkownik: 'system:waga-gabarytowa',
       akcja: 'waga_gab_przeliczona',
       wynik: 'poprawione',
-      ilosc: poprawione,
+      ilosc: dhl.poprawione,
       // Same przyklady, nie cala lista - audyt ma powiedziec CO sie stalo, nie byc kopia bazy.
-      szczegoly: { przyklady: doPoprawy.slice(0, 10), bledne_wymiary: bledneWymiary },
+      szczegoly: { przyklady: dhl.przyklady, bledne_wymiary: dhl.bledneWymiary },
     });
   }
 
-  // `poprawione` to liczba REALNIE zmienionych wierszy - moze byc mniejsza niz
-  // doPoprawy.length, gdy ktos w miedzyczasie zapisal nowe wymiary (patrz JOIN wyzej).
-  return { sprawdzone: res.recordset.length, poprawione, pominieteWyscigi: doPoprawy.length - poprawione, bledneWymiary };
+  // Pole "z kartonu" - tylko gdy user zalozyl je w Subiekcie i podal kolumne (placeholder=null
+  // => pomijamy, feature "uspiony" w GT). Liczy z tej samej listy co podglad na Parametrach.
+  let karton = null;
+  if (KOLUMNY.waga_gabarytowa_karton) {
+    karton = await uzgodnijKolumne(
+      KOLUMNY.waga_gabarytowa_karton,
+      (rozbite) => kartony.liczWageGabarytowaKarton(rozbite)?.waga ?? null
+    );
+    if (karton.poprawione) {
+      audyt.zapisz({
+        uzytkownik: 'system:waga-gabarytowa',
+        akcja: 'waga_gab_karton_przeliczona',
+        wynik: 'poprawione',
+        ilosc: karton.poprawione,
+        szczegoly: { przyklady: karton.przyklady },
+      });
+    }
+  }
+
+  // `poprawione` to liczba REALNIE zmienionych wierszy - moze byc mniejsza niz doPoprawy.length,
+  // gdy ktos w miedzyczasie zapisal nowe wymiary (patrz JOIN w uzgodnijKolumne).
+  return {
+    sprawdzone: dhl.sprawdzone,
+    poprawione: dhl.poprawione,
+    pominieteWyscigi: dhl.pominieteWyscigi,
+    bledneWymiary: dhl.bledneWymiary,
+    karton: karton && { poprawione: karton.poprawione, pominieteWyscigi: karton.pominieteWyscigi },
+  };
 }
 
 function start(interwalMs = DOMYSLNY_INTERWAL_MS) {

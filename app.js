@@ -18,6 +18,7 @@ const doSprawdzeniaRouter = require('./routes/do-sprawdzenia');
 const audytRouter = require('./routes/audyt');
 const statusRouter = require('./routes/status');
 const uzytkownicyRouter = require('./routes/uzytkownicy');
+const kartonyRouter = require('./routes/kartony');
 const blokadyRouter = require('./routes/blokady');
 const blokady = require('./services/blokady');
 const auth = require('./services/auth');
@@ -52,6 +53,9 @@ app.use(express.static(path.join(__dirname, 'public'), {
 
 // logowanie/uzytkownicy (obsluguje wlasny auth) + blokady edycji (wymagaja sesji w routerze)
 app.use('/api/uzytkownicy', uzytkownicyRouter);
+// kartony: odczyt (GET, /dobierz) otwarty - czyta go podglad na Parametrach; mutacje admin-only
+// wewnatrz routera (auth.wymagajAdmin). Stad montaz "goly", jak uzytkownicy.
+app.use('/api/kartony', kartonyRouter);
 app.use('/api/blokady', blokadyRouter);
 
 // Na zapisach (POST/PUT/DELETE) wymagamy sesji i WSTRZYKUJEMY operatora z tokenu do req.body

@@ -43,6 +43,33 @@
       : '—';
   }
 
+  // Podglad wagi "z kartonu" liczy BACKEND (/api/kartony/dobierz) - lista kartonow jest edytowalna,
+  // wiec nie da sie jej trzymac na sztywno tutaj. Debounced; best-effort (blad nie blokuje ekranu).
+  let kartonTimer = null;
+  function pokazWageGabKarton(waga, kod, zrodlo) {
+    const val = el('par-waga-gab-karton');
+    if (!val) return;
+    val.textContent = waga
+      ? (zrodlo === 'karton' ? `${waga} kg · ${kod}` : `${waga} kg · z wymiarów`)
+      : '—';
+  }
+  function odswiezWageGabKarton() {
+    const d = liczba(el('par-dlugosc').value);
+    const s = liczba(el('par-szerokosc').value);
+    const w = liczba(el('par-wysokosc').value);
+    if (![d, s, w].every((n) => n !== null && n > 0)) { pokazWageGabKarton(null); return; }
+    clearTimeout(kartonTimer);
+    kartonTimer = setTimeout(async () => {
+      try {
+        const q = new URLSearchParams({ dlugosc: d, szerokosc: s, wysokosc: w });
+        const res = await fetch(`/api/kartony/dobierz?${q}`);
+        if (!res.ok) return;
+        const r = await res.json();
+        pokazWageGabKarton(r.waga_gabarytowa_karton, r.karton_kod, r.zrodlo);
+      } catch { /* podglad best-effort */ }
+    }, 300);
+  }
+
   async function otworz(artykulGtId, opcje = {}) {
     biezacy = { artykul_gt_id: String(artykulGtId), symbol: opcje.symbol ?? '', nazwa: opcje.nazwa ?? '' };
     powrot = typeof opcje.powrot === 'function' ? opcje.powrot : null;
@@ -51,6 +78,7 @@
     el('par-nazwa').textContent = biezacy.nazwa || '';
     for (const id of ['par-dlugosc', 'par-szerokosc', 'par-wysokosc', 'par-waga']) el(id).value = '';
     el('par-waga-gab').textContent = '—';
+    pokazWageGabKarton(null);
     komunikat('');
 
     try {
@@ -62,6 +90,7 @@
       if (d.wysokosc !== null) el('par-wysokosc').value = d.wysokosc;
       if (d.waga !== null) el('par-waga').value = String(d.waga).replace(',', '.');
       odswiezWageGab();
+      pokazWageGabKarton(d.waga_gabarytowa_karton, d.karton_kod, d.karton_zrodlo);
     } catch (err) {
       komunikat(err.message, 'blad');
     }
@@ -111,6 +140,7 @@
       if (!res.ok) throw new Error(dane.blad || 'Nie udało się zapisać');
 
       if (dane.waga_gabarytowa) el('par-waga-gab').textContent = `${dane.waga_gabarytowa} kg`;
+      pokazWageGabKarton(dane.waga_gabarytowa_karton, dane.karton_kod, dane.karton_zrodlo);
       const ostrz = (dane.ostrzezenia || []).join(' ');
       komunikat(ostrz ? `Zapisano ✓ — ${ostrz}` : 'Zapisano ✓', ostrz ? 'ostrzezenie' : 'sukces');
       if (powrot) setTimeout(() => powrot(true), 700);
@@ -130,6 +160,6 @@
   el('par-zapisz').addEventListener('click', zapisz);
   el('par-wstecz').addEventListener('click', () => (powrot ? powrot(false) : history.back()));
   for (const id of ['par-dlugosc', 'par-szerokosc', 'par-wysokosc']) {
-    el(id).addEventListener('input', odswiezWageGab);
+    el(id).addEventListener('input', () => { odswiezWageGab(); odswiezWageGabKarton(); });
   }
 })();

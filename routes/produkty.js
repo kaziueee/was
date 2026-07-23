@@ -301,6 +301,9 @@ router.get('/:artykulGtId/atrybuty', async (req, res) => {
       wysokosc: a?.rozbite?.wysokosc ?? null,
       waga: a?.waga ?? null,
       waga_gabarytowa: a?.waga_gabarytowa ?? null,
+      waga_gabarytowa_karton: a?.waga_gabarytowa_karton ?? null,
+      karton_kod: a?.karton_kod ?? null,
+      karton_zrodlo: a?.karton_zrodlo ?? null,
     });
   } catch (err) {
     res.status(503).json({ blad: 'GT niedostępny — nie można odczytać parametrów towaru' });

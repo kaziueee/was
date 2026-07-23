@@ -77,6 +77,7 @@ const panele = {
   sciezki: { sekcja: 'panel-sciezki', zaladowano: false, odswiez: odswiezRaporty },
   log: { sekcja: 'panel-log', zaladowano: false, odswiez: odswiezLog },
   uzytkownicy: { sekcja: 'panel-uzytkownicy', zaladowano: false, odswiez: odswiezUzytkownicy },
+  kartony: { sekcja: 'panel-kartony', zaladowano: false, odswiez: odswiezKartony },
 };
 
 // Grupa "Ruchy" - jedna pozycja w nawigacji, cztery osobne panele pod spodem. Trzymamy je
@@ -722,6 +723,9 @@ const AKCJA_ETYKIETA = {
   // nie szukal winnego czlowieka.
   korekta_auto: 'Korekta auto (job)',
   waga_gab_przeliczona: 'Waga gab. przeliczona (job)',
+  waga_gab_karton_przeliczona: 'Waga gab. z kartonu przeliczona (job)',
+  karton_dodany: 'Karton dodany', karton_zmieniony: 'Karton zmieniony', karton_usuniety: 'Karton usunięty',
+  karton_kolejnosc: 'Kartony — kolejność',
 };
 
 // "przed"/"po" sa JSON-em (lub null) - kompaktowy zapis "k:v, k:v"
@@ -1668,8 +1672,11 @@ el('zwroty-zazn-wszystkie').addEventListener('change', (e) => {
 // === UZYTKOWNICY (zakladka tylko dla admina) ===
 
 function pokazZakladkeAdmina() {
-  const tab = el('tab-uzytkownicy');
-  if (tab) tab.style.display = (window.WMS && WMS.jestAdmin()) ? '' : 'none';
+  const admin = !!(window.WMS && WMS.jestAdmin());
+  for (const id of ['tab-uzytkownicy', 'tab-kartony']) {
+    const tab = el(id);
+    if (tab) tab.style.display = admin ? '' : 'none';
+  }
 }
 if (window.WMS) WMS.gotowe.then(pokazZakladkeAdmina);
 window.addEventListener('wms-zalogowano', pokazZakladkeAdmina);
@@ -1757,6 +1764,147 @@ el('form-nowy-user').addEventListener('submit', async (e) => {
     el('nowy-user-imie').value = ''; el('nowy-user-pin').value = '';
     pokazKomunikat(`Dodano ${imie}`, 'ok');
     odswiezUzytkownicy();
+  } catch (err) { pokazKomunikat(err.message, 'blad'); }
+});
+
+// === KARTONY (zakladka tylko dla admina) ===
+
+// Waga gabarytowa kartonu [kg] - podglad w tabeli. Wzor jak w backendzie (config/kartony):
+// objetosc / 4000, minimum 0,01. Display-only; autorytatywne liczenie jest po stronie serwera.
+function wagaKartonu(k) {
+  return Math.max((k.wysokosc * k.szerokosc * k.dlugosc) / 4000, 0.01).toFixed(2).replace('.', ',');
+}
+
+async function odswiezKartony() {
+  try { renderujKartony(await api('/api/kartony')); }
+  catch (err) { pokazKomunikat(err.message, 'blad'); }
+}
+
+async function zapiszKarton(id, patch) {
+  try {
+    await api(`/api/kartony/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+    odswiezKartony();
+  } catch (err) { pokazKomunikat(err.message, 'blad'); }
+}
+
+async function usunKarton(k) {
+  if (!confirm(`Usunąć karton „${k.kod}”?`)) return;
+  try {
+    await api(`/api/kartony/${k.id}`, { method: 'DELETE' });
+    pokazKomunikat(`Usunięto karton ${k.kod}`, 'ok');
+    odswiezKartony();
+  } catch (err) { pokazKomunikat(err.message, 'blad'); }
+}
+
+// Wiersz w trybie EDYCJI: kod + 3 wymiary + Zapisz/Anuluj. Osobny tryb (a nie zawsze-edytowalny),
+// zeby lista ~32 kartonow zostala skanowalna. Reuzywa przyciskUser (generyczny builder przyciskow).
+function edytujWierszKartonu(tr, k) {
+  tr.draggable = false;   // podczas edycji wiersza nie przeciagamy
+  tr.innerHTML = `
+    <td style="text-align:center;color:#ccc">⠿</td>
+    <td><input type="text" class="kart-e-kod" value="${k.kod}" style="width:7em"></td>
+    <td>
+      <input type="number" class="kart-e-wys" value="${k.wysokosc}" min="0" step="any" style="width:4.5em"> ×
+      <input type="number" class="kart-e-szer" value="${k.szerokosc}" min="0" step="any" style="width:4.5em"> ×
+      <input type="number" class="kart-e-dl" value="${k.dlugosc}" min="0" step="any" style="width:4.5em">
+    </td>
+    <td colspan="2" class="opis">cm (wys × szer × dł)</td>
+    <td></td>`;
+  const akc = tr.lastElementChild;
+  akc.appendChild(przyciskUser('Zapisz', 'btn-small btn-primary', () => {
+    zapiszKarton(k.id, {
+      kod: tr.querySelector('.kart-e-kod').value.trim(),
+      wysokosc: tr.querySelector('.kart-e-wys').value,
+      szerokosc: tr.querySelector('.kart-e-szer').value,
+      dlugosc: tr.querySelector('.kart-e-dl').value,
+    });
+  }));
+  akc.appendChild(przyciskUser('Anuluj', 'btn-small', odswiezKartony));
+}
+
+let kartonDragId = null;
+
+function renderujKartony(lista) {
+  const tbody = el('kartony-tbody'); tbody.innerHTML = '';
+  el('kartony-brak').classList.toggle('hidden', lista.length > 0);
+  for (const k of lista) {
+    const tr = document.createElement('tr');
+    tr.dataset.id = k.id;
+    tr.dataset.aktywny = k.aktywny ? '1' : '0';
+    tr.draggable = true;
+    if (!k.aktywny) tr.style.opacity = '0.5';
+    tr.innerHTML = `<td class="kart-uchwyt" title="Przeciągnij, aby zmienić kolejność" style="cursor:grab;color:#999;text-align:center;user-select:none">⠿</td>
+      <td><strong>${k.kod}</strong></td>
+      <td>${k.wysokosc} × ${k.szerokosc} × ${k.dlugosc}</td>
+      <td>${wagaKartonu(k)} kg</td>
+      <td>${k.aktywny ? 'aktywny' : 'wyłączony'}</td>
+      <td></td>`;
+    const akc = tr.lastElementChild;
+    akc.appendChild(przyciskUser('Edytuj', 'btn-small', () => edytujWierszKartonu(tr, k)));
+    akc.appendChild(przyciskUser(k.aktywny ? 'Wyłącz' : 'Włącz', k.aktywny ? 'btn-small btn-danger' : 'btn-small', () => zapiszKarton(k.id, { aktywny: k.aktywny ? 0 : 1 })));
+    akc.appendChild(przyciskUser('Usuń', 'btn-small btn-danger', () => usunKarton(k)));
+    wiazDnDKartonu(tr);
+    tbody.appendChild(tr);
+  }
+}
+
+// Drag&drop wiersza: przeciagnij karton w inne miejsce listy. Po upuszczeniu zapisujemy NOWA
+// kolejnosc id (PUT /api/kartony/kolejnosc) i odswiezamy. Sluzy do wsuniecia nowego kartonu
+// (dodawany na koniec) miedzy podobne. Kolejnosc jest tez remisem przy rownej objetosci (dobor).
+function wiazDnDKartonu(tr) {
+  tr.addEventListener('dragstart', (e) => {
+    kartonDragId = Number(tr.dataset.id);
+    e.dataTransfer.effectAllowed = 'move';
+    tr.style.opacity = '0.35';
+  });
+  tr.addEventListener('dragend', () => {
+    tr.style.opacity = tr.dataset.aktywny === '0' ? '0.5' : '';
+    kartonDragId = null;
+  });
+  tr.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
+  tr.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const doId = Number(tr.dataset.id);
+    if (!kartonDragId || kartonDragId === doId) return;
+    przeniesKarton(kartonDragId, doId);
+  });
+}
+
+function przeniesKarton(zId, doId) {
+  const tbody = el('kartony-tbody');
+  const src = tbody.querySelector(`tr[data-id="${zId}"]`);
+  const tgt = tbody.querySelector(`tr[data-id="${doId}"]`);
+  if (!src || !tgt) return;
+  const rows = [...tbody.children];
+  // wstaw przed/za targetem zaleznie od kierunku - naturalne zachowanie przeciagania
+  if (rows.indexOf(src) < rows.indexOf(tgt)) tgt.after(src); else tgt.before(src);
+  zapiszKolejnosc([...tbody.children].map((r) => Number(r.dataset.id)));
+}
+
+async function zapiszKolejnosc(idy) {
+  try {
+    await api('/api/kartony/kolejnosc', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kolejnosc: idy }) });
+    odswiezKartony();
+  } catch (err) { pokazKomunikat(err.message, 'blad'); odswiezKartony(); }
+}
+
+el('form-nowy-karton').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const kod = el('nowy-karton-kod').value.trim();
+  if (!kod) return;
+  try {
+    await api('/api/kartony', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kod,
+        wysokosc: el('nowy-karton-wys').value,
+        szerokosc: el('nowy-karton-szer').value,
+        dlugosc: el('nowy-karton-dl').value,
+      }),
+    });
+    el('form-nowy-karton').reset();
+    pokazKomunikat(`Dodano karton ${kod}`, 'ok');
+    odswiezKartony();
   } catch (err) { pokazKomunikat(err.message, 'blad'); }
 });
 
@@ -2522,6 +2670,30 @@ function parOdswiezWageGab() {
     : '—';
 }
 
+// Podglad wagi gabarytowej "z kartonu" - liczy BACKEND (/api/kartony/dobierz), bo lista kartonow
+// jest edytowalna i nie da sie jej trzymac na sztywno we froncie (regula #5). Debounced, zeby nie
+// strzelac zapytaniem na kazdy znak. Best-effort: blad podgladu nie blokuje edycji parametrow.
+let mparKartonTimer = null;
+function pokazWageGabKarton(waga, kod, zrodlo) {
+  el('mpar-waga-gab-karton').textContent = waga ? `${waga} kg` : '—';
+  const opis = el('mpar-karton-opis');
+  if (opis) opis.textContent = !waga ? '' : zrodlo === 'karton' ? `— karton ${kod}` : '— brak pasującego kartonu, z wymiarów';
+}
+function parOdswiezWageGabKarton() {
+  const d = parLiczba(el('mpar-dlugosc').value);
+  const s = parLiczba(el('mpar-szerokosc').value);
+  const w = parLiczba(el('mpar-wysokosc').value);
+  if (![d, s, w].every((n) => n !== null && n > 0)) { pokazWageGabKarton(null); return; }
+  clearTimeout(mparKartonTimer);
+  mparKartonTimer = setTimeout(async () => {
+    try {
+      const q = new URLSearchParams({ dlugosc: d, szerokosc: s, wysokosc: w });
+      const r = await api(`/api/kartony/dobierz?${q}`);
+      pokazWageGabKarton(r.waga_gabarytowa_karton, r.karton_kod, r.zrodlo);
+    } catch { /* podglad best-effort - nie przeszkadza w zapisie */ }
+  }, 300);
+}
+
 async function renderModalParametry() {
   if (!modalProdukt) return;
   for (const id of ['mpar-dlugosc', 'mpar-szerokosc', 'mpar-wysokosc', 'mpar-waga']) el(id).value = '';
@@ -2533,6 +2705,7 @@ async function renderModalParametry() {
     if (d.wysokosc !== null) el('mpar-wysokosc').value = d.wysokosc;
     if (d.waga !== null) el('mpar-waga').value = String(d.waga).replace(',', '.');
     parOdswiezWageGab();
+    pokazWageGabKarton(d.waga_gabarytowa_karton, d.karton_kod, d.karton_zrodlo);
   } catch (err) {
     pokazKomunikatEl('modal-komunikat', err.message, 'blad');
   }
@@ -2564,6 +2737,7 @@ async function zapiszModalParametry() {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cialo),
     });
     if (dane.waga_gabarytowa) el('mpar-waga-gab').textContent = `${dane.waga_gabarytowa} kg`;
+    pokazWageGabKarton(dane.waga_gabarytowa_karton, dane.karton_kod, dane.karton_zrodlo);
     const ostrz = (dane.ostrzezenia || []).join(' ');
     pokazKomunikatEl('modal-komunikat', ostrz ? `Zapisano parametry — ${ostrz}` : 'Zapisano parametry.', ostrz ? 'info' : 'ok');
   } catch (err) {
@@ -2575,7 +2749,7 @@ async function zapiszModalParametry() {
 
 el('btn-mpar-zapisz').addEventListener('click', zapiszModalParametry);
 for (const id of ['mpar-dlugosc', 'mpar-szerokosc', 'mpar-wysokosc']) {
-  el(id).addEventListener('input', parOdswiezWageGab);
+  el(id).addEventListener('input', () => { parOdswiezWageGab(); parOdswiezWageGabKarton(); });
 }
 
 function zamknijModal() {

@@ -66,6 +66,7 @@ Lista magazynów: `config/magazyny.js`. Wyprowadza dwie **różne** sumy, obie z
 | `Lokalizacja Górna` | `tw__Towar.tw_Pole8` | lokalizacje K4gora skompresowane | WMS |
 | `Lokalizacja Zapas` | `pwd_Tekst08` | **nieużywane** — patrz niżej | nikt |
 | `Wymiary`, `Waga produktu`, `Waga gabarytowa DHL` | `pwd_Tekst07`, `pwd_Tekst06`, `pwd_Tekst09` | patrz „Parametry produktu" | WMS |
+| `Waga gabarytowa karton DHL` | `pw_Dane.pwd_Tekst10` | waga gab. z najmniejszego pasującego kartonu (fallback goły wymiar) | WMS |
 | `Stan K4`, `Stan K4Góra` | — | kopie stanów dla multistany | NIE dotykamy |
 | `Ilość w op. zbiorczym`, `Baterie` | `pwd_Tekst04`, `pwd_Tekst05` | ręcznie | NIE dotykamy |
 
@@ -168,11 +169,14 @@ WMS jako warstwa **danych opisowych** nad GT. To NIE są stany — reguła #1 ic
 |---|---|---|
 | Wymiary | `Wymiary` | `pw_Dane.pwd_Tekst07`, np. `25,5x17,5x5,5` (dł×szer×wys, cm) |
 | Waga produktu | `Waga produktu` | `pw_Dane.pwd_Tekst06`, w **kg** |
-| Waga gabarytowa DHL | `Waga gabarytowa DHL` | `pw_Dane.pwd_Tekst09`, w kg, **wyliczana** |
+| Waga gabarytowa DHL | `Waga gabarytowa DHL` | `pw_Dane.pwd_Tekst09`, w kg, **wyliczana** (z gołych wymiarów) |
+| Waga gabarytowa z kartonu | `Waga gabarytowa karton DHL` | `pw_Dane.pwd_Tekst10`, w kg, **wyliczana z kartonu** (fallback goły wymiar) |
 
 `pw_Dane` trzyma pola własne wszystkich obiektów; wiersz towaru = (`pwd_TypObiektu=-14`, `pwd_IdObiektu=tw_Id`). **Większość towarów nie ma tam wiersza** — dlatego zapis to UPSERT. `pwd_Id` NIE jest IDENTITY, **ale GT MA dla niego licznik**: tabela `ins_ident` (`ido_nazwa='pw_Dane'`, `ido_wartosc` = następny wolny numer), podbijana atomowo procedurą składowaną `spIdentyfikator`. WMS alokuje `pwd_Id` **przez `spIdentyfikator`** (tak jak Sfera), pod `UPDLOCK,HOLDLOCK` na sprawdzeniu istnienia wiersza — **NIGDY przez `MAX+1`**. `MAX+1` omijało ten licznik i wypychało `pw_Dane` ponad niego, przez co GT przy własnym zapisie pola własnego trafiał na zajęty `pwd_Id` → „naruszenie integralności danych" (także ręczny zapis w Subiekcie, także komplet — incydent 2026-07-20). `ab_Licznik` to faktycznie konfiguracja przypomnień, nie generator.
 
 **Waga gabarytowa = dł×szer×wys/4000** (DHL), 2 miejsca, minimum `0,01`. Liczona **zawsze serwerowo** — `PUT /api/produkty/:id/atrybuty` ignoruje tę wartość przysłaną przez klienta, więc nie da się zapisać liczby niespójnej z wymiarami. Zmiana wymiarów przelicza ją w tej samej transakcji; `services/waga-gabarytowa-job.js` (co 6 h, `WAGA_GAB_INTERWAL_MIN`) łapie ręczne zmiany wymiarów zrobione w samym Subiekcie.
+
+**Waga gabarytowa z kartonu (`pwd_Tekst10` „Waga gabarytowa karton DHL", 2026-07-23).** Drugie, OSOBNE pole obok DHL — liczone nie z gołego produktu, lecz z **najmniejszego pasującego kartonu wysyłkowego** (kurier liczy pudło, nie goły towar). Lista kartonów jest **edytowalna w panelu admina** (desktop, zakładka „Kartony", tylko admin — CRUD `/api/kartony` z `auth.wymagajAdmin`): tabela SQLite `kartony` (seed z `config/kartony.js`), dobór/waga w `services/kartony.js` z cache; **czysta logika** (`dobierzKartonZListy`, `liczWageKartonZListy`, `sprawdzKarton`) siedzi w `config/kartony.js` — testowalna bez DB/GT (`test/kartony.test.js`). Produkt niemieszczący się w żadnym kartonie → **fallback na goły wymiar** (`zrodlo:'wymiar'`); brak wymiarów → puste. Podgląd na ekranie Parametry (desktop + Zebra) przez `GET /api/kartony/dobierz` (odczyt otwarty). Zapis do GT tą **samą bezpieczną ścieżką UPSERT** co DHL (`pwd_Id` z `spIdentyfikator`, nigdy `MAX+1`) — `pwd_Tekst10` tylko dokładane do listy `pola`. Ten sam `waga-gabarytowa-job.js` uzgadnia OBA pola (helper `uzgodnijKolumne`), więc edycja listy kartonów propaguje się na kartotekę.
 
 **Walidacja** (`sprawdzWymiary`/`sprawdzWage`, egzekwowane w `routes/produkty.js`): trzy liczby **> 0** (zero jest błędem — w danych z BaseLinkera trafiały się wpisy `0x65x53`), ostrzeżenie powyżej 150 cm, twardy limit 1000 cm.
 

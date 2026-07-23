@@ -777,6 +777,9 @@
             <span id="modal-akcja-lok-brak" class="brak-pola hidden">brak pola (magazyn zewnętrzny)</span>
           </div>
         </div>
+        <!-- "Na K4G juz lezy": gdzie SKU siedzi na K4G, gdy cel = K4G. K4G = 1 SKU = N
+             lokalizacji, wiec okno akcji nie zaslania juz tej informacji (JS: akcjaRenderK4gRef) -->
+        <div id="modal-akcja-k4g" class="k4g-ref hidden" aria-live="polite"></div>
         <div class="modal-akcja-stopka">
           <button type="button" id="btn-modal-akcja-wykonaj" class="btn btn-primary">Wykonaj</button>
           <button type="button" id="btn-modal-akcja-anuluj" class="btn">Anuluj</button>

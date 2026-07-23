@@ -887,6 +887,61 @@ main {
   margin-top: 0.75rem;
 }
 
+/* Panel "Na K4G juz lezy" w oknie akcji - gdzie SKU siedzi na K4G przy celu K4G.
+   Czysto informacyjny (zrodlo: stany WMS, fallback tw_Pole8 z GT). Bez wlasnego
+   `display`, zeby globalne .hidden (display:none) wygrywalo bez walki o specyficznosc. */
+.k4g-ref {
+  margin-top: 0.7rem;
+  border: 1px solid #cfe6df;
+  background: #f2faf7;
+  border-radius: 7px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.85rem;
+}
+.k4g-ref__h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #0f6e56;
+  font-weight: bold;
+  font-size: 0.8rem;
+  margin-bottom: 0.35rem;
+}
+.k4g-ref__badge {
+  background: #2a9d8f;
+  color: #fff;
+  border-radius: 20px;
+  padding: 0.05rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: normal;
+}
+.k4g-ref__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.2rem 0;
+  border-top: 1px dashed #d3e8e1;
+}
+.k4g-ref__row:first-of-type { border-top: none; }
+.k4g-ref__kod,
+.k4g-ref__gt {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #1d3557;
+  font-weight: bold;
+}
+.k4g-ref__ile { color: #0f6e56; font-weight: bold; white-space: nowrap; }
+.k4g-ref__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid #cfe6df;
+  font-size: 0.75rem;
+  color: #0f6e56;
+}
+.k4g-ref__df { color: #9a6700; font-weight: bold; white-space: nowrap; }
+
 /* kolumny akcji w tabeli Produkty */
 .tabela td.td-akcja,
 .tabela th.th-akcja {

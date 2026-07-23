@@ -2410,6 +2410,9 @@ const MAG_LABEL = { K4: 'K4 Hala', K4G: 'K4 Góra', MAG: 'Kajtek (MAG)', LS: 'Le
 
 let modalProdukt = null;
 let modalAkcjaCtx = null;
+// Lokalizacje K4G (kod+ilosc) zapamietane przy renderze rozkladu - dla panelu "Na K4G
+// juz lezy" w oknie akcji. otworzAkcje nie ma dostepu do `loki`, a nie chcemy 2. fetcha.
+let modalLokiK4g = [];
 
 let modalHeartbeat = null;
 // Zakladki modalu ladowane leniwie - flagi resetowane przy kazdym otwarciu produktu.
@@ -2642,6 +2645,13 @@ async function renderModalRozklad() {
       dl.appendChild(o);
     }
   } catch { /* podpowiedzi opcjonalne */ }
+
+  // Snapshot lokalizacji K4G (kod+ilosc) dla panelu "Na K4G juz lezy" w oknie akcji.
+  // K4G = 1 SKU = N lokalizacji, wiec jest co pokazac przy wyborze docelowej polki.
+  modalLokiK4g = loki
+    .filter((l) => l.magazyn === 'K4G' && l.ilosc > 0)
+    .sort((a, b) => porownajKodLok(a.kod, b.kod))
+    .map((l) => ({ kod: l.kod, ilosc: l.ilosc }));
 
   // Plan lokalizacji z GT (K4 i K4G) - zachowany do pelnego przypisania (zeby przy
   // rozkladaniu np. 3 lokalizacji nie zgubic pozostalych po nadpisaniu pola GT).
@@ -3057,6 +3067,52 @@ function otworzAkcje(ctx) {
 function zamknijAkcje() {
   modalAkcjaCtx = null;
   el('modal-akcja-overlay').classList.add('hidden');
+  const k = el('modal-akcja-k4g');
+  if (k) { k.classList.add('hidden'); k.innerHTML = ''; }
+}
+
+// Panel "Na K4G juz lezy" w oknie akcji: pokazuje, gdzie SKU juz siedzi na K4G, gdy cel =
+// K4G (przypisanie/rozlozenie/przeniesienie na gore). Dzieki temu okno akcji nie zaslania
+// juz tej informacji - decyzja o docelowej polce zapada bez zamykania okna. Czysto
+// informacyjny: zadnego ruchu nie robi. Zrodlo: snapshot stanow WMS (modalLokiK4g),
+// fallback na tekst K4G z GT (tw_Pole8) gdy WMS nie zna rozbicia.
+function akcjaRenderK4gRef(celMag) {
+  const box = el('modal-akcja-k4g');
+  if (!box) return;
+  const ukryj = () => { box.classList.add('hidden'); box.innerHTML = ''; };
+  if (celMag !== 'K4G') { ukryj(); return; }
+
+  const loki = modalLokiK4g || [];
+  if (loki.length > 0) {
+    const suma = loki.reduce((s, l) => s + l.ilosc, 0);
+    const gtK4g = modalProdukt?.stany_gt?.K4G?.ilosc ?? 0;
+    const deficyt = Math.max(gtK4g - suma, 0);
+    const wiersze = loki.map((l) =>
+      `<div class="k4g-ref__row"><span class="k4g-ref__kod">${l.kod}</span>`
+      + `<span class="k4g-ref__ile">${l.ilosc} szt</span></div>`).join('');
+    const foot = deficyt > 0
+      ? `<span>źródło: WMS</span><span class="k4g-ref__df">deficyt ${deficyt} do rozłożenia</span>`
+      : `<span>źródło: WMS</span><span>Σ ${suma} szt = stan GT</span>`;
+    box.innerHTML = '<div class="k4g-ref__h"><span>Na K4G już leży</span>'
+      + `<span class="k4g-ref__badge">${loki.length} · ${suma} szt</span></div>`
+      + wiersze + `<div class="k4g-ref__foot">${foot}</div>`;
+    box.classList.remove('hidden');
+    return;
+  }
+
+  // WMS nie zna rozbicia K4G - pokaz surowy tekst z pola GT (tw_Pole8), jak jest.
+  const gtTekst = modalProdukt?.lokalizacja_k4g_gt;
+  if (gtTekst) {
+    box.innerHTML = '<div class="k4g-ref__h"><span>Na K4G już leży</span>'
+      + '<span class="k4g-ref__badge">wg GT</span></div>'
+      + `<div class="k4g-ref__row"><span class="k4g-ref__gt">${gtTekst}</span></div>`
+      + '<div class="k4g-ref__foot"><span>źródło: GT · tw_Pole8</span>'
+      + '<span>WMS nie zna rozbicia</span></div>';
+    box.classList.remove('hidden');
+    return;
+  }
+
+  ukryj(); // nic do pokazania (pierwsza lokalizacja K4G)
 }
 
 el('btn-modal-akcja-x').addEventListener('click', zamknijAkcje);
@@ -3067,6 +3123,7 @@ el('modal-akcja-overlay').addEventListener('click', (e) => {
 async function akcjaOdswiezCel() {
   if (!modalAkcjaCtx) return;
   const celMag = el('modal-akcja-magazyn').value;
+  akcjaRenderK4gRef(celMag); // panel "Na K4G juz lezy" - od razu, bez czekania na fetch
   await mmZaladujLokCel(el('modal-akcja-lok'), el('modal-akcja-lok-brak'), celMag);
   if (mmCzyWms(celMag)) await mmUstawCelK4(el('modal-akcja-lok'), null, celMag, modalProdukt);
   akcjaPozostanie();

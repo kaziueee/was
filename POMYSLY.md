@@ -18,7 +18,7 @@ Legenda: `[ ]` do zrobienia · `[x]` zrobione · 🟢 szybka wygrana · 🟡 śr
 ## 2. Drobne UX na istniejących ekranach
 
 - [x] 🟢 **Ścieżka „Brak parametrów" → skok do wagi gdy są wymiary** — ZROBIONE 2026-07-21 (`public/zebra/parametry.js`, `otworz()`). Gdy wszystkie trzy wymiary są komplet (>0), focus ląduje od razu na polu wagi; przy braku wymiarów (lub złych danych typu `0×65×53`) zaczyna normalnie od długości.
-- [ ] 🟢 **Desktop: pokaż lokalizację K4G w edycji** — w edycji produktu na desktopie (`public/desktop/app.js`) w trakcie wpisywania znika info, gdzie towar leży na K4G, i trzeba się cofać. Pokazać lokalizacje K4G obok pola edycji (K4G = 1 SKU = N lokalizacji, więc jest co pokazać — źródło: `stany_lokalizacji` / `tw_Pole8`).
+- [x] 🟢 **Desktop: pokaż lokalizację K4G w edycji** — ZROBIONE 2026-07-23 (`public/desktop/app.js` `akcjaRenderK4gRef` + `index.html` `#modal-akcja-k4g` + `style.css` `.k4g-ref`). Sedno problemu to **okno akcji** (Przypisz/Przenieś/Rozłóż, `#modal-akcja-overlay`): otwiera się NAD tabelą rozkładu i ją zasłania, więc przy wyborze docelowej półki nie widać, gdzie SKU już leży na K4G. Fix: pod polem „Lokalizacja docelowa" panel **„Na K4G już leży"** (kod → ilość + deficyt), renderowany gdy cel = K4G. Źródło: snapshot stanów WMS (`modalLokiK4g` z `renderModalRozklad`), fallback na tekst `tw_Pole8` z GT, gdy WMS nie zna rozbicia. Czysto informacyjny — żadnego ruchu, zero ryzyka dla inwariantów. Inline-edycja kodu w tabeli NIE była problemem (pozostałe wiersze K4G zostają widoczne), więc akcent poszedł na okno akcji. Zweryfikowane: składnia + 10/10 smoke-testów logiki renderu; **do klik-testu na realnym modalu z GT** (podgląd w tej sesji wisiał). Wizualizacja: artefakt „Desktop K4G w edycji — rozwiązanie".
 
 ## 3. Infrastruktura i bezpieczeństwo danych
 
@@ -34,7 +34,7 @@ Legenda: `[ ]` do zrobienia · `[x]` zrobione · 🟢 szybka wygrana · 🟡 śr
 
 ## Od czego zacząć
 
-1. **🟢 Desktop K4G w edycji** — drobny UX, zero ryzyka, realnie irytuje przy codziennej pracy.
+1. ✅ **Desktop K4G w edycji** — ZROBIONE 2026-07-23 (patrz wyżej). Następne w kolejce: waga z kartonów (a).
 2. **🟡 Waga z kartonów (a)** — masz połowę roboty w `config/kartony.js`; podpięcie doboru kartonu to niewielka zmiana w `gt-atrybuty.js`.
 3. **🔴 Decyzja o auto-czyszczeniu zer** — zanim cokolwiek kodować, rozstrzygnij tension z inwariantem (patrz punkt wyżej).
 

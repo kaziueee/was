@@ -2,7 +2,8 @@ const express = require('express');
 const db = require('../db/database');
 const audyt = require('../services/audyt');
 const gtDokumenty = require('../services/gt-dokumenty');
-const { pobierzK4NiskieStany, pobierzK4PelnaRezerwacja, dostepneWGt, pobierzStanyGt, sumaRazem, sumaZapasK4 } = require('../services/gt-produkty');
+const { pobierzK4NiskieStany, oznaczWariantyPU, pobierzK4PelnaRezerwacja, dostepneWGt, pobierzStanyGt, sumaRazem, sumaZapasK4 } = require('../services/gt-produkty');
+const { porownajObchod } = require('../services/kolejnosc-obchodu');
 const gtFields = require('../services/gt-fields');
 const gtAtrybuty = require('../services/gt-atrybuty');
 
@@ -216,8 +217,10 @@ function zamknijNiezgodnosc(req, res, akcjaZamkniecia) {
 }
 
 // GET /api/sciezki/ostatnie-sztuki - lista przystankow (towary K4 ze stanem 1..5, z lokalizacja
-// K4), posortowana po kodzie lokalizacji = kolejnosc zbierania. Stan liczony wg reguly
-// "WMS jest prawda tam gdzie istnieje, inaczej GT". Wyklucza:
+// K4). Kolejnosc: domyslnie po kodzie lokalizacji (kolejnosc zbierania), ale trzy grupy ida na
+// KONIEC obchodu (zob. services/kolejnosc-obchodu.js): egzemplarze poprezentacyjne/uszkodzone
+// (symbol na p/u), sztuki czekajace w strefie i pozycje z pelna rezerwacja K4. Stan liczony wg
+// reguly "WMS jest prawda tam gdzie istnieje, inaczej GT". Wyklucza:
 //  - pary (artykul+lokalizacja) sprawdzone w ciagu DNI_POMIN_SPRAWDZONE dni,
 //  - SKU z przyjeciem z zewnetrznego w ciagu DNI_POMIN_PRZYJECIE dni.
 router.get('/ostatnie-sztuki', async (req, res, next) => {
@@ -276,12 +279,19 @@ router.get('/ostatnie-sztuki', async (req, res, next) => {
     }
   }
 
-  // zbiory wykluczen z SQLite (jedno zapytanie na kazdy) - filtrujemy w Node
-  const sprawdzone = new Set(db.prepare(
+  // zbiory wykluczen z SQLite (jedno zapytanie na kazdy) - filtrujemy w Node.
+  // Z tych samych wierszy audytu budujemy DWA zbiory:
+  //  - sprawdzone (para artykul|lokalizacja) - do WYKLUCZENIA z listy (para juz policzona),
+  //  - sprawdzoneSku (samo artykul_gt_id) - do KOLEJNOSCI: SKU policzone niedawno, ktore wrocilo
+  //    na liste po przypisaniu NOWEJ lokalizacji (nowa para nie trafia do `sprawdzone`), idzie na
+  //    sam koniec, zeby nie wyprzedzalo pozycji jeszcze w ogole nieliczonych (grupaObchodu).
+  const sprawdzoneRows = db.prepare(
     `SELECT DISTINCT artykul_gt_id, lokalizacja FROM audyt
      WHERE akcja IN ('sprawdzenie_stanu','sprawdzenie_niezgodne','sprawdzenie_zamkniete')
        AND czas >= datetime('now', ?)`
-  ).all(`-${DNI_POMIN_SPRAWDZONE} days`).map((r) => `${r.artykul_gt_id}|${r.lokalizacja}`));
+  ).all(`-${DNI_POMIN_SPRAWDZONE} days`);
+  const sprawdzone = new Set(sprawdzoneRows.map((r) => `${r.artykul_gt_id}|${r.lokalizacja}`));
+  const sprawdzoneSku = new Set(sprawdzoneRows.map((r) => r.artykul_gt_id));
 
   const przyjete = new Set(db.prepare(
     `SELECT DISTINCT artykul_gt_id FROM ruchy
@@ -292,15 +302,25 @@ router.get('/ostatnie-sztuki', async (req, res, next) => {
 
   const przefiltrowane = kandydaci
     .filter((t) => !sprawdzone.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`) && !przyjete.has(t.artykul_gt_id)
-      && !pominiete.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`))
-    .sort((a, b) => (a.lokalizacja_kod || '').localeCompare(b.lokalizacja_kod || '')
-      || (a.symbol || '').localeCompare(b.symbol || ''));
+      && !pominiete.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`));
 
-  // Oczekiwana POLKA = stan GT - strefy. Magazynier liczy regal, a nierozlozona dostawa albo
-  // zwrot czekajacy w strefie leza gdzie indziej - bez tego odjecia lista mowilaby "3 szt.",
-  // a na polce jest 1 (zob. zapiszSprawdzenie). Jedno zapytanie do GT na cala liste.
-  // Gdy GT z dokumentami padnie, pokazujemy sam stan - lista dziala jak dotad.
-  const pozycje = await dolaczOczekiwanaPolke(przefiltrowane);
+  // Dwie rzeczy potrzebne do KOLEJNOSCI licza sie rownolegle (obie z GT):
+  //  - oczekiwana POLKA = stan GT - strefy: magazynier liczy regal, a nierozlozona dostawa/zwrot
+  //    czekaja w strefie i leza gdzie indziej - bez odjecia lista mowilaby "3 szt.", a na polce
+  //    jest 1 (zob. zapiszSprawdzenie). Doklada tez w_strefach = jedna z grup "na koniec".
+  //  - warianty p/u (poprezentacyjne/uszkodzone): rozpoznane po bazowym symbolu w GT.
+  // Musi byc PRZED sortem: sort spycha na koniec wlasnie pozycje ze strefa i p/u. Oba GT-zrodla
+  // best-effort - dolaczOczekiwanaPolke sam tlumi blad (pokazuje sam stan), a oznaczWariantyPU
+  // owijamy catch-em: gdy to jedno zapytanie padnie, po prostu nie wyroznimy p/u.
+  const [pozycje, wariantyPU] = await Promise.all([
+    dolaczOczekiwanaPolke(przefiltrowane),
+    oznaczWariantyPU(przefiltrowane.map((p) => p.symbol)).catch(() => new Set()),
+  ]);
+
+  // Kolejnosc: grupa (zwykle < p/u < strefa < pelna rezerwacja < policzone-niedawno), potem kod
+  // lokalizacji (kolejnosc zbierania), potem symbol. sprawdzoneSku spycha na sam koniec SKU
+  // policzone niedawno, ktore wrocilo po przypisaniu lokalizacji.
+  pozycje.sort((a, b) => porownajObchod(a, b, { wariantyPU, sprawdzoneSku }));
 
   res.json({ pozycje, razem: pozycje.length });
 });

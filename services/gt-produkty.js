@@ -10,6 +10,7 @@ const db = require('../db/database');
 const { MAGAZYNY, MAGAZYNY_RAZEM, MAGAZYNY_ZAPAS_K4 } = require('../config/magazyny');
 const { escapeLike, podzielNaSlowa, LIMIT_WYSZUKIWANIA } = require('./wyszukiwanie');
 const { pobierzPrzegladLokalizacji } = require('./gt-fields');
+const { bazySymboluWariantu } = require('./kolejnosc-obchodu');
 
 // buduje stany_gt w stalej kolejnosci K4, K4G, MAG, LS - kazdy magazyn ma
 // ilosc i rezerwacje (0, jesli towar nie ma wiersza w tw_Stan dla magazynu)
@@ -503,6 +504,46 @@ async function pobierzK4NiskieStany({ min = 1, max = 5, maxRazem = 5 } = {}) {
   }));
 }
 
+// Z listy symboli zwraca Set tych, ktore sa egzemplarzem poprezentacyjnym/uszkodzonym: symbol
+// konczy sie na 'p'/'u' I istnieje jego symbol BAZOWY jako towar (rodzaj 1) w GT. Uzywa sciezka
+// "Ostatnie sztuki" do spychania takich pozycji na koniec obchodu.
+//
+// Samo zakonczenie na p/u NIE wystarcza - kolory ("870BLU"=niebieski), kody jezyka ("1696HU"
+// =wegierski) i zwykle symbole ("F2713P") tez tak wygladaja. Istnienie bazy odsiewa je: na
+// zywym Z_KAJTEK z 165 symboli zakonczonych na u/p wsrod kandydatow "Ostatnich sztuk" baza
+// wykluczyla dokladnie te 4 falszywe, zostawiajac realne warianty (test empiryczny 2026-07-24).
+// bazySymboluWariantu daje kandydatow na symbol bazowy (goly i - gdy jest separator - bez
+// separatora); jedno zapytanie IN sprawdza, ktore z nich istnieja. Rzuca przy niedostepnym GT -
+// wolajacy traktuje to best-effort (obchod ma dzialac takze bez wyroznienia p/u).
+async function oznaczWariantyPU(symbols) {
+  const kandydaci = [];
+  for (const s of new Set(symbols)) {
+    const bazy = bazySymboluWariantu(s);
+    if (bazy.length) kandydaci.push({ symbol: s, bazy });
+  }
+  if (kandydaci.length === 0) return new Set();
+
+  const bazy = [...new Set(kandydaci.flatMap((k) => k.bazy))];
+  const istnieje = new Set();
+  await Promise.all(naCzesci(bazy, 1000).map(async (paczka) => {
+    const parametry = {};
+    const warunki = paczka.map((b, i) => { parametry[`b${i}`] = b; return `@b${i}`; }).join(', ');
+    const { recordset } = await query(
+      `SELECT tw_Symbol FROM tw__Towar WHERE tw_Rodzaj = 1 AND tw_Symbol IN (${warunki})`,
+      parametry
+    );
+    // GT porownuje symbole bez wzgledu na wielkosc liter i trailing spacje; normalizujemy tak
+    // samo po stronie Node, zeby dopasowanie kandydata do bazy sie zgadzalo.
+    for (const r of recordset) istnieje.add(String(r.tw_Symbol).trim().toUpperCase());
+  }));
+
+  const wynik = new Set();
+  for (const k of kandydaci) {
+    if (k.bazy.some((b) => istnieje.has(String(b).trim().toUpperCase()))) wynik.add(k.symbol);
+  }
+  return wynik;
+}
+
 // Ekran "Do sprawdzenia" (routes/do-sprawdzenia.js): WSZYSTKIE towary ze stanem GT na K4.
 // Kandydaci, nie wynik - ile z tego jest naprawde "do sprawdzenia", liczy dopiero
 // rozbijStanK4 (stan - strefy - kopia WMS).
@@ -748,6 +789,7 @@ module.exports = {
   listujProdukty,
   pobierzProduktyZUniwersum,
   pobierzK4NiskieStany,
+  oznaczWariantyPU,
   pobierzK4PelnaRezerwacja,
   pobierzK4StanyDoSprawdzenia,
   pobierzStanyGt,

@@ -80,10 +80,17 @@ function bokiMalejaco(k) {
   return [k.wysokosc, k.szerokosc, k.dlugosc].sort((a, b) => b - a);
 }
 
-// Liczba [kg] -> tekst dla GT: 2 miejsca, przecinek. Ten sam ksztalt, co pole
-// "Waga gabarytowa DHL" (gt-atrybuty.liczWageGabarytowa), zeby oba pola wygladaly tak samo.
+// Liczba [kg] -> tekst do WYSWIETLENIA: 2 miejsca, PRZECINEK (locale PL - tak jak pole DHL
+// obok na ekranie Parametry). NIE do zapisu w GT czytanym przez BaseLinker - od tego formatWagaGt.
 function formatWaga(n) {
   return Number(n).toFixed(2).replace('.', ',');
+}
+
+// Liczba [kg] -> tekst do ZAPISU w polu GT czytanym przez BaseLinker: 2 miejsca, KROPKA.
+// BaseLinker parsuje te wartosc jako liczbe, a przecinkowy tekst ("1,64") mu sie rozjezdza
+// (stad user zaczal od pola liczbowego - ale kropka w tekstowym zalatwia to bez nowego pola).
+function formatWagaGt(n) {
+  return Number(n).toFixed(2);
 }
 
 // {dlugosc, szerokosc, wysokosc} (liczby albo teksty "25,5") -> znormalizowane liczby,
@@ -123,16 +130,24 @@ function dobierzKarton(wymiary) {
 }
 
 // Waga gabarytowa "z kartonu" dla produktu o danych wymiarach, liczona z PODANEJ listy.
-// Zwraca { waga: "0,75", karton_kod: "A1", zrodlo: "karton" } gdy cos pasuje; gdy nie pasuje
-// zaden karton (produkt wiekszy od najwiekszego), a wymiary sa - FALLBACK na gola wage
-// gabarytowa produktu (ten sam wzor obj/DZIELNIK_DHL, zrodlo: "wymiar"); gdy brak wymiarow - null.
+// Zwraca { waga, wagaGt, karton_kod, zrodlo } gdy sa wymiary, inaczej null:
+//   waga   = "0,75" (PRZECINEK) - do WYSWIETLENIA (ekran Parametry, locale PL)
+//   wagaGt = "0.75" (KROPKA)    - do ZAPISU w polu GT czytanym przez BaseLinker
+// Gdy produkt nie miesci sie w zadnym kartonie (wiekszy od najwiekszego) - FALLBACK na gola
+// wage gabarytowa produktu (ten sam wzor obj/DZIELNIK_DHL, zrodlo "wymiar").
 function liczWageKartonZListy(lista, wymiary) {
   const dims = normalizujWymiary(wymiary);
   if (!dims) return null;
   const k = dobierzKartonZListy(lista, dims);
-  if (k) return { waga: formatWaga(wagaGabarytowa(k)), karton_kod: k.kod, zrodlo: 'karton' };
-  const kg = Math.max((dims.dlugosc * dims.szerokosc * dims.wysokosc) / DZIELNIK_DHL, WAGA_GAB_MIN);
-  return { waga: formatWaga(kg), karton_kod: null, zrodlo: 'wymiar' };
+  const kg = k
+    ? wagaGabarytowa(k)
+    : Math.max((dims.dlugosc * dims.szerokosc * dims.wysokosc) / DZIELNIK_DHL, WAGA_GAB_MIN);
+  return {
+    waga: formatWaga(kg),
+    wagaGt: formatWagaGt(kg),
+    karton_kod: k ? k.kod : null,
+    zrodlo: k ? 'karton' : 'wymiar',
+  };
 }
 
 // Walidacja jednego kartonu (dodanie/edycja). CZYSTA - nie sprawdza unikalnosci kodu
@@ -160,6 +175,7 @@ module.exports = {
   wagaGabarytowa,
   bokiMalejaco,
   formatWaga,
+  formatWagaGt,
   normalizujWymiary,
   dobierzKartonZListy,
   dobierzKarton,

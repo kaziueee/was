@@ -59,7 +59,7 @@ test('karton pasuje -> waga z kartonu (obj/4000), zrodlo karton', () => {
   // 12x12x3 -> SREDNI (obj 4000) -> 1,00 kg
   assert.deepEqual(
     liczWageKartonZListy(LISTA, { dlugosc: 12, szerokosc: 12, wysokosc: 3 }),
-    { waga: '1,00', karton_kod: 'SREDNI', zrodlo: 'karton' }
+    { waga: '1,00', wagaGt: '1.00', karton_kod: 'SREDNI', zrodlo: 'karton' }
   );
 });
 
@@ -67,7 +67,7 @@ test('brak kartonu, ale sa wymiary -> FALLBACK gola waga, zrodlo wymiar', () => 
   // 50x50x50 -> nic nie pasuje -> 125000/4000 = 31,25
   assert.deepEqual(
     liczWageKartonZListy(LISTA, { dlugosc: 50, szerokosc: 50, wysokosc: 50 }),
-    { waga: '31,25', karton_kod: null, zrodlo: 'wymiar' }
+    { waga: '31,25', wagaGt: '31.25', karton_kod: null, zrodlo: 'wymiar' }
   );
 });
 
@@ -85,6 +85,13 @@ test('brak wymiarow -> null', () => {
 test('waga zawsze 2 miejsca po przecinku (przecinek, nie kropka)', () => {
   const r = liczWageKartonZListy(LISTA, { dlugosc: 12, szerokosc: 12, wysokosc: 3 });
   assert.match(r.waga, /^\d+,\d{2}$/);
+});
+
+test('wagaGt = KROPKA (do GT/BaseLinkera), waga = PRZECINEK (do wyswietlenia PL)', () => {
+  const r = liczWageKartonZListy(LISTA, { dlugosc: 12, szerokosc: 12, wysokosc: 3 });
+  assert.equal(r.waga, '1,00');       // ekran Parametry (locale PL)
+  assert.equal(r.wagaGt, '1.00');     // pole GT czytane przez BaseLinker
+  assert.match(r.wagaGt, /^\d+\.\d{2}$/);
 });
 
 // --- sprawdzKarton: walidacja ---
@@ -111,6 +118,6 @@ test('realny seed: plaski 30x20x2 -> A-KleinPacket 1,64 kg (goly wymiar dalby 0,
   assert.equal(dobierzKarton({ dlugosc: 30, szerokosc: 20, wysokosc: 2 }).kod, 'A-KleinPacket');
   assert.deepEqual(
     liczWageKartonZListy(KARTONY, { dlugosc: 30, szerokosc: 20, wysokosc: 2 }),
-    { waga: '1,64', karton_kod: 'A-KleinPacket', zrodlo: 'karton' }
+    { waga: '1,64', wagaGt: '1.64', karton_kod: 'A-KleinPacket', zrodlo: 'karton' }
   );
 });

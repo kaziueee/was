@@ -86,14 +86,24 @@ function zlozWymiary({ dlugosc, szerokosc, wysokosc }) {
   return [dlugosc, szerokosc, wysokosc].map((n) => formatuj(n, 2)).join('x');
 }
 
-// Waga gabarytowa DHL w kg jako tekst, zawsze 2 miejsca po przecinku.
-// Zwraca null gdy wymiarow brak - wtedy pole w GT ma zostac wyczyszczone,
-// zeby nie zostawala wartosc wyliczona z poprzednich wymiarow.
-function liczWageGabarytowa(wymiary) {
+// Surowa waga gabarytowa DHL [kg] jako liczba, albo null gdy brak wymiarow.
+function kgGabarytowa(wymiary) {
   if (!wymiary) return null;
   const { dlugosc, szerokosc, wysokosc } = wymiary;
-  const kg = (dlugosc * szerokosc * wysokosc) / DZIELNIK_DHL;
-  return Math.max(kg, WAGA_GAB_MIN).toFixed(2).replace('.', ',');
+  return Math.max((dlugosc * szerokosc * wysokosc) / DZIELNIK_DHL, WAGA_GAB_MIN);
+}
+
+// Waga gabarytowa DHL, 2 miejsca. Dwa formaty - jak przy wadze z kartonu:
+//   liczWageGabarytowa   -> PRZECINEK, do WYSWIETLENIA / odpowiedzi API (locale PL)
+//   liczWageGabarytowaGt -> KROPKA, do zapisu w polu GT (pwd_Tekst09) czytanym przez BaseLinker
+// Null gdy brak wymiarow - wtedy pole w GT ma zostac wyczyszczone (nie zostawiamy starej wartosci).
+function liczWageGabarytowa(wymiary) {
+  const kg = kgGabarytowa(wymiary);
+  return kg === null ? null : kg.toFixed(2).replace('.', ',');
+}
+function liczWageGabarytowaGt(wymiary) {
+  const kg = kgGabarytowa(wymiary);
+  return kg === null ? null : kg.toFixed(2);
 }
 
 // Sprawdza wymiary wpisane przez czlowieka. Zwraca {blad} albo {wymiary, ostrzezenia}.
@@ -200,22 +210,26 @@ async function zapiszAtrybuty(artykulGtId, zmiany) {
     parametry.wymiary = tekst;
     zapisane.wymiary = tekst || null;
 
-    // Wymiary i waga gabarytowa zmieniaja sie razem albo wcale.
+    // Wymiary i waga gabarytowa zmieniaja sie razem albo wcale. gab (przecinek) -> odpowiedz/podglad;
+    // gabGt (KROPKA) -> pole GT, bo BaseLinker czyta te wartosc jako liczbe (jak waga z kartonu).
     const gab = liczWageGabarytowa(wymiary);
+    const gabGt = liczWageGabarytowaGt(wymiary);
     pola.push({ kolumna: KOLUMNY.waga_gabarytowa, parametr: '@wagaGab' });
-    parametry.wagaGab = gab ?? '';
+    parametry.wagaGab = gabGt ?? '';
     zapisane.waga_gabarytowa = gab;
 
     // Waga gabarytowa "z kartonu" (najmniejszy pasujacy karton, fallback goly wymiar). Zawsze
     // trafia do `zapisane` (API/podglad); do GT pisana tylko gdy kolumna skonfigurowana - dopoki
     // placeholder=null, pole w GT jeszcze nie istnieje, wiec nie dokladamy go do UPSERT-a.
     const kartonWaga = wymiary ? kartony.liczWageGabarytowaKarton(wymiary) : null;
+    // `waga` (przecinek) -> do odpowiedzi/podgladu (locale PL). `wagaGt` (KROPKA) -> do pola GT,
+    // bo BaseLinker czyta te wartosc jako liczbe i przecinkowy tekst mu sie rozjezdza.
     zapisane.waga_gabarytowa_karton = kartonWaga?.waga ?? null;
     zapisane.karton_kod = kartonWaga?.karton_kod ?? null;
     zapisane.karton_zrodlo = kartonWaga?.zrodlo ?? null;
     if (KOLUMNY.waga_gabarytowa_karton) {
       pola.push({ kolumna: KOLUMNY.waga_gabarytowa_karton, parametr: '@wagaGabKarton' });
-      parametry.wagaGabKarton = kartonWaga?.waga ?? '';
+      parametry.wagaGabKarton = kartonWaga?.wagaGt ?? '';
     }
   }
 
@@ -354,6 +368,7 @@ module.exports = {
   rozbierzWymiary,
   zlozWymiary,
   liczWageGabarytowa,
+  liczWageGabarytowaGt,
   liczba,
   formatuj,
   KOLUMNY,

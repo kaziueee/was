@@ -13,7 +13,7 @@ const audyt = require('./audyt');
 const awarie = require('./awarie');
 const kartony = require('./kartony');
 const {
-  KOLUMNY, TYP_OBIEKTU_TOWAR, rozbierzWymiary, liczWageGabarytowa,
+  KOLUMNY, TYP_OBIEKTU_TOWAR, rozbierzWymiary, liczWageGabarytowaGt,
 } = require('./gt-atrybuty');
 
 // Domyslnie 6 h - wymiary zmieniaja sie rzadko (zapis jest jednorazowy per produkt),
@@ -92,7 +92,9 @@ async function uzgodnijKolumne(kolumna, licz) {
 // kartonow). Kartonowy przebieg jest zarazem KANALEM PROPAGACJI edycji listy kartonow na
 // kartoteke: zmiana wymiarow kartonu w panelu admina zmienia oczekiwana wage czesci towarow.
 async function wykonajSpojnoscWagiGabarytowej() {
-  const dhl = await uzgodnijKolumne(KOLUMNY.waga_gabarytowa, liczWageGabarytowa);
+  // liczWageGabarytowaGt = KROPKA - pwd_Tekst09 trzymamy teraz z kropka (BaseLinker). Przy pierwszym
+  // przebiegu po wdrozeniu przepisze istniejace wartosci z przecinka na kropke (rozjazd -> UPDATE).
+  const dhl = await uzgodnijKolumne(KOLUMNY.waga_gabarytowa, liczWageGabarytowaGt);
   if (dhl.poprawione) {
     audyt.zapisz({
       // 'system:<job>' to UMOWA, nie ozdobnik: po tym prefiksie log odroznia prace automatu
@@ -113,7 +115,9 @@ async function wykonajSpojnoscWagiGabarytowej() {
   if (KOLUMNY.waga_gabarytowa_karton) {
     karton = await uzgodnijKolumne(
       KOLUMNY.waga_gabarytowa_karton,
-      (rozbite) => kartony.liczWageGabarytowaKarton(rozbite)?.waga ?? null
+      // wagaGt (KROPKA) - musi pasowac do formatu zapisanego w GT (BaseLinker), inaczej job
+      // widzialby wieczny rozjazd i pisal w kolko.
+      (rozbite) => kartony.liczWageGabarytowaKarton(rozbite)?.wagaGt ?? null
     );
     if (karton.poprawione) {
       audyt.zapisz({

@@ -16,14 +16,24 @@
 
 const path = require('path');
 const fs = require('fs');
+const { execFile, execFileSync } = require('child_process');
 const { DatabaseSync } = require('node:sqlite');
 const db = require('../db/database');
 const awarie = require('./awarie');
+const czytelne = require('./backup-czytelne');
 
 const DB_PATH = path.join(__dirname, '..', 'db', 'wms.db');
 const BACKUP_DIR = process.env.WMS_BACKUP_DIR || path.join(__dirname, '..', 'db', 'backups');
 const MIRROR_DIR = process.env.WMS_BACKUP_MIRROR || null; // drugie miejsce (opcjonalne)
 const LOG_DIR = path.join(__dirname, '..', 'logs');
+
+// Kopia poza maszyne (DR): dzienna paczka .db + czytelne CSV wypychana rclone JEDNOKIERUNKOWO.
+// Wlaczana OBECNOSCIA WMS_RCLONE_REMOTE (puste = chmura wylaczona, zachowanie backupu bez zmian).
+const CHMURA_DIR = process.env.WMS_CHMURA_DIR || path.join(BACKUP_DIR, 'chmura');
+const RCLONE_REMOTE = process.env.WMS_RCLONE_REMOTE || null;  // np. "b2wms:kaziu-wms/wms"
+const RCLONE_BIN = process.env.WMS_RCLONE_BIN || 'rclone';    // sciezka do rclone.exe albo nazwa w PATH
+const RCLONE_CONFIG = process.env.WMS_RCLONE_CONFIG || null;  // sciezka do rclone.conf (opcjonalnie)
+const TRZYMAJ_CHMURA_DNI = Number(process.env.WMS_CHMURA_TRZYMAJ_DNI) || 14; // lokalnie; chmura trzyma komplet
 
 // Retencja (warstwy)
 const TRZYMAJ_GODZINOWE = 48; // ostatnie ~2 dni, kazda godzina
@@ -127,6 +137,9 @@ function zrobBackup({ etykieta = null, rotuj = true } = {}) {
     // 5. rotacja (tylko dla zwyklych, nie dla etykietowanych)
     if (rotuj && !etykieta) rotujBackupy();
 
+    // 6. kopia poza maszyne (chmura, DR) - raz dziennie; no-op gdy WMS_RCLONE_REMOTE puste
+    if (!etykieta) bundleDzienny(docel);
+
     return { ok: true, plik: docel };
   } catch (e) {
     log('BLAD', `zrobBackup rzucil wyjatek: ${e.message}`);
@@ -205,6 +218,80 @@ function rotujBackupy() {
   if (skasowano) log('INFO', `rotacja: skasowano ${skasowano} starych, zostaje ${trzymaj.size}`);
 }
 
+// --- kopia poza maszyne (chmura, DR) ---
+// Cel czysto AWARYJNY: gdy wszystko padnie, off-site zostaje sie czym ratowac.
+// Raz dziennie: 3 czytelne CSV (services/backup-czytelne) + kopia dziennego .db -> CHMURA_DIR,
+// potem rclone copy JEDNOKIERUNKOWO do WMS_RCLONE_REMOTE. Push NIE kasuje niczego w chmurze,
+// wiec lokalny blad/rotacja nie moga siegnac kopii off-site. Wlaczane obecnoscia WMS_RCLONE_REMOTE.
+
+let ostatniaDataChmury = null; // YYYY-MM-DD ostatniej UDANEJ wysylki (guard 1x/dzien; blad -> retry przy kolejnym backupie)
+
+function argsRclone() {
+  const args = ['copy', CHMURA_DIR, RCLONE_REMOTE, '--transfers', '4'];
+  if (RCLONE_CONFIG) args.push('--config', RCLONE_CONFIG);
+  return args;
+}
+
+// Lokalna rotacja CHMURA_DIR: trzymaj ostatnie N dni. Chmura ma KOMPLET (copy nic nie kasuje zdalnie).
+function rotujChmure() {
+  const RE_DATA = /_(\d{4})-(\d{2})-(\d{2})\.(?:db|csv)$/;
+  let pliki;
+  try { pliki = fs.readdirSync(CHMURA_DIR); } catch { return; }
+  const granica = new Date();
+  granica.setDate(granica.getDate() - TRZYMAJ_CHMURA_DNI);
+  for (const nazwa of pliki) {
+    const m = nazwa.match(RE_DATA);
+    if (!m || new Date(+m[1], +m[2] - 1, +m[3]) >= granica) continue;
+    try { fs.unlinkSync(path.join(CHMURA_DIR, nazwa)); } catch (e) { log('BLAD', `chmura: nie moge skasowac ${nazwa}: ${e.message}`); }
+  }
+}
+
+// Wywolywane po kazdym zwyklym backupie; samo pilnuje "raz dziennie" i "chmura wlaczona".
+function bundleDzienny(zrodloDb) {
+  if (!RCLONE_REMOTE) return; // chmura wylaczona - zachowanie bez zmian
+  const data = znacznikCzasu().slice(0, 10);
+  if (ostatniaDataChmury === data) return; // dzis juz wyslane OK
+  try {
+    fs.mkdirSync(CHMURA_DIR, { recursive: true });
+    // pliki dnia generujemy raz (idempotentnie po restarcie - guard po istnieniu zbiorczego)
+    if (!fs.existsSync(path.join(CHMURA_DIR, `lokalizacje_zbiorczo_${data}.csv`))) {
+      const w = czytelne.generujPliki(db, CHMURA_DIR, data);
+      fs.copyFileSync(zrodloDb, path.join(CHMURA_DIR, `wms_${data}.db`));
+      log('INFO', `chmura: paczka dnia ${data} gotowa (SKU ${w.liczbaSku}, stany ${w.liczbaStanow}, ruchy ${w.liczbaRuchow})`);
+    }
+    rotujChmure();
+    // wysylka asynchroniczna; ostatniaDataChmury ustawiane dopiero po sukcesie -> blad ponawia sie przy kolejnym backupie
+    execFile(RCLONE_BIN, argsRclone(), { timeout: 5 * 60 * 1000 }, (err, stdout, stderr) => {
+      if (err) { log('BLAD', `chmura: rclone copy nie powiodl sie: ${err.message}${stderr ? ` | ${String(stderr).trim().slice(0, 300)}` : ''}`); return; }
+      ostatniaDataChmury = data;
+      log('INFO', `chmura: wyslano paczke ${data} -> ${RCLONE_REMOTE}`);
+    });
+  } catch (e) {
+    log('BLAD', `chmura: bundleDzienny padl: ${e.message}`);
+  }
+}
+
+// Wymusza paczke+wysylke TERAZ, synchronicznie i z wynikiem - do 1. uruchomienia po konfiguracji B2
+// oraz do kwartalnego testu odtwarzalnosci. Swiezy .db (VACUUM INTO) + CSV + rclone copy (czeka).
+function wyslijTeraz() {
+  if (!RCLONE_REMOTE) return { ok: false, powod: 'WMS_RCLONE_REMOTE nieustawione (chmura wylaczona)' };
+  if (!bazaZdrowa()) return { ok: false, powod: 'integrity_check zywej bazy != ok' };
+  const data = znacznikCzasu().slice(0, 10);
+  try {
+    fs.mkdirSync(CHMURA_DIR, { recursive: true });
+    const w = czytelne.generujPliki(db, CHMURA_DIR, data);
+    const dbDocel = path.join(CHMURA_DIR, `wms_${data}.db`);
+    try { fs.unlinkSync(dbDocel); } catch { /* moze nie istniec */ }
+    db.exec(`VACUUM INTO '${dbDocel.replace(/'/g, "''")}'`);
+    rotujChmure();
+    const out = execFileSync(RCLONE_BIN, argsRclone(), { timeout: 5 * 60 * 1000, encoding: 'utf8' });
+    ostatniaDataChmury = data;
+    return { ok: true, data, pliki: w, wyjscie: out };
+  } catch (e) {
+    return { ok: false, powod: `rclone/paczka: ${e.message}`, stderr: e.stderr ? String(e.stderr) : undefined };
+  }
+}
+
 // --- harmonogram ---
 
 let timer = null;
@@ -235,11 +322,11 @@ function start() {
   // backup od razu przy starcie (restart = swieza migawka), potem co godzine
   zrobBackup();
   zaplanujKolejny();
-  log('INFO', `harmonogram: co godzine ${GODZ_PRACY_OD}-${GODZ_PRACY_DO} + nocny ${GODZ_NOCNY}:00; katalog ${BACKUP_DIR}${MIRROR_DIR ? `; mirror ${MIRROR_DIR}` : ''}`);
+  log('INFO', `harmonogram: co godzine ${GODZ_PRACY_OD}-${GODZ_PRACY_DO} + nocny ${GODZ_NOCNY}:00; katalog ${BACKUP_DIR}${MIRROR_DIR ? `; mirror ${MIRROR_DIR}` : ''}${RCLONE_REMOTE ? `; chmura ${RCLONE_REMOTE} (dziennie)` : ''}`);
 }
 
 function stop() {
   if (timer) { clearTimeout(timer); timer = null; }
 }
 
-module.exports = { start, stop, zrobBackup, rotujBackupy, bazaZdrowa, BACKUP_DIR };
+module.exports = { start, stop, zrobBackup, rotujBackupy, bazaZdrowa, wyslijTeraz, BACKUP_DIR, CHMURA_DIR };

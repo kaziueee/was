@@ -826,6 +826,32 @@ function zmianaTekst(przed, po) {
   return q || p || '–';
 }
 
+// Zmiana dla wazenia (atrybuty_zapis). "po" zawiera tez pola WYLICZANE serwerowo (waga
+// gabarytowa, karton_*) - w logu to szum. Pokazujemy tylko pola, ktore czlowiek wpisuje
+// (wymiary, waga), i tylko te, ktore BYLY czescia tego zapisu (klucz obecny w "po") i sie
+// zmienily. Np. z "wymiary:39x22x8, waga:null, ... → wymiary:39x22x8, waga:0,64, karton..."
+// zostaje "waga: — → 0,64". Display-only, wiec porzadkuje tez stare wpisy.
+const ATRYBUTY_ISTOTNE = [['wymiary', 'wymiary'], ['waga', 'waga']];
+function zmianaAtrybuty(przed, po) {
+  let p = {}, q = {};
+  try { p = JSON.parse(przed) || {}; } catch { /* brak/uszkodzony przed */ }
+  try { q = JSON.parse(po) || {}; } catch { /* brak/uszkodzony po */ }
+  const norm = (v) => (v == null || v === '' ? null : v);
+  const czesci = [];
+  for (const [klucz, etykieta] of ATRYBUTY_ISTOTNE) {
+    if (!(klucz in q)) continue;                 // pole nie bylo czescia tego zapisu
+    const pv = norm(p[klucz]), qv = norm(q[klucz]);
+    if (pv === qv) continue;                      // bez zmiany
+    czesci.push(przed == null ? `${etykieta}: ${qv}` : `${etykieta}: ${pv ?? '—'} → ${qv ?? '—'}`);
+  }
+  return czesci.length ? czesci.join(', ') : '–';
+}
+
+// Kolumna "Zmiana": wazenie ma wlasny, odchudzony widok; reszta - generyczny diff k:v.
+function zmianaOpis(r) {
+  return r.akcja === 'atrybuty_zapis' ? zmianaAtrybuty(r.przed, r.po) : zmianaTekst(r.przed, r.po);
+}
+
 // Przycisk "Ponów" dla ruchu pending (przeniesione z dawnej zakladki Ruchy).
 function przyciskPonowRuch(ruchId) {
   const btn = document.createElement('button');
@@ -887,7 +913,7 @@ function wierszLog(r, { zKolumnamiSku }) {
     <td>${r.magazyn ?? '–'}</td>
     <td>${r.lokalizacja ?? '–'}</td>
     <td>${r.ilosc ?? ''}</td>
-    <td class="opis">${zmianaTekst(r.przed, r.po)}</td>
+    <td class="opis">${zmianaOpis(r)}</td>
     <td>${wynik ? badge(wynik) : '–'}</td>
     ${dok}
     <td>${r.uzytkownik ?? '–'}</td>`;

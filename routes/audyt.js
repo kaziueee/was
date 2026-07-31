@@ -11,11 +11,19 @@ router.get('/', (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 300, 1000);
   const offset = Number(req.query.offset) || 0;
 
+  // ?akcja= przyjmuje JEDNA akcje albo LISTE po przecinku. Lista obsluguje filtr "cala sciezka"
+  // na desktopie: jedna pozycja ("Sciezka: Ostatnie sztuki") rozwija sie na komplet akcji tej
+  // sciezki (sprawdzenie/niezgodne/zamkniete/pominiete). Puste czlony odsiewamy.
+  const akcje = akcja ? String(akcja).split(',').map((s) => s.trim()).filter(Boolean) : [];
+
   const warunki = [];
   const param = [];
   if (artykul_gt_id) { warunki.push('a.artykul_gt_id = ?'); param.push(String(artykul_gt_id)); }
   if (uzytkownik) { warunki.push('a.uzytkownik = ?'); param.push(uzytkownik); }
-  if (akcja) { warunki.push('a.akcja = ?'); param.push(akcja); }
+  if (akcje.length) {
+    warunki.push(`a.akcja IN (${akcje.map(() => '?').join(', ')})`);
+    param.push(...akcje);
+  }
 
   // Domyslnie log pokazuje TYLKO prace czlowieka. Wpisy jobow (uzytkownik 'system:<job>')
   // sa szumem przy pytaniu "kto to zmienil" - jest ich duzo, powstaja same i nikt za nie
@@ -26,7 +34,7 @@ router.get('/', (req, res) => {
   // Rozpoznajemy po PREFIKSIE uzytkownika, a nie po liscie akcji: lista wymagalaby dopisania
   // przy kazdym nowym jobie i pierwszy zapomniany zasypywalby widok bez ostrzezenia.
   // NULL zostaje po stronie czlowieka - to akcja bez podanego operatora, nie automat.
-  if (req.query.automaty !== '1' && !akcja) {
+  if (req.query.automaty !== '1' && akcje.length === 0) {
     warunki.push("(a.uzytkownik IS NULL OR a.uzytkownik NOT LIKE 'system:%')");
   }
   if (q) {

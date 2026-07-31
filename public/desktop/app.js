@@ -185,6 +185,16 @@ function pulpitSkokLog() {
   odswiezLog();
 }
 
+// przejscie do Logu z ustawionym filtrem calej sciezki (ta sama wartosc "sciezka:<klucz>",
+// co grupa w dropdownie Logu - zob. SCIEZKI_AUDYT / dodajFiltrSciezek)
+function pulpitSkokLogSciezka(klucz) {
+  const sel = el('log-akcja');
+  if (sel) sel.value = `sciezka:${klucz}`;
+  panele.log.zaladowano = true;
+  location.hash = '#log';
+  odswiezLog();
+}
+
 function renderujPulpitKolejke(d) {
   const cont = el('pulpit-kolejka');
   cont.innerHTML = '';
@@ -289,6 +299,30 @@ function renderujPulpitTrendy(t) {
     podpis: `30d ${t.d30.brk.szt} szt.`, wariant: t.d7.brk.szt > 0 ? 'amber' : 'ok' }));
 }
 
+// Rozbicie aktywnosci po sciezkach obchodu. Backend daje liczniki per akcja (aktywnosc_akcje);
+// tu sumujemy akcje kazdej sciezki wg SCIEZKI_AUDYT (jedno zrodlo z Logiem zmian). Kafel klika
+// sie w Log z filtrem tej sciezki. Kolejnosc kafli = kolejnosc w SCIEZKI_AUDYT.
+function renderujPulpitSciezki(aktywnoscAkcje) {
+  const cont = el('pulpit-sciezki');
+  if (!cont) return;
+  cont.innerHTML = '';
+  const mapa = new Map((aktywnoscAkcje || []).map((a) => [a.akcja, a]));
+  for (const [klucz, grupa] of Object.entries(SCIEZKI_AUDYT)) {
+    let d1 = 0, d7 = 0, d30 = 0;
+    for (const a of grupa.akcje) {
+      const r = mapa.get(a.kod);
+      if (r) { d1 += r.d1; d7 += r.d7; d30 += r.d30; }
+    }
+    cont.appendChild(pulpitKafel({
+      etykieta: grupa.label,
+      wartosc: d7,
+      podpis: `dziś ${d1} · 30d ${d30}`,
+      wariant: d7 > 0 ? 'blue' : 'neutral',
+      onKlik: () => pulpitSkokLogSciezka(klucz),
+    }));
+  }
+}
+
 function renderujPulpitLudzie(ludzie) {
   const tbody = el('pulpit-ludzie-tbody');
   tbody.innerHTML = '';
@@ -340,6 +374,7 @@ async function odswiezPulpit() {
   renderujPulpitKolejke(d);
   renderujPulpitStan(d.zajetosc);
   renderujPulpitTrendy(d.trendy);
+  renderujPulpitSciezki(d.aktywnosc_akcje);
   renderujPulpitLudzie(d.ludzie);
 }
 
@@ -718,6 +753,8 @@ const AKCJA_ETYKIETA = {
   'MM-zewn': 'MM zewn.', Uzupelnienie: 'Uzupełnienie', usuniecie_ruchu: 'Usunięcie ruchu',
   lokalizacja_nowa: 'Nowa lok.', lokalizacja_edycja: 'Edycja lok.', lokalizacja_usuniecie: 'Usunięcie lok.',
   zapas_k4: 'Zapas K4', plan_lok: 'Plan lok.', import_lokalizacji: 'Import lok.',
+  // atrybuty_zapis (wazenie) i pozostale akcje sciezek maja etykiety w SCIEZKI_AUDYT ponizej -
+  // renderowane jako "Sciezka · Krotka" przez etykietaAkcja().
   // Akcje AUTOMATOW (uzytkownik 'system:<job>'). Domyslnie ukryte w logu - widac je po
   // wybraniu "U+A" albo tej konkretnej akcji. Etykieta mowi wprost, ze to job, zeby nikt
   // nie szukal winnego czlowieka.
@@ -727,6 +764,55 @@ const AKCJA_ETYKIETA = {
   karton_dodany: 'Karton dodany', karton_zmieniony: 'Karton zmieniony', karton_usuniety: 'Karton usunięty',
   karton_kolejnosc: 'Kartony — kolejność',
 };
+
+// Sciezki obchodu (menu "Sciezki" na Zebrze + Zwroty) zebrane do Logu zmian. Kazda sciezka to
+// KOMPLET akcji audytu (sprawdzenie/niezgodne/zamkniete/pominiete itd.). Definicja w JEDNYM
+// miejscu buduje oba widoki: pozycje filtra "Sciezka: X" (jeden wybor = caly komplet naraz,
+// rozwijany w odswiezLog i wysylany po przecinku do backendu) oraz etykiete kolumny "Akcja"
+// ("Ostatnie sztuki · Sprawdzenie stanu"). Akcja spoza sciezek leci przez AKCJA_ETYKIETA jak
+// dotad. Dopisanie akcji do sciezki = jeden wpis tutaj (filtr i etykieta ida za tym same).
+const SCIEZKI_AUDYT = {
+  ostatnie_sztuki: { label: 'Ostatnie sztuki', akcje: [
+    { kod: 'sprawdzenie_stanu', krotka: 'Sprawdzenie stanu' },
+    { kod: 'sprawdzenie_niezgodne', krotka: 'Niezgodność stanu' },
+    { kod: 'sprawdzenie_zamkniete', krotka: 'Zamknięcie niezgodności' },
+    { kod: 'sprawdzenie_pominiete', krotka: 'Pominięto' },
+  ] },
+  k4_rezerwacja: { label: 'K4 pełna rezerwacja', akcje: [
+    { kod: 'sprawdzenie_rez', krotka: 'Sprawdzenie stanu' },
+    { kod: 'sprawdzenie_rez_niezgodne', krotka: 'Niezgodność stanu' },
+    { kod: 'sprawdzenie_rez_zamkniete', krotka: 'Zamknięcie niezgodności' },
+    { kod: 'sprawdzenie_rez_pominiete', krotka: 'Pominięto' },
+  ] },
+  czysc_zera: { label: 'Czyść zera', akcje: [
+    { kod: 'zero_zwolnione', krotka: 'Zwolnienie slotu' },
+    { kod: 'zero_niezgodne', krotka: 'Niezgodność (coś leży)' },
+    { kod: 'zero_zamkniete', krotka: 'Zamknięcie niezgodności' },
+    { kod: 'zero_pominiete', krotka: 'Pominięto' },
+  ] },
+  wazenie: { label: 'Ważenie', akcje: [
+    { kod: 'atrybuty_zapis', krotka: 'Zapis parametrów' },
+    { kod: 'parametry_pominiete', krotka: 'Pominięto' },
+  ] },
+  zwroty: { label: 'Zwroty', akcje: [
+    { kod: 'wozek_utworzony', krotka: 'Wózek utworzony' },
+    { kod: 'wozek_dolozono', krotka: 'Dołożono na wózek' },
+    { kod: 'wozek_zdjeto', krotka: 'Zdjęto z wózka' },
+    { kod: 'wozek_zamkniety', krotka: 'Wózek zamknięty' },
+    { kod: 'zwrot_nieznaleziony', krotka: 'Nie znaleziono na wózku' },
+    { kod: 'zwrot_brak_zamkniety', krotka: 'Zamknięto (brak na wózku)' },
+  ] },
+};
+// kod akcji -> {sciezka, krotka} - do etykiety wiersza. Zbudowane z mapy wyzej (jedno zrodlo).
+const SCIEZKA_AKCJI = {};
+for (const [klucz, grupa] of Object.entries(SCIEZKI_AUDYT))
+  for (const a of grupa.akcje) SCIEZKA_AKCJI[a.kod] = { sciezka: grupa.label, krotka: a.krotka, klucz };
+
+// Etykieta kolumny "Akcja": akcja ze sciezki -> "Sciezka · Krotka", inaczej AKCJA_ETYKIETA.
+function etykietaAkcja(kod) {
+  const s = SCIEZKA_AKCJI[kod];
+  return s ? `${s.sciezka} · ${s.krotka}` : (AKCJA_ETYKIETA[kod] ?? kod);
+}
 
 // "przed"/"po" sa JSON-em (lub null) - kompaktowy zapis "k:v, k:v"
 function jsonKomp(s) {
@@ -796,7 +882,7 @@ function wierszLog(r, { zKolumnamiSku }) {
   const wynik = r.ruch_id != null ? (r.ruch_status ?? 'anulowany') : r.wynik;
   tr.innerHTML = `
     <td>${formatDatetime(r.czas)}</td>
-    <td>${AKCJA_ETYKIETA[r.akcja] ?? r.akcja}</td>
+    <td>${etykietaAkcja(r.akcja)}</td>
     ${sku}
     <td>${r.magazyn ?? '–'}</td>
     <td>${r.lokalizacja ?? '–'}</td>
@@ -849,8 +935,13 @@ async function odswiezLog() {
   if (uzytkownik) params.set('uzytkownik', uzytkownik);
   // '__ua' to nie akcja, tylko przelacznik zakresu: dolacz prace automatow (jobow) do pracy
   // czlowieka. Domyslnie backend je chowa - zob. routes/audyt.js.
+  // 'sciezka:<klucz>' to nie akcja, tylko cala sciezka: rozwijamy ja na komplet akcji z
+  // SCIEZKI_AUDYT i wysylamy po przecinku (backend przyjmuje liste w ?akcja=).
   if (akcja === '__ua') params.set('automaty', '1');
-  else if (akcja) params.set('akcja', akcja);
+  else if (akcja.startsWith('sciezka:')) {
+    const grupa = SCIEZKI_AUDYT[akcja.slice('sciezka:'.length)];
+    if (grupa) params.set('akcja', grupa.akcje.map((a) => a.kod).join(','));
+  } else if (akcja) params.set('akcja', akcja);
   try {
     const { wiersze, total } = await api(`/api/audyt?${params.toString()}`);
     const tbody = el('log-tbody');
@@ -867,6 +958,23 @@ el('btn-log-odswiez').addEventListener('click', odswiezLog);
 el('log-akcja').addEventListener('change', odswiezLog);
 el('log-uzytkownik').addEventListener('change', odswiezLog);
 el('log-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') odswiezLog(); });
+
+// Doklada do filtra grupe "Sciezki (cala sciezka)" - jedna pozycja = caly komplet akcji danej
+// sciezki (wartosc "sciezka:<klucz>", rozwijana w odswiezLog). Budowane z SCIEZKI_AUDYT, wiec
+// nowa sciezka pojawia sie w filtrze sama. Wstawiane przed pierwsza statyczna grupe opcji.
+(function dodajFiltrSciezek() {
+  const sel = el('log-akcja');
+  if (!sel) return;
+  const grupa = document.createElement('optgroup');
+  grupa.label = 'Ścieżki (cała ścieżka)';
+  for (const [klucz, g] of Object.entries(SCIEZKI_AUDYT)) {
+    const o = document.createElement('option');
+    o.value = `sciezka:${klucz}`;
+    o.textContent = g.label;
+    grupa.appendChild(o);
+  }
+  sel.insertBefore(grupa, sel.querySelector('optgroup'));
+})();
 
 // historia pojedynczego SKU (zakladka "Historia" w modalu produktu). Lazy-load
 // przy pierwszym wejsciu na zakladke (zob. modalPokazTab).

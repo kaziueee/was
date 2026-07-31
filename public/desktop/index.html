@@ -82,6 +82,10 @@
       <h3 class="pulpit-tytul pulpit-admin">Trendy</h3>
       <div id="pulpit-trendy" class="pulpit-kafle pulpit-admin"></div>
 
+      <!-- Aktywność wg ścieżek obchodu (tylko admin); kafel -> Log z filtrem tej ścieżki -->
+      <h3 class="pulpit-tytul pulpit-admin">Aktywność wg ścieżek (7 dni)</h3>
+      <div id="pulpit-sciezki" class="pulpit-kafle pulpit-admin"></div>
+
       <!-- Ludzie: ranking (tylko admin) -->
       <h3 class="pulpit-tytul pulpit-admin">Aktywność magazynierów</h3>
       <div class="tabela-wrapper pulpit-admin">
@@ -600,19 +604,24 @@
           <select id="log-akcja">
             <option value="">Wszystkie akcje (użytkownik)</option>
             <option value="__ua">Wszystkie + automaty (U+A)</option>
-            <option value="MM">MM</option>
-            <option value="LOK">Zmiana lokalizacji</option>
-            <option value="przypisanie">Przypisanie</option>
-            <option value="przyjecie">Przyjęcie</option>
-            <option value="MM-zewn">MM zewnętrzny</option>
-            <option value="Uzupelnienie">Uzupełnienie</option>
-            <option value="usuniecie_ruchu">Usunięcie ruchu</option>
-            <option value="lokalizacja_nowa">Nowa lokalizacja</option>
-            <option value="lokalizacja_edycja">Edycja lokalizacji</option>
-            <option value="lokalizacja_usuniecie">Usunięcie lokalizacji</option>
-            <option value="zapas_k4">Zapas K4</option>
-            <option value="korekta_auto">Korekta auto (job rozjazdów)</option>
-            <option value="waga_gab_przeliczona">Waga gab. przeliczona (job)</option>
+            <!-- Grupa „Ścieżki (cała ścieżka)" doklejana z JS (SCIEZKI_AUDYT) — jedno źródło -->
+            <optgroup label="Ruchy i lokalizacje">
+              <option value="MM">MM</option>
+              <option value="LOK">Zmiana lokalizacji</option>
+              <option value="przypisanie">Przypisanie</option>
+              <option value="przyjecie">Przyjęcie</option>
+              <option value="MM-zewn">MM zewnętrzny</option>
+              <option value="Uzupelnienie">Uzupełnienie</option>
+              <option value="usuniecie_ruchu">Usunięcie ruchu</option>
+              <option value="lokalizacja_nowa">Nowa lokalizacja</option>
+              <option value="lokalizacja_edycja">Edycja lokalizacji</option>
+              <option value="lokalizacja_usuniecie">Usunięcie lokalizacji</option>
+              <option value="zapas_k4">Zapas K4</option>
+            </optgroup>
+            <optgroup label="Automaty (joby)">
+              <option value="korekta_auto">Korekta auto (job rozjazdów)</option>
+              <option value="waga_gab_przeliczona">Waga gab. przeliczona (job)</option>
+            </optgroup>
           </select>
           <select id="log-uzytkownik" title="Filtruj po użytkowniku (kolumna „Kto")">
             <option value="">Wszyscy użytkownicy</option>

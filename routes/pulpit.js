@@ -149,6 +149,23 @@ function ludzie() {
   ).all(...AKCJE_MM, ...AKCJE_LOK);
 }
 
+// --- aktywnosc per AKCJA (okna 1/7/30 dni) do rozbicia po sciezkach obchodu ---
+// Backend liczy GENERYCZNIE, per akcja - bez wiedzy o sciezkach. Grupowanie akcji w sciezki
+// (Ostatnie sztuki / Wazenie / Zwroty ...) robi front wg SCIEZKI_AUDYT, zeby definicja sciezek
+// zostala w JEDNYM miejscu (ta sama mapa buduje filtr i etykiety Logu zmian). Akcje spoza
+// sciezek front po prostu zignoruje. WHERE ogranicza do 30 dni, wiec GROUP BY jest tani.
+function aktywnoscAkcje() {
+  return db.prepare(
+    `SELECT akcja,
+       SUM(CASE WHEN czas >= datetime('now','-1 day')  THEN 1 ELSE 0 END) AS d1,
+       SUM(CASE WHEN czas >= datetime('now','-7 days') THEN 1 ELSE 0 END) AS d7,
+       COUNT(*) AS d30
+     FROM audyt
+     WHERE czas >= datetime('now','-30 days')
+     GROUP BY akcja`
+  ).all();
+}
+
 // --- statusy zgodnosci ze snapshotu (moze byc null) ---
 function statusy() {
   const snap = snapshot.odczytaj('statusy_zgodnosci');
@@ -176,6 +193,7 @@ router.get('/', (req, res, next) => {
       zaleglosci: zaleglosci(),
       trendy: trendy(),
       ludzie: ludzie(),
+      aktywnosc_akcje: aktywnoscAkcje(),
       statusy: statusy(),
       kafle: kafle(),
       teraz: new Date().toISOString(),

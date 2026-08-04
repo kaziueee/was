@@ -194,7 +194,7 @@
         ? sciezka.tekstPusto
         : (pominiete === 0
           ? `Sprawdzono ${sprawdzone} ${odmianaPozycji(sprawdzone)}. 🎉`
-          : `Koniec listy — sprawdzono ${sprawdzone} z ${lista.length}, pominięto ${pominiete}. Pominięte zostają na liście — przy następnym obchodzie zobaczysz je na jej końcu.`);
+          : `Koniec listy — sprawdzono ${sprawdzone} z ${lista.length}, pominięto ${pominiete}. Pominięte zostają na liście — przy następnym obchodzie będą na swoim miejscu.`);
       el('sciezki-pusto').classList.remove('hidden');
       return;
     }
@@ -226,10 +226,11 @@
   }
 
   // "Pomin" - nie teraz (zastawiona lokalizacja, brak czasu). Pozycja NIE wypada z obchodu:
-  // wedruje na KONIEC listy (zyczenie usera 2026-08-04) - zablokowana teraz polka bywa wolna
-  // za kwadrans, a znikniecie zadania oznaczalo, ze nikt sie o nim nie dowie. Backend robi to
-  // samo miedzy obchodami (grupa "pominiete" w sorcie). Bez skanu: magazynier wlasnie mowi,
-  // ze do towaru nie dotarl.
+  // wedruje na KONIEC BIEZACEJ listy - zablokowana teraz polka bywa wolna za kwadrans, a
+  // znikniecie zadania oznaczalo, ze nikt sie o nim nie dowie. To zachowanie EKRANU; backend
+  // o pominieciach nie wie nic, wiec przy nastepnym obchodzie pozycja stoi na swoim miejscu
+  // wg lokalizacji (decyzja usera 2026-08-04). Bez skanu: magazynier wlasnie mowi, ze do
+  // towaru nie dotarl.
   //
   // Drugie pominiecie tej samej pozycji juz jej NIE cofa na koniec - inaczej "pomin wszystko"
   // krecilby liste w kolko i obchod nigdy by sie nie skonczyl. Wtedy zostaje na liscie do

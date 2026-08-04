@@ -51,17 +51,14 @@ const RAZEM_MAX = 5;
 const LIMIT_BRAK_PARAMETROW = 500;
 // Ile dni po sprawdzeniu pary (artykul+lokalizacja) wypada z listy.
 const DNI_POMIN_SPRAWDZONE = 180;
-// Ile dni pominiecie ("Pomin" na obchodzie) spycha pare na KONIEC listy. Pominiecie to
-// "nie teraz" (zastawiona lokalizacja, brak czasu), a nie "sprawdzone", wiec zadanie NIE
-// moze wypasc ze spisu - inaczej nikt sie nie dowie, ze wciaz czeka (zyczenie usera
-// 2026-08-04).
+// POMINIECIE NIE MA WLASNEGO OKNA (decyzja usera 2026-08-04). "Pomin" znaczy tylko "nie teraz"
+// (zastawiona lokalizacja, brak czasu) i zostawia sam wpis w audycie - zadnego wykluczenia ani
+// spychania. Pozycja zostaje na liscie i przy nastepnym obchodzie stoi na SWOIM miejscu wg
+// lokalizacji, chyba ze lapie ja inna regula (p/u, strefa, pelna rezerwacja, policzone niedawno).
+// Historia: najpierw pominiecie chowalo pare na 7 dni (zadanie znikalo, a po tygodniu wracalo
+// jakby nigdy nic), potem spychalo ja na koniec spisu - oba za duzo. Druga szanse w tym samym
+// obchodzie daje FRONT, przerzucajac pozycje na koniec biezacej listy (public/zebra/sciezki.js).
 //
-// Okno rowne DNI_POMIN_SPRAWDZONE, i to celowo: skoro pozycja wciaz jest na liscie, to
-// znaczy, ze NIKT jej nie policzyl (policzone wypadaja na 180 dni). Krotsze okno (bylo 7 dni,
-// gdy pominiete znikaly z listy) oznaczaloby, ze po tygodniu pominieta pozycja wraca przed
-// wszystko, czego nikt jeszcze nie ruszal - a wlasnie to bylo zgloszeniem ("pominiete wracaja
-// na poczatek kolejki"). Pominiete siedzi wiec na koncu tak dlugo, az ktos je policzy.
-const DNI_KONIEC_POMINIETE = DNI_POMIN_SPRAWDZONE;
 // Ile dni po przyjeciu z magazynu zewnetrznego (MAG/LS) pomijamy SKU - stan jest swiezy
 // i znany (ktos swiadomie dolozyl kilka szt.), nie ma czego weryfikowac.
 const DNI_POMIN_PRZYJECIE = 30;
@@ -126,7 +123,7 @@ async function zapiszSprawdzenie(req, res, akcjaZgodne, akcjaNiezgodne) {
 // brak czasu). To NIE jest wynik liczenia, wiec:
 //  - nie wchodzi do okna MAX(id) w raportNiezgodnosci: pominiecie po niezgodnosci NIE moze
 //    jej domykac ("nie chcialo mi sie" != "zalatwione"),
-//  - NIE usuwa pozycji z obchodu - przesuwa ja na jego koniec (DNI_KONIEC_POMINIETE).
+//  - NIE rusza listy ani jej kolejnosci: pozycja zostaje tam, gdzie stoi wg lokalizacji.
 // Skan nie jest wymagany - magazynier wlasnie mowi, ze do towaru nie dotarl.
 function zapiszPominiecie(req, res, akcja) {
   const { artykul_gt_id, artykul_symbol, lokalizacja_kod } = req.body ?? {};
@@ -143,24 +140,6 @@ function zapiszPominiecie(req, res, akcja) {
     wynik: 'pominiete',
   });
   res.status(201).json({ pominiete: true });
-}
-
-// Zbior par (artykul|lokalizacja) pominietych w oknie DNI_KONIEC_POMINIETE - do SPYCHANIA
-// na koniec listy (nie do wykluczenia: pominiete zostaje zadaniem, zob. DNI_KONIEC_POMINIETE).
-function paryPominiete(akcja) {
-  return new Set(db.prepare(
-    `SELECT DISTINCT artykul_gt_id, lokalizacja FROM audyt
-     WHERE akcja = ? AND czas >= datetime('now', ?)`
-  ).all(akcja, `-${DNI_KONIEC_POMINIETE} days`).map((r) => `${r.artykul_gt_id}|${r.lokalizacja}`));
-}
-
-// Pominiete NIE wypadaja z obchodu - wracaja na jego KONIEC. Stabilne: w obu kubelkach
-// zostaje kolejnosc wejsciowa (czyli ta sama, po lokalizacji). Dla "Ostatnich sztuk" tego
-// nie uzywamy - tam pominiecie jest jedna z GRUP sortu (services/kolejnosc-obchodu.js),
-// bo ta sciezka ma wiecej niz jedno kryterium "na koniec".
-function naKoniecPominiete(pozycje, pominiete) {
-  const jestPominiete = (t) => pominiete.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`);
-  return [...pozycje.filter((t) => !jestPominiete(t)), ...pozycje.filter(jestPominiete)];
 }
 
 // Wspolny raport otwartych niezgodnosci: pary (artykul+lokalizacja), dla ktorych NAJNOWSZE
@@ -235,9 +214,9 @@ function zamknijNiezgodnosc(req, res, akcjaZamkniecia) {
 // GET /api/sciezki/ostatnie-sztuki - lista przystankow (towary K4 ze stanem 1..5, z lokalizacja
 // K4). Kolejnosc: domyslnie po kodzie lokalizacji (kolejnosc zbierania), ale trzy grupy ida na
 // KONIEC obchodu (zob. services/kolejnosc-obchodu.js): egzemplarze poprezentacyjne/uszkodzone
-// (symbol na p/u), sztuki czekajace w strefie, pozycje z pelna rezerwacja K4 i pominiete
-// ("nie teraz" - te ZOSTAJA na liscie, tylko na koncu). Stan liczony wg reguly "WMS jest
-// prawda tam gdzie istnieje, inaczej GT". Wyklucza:
+// (symbol na p/u), sztuki czekajace w strefie i pozycje z pelna rezerwacja K4. Pominiecie
+// NIE jest zadna z nich - zostawia sam wpis w audycie, pozycja stoi tam, gdzie stala.
+// Stan liczony wg reguly "WMS jest prawda tam gdzie istnieje, inaczej GT". Wyklucza:
 //  - pary (artykul+lokalizacja) sprawdzone w ciagu DNI_POMIN_SPRAWDZONE dni,
 //  - SKU z przyjeciem z zewnetrznego w ciagu DNI_POMIN_PRZYJECIE dni.
 router.get('/ostatnie-sztuki', async (req, res, next) => {
@@ -315,9 +294,8 @@ router.get('/ostatnie-sztuki', async (req, res, next) => {
      WHERE mag_zrodlo_zewnetrzny IS NOT NULL AND data_ruchu >= datetime('now', ?)`
   ).all(`-${DNI_POMIN_PRZYJECIE} days`).map((r) => r.artykul_gt_id));
 
-  // Pominiete NIE sa wykluczeniem - ida do KOLEJNOSCI (grupa tuz przed policzonymi niedawno).
-  const pominietePary = paryPominiete('sprawdzenie_pominiete');
-
+  // Pominiec NIE czytamy w ogole: nie wykluczaja pozycji ani nie zmieniaja jej miejsca
+  // (zob. komentarz przy DNI_POMIN_PRZYJECIE wyzej). Zostaja tylko sladem w audycie.
   const przefiltrowane = kandydaci
     .filter((t) => !sprawdzone.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`) && !przyjete.has(t.artykul_gt_id));
 
@@ -334,11 +312,10 @@ router.get('/ostatnie-sztuki', async (req, res, next) => {
     oznaczWariantyPU(przefiltrowane.map((p) => p.symbol)).catch(() => new Set()),
   ]);
 
-  // Kolejnosc: grupa (zwykle < p/u < strefa < pelna rezerwacja < pominiete < policzone-niedawno),
-  // potem kod lokalizacji (kolejnosc zbierania), potem symbol. sprawdzoneSku spycha na sam koniec
-  // SKU policzone niedawno, ktore wrocilo po przypisaniu lokalizacji; pominietePary - przystanki,
-  // przy ktorych ktos powiedzial "nie teraz" (zostaja zadaniem, tylko na koncu).
-  pozycje.sort((a, b) => porownajObchod(a, b, { wariantyPU, sprawdzoneSku, pominietePary }));
+  // Kolejnosc: grupa (zwykle < p/u < strefa < pelna rezerwacja < policzone-niedawno), potem kod
+  // lokalizacji (kolejnosc zbierania), potem symbol. sprawdzoneSku spycha na sam koniec SKU
+  // policzone niedawno, ktore wrocilo po przypisaniu lokalizacji.
+  pozycje.sort((a, b) => porownajObchod(a, b, { wariantyPU, sprawdzoneSku }));
 
   res.json({ pozycje, razem: pozycje.length });
 });
@@ -382,14 +359,12 @@ router.get('/k4-rezerwacja', async (req, res) => {
        AND czas >= datetime('now', ?)`
   ).all(`-${DNI_POMIN_SPRAWDZONE} days`).map((r) => `${r.artykul_gt_id}|${r.lokalizacja}`));
 
-  const pominiete = paryPominiete('sprawdzenie_rez_pominiete');
-
-  const pozycje = naKoniecPominiete(gtRows
+  const pozycje = gtRows
     .map((g) => ({ artykul_gt_id: g.artykul_gt_id, symbol: g.symbol, nazwa: g.nazwa,
       ean: g.ean, lokalizacja_kod: g.lokalizacja_kod, stan: g.stan_k4, rezerwacja: g.rez_k4, zrodlo: 'GT' }))
     .filter((t) => !sprawdzone.has(`${t.artykul_gt_id}|${t.lokalizacja_kod}`))
     .sort((a, b) => (a.lokalizacja_kod || '').localeCompare(b.lokalizacja_kod || '')
-      || (a.symbol || '').localeCompare(b.symbol || '')), pominiete);
+      || (a.symbol || '').localeCompare(b.symbol || ''));
 
   res.json({ pozycje, razem: pozycje.length });
 });
@@ -453,8 +428,6 @@ router.get('/czysc-zera', async (req, res) => {
        AND czas >= datetime('now', ?)`
   ).all(`-${DNI_POMIN_SPRAWDZONE} days`).map((r) => `${r.artykul_gt_id}|${r.lokalizacja}`));
 
-  const pominiete = paryPominiete('zero_pominiete');
-
   const pozycje = wmsRows
     .map((w) => {
       const sg = stany.get(String(w.artykul_gt_id)) || {};
@@ -467,7 +440,7 @@ router.get('/czysc-zera', async (req, res) => {
     .sort((a, b) => (a.lokalizacja_kod || '').localeCompare(b.lokalizacja_kod || '')
       || (a.symbol || '').localeCompare(b.symbol || ''));
 
-  res.json({ pozycje: naKoniecPominiete(pozycje, pominiete), razem: pozycje.length });
+  res.json({ pozycje, razem: pozycje.length });
 });
 
 // POST /api/sciezki/czysc-zera/zwolnienie - potwierdzenie "pusto" na obchodzie.
@@ -599,7 +572,6 @@ router.get('/brak-parametrow', async (req, res) => {
     if (!biezaca || r.magazyn === 'K4') lokalizacje.set(r.artykul_gt_id, r.kod);
   }
 
-  const pominiete = paryPominiete('parametry_pominiete');
   const pozycje = kandydaci
     // Adres: WMS ma pierwszenstwo (jest masterem lokalizacji), a gdy danego SKU nie zna -
     // kopia z pol wlasnych GT. Bez tego fallbacku obchod bylby prawie bezadresowy: WMS
@@ -615,10 +587,7 @@ router.get('/brak-parametrow', async (req, res) => {
       return a.lokalizacja_kod.localeCompare(b.lokalizacja_kod);
     });
 
-  // Pominiete na koniec (nie wypadaja z listy). Klucz sklejany DOKLADNIE tak jak w
-  // paryPominiete (`${id}|${lokalizacja}`), lacznie z tym, ze null daje "null" - inaczej
-  // pominiecia towarow bez adresu K4 nigdy by sie nie dopasowaly.
-  res.json({ pozycje: naKoniecPominiete(pozycje, pominiete), licznik: pozycje.length });
+  res.json({ pozycje, licznik: pozycje.length });
 });
 
 // Wlasny handler pominiecia, nie wspolny zapiszPominiecie: tam lokalizacja_kod jest

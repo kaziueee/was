@@ -7,8 +7,9 @@ const test = require('node:test');
 const assert = require('node:assert');
 
 const {
-  bazySymboluWariantu, grupaObchodu, porownajObchod,
-  GRUPA_ZWYKLA, GRUPA_WARIANT_PU, GRUPA_STREFA, GRUPA_PELNA_REZ, GRUPA_POLICZONE_NIEDAWNO,
+  bazySymboluWariantu, grupaObchodu, porownajObchod, czyBiuro,
+  GRUPA_ZWYKLA, GRUPA_BIURO, GRUPA_WARIANT_PU, GRUPA_STREFA, GRUPA_PELNA_REZ,
+  GRUPA_POLICZONE_NIEDAWNO,
 } = require('../services/kolejnosc-obchodu');
 
 // --- bazySymboluWariantu: kandydaci na symbol bazowy dla wariantu p/u ---
@@ -45,15 +46,29 @@ test('zwykla pozycja (nie p/u, bez strefy, bez pelnej rez) = grupa 0', () => {
   assert.equal(grupaObchodu(poz({}), {}), GRUPA_ZWYKLA);
 });
 
-test('wariant p/u = grupa 1 (gdy nie ma silniejszej cechy)', () => {
+test('wariant p/u = grupa 2 (gdy nie ma silniejszej cechy)', () => {
   assert.equal(grupaObchodu(poz({}), { jestWariantemPU: true }), GRUPA_WARIANT_PU);
 });
 
-test('sztuki w strefie = grupa 2', () => {
+test('biuro = grupa 1 - za zwyklymi polkami, ale przed p/u', () => {
+  // Kody biura sortuja sie po literach przed A1, wiec bez tej grupy obchod zaczynal sie
+  // od wycieczki do biura (zyczenie usera 2026-08-04).
+  for (const kod of ['biuro', 'BIURO', 'M2-BIURKO', 'RB/BIURO']) {
+    assert.equal(grupaObchodu(poz({ lokalizacja_kod: kod }), {}), GRUPA_BIURO, kod);
+    assert.ok(czyBiuro(kod), kod);
+  }
+  assert.equal(grupaObchodu(poz({ lokalizacja_kod: 'A1-P1' }), {}), GRUPA_ZWYKLA);
+  // kod z siatki regalow nigdy nie udaje biura
+  for (const kod of ['B11', 'M2-B27-P4', 'L3-P3', 'RB']) assert.equal(czyBiuro(kod), false, kod);
+  // dalsza cecha wygrywa: p/u lezace w biurze idzie do p/u
+  assert.equal(grupaObchodu(poz({ lokalizacja_kod: 'biuro' }), { jestWariantemPU: true }), GRUPA_WARIANT_PU);
+});
+
+test('sztuki w strefie = grupa 3', () => {
   assert.equal(grupaObchodu(poz({ w_strefach: 2 }), {}), GRUPA_STREFA);
 });
 
-test('caly stan K4 zarezerwowany = grupa 3', () => {
+test('caly stan K4 zarezerwowany = grupa 4', () => {
   assert.equal(grupaObchodu(poz({ stan: 3, rezerwacja: 3 }), {}), GRUPA_PELNA_REZ);
   assert.equal(grupaObchodu(poz({ stan: 2, rezerwacja: 5 }), {}), GRUPA_PELNA_REZ);
 });
@@ -74,7 +89,7 @@ test('pominiecie NIE jest cecha kolejnosci - pozycja zostaje w swojej grupie', (
   assert.equal(grupaObchodu(poz({ w_strefach: 2 }), { pominieteNiedawno: true }), GRUPA_STREFA);
 });
 
-test('policzone niedawno = grupa 4, bije KAZDA inna ceche', () => {
+test('policzone niedawno = grupa 5, bije KAZDA inna ceche', () => {
   assert.equal(grupaObchodu(poz({}), { sprawdzoneNiedawno: true }), GRUPA_POLICZONE_NIEDAWNO);
   // nawet gdy pozycja jest jednoczesnie p/u, w strefie i w pelni zarezerwowana
   assert.equal(
@@ -92,19 +107,21 @@ test('priorytet cech: najdalsza wygrywa (policzone-niedawno > rez > strefa > p/u
 
 // --- porownajObchod: pelny komparator ---
 
-test('grupy ida w kolejnosci zwykle < p/u < strefa < pelna rez < policzone-niedawno, reszta po lokalizacji', () => {
+test('grupy ida w kolejnosci zwykle < biuro < p/u < strefa < pelna rez < policzone-niedawno, reszta po lokalizacji', () => {
   const ctx = { wariantyPU: new Set(['WAR-P']), sprawdzoneSku: new Set(['9']) };
   const lista = [
-    { artykul_gt_id: '1', symbol: 'REZ', lokalizacja_kod: 'M2-A1-P1', stan: 2, rezerwacja: 2, w_strefach: 0 }, // grupa 3
+    { artykul_gt_id: '1', symbol: 'REZ', lokalizacja_kod: 'M2-A1-P1', stan: 2, rezerwacja: 2, w_strefach: 0 }, // grupa 4
     { artykul_gt_id: '2', symbol: 'ZWY-B', lokalizacja_kod: 'M2-B2-P1', stan: 3, rezerwacja: 0, w_strefach: 0 }, // grupa 0
-    { artykul_gt_id: '3', symbol: 'STR', lokalizacja_kod: 'M2-A2-P1', stan: 3, rezerwacja: 0, w_strefach: 1 }, // grupa 2
-    { artykul_gt_id: '4', symbol: 'WAR-P', lokalizacja_kod: 'M2-Z9-P1', stan: 3, rezerwacja: 0, w_strefach: 0 }, // grupa 1
+    { artykul_gt_id: '3', symbol: 'STR', lokalizacja_kod: 'M2-A2-P1', stan: 3, rezerwacja: 0, w_strefach: 1 }, // grupa 3
+    { artykul_gt_id: '4', symbol: 'WAR-P', lokalizacja_kod: 'M2-Z9-P1', stan: 3, rezerwacja: 0, w_strefach: 0 }, // grupa 2
     { artykul_gt_id: '5', symbol: 'ZWY-A', lokalizacja_kod: 'M2-A1-P1', stan: 3, rezerwacja: 0, w_strefach: 0 }, // grupa 0
+    // biuro - kod sortuje sie przed A1, ale ma stac za regalami (grupa 1)
+    { artykul_gt_id: '6', symbol: 'BIURKO', lokalizacja_kod: 'biuro', stan: 3, rezerwacja: 0, w_strefach: 0 },
     // policzone niedawno (SKU 9) - mimo lokalizacji A0 (najwczesniejszej) idzie na SAM koniec
-    { artykul_gt_id: '9', symbol: 'POLICZ', lokalizacja_kod: 'M2-A0-P1', stan: 3, rezerwacja: 0, w_strefach: 0 }, // grupa 4
+    { artykul_gt_id: '9', symbol: 'POLICZ', lokalizacja_kod: 'M2-A0-P1', stan: 3, rezerwacja: 0, w_strefach: 0 }, // grupa 5
   ];
   const posortowane = [...lista].sort((a, b) => porownajObchod(a, b, ctx)).map((p) => p.symbol);
-  assert.deepEqual(posortowane, ['ZWY-A', 'ZWY-B', 'WAR-P', 'STR', 'REZ', 'POLICZ']);
+  assert.deepEqual(posortowane, ['ZWY-A', 'ZWY-B', 'BIURKO', 'WAR-P', 'STR', 'REZ', 'POLICZ']);
 });
 
 test('policzone-niedawno nie wyprzedza nieliczonych mimo najwczesniejszej lokalizacji', () => {

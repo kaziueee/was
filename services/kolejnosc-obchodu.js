@@ -4,12 +4,20 @@
 // (jak adnotacja-stref.js / rozbij-stan-k4). Domyslnie obchod idzie po kodzie lokalizacji
 // (kolejnosc zbierania), ale kilka rodzajow pozycji spychamy na KONIEC, bo kazdy wymaga innej
 // uwagi niz zwykle liczenie pelnej polki:
-//   1. egzemplarz poprezentacyjny / uszkodzony (symbol na 'p'/'u' + istnieje baza w GT),
-//   2. czesc stanu czeka w strefie (nierozlozona dostawa/zwrot - liczenie samej polki mniej pewne),
-//   3. caly stan K4 zarezerwowany (nic z polki nie ruszysz - najnizszy priorytet weryfikacji),
-//   4. SKU policzone niedawno na obchodzie, ktore WROCILO na liste po przypisaniu lokalizacji.
-// Grupy rosnaco = coraz dalej na koniec: zwykle < p/u < strefa < pelna rez < policzone-niedawno.
-// Kolejnosc p/u/strefa/rez wg zyczenia usera (2026-07-24): p/u PRZED strefami i pelna rezerwacja.
+//   1. towar lezacy w BIURZE, nie na hali (lokalizacja "biuro" / "M2-BIURKO"),
+//   2. egzemplarz poprezentacyjny / uszkodzony (symbol na 'p'/'u' + istnieje baza w GT),
+//   3. czesc stanu czeka w strefie (nierozlozona dostawa/zwrot - liczenie samej polki mniej pewne),
+//   4. caly stan K4 zarezerwowany (nic z polki nie ruszysz - najnizszy priorytet weryfikacji),
+//   5. SKU policzone niedawno na obchodzie, ktore WROCILO na liste po przypisaniu lokalizacji.
+// Grupy rosnaco = coraz dalej na koniec:
+//   zwykle < biuro < p/u < strefa < pelna rez < policzone-niedawno.
+// Kolejnosc p/u/strefa/rez wg zyczenia usera (2026-07-24): p/u PRZED strefami i pelna rezerwacja;
+// biuro PRZED p/u (2026-08-04).
+//
+// Grupa "biuro" (zyczenie usera 2026-08-04): to nie jest przystanek na trasie obchodu - kody
+// "biuro"/"BIURO"/"M2-BIURKO" sortuja sie po literach na sam POCZATEK listy (przed A1), przez
+// co obchod zaczynal sie od wycieczki do biura zamiast od pierwszego regalu. Towar tam lezacy
+// trzeba policzyc, ale przy okazji, na koncu.
 //
 // POMINIECIE NIE JEST TU ZADNA GRUPA (decyzja usera 2026-08-04). "Pomin" znaczy tylko "nie
 // teraz" - pozycja zostaje na liscie i przy nastepnym obchodzie stoi na SWOIM miejscu wg
@@ -43,12 +51,19 @@ function bazySymboluWariantu(symbol) {
   return bazy.filter(Boolean);
 }
 
-// Numery grup (0 = najpierw, 4 = na sam koniec).
+// Numery grup (0 = najpierw, 5 = na sam koniec).
 const GRUPA_ZWYKLA = 0;
-const GRUPA_WARIANT_PU = 1;
-const GRUPA_STREFA = 2;
-const GRUPA_PELNA_REZ = 3;
-const GRUPA_POLICZONE_NIEDAWNO = 4;
+const GRUPA_BIURO = 1;
+const GRUPA_WARIANT_PU = 2;
+const GRUPA_STREFA = 3;
+const GRUPA_PELNA_REZ = 4;
+const GRUPA_POLICZONE_NIEDAWNO = 5;
+
+// Czy kod lokalizacji wskazuje BIURO, a nie regal na hali. Dopasowanie po fragmencie "BIUR",
+// bo to samo miejsce jest w danych zapisane roznie ("biuro", "BIURO", "M2-BIURKO", "RB/BIURO")
+// - czesc kodow przychodzi z recznie pisanych pol GT. Falszywych trafien nie ma: kod z siatki
+// regalow to litera A-L + cyfry + opcjonalne P<n>, wiec nigdy nie zawiera liter "BIUR".
+const czyBiuro = (kod) => String(kod || '').toUpperCase().includes('BIUR');
 
 // Grupa pozycji w kolejnosci obchodu. Flagi przychodza z zewnatrz (wymagaja zrodel, ktorych
 // czysta funkcja nie zna):
@@ -58,8 +73,10 @@ const GRUPA_POLICZONE_NIEDAWNO = 4;
 //   - policzone niedawno bije WSZYSTKO (idzie na sam koniec - nie moze wyprzedzic nieliczonych),
 //   - pelna rezerwacja: caly stan K4 zablokowany (rez >= stan, stan > 0),
 //   - strefa: chocby 1 szt. czeka poza polka (w_strefach > 0),
-//   - p/u: egzemplarz poprezentacyjny/uszkodzony.
-// Pozycja i zarezerwowana, i w strefie ladzie w rezerwacji; i w strefie, i p/u - w strefie.
+//   - p/u: egzemplarz poprezentacyjny/uszkodzony,
+//   - biuro: towar poza hala (najblizsza grupa - te pozycje sa "prawie zwykle", tylko nie po drodze).
+// Pozycja i zarezerwowana, i w strefie ladzie w rezerwacji; i w strefie, i p/u - w strefie;
+// p/u lezace w biurze - w p/u (dalsza cecha wygrywa).
 // Stan 0 NIE jest "pelna rezerwacja" (0 >= 0), co chroni przed zaklasyfikowaniem pustej pozycji
 // jako zablokowanej.
 function grupaObchodu(p, { jestWariantemPU = false, sprawdzoneNiedawno = false } = {}) {
@@ -69,6 +86,7 @@ function grupaObchodu(p, { jestWariantemPU = false, sprawdzoneNiedawno = false }
   if (stan > 0 && rez >= stan) return GRUPA_PELNA_REZ;
   if (Number(p.w_strefach) > 0) return GRUPA_STREFA;
   if (jestWariantemPU) return GRUPA_WARIANT_PU;
+  if (czyBiuro(p.lokalizacja_kod)) return GRUPA_BIURO;
   return GRUPA_ZWYKLA;
 }
 
@@ -92,7 +110,9 @@ module.exports = {
   bazySymboluWariantu,
   grupaObchodu,
   porownajObchod,
+  czyBiuro,
   GRUPA_ZWYKLA,
+  GRUPA_BIURO,
   GRUPA_WARIANT_PU,
   GRUPA_STREFA,
   GRUPA_PELNA_REZ,

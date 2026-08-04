@@ -10,6 +10,9 @@ const db = require('../db/database');
 const { MAGAZYNY, MAGAZYNY_RAZEM, MAGAZYNY_ZAPAS_K4 } = require('../config/magazyny');
 const { escapeLike, podzielNaSlowa, LIMIT_WYSZUKIWANIA } = require('./wyszukiwanie');
 const { pobierzPrzegladLokalizacji } = require('./gt-fields');
+// wprost z adnotacja-stref (a nie przez re-eksport z gt-fields) - czysty modul bez SQLite/GT
+const { bezAdnotacjiStref } = require('./adnotacja-stref');
+const { golyKod } = require('./lokalizacje-model');
 const { bazySymboluWariantu } = require('./kolejnosc-obchodu');
 
 // buduje stany_gt w stalej kolejnosci K4, K4G, MAG, LS - kazdy magazyn ma
@@ -146,9 +149,16 @@ async function szukajProdukty(fraza, limit = LIMIT_WYSZUKIWANIA) {
 // Czy kod jest PELNYM czlonem lokalizacji w polu GT - pola sa skompresowane, np.
 // "M2-B3-P3 / M2-B4-P3", "C14P1 /L19P3 /", a czlony rozdziela '/', spacja, ',' lub ';'.
 // Dzieki temu skan "C16" NIE lapie "M2-C16-P2" (podciag), tylko lokalizacje faktycznie "C16".
+//
+// Porownujemy po formie GOLEJ (bez myslnikow), bo pola GT sa pisane RECZNIE i ta sama polka
+// bywa tam zapisana na oba sposoby - w danych produkcyjnych siedzi obok siebie "M2-B3-P3"
+// i "C14P1". Skan "A1P1" wchodzi do WMS jako kanoniczne "A1-P1" (jedna lokalizacja), wiec bez
+// tego zrownania towary opisane w GT jako "A1P1" nie pokazywalyby sie na tej lokalizacji.
+// Myslnik jest tu ORTOGRAFIA, nie znaczeniem - "A1-P1" i "A1P1" to ta sama polka.
 function kodJestTokenemLokalizacji(pole, kodUp) {
   if (!pole) return false;
-  return String(pole).toUpperCase().split(/[\s/,;]+/).some((token) => token === kodUp);
+  const cel = golyKod(kodUp);
+  return String(pole).toUpperCase().split(/[\s/,;]+/).some((token) => golyKod(token) === cel);
 }
 
 // Szuka towarow po KODZIE LOKALIZACJI w polach wlasnych GT (tw_Pole1 = miejsce K4,
@@ -163,11 +173,16 @@ async function szukajPoLokalizacjiGt(fraza, limit = LIMIT_WYSZUKIWANIA) {
 
   // Prefiltr SQL podciagiem (LIKE), potem doklandny filtr tokenowy w Node (LIKE nie
   // odroznia czlonu od podciagu). Over-fetch, bo czesc trafien podciagu odpadnie.
-  const parametry = { cap: 500, lok: `%${escapeLike(kod)}%` };
+  //
+  // Prefiltr musi zapytac o OBA zapisy ("A1-P1" i "A1P1"), bo SQL nie umie porownac po formie
+  // golej, a pola GT trzymaja obie ortografie. Filtr tokenowy w Node i tak je zrownuje - bez
+  // drugiego LIKE po prostu nie doszlyby do niego towary opisane bez myslnika.
+  const parametry = { cap: 500, lok: `%${escapeLike(kod)}%`, lokGoly: `%${escapeLike(golyKod(kod))}%` };
   const towary = await query(`
     SELECT TOP (@cap) t.tw_Id, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk, t.tw_Pole1, t.tw_Pole8
     FROM tw__Towar t
-    WHERE (t.tw_Pole1 LIKE @lok ESCAPE '\\' OR t.tw_Pole8 LIKE @lok ESCAPE '\\')
+    WHERE (t.tw_Pole1 LIKE @lok ESCAPE '\\' OR t.tw_Pole8 LIKE @lok ESCAPE '\\'
+        OR t.tw_Pole1 LIKE @lokGoly ESCAPE '\\' OR t.tw_Pole8 LIKE @lokGoly ESCAPE '\\')
       AND EXISTS (
         SELECT 1 FROM tw_Stan s JOIN sl_Magazyn m ON m.mag_Id = s.st_MagId
         WHERE s.st_TowId = t.tw_Id AND m.mag_Symbol IN ('K4', 'K4G') AND s.st_Stan > 0
@@ -372,9 +387,14 @@ async function listujProdukty({ q, limit = 50, offset = 0, sort = 'sku', dir = '
     parametry.symbolFraza = `${escapeLike(fraza)}%`;
     parametry.eanFraza = `${escapeLike(fraza)}%`;
     parametry.lokFraza = `%${escapeLike(fraza)}%`; // kod lokalizacji w polach GT (tw_Pole1/Pole8)
+    // Druga ortografia kodu: wpisane "A1-P1" ma znalezc tez towary opisane w GT jako "A1P1"
+    // (i odwrotnie) - pola GT sa pisane recznie, myslnik bywa lub nie. Dla fraz, ktore nie
+    // sa kodem (nazwa, symbol), goly wariant jest rowny frazie, wiec warunek nic nie zmienia.
+    parametry.lokFrazaGola = `%${escapeLike(golyKod(fraza))}%`;
     // Match po lokalizacji GT tylko dla towarow ze stanem K4/K4G - inaczej zlapaloby inne
     // kategorie, gdzie tw_Pole1/8 = autor/pomieszczenie.
-    const lokWarunek = `((t.tw_Pole1 LIKE @lokFraza ESCAPE '\\' OR t.tw_Pole8 LIKE @lokFraza ESCAPE '\\')`
+    const lokWarunek = `((t.tw_Pole1 LIKE @lokFraza ESCAPE '\\' OR t.tw_Pole8 LIKE @lokFraza ESCAPE '\\'`
+      + `   OR t.tw_Pole1 LIKE @lokFrazaGola ESCAPE '\\' OR t.tw_Pole8 LIKE @lokFrazaGola ESCAPE '\\')`
       + ` AND EXISTS (SELECT 1 FROM tw_Stan sl JOIN sl_Magazyn ml ON ml.mag_Id = sl.st_MagId`
       + `   WHERE sl.st_TowId = t.tw_Id AND ml.mag_Symbol IN ('K4', 'K4G') AND sl.st_Stan > 0))`;
     where = `(t.tw_Symbol LIKE @symbolFraza ESCAPE '\\' OR t.tw_PodstKodKresk LIKE @eanFraza ESCAPE '\\' OR ${lokWarunek} OR (${warunkiSlow}))`;
@@ -492,16 +512,24 @@ async function pobierzK4NiskieStany({ min = 1, max = 5, maxRazem = 5 } = {}) {
     ORDER BY LTRIM(RTRIM(t.tw_Pole1)), t.tw_Symbol
   `, { min, max, maxRazem });
 
+  // tw_Pole1 to pole CZLOWIEKA, nie czysty kod: job stref dokleja do niego "+StD20" (ile sztuk
+  // czeka poza polka). Tu uzywamy go jako ADRESU (sort obchodu, klucz pary artykul+lokalizacja
+  // w audycie sprawdzen i pominiec), wiec dopisek MUSI zejsc - CLAUDE.md, "Adnotacja stref".
+  // Bez tego: (a) adres skakal przy kazdej zmianie strefy, wiec pominiecie/sprawdzenie zapisane
+  // pod starym kluczem przestawalo pasowac, (b) pozycja z SAMYM dopiskiem ("+StP1", pusty adres
+  // w GT) sortowala sie na sam POCZATEK obchodu. Pusty adres po zdjeciu dopisku = SKU bez
+  // miejsca w K4 - wypada z listy tak samo, jak wypadalo przed istnieniem dopiskow (warunek
+  // tw_Pole1 <> '' w SQL wyzej).
   return recordset.map((r) => ({
     artykul_gt_id: String(r.tw_Id),
     symbol: r.tw_Symbol,
     nazwa: r.tw_Nazwa,
     ean: r.tw_PodstKodKresk || null,
-    lokalizacja_kod: r.lokalizacja,
+    lokalizacja_kod: bezAdnotacjiStref(r.lokalizacja),
     stan_k4: r.stan_k4,
     rez_k4: r.rez_k4,
     razem: r.razem,
-  }));
+  })).filter((t) => t.lokalizacja_kod);
 }
 
 // Z listy symboli zwraca Set tych, ktore sa egzemplarzem poprezentacyjnym/uszkodzonym: symbol
@@ -786,6 +814,7 @@ module.exports = {
   pobierzProdukt,
   szukajProdukty,
   szukajPoLokalizacjiGt,
+  kodJestTokenemLokalizacji,   // eksport dla testu (czysta funkcja, bez GT/SQLite)
   listujProdukty,
   pobierzProduktyZUniwersum,
   pobierzK4NiskieStany,

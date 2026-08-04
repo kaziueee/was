@@ -7,11 +7,30 @@ const { pobierzStatusLokalizacjiGt, synchronizujLokalizacje, pobierzPrzegladLoka
 const gtDokumenty = require('../services/gt-dokumenty');
 const gtZestawy = require('../services/gt-zestawy');
 const audyt = require('../services/audyt');
-const { rozbierzKod, normalizujKodLokalizacji, TYPY } = require('../services/lokalizacje-model');
+const { rozbierzKod, normalizujKodLokalizacji, kanonicznyKodSiatki, golyKod, TYPY } = require('../services/lokalizacje-model');
 
 const router = express.Router();
 
 const SQLITE_CONSTRAINT_UNIQUE = 2067;
+
+// Lookup lokalizacji po zeskanowanym/wpisanym kodzie. Dwa podejscia, w tej kolejnosci:
+//  1. postac KANONICZNA (A8P2 -> A8-P2) - tak zapisujemy kody od 2026-08-04,
+//  2. fallback po formie GOLEJ (bez myslnikow) - dla starych wierszy zapisanych niekanonicznie.
+// Fallback jest potrzebny, bo do 2026-08-04 zapis (POST/import/PUT) bral kod DOSLOWNIE, wiec
+// w bazie wyladowaly wiersze typu "L3P3" czy "C17P3" - niewidoczne dla lookupu, ktory pytal
+// juz o "L3-P3". Na produkcji objawialo sie to jako "czesc lokalizacji w regale L sie nie czyta".
+// Fallback odpalamy TYLKO dla kodow z siatki regalow (kanonicznyKodSiatki != null), zeby skan
+// SKU/EAN nie trafial przypadkiem w lokalizacje o podobnym zapisie.
+function znajdzLokalizacjePoKodzie(kodSurowy) {
+  const trafienie = db.prepare('SELECT * FROM lokalizacje WHERE kod = ?')
+    .get(normalizujKodLokalizacji(kodSurowy));
+  if (trafienie) return trafienie;
+  const kanonSiatki = kanonicznyKodSiatki(kodSurowy);
+  if (!kanonSiatki) return null;
+  return db.prepare(
+    "SELECT * FROM lokalizacje WHERE REPLACE(REPLACE(kod, '-', ''), ' ', '') = ?"
+  ).get(golyKod(kanonSiatki)) ?? null;
+}
 
 // GET /api/lokalizacje - lista lokalizacji (filtry: ?magazyn=, ?aktywna=, ?q=)
 router.get('/', (req, res) => {
@@ -266,11 +285,10 @@ async function dolaczDaneGt(payload) {
 router.get('/skan/:kod', async (req, res, next) => {
   try {
     const kod = req.params.kod;
-    // Kody lokalizacji: dopasuj tez formy bez myslnika (A8P2 == A8-P2) - stare naklejki.
-    // Dla SKU/EAN/nazwy normalizacja zwraca kod bez zmian, wiec dalsze lookupy dzialaja jak dotad.
-    const kodLok = normalizujKodLokalizacji(kod);
-
-    const lokalizacja = db.prepare('SELECT * FROM lokalizacje WHERE kod = ?').get(kodLok);
+    // Kody lokalizacji: dopasuj tez formy bez myslnika (A8P2 == A8-P2) - stare naklejki
+    // ORAZ stare, niekanoniczne wiersze w bazie (zob. znajdzLokalizacjePoKodzie).
+    // Dla SKU/EAN/nazwy lookup nie trafia, wiec dalsze sciezki dzialaja jak dotad.
+    const lokalizacja = znajdzLokalizacjePoKodzie(kod);
     if (lokalizacja) {
       const zawartosc = db.prepare(
         `SELECT artykul_gt_id, artykul_symbol, artykul_nazwa, ilosc
@@ -356,7 +374,7 @@ router.get('/skan/:kod', async (req, res, next) => {
 // GET /api/lokalizacje/kod/:kod - lookup po kodzie (np. po skanie etykiety).
 // Normalizuje myslniki (A8P2 == A8-P2) - obsluga starych naklejek bez myslnika.
 router.get('/kod/:kod', (req, res) => {
-  const lokalizacja = db.prepare('SELECT * FROM lokalizacje WHERE kod = ?').get(normalizujKodLokalizacji(req.params.kod));
+  const lokalizacja = znajdzLokalizacjePoKodzie(req.params.kod);
   if (!lokalizacja) return res.status(404).json({ blad: 'Lokalizacja nie znaleziona' });
   res.json(lokalizacja);
 });
@@ -455,17 +473,22 @@ router.post('/', (req, res) => {
     return res.status(400).json({ blad: `Pole "magazyn" musi byc jednym z: ${MAGAZYNY_WMS.join(', ')}` });
   }
 
+  // Kod ZAWSZE zapisujemy w postaci kanonicznej (L3P3 -> L3-P3, a8p2 -> A8-P2). Doslowny
+  // zapis tworzyl wiersze, ktorych zaden lookup potem nie znajdowal - zob. komentarz przy
+  // znajdzLokalizacjePoKodzie i normalizujKodLokalizacji.
+  const kodKanoniczny = normalizujKodLokalizacji(kod);
+
   try {
-    const c = rozbierzKod(kod, magazyn);
+    const c = rozbierzKod(kodKanoniczny, magazyn);
     const result = db.prepare(
       `INSERT INTO lokalizacje (kod, magazyn, hala, regal, alejka, strona, kolumna, typ)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(kod.trim(), magazyn, c.hala, c.regal, c.alejka, c.strona, c.kolumna, c.typ);
-    audyt.zapisz({ uzytkownik: req.body?.operator ?? null, akcja: 'lokalizacja_nowa', magazyn, lokalizacja: kod.trim(), po: { kod: kod.trim(), magazyn }, wynik: 'ok' });
+    ).run(kodKanoniczny, magazyn, c.hala, c.regal, c.alejka, c.strona, c.kolumna, c.typ);
+    audyt.zapisz({ uzytkownik: req.body?.operator ?? null, akcja: 'lokalizacja_nowa', magazyn, lokalizacja: kodKanoniczny, po: { kod: kodKanoniczny, magazyn }, wynik: 'ok' });
     res.status(201).json(db.prepare('SELECT * FROM lokalizacje WHERE id = ?').get(result.lastInsertRowid));
   } catch (err) {
     if (err.errcode === SQLITE_CONSTRAINT_UNIQUE) {
-      return res.status(409).json({ blad: `Lokalizacja o kodzie "${kod.trim()}" juz istnieje` });
+      return res.status(409).json({ blad: `Lokalizacja o kodzie "${kodKanoniczny}" juz istnieje` });
     }
     throw err;
   }
@@ -488,7 +511,9 @@ router.post('/import', (req, res) => {
   const widziane = new Set();
 
   for (const wpis of wejscie) {
-    const kod = String(wpis?.kod ?? '').trim().toUpperCase();
+    // Kanonizacja PRZED dedupem: "L3P3" i "L3-P3" w jednej wklejce to ta sama lokalizacja,
+    // a wiersz musi wyladowac w bazie w formie, ktora znajdzie pozniejszy skan.
+    const kod = normalizujKodLokalizacji(wpis?.kod);
     const magazyn = wpis?.magazyn;
     if (!kod) continue; // puste linie ignorujemy cicho
     if (!MAGAZYNY_WMS.includes(magazyn)) {
@@ -564,7 +589,9 @@ router.put('/:id', (req, res) => {
 
   const { kod, magazyn, aktywna, typ } = req.body ?? {};
 
-  const nowyKod = kod !== undefined ? String(kod).trim() : lokalizacja.kod;
+  // Jak w POST: do bazy idzie postac kanoniczna (edycja to tez droga, ktora "L3P3" mogloby
+  // wrocic do bazy - i znow zniknac ze skanu).
+  const nowyKod = kod !== undefined ? normalizujKodLokalizacji(kod) : lokalizacja.kod;
   const nowyMagazyn = magazyn !== undefined ? magazyn : lokalizacja.magazyn;
   const nowaAktywna = aktywna !== undefined ? (aktywna ? 1 : 0) : lokalizacja.aktywna;
 

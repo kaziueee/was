@@ -58,19 +58,34 @@ function rozbierzKod(kodSurowy, magazyn) {
 
 // Kod bez myslnikow/spacji -> postac kanoniczna z myslnikami (A8P2 -> A8-P2,
 // M2A8P2 -> M2-A8-P2, a8-p2 -> A8-P2). Czesc etykiet na magazynie ma stare kody
-// bez myslnika - dzieki temu skan/wpis czyta obie formy do czasu wymiany naklejek.
-// Kody spoza wzorca lokalizacji (RB, BIURO, SKU, EAN) zwracane bez zmian (uppercase/trim).
+// bez myslnika (najwiecej w regale L) - dzieki temu skan/wpis czyta obie formy.
+// Zwraca null, gdy kod NIE jest kodem siatki regalow (RB, BIURO, SKU, EAN) - dzieki
+// temu wolajacy wie, czy w ogole ma do czynienia z lokalizacja z siatki.
 const WZORZEC_LUZNY = /^(M2)?([A-L])(\d{1,2})(?:P([1-6]))?$/;
-function normalizujKodLokalizacji(kodSurowy) {
-  const kod = String(kodSurowy ?? '').trim().toUpperCase();
-  const bez = kod.replace(/[\s-]/g, '');
+function kanonicznyKodSiatki(kodSurowy) {
+  const bez = String(kodSurowy ?? '').trim().toUpperCase().replace(/[\s-]/g, '');
   const m = bez.match(WZORZEC_LUZNY);
-  if (!m) return kod; // nie wyglada na kod lokalizacji - nie ruszamy (SKU/EAN/nazwane)
+  if (!m) return null;
   const hala = m[1] ? 'M2-' : '';
   const poziom = m[4] ? `-P${m[4]}` : '';
   return `${hala}${m[2]}${m[3]}${poziom}`;
 }
 
+// Postac kanoniczna kodu do ZAPISU i do lookupu. Kody spoza siatki (RB, BIURO, SKU, EAN)
+// zwracane bez zmian (uppercase/trim) - tam nie mamy czego kanonizowac.
+//
+// UWAGA: jedyna postac, w jakiej kod lokalizacji wolno TRZYMAC w bazie. Zapis surowego kodu
+// (jak przed 2026-08-04) tworzyl wiersze typu "L3P3", ktorych zaden lookup juz nie znajdowal:
+// kazde szukanie normalizuje wejscie do "L3-P3", a takiego wiersza nie bylo. Skutek na
+// produkcji: czesc lokalizacji w regale L (i C17P3) byla niewidoczna dla skanu mimo towaru.
+function normalizujKodLokalizacji(kodSurowy) {
+  return kanonicznyKodSiatki(kodSurowy) ?? String(kodSurowy ?? '').trim().toUpperCase();
+}
+
+// Kod bez myslnikow/spacji - do porownan "ta sama lokalizacja, inny zapis" (L3-P3 == L3P3).
+// Uzywane przez fallback lookupu dla starych, niekanonicznych wierszy.
+const golyKod = (kodSurowy) => String(kodSurowy ?? '').trim().toUpperCase().replace(/[\s-]/g, '');
+
 const TYPY = ['paleta', 'trawers', 'polka', 'inny'];
 
-module.exports = { rozbierzKod, normalizujKodLokalizacji, TYPY };
+module.exports = { rozbierzKod, normalizujKodLokalizacji, kanonicznyKodSiatki, golyKod, TYPY };

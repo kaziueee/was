@@ -7,8 +7,9 @@ const test = require('node:test');
 const assert = require('node:assert');
 
 const {
-  bazySymboluWariantu, grupaObchodu, porownajObchod,
-  GRUPA_ZWYKLA, GRUPA_WARIANT_PU, GRUPA_STREFA, GRUPA_PELNA_REZ, GRUPA_POLICZONE_NIEDAWNO,
+  bazySymboluWariantu, grupaObchodu, porownajObchod, kluczPary,
+  GRUPA_ZWYKLA, GRUPA_WARIANT_PU, GRUPA_STREFA, GRUPA_PELNA_REZ, GRUPA_POMINIETE,
+  GRUPA_POLICZONE_NIEDAWNO,
 } = require('../services/kolejnosc-obchodu');
 
 // --- bazySymboluWariantu: kandydaci na symbol bazowy dla wariantu p/u ---
@@ -66,7 +67,21 @@ test('stan 0 nie jest "pelna rezerwacja" mimo rez>=stan', () => {
   assert.equal(grupaObchodu(poz({ stan: 0, rezerwacja: 0 }), {}), GRUPA_ZWYKLA);
 });
 
-test('policzone niedawno = grupa 4, bije KAZDA inna ceche', () => {
+test('pominiete niedawno = grupa 4 (za pelna rezerwacja, przed policzonymi)', () => {
+  assert.equal(grupaObchodu(poz({}), { pominieteNiedawno: true }), GRUPA_POMINIETE);
+  // bije rezerwacje, strefe i p/u - to "najdalsza" cecha sposrod nich
+  assert.equal(
+    grupaObchodu(poz({ stan: 3, rezerwacja: 3, w_strefach: 2 }), { jestWariantemPU: true, pominieteNiedawno: true }),
+    GRUPA_POMINIETE
+  );
+  // ...ale policzone niedawno bije pominiete (tamto ktos policzyl, to wciaz czeka)
+  assert.equal(
+    grupaObchodu(poz({}), { pominieteNiedawno: true, sprawdzoneNiedawno: true }),
+    GRUPA_POLICZONE_NIEDAWNO
+  );
+});
+
+test('policzone niedawno = grupa 5, bije KAZDA inna ceche', () => {
   assert.equal(grupaObchodu(poz({}), { sprawdzoneNiedawno: true }), GRUPA_POLICZONE_NIEDAWNO);
   // nawet gdy pozycja jest jednoczesnie p/u, w strefie i w pelni zarezerwowana
   assert.equal(
@@ -84,7 +99,7 @@ test('priorytet cech: najdalsza wygrywa (policzone-niedawno > rez > strefa > p/u
 
 // --- porownajObchod: pelny komparator ---
 
-test('grupy ida w kolejnosci zwykle < p/u < strefa < pelna rez < policzone-niedawno, reszta po lokalizacji', () => {
+test('grupy ida w kolejnosci zwykle < p/u < strefa < pelna rez < pominiete < policzone-niedawno, reszta po lokalizacji', () => {
   const ctx = { wariantyPU: new Set(['WAR-P']), sprawdzoneSku: new Set(['9']) };
   const lista = [
     { artykul_gt_id: '1', symbol: 'REZ', lokalizacja_kod: 'M2-A1-P1', stan: 2, rezerwacja: 2, w_strefach: 0 }, // grupa 3
@@ -107,6 +122,33 @@ test('policzone-niedawno nie wyprzedza nieliczonych mimo najwczesniejszej lokali
   // mimo ze A1 < Z9, przypisany-po-sprawdzeniu (77) ma stac ZA nieliczonym (88)
   assert.ok(porownajObchod(wroci, nowy, ctx) > 0);
   assert.ok(porownajObchod(nowy, wroci, ctx) < 0);
+});
+
+test('pominiete NIE wypada z listy, tylko laduje na jej koncu (przed policzonymi)', () => {
+  const pominiety = { artykul_gt_id: '5', symbol: 'POMIN', lokalizacja_kod: 'A1', stan: 2, rezerwacja: 0, w_strefach: 0 };
+  const zwykly = { artykul_gt_id: '6', symbol: 'ZWYKLY', lokalizacja_kod: 'Z9', stan: 2, rezerwacja: 0, w_strefach: 0 };
+  const policzony = { artykul_gt_id: '7', symbol: 'POLICZ', lokalizacja_kod: 'A0', stan: 2, rezerwacja: 0, w_strefach: 0 };
+  const ctx = {
+    wariantyPU: new Set(),
+    sprawdzoneSku: new Set(['7']),
+    pominietePary: new Set([kluczPary(pominiety)]),
+  };
+  const kolejnosc = [policzony, pominiety, zwykly]
+    .sort((a, b) => porownajObchod(a, b, ctx)).map((p) => p.symbol);
+  assert.deepEqual(kolejnosc, ['ZWYKLY', 'POMIN', 'POLICZ']);
+});
+
+test('pominiecie dotyczy PARY - to samo SKU na innej lokalizacji zostaje w normalnej kolejnosci', () => {
+  const ctx = {
+    wariantyPU: new Set(),
+    sprawdzoneSku: new Set(),
+    pominietePary: new Set(['5|A1']),
+  };
+  const stara = { artykul_gt_id: '5', symbol: 'X', lokalizacja_kod: 'A1', stan: 2, rezerwacja: 0, w_strefach: 0 };
+  const nowa = { artykul_gt_id: '5', symbol: 'X', lokalizacja_kod: 'B2', stan: 2, rezerwacja: 0, w_strefach: 0 };
+  assert.equal(grupaObchodu(stara, { pominieteNiedawno: ctx.pominietePary.has(kluczPary(stara)) }), GRUPA_POMINIETE);
+  assert.equal(grupaObchodu(nowa, { pominieteNiedawno: ctx.pominietePary.has(kluczPary(nowa)) }), GRUPA_ZWYKLA);
+  assert.ok(porownajObchod(nowa, stara, ctx) < 0);
 });
 
 test('w obrebie tej samej lokalizacji rozstrzyga symbol', () => {

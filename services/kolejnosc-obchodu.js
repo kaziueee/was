@@ -7,9 +7,17 @@
 //   1. egzemplarz poprezentacyjny / uszkodzony (symbol na 'p'/'u' + istnieje baza w GT),
 //   2. czesc stanu czeka w strefie (nierozlozona dostawa/zwrot - liczenie samej polki mniej pewne),
 //   3. caly stan K4 zarezerwowany (nic z polki nie ruszysz - najnizszy priorytet weryfikacji),
-//   4. SKU policzone niedawno na obchodzie, ktore WROCILO na liste po przypisaniu lokalizacji.
-// Grupy rosnaco = coraz dalej na koniec: zwykle < p/u < strefa < pelna rez < policzone-niedawno.
+//   4. pozycja POMINIETA niedawno ("nie teraz" na obchodzie - zastawiona lokalizacja, brak czasu),
+//   5. SKU policzone niedawno na obchodzie, ktore WROCILO na liste po przypisaniu lokalizacji.
+// Grupy rosnaco = coraz dalej na koniec:
+//   zwykle < p/u < strefa < pelna rez < pominiete < policzone-niedawno.
 // Kolejnosc p/u/strefa/rez wg zyczenia usera (2026-07-24): p/u PRZED strefami i pelna rezerwacja.
+//
+// Grupa "pominiete" (zmiana 2026-08-04, zyczenie usera): pominiecie NIE moze wyrzucac pozycji
+// ze spisu - ma ja przesuwac na KONIEC. Wczesniej "Pomin" chowal pare (artykul+lokalizacja) na
+// 7 dni; przez to zadanie po prostu znikalo i nikt nie wiedzial, ze czeka. Teraz zostaje na
+// liscie, tylko za wszystkim, co da sie policzyc od razu (a w obrebie jednego obchodu wraca na
+// koniec listy - zob. pominPrzystanek w public/zebra/sciezki.js).
 //
 // Grupa "policzone niedawno" (zmiana 2026-07-30) rozwiazuje konkretny przypadek: na obchodzie
 // czesto PO sprawdzeniu przypisujemy SKU lokalizacje (przypisanie = zmiana lokalizacji). Para
@@ -37,27 +45,36 @@ function bazySymboluWariantu(symbol) {
   return bazy.filter(Boolean);
 }
 
-// Numery grup (0 = najpierw, 4 = na sam koniec).
+// Numery grup (0 = najpierw, 5 = na sam koniec).
 const GRUPA_ZWYKLA = 0;
 const GRUPA_WARIANT_PU = 1;
 const GRUPA_STREFA = 2;
 const GRUPA_PELNA_REZ = 3;
-const GRUPA_POLICZONE_NIEDAWNO = 4;
+const GRUPA_POMINIETE = 4;
+const GRUPA_POLICZONE_NIEDAWNO = 5;
+
+// Klucz pary (artykul + lokalizacja) - tak samo skladany w audycie pominiec (routes/sciezki.js).
+const kluczPary = (p) => `${p?.artykul_gt_id}|${p?.lokalizacja_kod}`;
 
 // Grupa pozycji w kolejnosci obchodu. Flagi przychodza z zewnatrz (wymagaja zrodel, ktorych
 // czysta funkcja nie zna):
 //   - `sprawdzoneNiedawno`: SKU ma swieze sprawdzenie w audycie (per SKU, zob. naglowek pliku),
+//   - `pominieteNiedawno`: para (artykul+lokalizacja) ma swieze "Pomin" w audycie,
 //   - `jestWariantemPU`: rozpoznanie p/u wymaga zapytania do GT o symbol bazowy.
 // Reszte czytamy wprost z pozycji. Kolejnosc IF wymusza priorytet "najdalszej" cechy:
 //   - policzone niedawno bije WSZYSTKO (idzie na sam koniec - nie moze wyprzedzic nieliczonych),
+//   - pominiete: ktos juz raz powiedzial "nie teraz" (ale wciaz NIE jest policzone),
 //   - pelna rezerwacja: caly stan K4 zablokowany (rez >= stan, stan > 0),
 //   - strefa: chocby 1 szt. czeka poza polka (w_strefach > 0),
 //   - p/u: egzemplarz poprezentacyjny/uszkodzony.
 // Pozycja i zarezerwowana, i w strefie ladzie w rezerwacji; i w strefie, i p/u - w strefie.
+// Pominiete stoi PRZED policzonymi niedawno: tamte ktos juz policzyl, te wciaz czekaja.
 // Stan 0 NIE jest "pelna rezerwacja" (0 >= 0), co chroni przed zaklasyfikowaniem pustej pozycji
 // jako zablokowanej.
-function grupaObchodu(p, { jestWariantemPU = false, sprawdzoneNiedawno = false } = {}) {
+function grupaObchodu(p, { jestWariantemPU = false, sprawdzoneNiedawno = false,
+  pominieteNiedawno = false } = {}) {
   if (sprawdzoneNiedawno) return GRUPA_POLICZONE_NIEDAWNO;
+  if (pominieteNiedawno) return GRUPA_POMINIETE;
   const stan = Number(p.stan) || 0;
   const rez = Number(p.rezerwacja) || 0;
   if (stan > 0 && rez >= stan) return GRUPA_PELNA_REZ;
@@ -69,11 +86,14 @@ function grupaObchodu(p, { jestWariantemPU = false, sprawdzoneNiedawno = false }
 // Komparator obchodu: najpierw grupa, w obrebie grupy po kodzie lokalizacji (kolejnosc
 // zbierania), a przy rownym kodzie po symbolu. Kontekst zbierany raz przed sortem:
 //   - wariantyPU: Set symboli uznanych za poprezentacyjne/uszkodzone,
-//   - sprawdzoneSku: Set artykul_gt_id policzonych niedawno na obchodzie (per SKU).
-function porownajObchod(a, b, { wariantyPU, sprawdzoneSku }) {
+//   - sprawdzoneSku: Set artykul_gt_id policzonych niedawno na obchodzie (per SKU),
+//   - pominietePary: Set kluczy "artykul|lokalizacja" pominietych niedawno (per PARA - pominiecie
+//     dotyczy konkretnego przystanku, nie towaru; po przypisaniu innej lokalizacji to nowe zadanie).
+function porownajObchod(a, b, { wariantyPU, sprawdzoneSku, pominietePary = new Set() }) {
   const flagi = (p) => ({
     jestWariantemPU: wariantyPU.has(p.symbol),
     sprawdzoneNiedawno: sprawdzoneSku.has(p.artykul_gt_id),
+    pominieteNiedawno: pominietePary.has(kluczPary(p)),
   });
   const ga = grupaObchodu(a, flagi(a));
   const gb = grupaObchodu(b, flagi(b));
@@ -86,9 +106,11 @@ module.exports = {
   bazySymboluWariantu,
   grupaObchodu,
   porownajObchod,
+  kluczPary,
   GRUPA_ZWYKLA,
   GRUPA_WARIANT_PU,
   GRUPA_STREFA,
   GRUPA_PELNA_REZ,
+  GRUPA_POMINIETE,
   GRUPA_POLICZONE_NIEDAWNO,
 };

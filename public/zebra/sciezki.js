@@ -194,13 +194,15 @@
         ? sciezka.tekstPusto
         : (pominiete === 0
           ? `Sprawdzono ${sprawdzone} ${odmianaPozycji(sprawdzone)}. 🎉`
-          : `Koniec listy — sprawdzono ${sprawdzone} z ${lista.length}, pominięto ${pominiete}. Pominięte wrócą na listę za tydzień.`);
+          : `Koniec listy — sprawdzono ${sprawdzone} z ${lista.length}, pominięto ${pominiete}. Pominięte zostają na liście — przy następnym obchodzie zobaczysz je na jej końcu.`);
       el('sciezki-pusto').classList.remove('hidden');
       return;
     }
 
     const p = lista[idx];
-    el('sciezki-postep').textContent = `Pozycja ${idx + 1} z ${lista.length}`;
+    // "wrocila" mowi, czemu ta sama pozycja widnieje drugi raz - bez tego wyglada na blad listy.
+    el('sciezki-postep').textContent =
+      `Pozycja ${idx + 1} z ${lista.length}${p.wrocilo ? ' · pominięta wcześniej' : ''}`;
     el('sciezki-skan').closest('.pole-blok').classList.remove('hidden');
     el('sciezki-ilosc').closest('.pole-blok').classList.add('hidden'); // ilosc dopiero po skanie
     el('sciezki-pusto').classList.add('hidden');
@@ -223,9 +225,15 @@
     el('sciezki-skan').focus();
   }
 
-  // "Pomin" - nie teraz (zastawiona lokalizacja, brak czasu). Zapisujemy, zeby pozycja nie
-  // wracala jutro na to samo miejsce listy (sort po lokalizacji), ale krotko - to nie jest
-  // sprawdzenie. Bez skanu: magazynier wlasnie mowi, ze do towaru nie dotarl.
+  // "Pomin" - nie teraz (zastawiona lokalizacja, brak czasu). Pozycja NIE wypada z obchodu:
+  // wedruje na KONIEC listy (zyczenie usera 2026-08-04) - zablokowana teraz polka bywa wolna
+  // za kwadrans, a znikniecie zadania oznaczalo, ze nikt sie o nim nie dowie. Backend robi to
+  // samo miedzy obchodami (grupa "pominiete" w sorcie). Bez skanu: magazynier wlasnie mowi,
+  // ze do towaru nie dotarl.
+  //
+  // Drugie pominiecie tej samej pozycji juz jej NIE cofa na koniec - inaczej "pomin wszystko"
+  // krecilby liste w kolko i obchod nigdy by sie nie skonczyl. Wtedy zostaje na liscie do
+  // nastepnego obchodu (backend wie o pominieciu z audytu).
   async function pominPrzystanek() {
     const p = lista[idx];
     if (!p) return;
@@ -242,8 +250,14 @@
         }),
       });
       const dane = await odczytaj(res);
-      pominiete += 1;
-      idx += 1;
+      if (p.wrocilo) {
+        idx += 1;                       // juz raz wrocila - teraz przepuszczamy dalej
+      } else {
+        p.wrocilo = true;
+        pominiete += 1;                 // liczymy POZYCJE, nie tapniecia w "Pomin"
+        lista.splice(idx, 1);
+        lista.push(p);                  // idx zostaje: wskazuje juz na nastepny przystanek
+      }
       renderPrzystanek();
     } catch (err) {
       komunikat(err.message, 'blad');

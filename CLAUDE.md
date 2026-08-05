@@ -216,6 +216,10 @@ POST /api/inwentaryzacja/pw
 - Nieudane MM i nieudany sync lokalizacji idą teraz do `logs/error-*.log` (`awarie.blad`). `ruchy.blad_opis` **nie wystarcza** — jest czyszczony przy pierwszym udanym ponowieniu.
 - **Czekanie na wątek STA zostaje bez timeoutu** i to jest świadome: wywołania COM nie da się przerwać, więc timeout zwolniłby tylko wątek HTTP, a zadanie dalej blokowałoby kolejkę. Zamiast udawanego ratunku — raportowanie (`zajety_od`).
 
+## Czas: baza w UTC, ekran w lokalnym
+
+SQLite pisze `CURRENT_TIMESTAMP` w **UTC** (`2026-08-05 12:48:37`), a magazyn żyje czasem lokalnym (CEST = UTC+2 latem, +1 zimą). Każde miejsce, które POKAZUJE znacznik z bazy, musi go przeliczyć: `new Date(String(czas).replace(' ', 'T') + 'Z')`. **Samo `new Date("2026-08-05 12:48")` nie wystarczy** — przeglądarka czyta taki napis jako czas *lokalny*, więc błąd zostaje, tylko trudniej go zauważyć. Do 2026-08-05 desktop drukował znacznik wprost (`s.slice(0,16)`), a Zebra wycinała godzinę regexem — przez co **wszystkie** godziny w Logu zmian, historii ruchów, rozjazdach i uzupełnieniach były o 2 h za małe. Konwersja siedzi w `formatDatetime` (desktop) i `czasSkrot` (Zebra); `dniTemu`/`dniTemuTekst` robiły to poprawnie od początku. Zapisu NIE ruszamy — UTC w bazie jest w porządku, przeliczamy przy wyświetlaniu.
+
 ## Log zmian (audyt)
 
 Wpisy jobów podpisują się `uzytkownik: 'system:<job>'` (np. `system:rozjazdy`, `system:waga-gabarytowa`) i są **domyślnie ukryte** w Logu zmian — przy pytaniu „kto to zmienił" są szumem, bo powstają same i nikt za nie nie odpowiada. Widać je po wybraniu **„Wszystkie + automaty (U+A)"** albo konkretnej akcji automatu. Rozpoznanie idzie po **prefiksie użytkownika, nie po liście akcji** — lista wymagałaby dopisania przy każdym nowym jobie, a pierwszy zapomniany zasypałby widok. `uzytkownik = NULL` liczy się jako człowiek (akcja bez podanego operatora). Egzekwowane w `routes/audyt.js` (`?automaty=1`).

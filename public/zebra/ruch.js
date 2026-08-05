@@ -2050,6 +2050,12 @@ window.addEventListener('wms-zalogowano', zastosujRoleWMenu);
     if (gt === false) {
       tekst = '<b>Brak połączenia z bazą Subiekta (GT).</b> Zwykle wraca samo; jeśli nie — '
         + 'sprawdź, czy serwer Subiekta działa, albo zadzwoń po pomoc.';
+    } else if (most === false && ostatni?.sfera?.stan === 'blad') {
+      // Proces mostu zyje, ale Sfera odbila ostatnia operacje - magazynier ma zobaczyc TRESC,
+      // bo czesto jest to zwykle "brak towaru na magazynie zrodlowym", a nie awaria.
+      tekst = `<b>Sfera zgłosiła błąd:</b> ${ostatni.sfera.komunikat || 'bez treści'}.<br>`
+        + 'Jeśli to nie jest brak towaru na magazynie źródłowym, przesunięcia MM będą wisieć jako '
+        + 'niewysłane — na pececie (konto <b>Adm</b>) dwuklik <code>MOST-RESTART</code> na pulpicie.';
     } else if (most === false) {
       tekst = '<b>Most GT nie odpowiada</b> — przesunięcia MM nie zaksięgują się w Subiekcie. '
         + 'Na pececie (konto <b>Adm</b>): dwuklik <code>MOST-RESTART</code> na pulpicie → poczekaj '
@@ -2083,7 +2089,9 @@ window.addEventListener('wms-zalogowano', zastosujRoleWMenu);
       const res = await fetch('/api/status');
       if (!res.ok) throw new Error('http ' + res.status);
       const s = await res.json();
-      ostatni = { gt: !!s.gt, most: !!s.most };
+      // "Most" = czy MM sie zaksieguje, wiec blad ostatniej operacji Sfery gasi kropke tak samo
+      // jak brak procesu. Sam proces odpowiada takze przy zawieszonej Sferze (2026-08-05).
+      ostatni = { gt: !!s.gt, most: !!s.most && s.sfera?.stan !== 'blad', sfera: s.sfera || null };
     } catch {
       ostatni = null;   // /api/status milczy - kropki na szaro, bez falszywego alarmu
     }

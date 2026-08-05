@@ -20,21 +20,34 @@ router.get('/', async (req, res) => {
     gt = false;
   }
 
-  // Most: dowolna odpowiedz HTTP = proces zyje; blad polaczenia (ECONNREFUSED) = down
+  // Most: pytamy /api/zdrowie, bo "proces odpowiada na HTTP" to ZA MALO. Kestrel odpowiada
+  // niezaleznie od Sfery, wiec przy zawieszonej Sferze stara wersja tego sprawdzenia (GET / i
+  // "kazda odpowiedz = dziala") trzymala kropke na zielono przez cala awarie - tak bylo
+  // 2026-08-05, gdy MM przez ~45 minut wpadaly w 'pending'. Teraz rozdzielamy dwie rzeczy:
+  //   most  - czy proces odpowiada (jak dotad; front tego uzywa jako podstawowej kropki),
+  //   sfera - jak skonczyla sie OSTATNIA realna operacja Sfery ('ok' | 'blad' | 'nieznany')
+  //           plus 'zajety_od', gdy most stoi w trwajacym wywolaniu COM.
+  // Stary most bez /api/zdrowie odpowie 404 - wtedy zostaje samo most=true, sfera='nieznany'
+  // (zachowanie jak przed zmiana, zeby wdrozenie Node przed mostem niczego nie zepsulo).
   let most = false;
+  let sfera = null;
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 2500);
-    await fetch((process.env.GT_BRIDGE_URL ?? 'http://localhost:5000') + '/', { signal: ctrl.signal });
+    const res = await fetch((process.env.GT_BRIDGE_URL ?? 'http://localhost:5000') + '/api/zdrowie', { signal: ctrl.signal });
     clearTimeout(t);
     most = true;
+    if (res.ok) {
+      const d = await res.json().catch(() => null);
+      if (d) sfera = { stan: d.sfera, komunikat: d.komunikat, czas: d.czas, zajety_od: d.zajety_od, w_kolejce: d.w_kolejce };
+    }
   } catch {
     most = false;
   }
 
   // Srodowisko testowe (Mac/dev) - flaga w .env WMS_TESTOWY=1. Produkcja jej nie ustawia,
   // wiec pasek "TESTOWY" tam sie nie pokaze, nawet gdyby kod tam trafil. Zob. public/shared/auth.js.
-  res.json({ baza, gt, most, testowy: process.env.WMS_TESTOWY === '1' });
+  res.json({ baza, gt, most, sfera, testowy: process.env.WMS_TESTOWY === '1' });
 });
 
 module.exports = router;

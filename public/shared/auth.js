@@ -122,10 +122,19 @@
       const st = ov.querySelector('#wms-auth-status');
       try {
         const s = await jGet('/api/status');
+        // "Most działa" znaczy: MM sie zaksieguje. Sam proces mostu odpowiadajacy na HTTP tego
+        // NIE gwarantuje - przy zawieszonej Sferze odpowiada dalej (incydent 2026-08-05, kropka
+        // swiecila na zielono przez cala awarie). Dlatego blad ostatniej operacji Sfery liczymy
+        // jako "most nie dziala" i piszemy, co konkretnie zglosila.
+        const sferaZle = s.sfera?.stan === 'blad';
+        const mostOk = s.most && !sferaZle;
+        const opisMostu = s.most
+          ? (sferaZle ? `⚠ Sfera: ${s.sfera.komunikat || 'błąd'}` : '✓ działa')
+          : '✗ nie działa';
         st.innerHTML =
           `Baza: <b>${s.baza || '—'}</b>`
           + ` &nbsp;·&nbsp; GT: <span class="${s.gt ? 'ok' : 'bad'}">${s.gt ? '✓ połączono' : '✗ brak'}</span>`
-          + ` &nbsp;·&nbsp; Most: <span class="${s.most ? 'ok' : 'bad'}">${s.most ? '✓ działa' : '✗ nie działa'}</span>`;
+          + ` &nbsp;·&nbsp; Most: <span class="${mostOk ? 'ok' : 'bad'}">${opisMostu}</span>`;
       } catch {
         st.innerHTML = '<span class="bad">Status środowiska niedostępny</span>';
       }

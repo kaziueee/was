@@ -122,6 +122,13 @@ async function wykonajRuchGTWewn(ruchId) {
         } else {
           dokOk = false;
           bladDok = odpowiedz.blad ?? odpowiedz.dane?.blad ?? `Most GT zwrocil status ${odpowiedz.status}`;
+          // Do LOGU, nie tylko do blad_opis. Tresc bledu Sfery jest kasowana z wiersza `ruchy`
+          // przy pierwszym udanym ponowieniu (status 'ok', blad_opis = NULL), wiec bez tego wpisu
+          // po awarii nie zostaje zaden slad - dokladnie tak stracilismy przyczyne 2026-08-05.
+          awarie.blad('most-gt', `MM nieudane: ${bladDok}`, {
+            ruchId, artykul: ruch.artykul_gt_id, symbol: ruch.artykul_symbol, ilosc: ruch.ilosc,
+            z: magazynZrodlowy, do: magazynDocelowy, proba: (ruch.mm_proby ?? 0) + 1, http: odpowiedz.status,
+          });
         }
       }
     }
@@ -137,6 +144,8 @@ async function wykonajRuchGTWewn(ruchId) {
   if (wynikLok && !(wynikLok.ok && wynikLok.dane?.sukces)) {
     lokOk = false;
     bladLok = wynikLok.blad ?? wynikLok.dane?.blad ?? `Most GT zwrocil status ${wynikLok.status}`;
+    awarie.blad('most-gt', `Sync lokalizacji GT nieudany: ${bladLok}`,
+      { ruchId, artykul: ruch.artykul_gt_id, symbol: ruch.artykul_symbol, magazyny: [...magazyny] });
   }
 
   if (dokOk && lokOk) {

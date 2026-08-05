@@ -18,8 +18,12 @@ namespace GtBridge
         [STAThread]
         public static void Main(string[] args)
         {
+            Dziennik.Rotuj();
+            Dziennik.Zapisz("proces", $"START mostu, pid={Environment.ProcessId}, exe={Environment.ProcessPath}");
+
             var host = CreateHostBuilder(args).Build();
             host.Start(); // uruchamia Kestrel (nasluch :5000) i wraca - nie blokuje
+            Dziennik.Zapisz("proces", "Kestrel wystartowal");
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
@@ -36,14 +40,17 @@ namespace GtBridge
 
             // Zatrzymaj host PRZED ewentualnym restartem - zwalnia port 5000, zamyka Sfere
             // (SferaGtService.Dispose przez kontener DI), zeby nowa instancja mogla wystartowac.
+            Dziennik.Zapisz("proces", restart ? "Zadano RESTART z traya - zatrzymuje host" : "Zamykanie mostu - zatrzymuje host");
             host.StopAsync().GetAwaiter().GetResult();
             host.Dispose();
+            Dziennik.Zapisz("proces", "Host zatrzymany");
 
             if (restart)
             {
                 var exe = Environment.ProcessPath;
                 if (!string.IsNullOrEmpty(exe))
                 {
+                    Dziennik.Zapisz("proces", $"Uruchamiam nowa instancje: {exe}");
                     Process.Start(new ProcessStartInfo
                     {
                         FileName = exe,

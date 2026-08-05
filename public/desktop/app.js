@@ -3638,6 +3638,18 @@ el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
       alert.classList.remove('hidden');
       return;
     }
+    // Most odpowiada, ale OSTATNIA operacja Sfery skonczyla sie bledem - dla magazyniera to
+    // to samo co "most nie dziala" (MM nie przejda), tylko z konkretna trescia. Osobny przypadek,
+    // bo wczesniej ten stan byl NIEWIDOCZNY: proces zyje, wiec kropka byla zielona (2026-08-05).
+    if (s.sfera?.stan === 'blad') {
+      const kiedy = s.sfera.czas ? new Date(s.sfera.czas).toLocaleTimeString('pl-PL') : '—';
+      alert.innerHTML = ICO + '<div class="srod-tresc"><b>Most odpowiada, ale Sfera zgłosiła błąd</b> '
+        + `(${kiedy}): <code>${s.sfera.komunikat || 'bez treści'}</code>.<br>`
+        + 'Jeśli to nie jest zwykłe „brak towaru na magazynie źródłowym”, przesunięcia MM będą wisieć jako niewysłane. '
+        + 'Na pececie (konto <b>Adm</b>): dwuklik <code>MOST-RESTART</code> na pulpicie.</div>';
+      alert.classList.remove('hidden');
+      return;
+    }
     alert.classList.add('hidden');
     alert.innerHTML = '';
   }
@@ -3645,9 +3657,12 @@ el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
   async function odswiez() {
     try {
       const s = await api('/api/status');
+      // Kropka mostu odpowiada na pytanie "czy MM przejdzie", a nie "czy proces zyje" - stad
+      // blad Sfery gasi ja tak samo jak brak procesu (tresc bledu jest w pasku nizej).
+      const mostOk = s.most && s.sfera?.stan !== 'blad';
       ustawChip(chipBaza, s.gt);
-      ustawChip(chipMost, s.most);
-      cluster.classList.toggle('ma-awarie', !s.gt || !s.most);
+      ustawChip(chipMost, mostOk);
+      cluster.classList.toggle('ma-awarie', !s.gt || !mostOk);
       pokazAlarm(s);
     } catch {
       // /api/status samo nie odpowiada (Node down / restart) - nie zgadujemy stanu mostu:

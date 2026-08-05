@@ -13,10 +13,43 @@ namespace GtBridge.Controllers
     public class GtController : ControllerBase
     {
         private readonly ISferaGtService _sfera;
+        private readonly StanMostu _stan;
 
-        public GtController(ISferaGtService sfera)
+        public GtController(ISferaGtService sfera, StanMostu stan)
         {
             _sfera = sfera;
+            _stan = stan;
+        }
+
+        // GET /api/zdrowie - stan mostu dla WMS (routes/status.js) i do diagnostyki z przegladarki.
+        //
+        // CELOWO nie dotyka Sfery: oddaje wylacznie to, co most JUZ wie (wynik ostatniej operacji
+        // + czy watek STA jest czyms zajety i od kiedy). Health-check wolajacy Sfere dokladalby
+        // zadania do tej samej kolejki STA, ktora przy awarii jest zaklinowana - czyli pogarszalby
+        // stan, ktory ma mierzyc. Dlatego "zdrowie" = obserwacja, nie ping.
+        //
+        // Powod istnienia (incydent 2026-08-05): WMS pytal most zwyklym GET / i KAZDA odpowiedz
+        // HTTP uznawal za "most dziala", wiec kropka byla zielona przez cala awarie Sfery.
+        [HttpGet("zdrowie")]
+        public ActionResult<ZdrowieResponse> Zdrowie()
+        {
+            var (stan, komunikat, czas, zajetyOd, operacja, wKolejce) = _stan.OdczytajPelny();
+            return Ok(new ZdrowieResponse
+            {
+                Zyje = true,
+                Sfera = stan switch
+                {
+                    StanPolaczenia.Ok => "ok",
+                    StanPolaczenia.Blad => "blad",
+                    _ => "nieznany",
+                },
+                Komunikat = komunikat,
+                Czas = czas,
+                ZajetyOd = zajetyOd,
+                Operacja = operacja,
+                WKolejce = wKolejce,
+                StartProcesu = _stan.StartProcesu,
+            });
         }
 
         [HttpPost("mm")]

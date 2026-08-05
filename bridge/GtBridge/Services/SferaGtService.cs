@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -53,16 +54,23 @@ namespace GtBridge.Services
         }
 
         // Wykonuje funkcje na watku STA i czeka na wynik (lub propaguje wyjatek).
-        private T NaWatkuSta<T>(Func<T> funkcja)
+        //
+        // Czekamy BEZ timeoutu - i tak zostaje, bo wywolania COM nie da sie przerwac: timeout
+        // zwolnilby tylko watek HTTP, a zadanie dalej blokowaloby kolejke STA (zmiana zachowania
+        // bez zysku). Zamiast tego RAPORTUJEMY: `opis` trafia do StanMostu (widzi go /api/zdrowie
+        // jako "zajety_od"), wiec zawieszenie da sie zobaczyc z zewnatrz zamiast zgadywac.
+        private T NaWatkuSta<T>(Func<T> funkcja, string opis = "operacja")
         {
             Exception? blad = null;
             T wynik = default!;
             using var gotowe = new ManualResetEventSlim(false);
+            _stan.ZadanieWKolejce();
             _zadania.Add(() =>
             {
+                _stan.ZadanieStart(opis);
                 try { wynik = funkcja(); }
                 catch (Exception e) { blad = e; }
-                finally { gotowe.Set(); }
+                finally { _stan.ZadanieKoniec(); gotowe.Set(); }
             });
             gotowe.Wait();
             if (blad != null) throw blad;
@@ -93,6 +101,10 @@ namespace GtBridge.Services
                 return _subiekt;
             }
 
+            // Zalogowanie do Sfery to zdarzenie rzadkie i wazne diagnostycznie: sesja zyje potem
+            // przez CALY proces (pole _subiekt), wiec z logu widac, ktora sesja obslugiwala dany MM.
+            Dziennik.Zapisz("sfera", $"Loguje sie do Sfery: baza={_opcje.Baza} serwer={_opcje.Serwer} operator={_opcje.Operator}");
+
             var typGt = Type.GetTypeFromProgID(_opcje.ProgId)
                 ?? throw new InvalidOperationException(
                     $"Nie znaleziono zarejestrowanego komponentu COM '{_opcje.ProgId}'. " +
@@ -121,6 +133,7 @@ namespace GtBridge.Services
             }
 
             _subiekt = gt.Uruchom(UruchomDopasujOperatora, UruchomNowy | UruchomWTle);
+            Dziennik.Zapisz("sfera", "Zalogowano - nowa sesja Subiekta (dziala w tle, bez okna)");
             return _subiekt;
         }
 
@@ -132,6 +145,11 @@ namespace GtBridge.Services
         // w DokumentResponse.Blad, zeby Node mogl zostawic ruch jako 'pending'.
         public Task<DokumentResponse> WystawMmAsync(MmRequest request)
         {
+            // Log przed i po KAZDYM MM - to jedyny slad, ktory przezyje restart mostu. Kluczem
+            // laczacym z WMS sa Uwagi ("WMS-RUCH:<id>"), stad ida do linii logu.
+            var etykieta = $"MM tw={request.ArtykulGtId} x{request.Ilosc} mag {request.MagazynZrodlowyId}->{request.MagazynDocelowyId} [{request.Uwagi}]";
+            var zegar = Stopwatch.StartNew();
+            Dziennik.Zapisz("mm", $"START {etykieta}");
             try
             {
                 var odpowiedz = NaWatkuSta(() =>
@@ -162,14 +180,18 @@ namespace GtBridge.Services
 
                     string numer = dok.NumerPelny;
                     return new DokumentResponse { Sukces = true, NumerDokumentu = numer };
-                });
+                }, etykieta);
                 _stan.ZapiszOk($"MM {odpowiedz.NumerDokumentu}");
+                Dziennik.Zapisz("mm", $"OK {odpowiedz.NumerDokumentu} po {zegar.ElapsedMilliseconds} ms :: {etykieta}");
                 return Task.FromResult(odpowiedz);
             }
             catch (Exception ex)
             {
                 var blad = OpisBledu(ex);
                 _stan.ZapiszBlad($"MM: {blad}");
+                // Pelny wyjatek (typ + HRESULT + stos) tylko do pliku - Node dostaje sam opis.
+                Dziennik.Zapisz("mm", $"BLAD po {zegar.ElapsedMilliseconds} ms :: {etykieta} :: {blad} :: {ex.GetType().Name}"
+                    + (ex is COMException c ? $" HRESULT=0x{(uint)c.ErrorCode:X8}" : "") + $" :: {ex.Message}");
                 return Task.FromResult(new DokumentResponse { Sukces = false, Blad = blad });
             }
         }
@@ -180,14 +202,16 @@ namespace GtBridge.Services
         {
             try
             {
-                NaWatkuSta<object?>(() => { Polacz(); return null; });
+                NaWatkuSta<object?>(() => { Polacz(); return null; }, "test polaczenia");
                 _stan.ZapiszOk("Test polaczenia OK");
+                Dziennik.Zapisz("test", "Test polaczenia OK");
                 return Task.FromResult(new DokumentResponse { Sukces = true });
             }
             catch (Exception ex)
             {
                 var blad = OpisBledu(ex);
                 _stan.ZapiszBlad($"Test: {blad}");
+                Dziennik.Zapisz("test", $"BLAD :: {blad} :: {ex.GetType().Name} :: {ex.Message}");
                 return Task.FromResult(new DokumentResponse { Sukces = false, Blad = blad });
             }
         }
@@ -262,6 +286,11 @@ namespace GtBridge.Services
         public void Dispose()
         {
             // Zamkniecie Subiekta musi sie odbyc na tym samym watku STA, ktory go utworzyl.
+            // UWAGA: jesli watek STA stoi w zawieszonym wywolaniu COM, to zadanie nigdy nie
+            // ruszy i Dispose bedzie czekac w nieskonczonosc (proces nie zamknie sie sam -
+            // do ubicia zostaje wtedy MOST-RESTART.cmd / naprawmost.ps1). Log ponizej pozwala
+            // to rozpoznac po fakcie: jest "zamykam", nie ma "zamkniete".
+            Dziennik.Zapisz("proces", "Zamykam sesje Sfery (Dispose)");
             try
             {
                 NaWatkuSta<object?>(() =>
@@ -273,9 +302,10 @@ namespace GtBridge.Services
                         _subiekt = null;
                     }
                     return null;
-                });
+                }, "zamkniecie sesji");
+                Dziennik.Zapisz("proces", "Sesja Sfery zamknieta");
             }
-            catch { /* zamykamy mimo bledu */ }
+            catch (Exception ex) { Dziennik.Zapisz("proces", $"Blad przy zamykaniu sesji: {ex.Message}"); }
             _zadania.CompleteAdding();
         }
     }

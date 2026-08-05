@@ -203,9 +203,18 @@ POST /api/mm
 POST /api/lok
 GET  /api/stan/:magId
 GET  /api/artykul/:id
+GET  /api/zdrowie          # stan mostu (nie dotyka Sfery) — czyta go routes/status.js
 POST /api/inwentaryzacja/rw
 POST /api/inwentaryzacja/pw
 ```
+
+**Diagnostyka mostu (2026-08-05).** Most pisze log do `logs/most-YYYY-MM-DD.log` **obok exe** (`bridge/GtBridge/bin/Release/net8.0-windows/win-x86/publish/logs/`, rotacja 90 dni): start/stop procesu, logowanie do Sfery, każdy MM (czas trwania + numer albo błąd z HRESULT), przebieg zamykania sesji. Wcześniej most nie zapisywał **nic** — jego stan żył wyłącznie w ikonie w trayu, więc po restarcie przyczyna awarii przepadała (tak straciliśmy błąd z 2026-08-05).
+
+- `GET /api/zdrowie` oddaje **tylko zapamiętany stan** (`sfera: ok|blad|nieznany`, komunikat, `zajety_od`, długość kolejki wątku STA). **Celowo nie woła Sfery** — health-check pukający w Sferę dokładałby zadań do tej samej zaklinowanej kolejki STA, czyli psułby to, co mierzy.
+- `zajety_od` to jedyny tani sygnał „wywołanie COM wisi": Kestrel odpowiada niezależnie od wątku STA, więc samo „proces odpowiada na HTTP" **nie znaczy** „most działa". Na tym poległo stare sprawdzenie w `/api/status` (`GET /` + każda odpowiedź = OK) — kropka „Most" świeciła na zielono przez całą awarię Sfery.
+- Kropka „Most" (desktop, Zebra, ekran logowania) gaśnie także wtedy, gdy proces żyje, ale ostatnia operacja Sfery skończyła się błędem — bo odpowiada na pytanie „czy MM przejdzie". Treść błędu ląduje w pasku instrukcji. Stary most bez `/api/zdrowie` → `sfera: null` i zachowanie jak dawniej (Node można wdrożyć przed mostem).
+- Nieudane MM i nieudany sync lokalizacji idą teraz do `logs/error-*.log` (`awarie.blad`). `ruchy.blad_opis` **nie wystarcza** — jest czyszczony przy pierwszym udanym ponowieniu.
+- **Czekanie na wątek STA zostaje bez timeoutu** i to jest świadome: wywołania COM nie da się przerwać, więc timeout zwolniłby tylko wątek HTTP, a zadanie dalej blokowałoby kolejkę. Zamiast udawanego ratunku — raportowanie (`zajety_od`).
 
 ## Log zmian (audyt)
 

@@ -12,10 +12,17 @@
     k.className = `komunikat ${typ || 'info'}`;
   }
 
-  // "2026-07-01 00:02:59" -> "01.07 00:02"
+  // "2026-07-01 00:02:59" (UTC z SQLite) -> "01.07 02:02" (czas LOKALNY, zegar na hali).
+  //
+  // Wcześniej regex wycinał godzinę wprost z napisu, więc historia pokazywała czas UTC -
+  // o 2 h za mały latem, o 1 h zimą. 'Z' doklejamy jawnie, bo `new Date("2026-07-01 00:02")`
+  // przeglądarka potraktowałaby jako czas lokalny i błąd zostałby ten sam.
   function czasSkrot(s) {
-    const m = String(s || '').match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
-    return m ? `${m[3]}.${m[2]} ${m[4]}:${m[5]}` : (s || '');
+    if (!s) return '';
+    const dt = new Date(String(s).replace(' ', 'T') + 'Z');
+    if (isNaN(dt.getTime())) return String(s);
+    const dwie = (n) => String(n).padStart(2, '0');
+    return `${dwie(dt.getDate())}.${dwie(dt.getMonth() + 1)} ${dwie(dt.getHours())}:${dwie(dt.getMinutes())}`;
   }
 
   // Akcje bedace fizycznym ruchem towaru (maja kierunek + ilosc). Biala lista, wiec KAZDA

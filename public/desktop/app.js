@@ -44,8 +44,20 @@ async function api(url, opts) {
   return dane;
 }
 
+// Czas z bazy -> czas LOKALNY (zegar na ścianie magazynu).
+//
+// SQLite pisze `CURRENT_TIMESTAMP` w UTC ("2026-08-05 14:48:37"), a my drukowaliśmy ten napis
+// dosłownie (`s.slice(0,16)`) - więc każda godzina w panelu była o 2 h za mała latem i o 1 h
+// zimą. Doklejamy 'Z' (jawnie: to jest UTC) i formatujemy w strefie przeglądarki. String bez
+// 'Z' NIE wystarczy: `new Date("2026-08-05 14:48")` przeglądarka czyta jako czas lokalny,
+// czyli błąd zostałby ten sam, tylko mniej widoczny.
 function formatDatetime(s) {
-  return s ? s.slice(0, 16) : '–';
+  if (!s) return '–';
+  const dt = new Date(String(s).replace(' ', 'T') + 'Z');
+  if (isNaN(dt.getTime())) return String(s).slice(0, 16);   // nieznany format - pokaż jak jest
+  const dwie = (n) => String(n).padStart(2, '0');
+  return `${dt.getFullYear()}-${dwie(dt.getMonth() + 1)}-${dwie(dt.getDate())} `
+    + `${dwie(dt.getHours())}:${dwie(dt.getMinutes())}`;
 }
 
 const BADGE_KLASY = {

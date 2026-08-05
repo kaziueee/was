@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using GtBridge.Services;
 using GtBridge.Tray;
@@ -30,6 +31,33 @@ namespace GtBridge
 
             var stan = host.Services.GetRequiredService<StanMostu>();
             var sfera = host.Services.GetRequiredService<ISferaGtService>();
+
+            // Test polaczenia PRZY STARCIE (zyczenie usera 2026-08-05): bez niego most po restarcie
+            // raportuje sfera="nieznany" az do pierwszego MM, wiec przez pol dnia nikt nie wie, czy
+            // Sfera w ogole odpowiada - a to jest jedyna rzecz, ktora ten most robi.
+            //
+            // W tle (Task.Run), zeby nie opoznial startu Kestrela ani ikony w trayu. Gdy sie nie uda
+            // (GT wstaje wolniej niz most, baza chwilowo niedostepna), ponawiamy co 5 minut az do
+            // pierwszego sukcesu - inaczej czerwona kropka zostalaby na caly dzien mimo sprawnej
+            // Sfery. Ponowienie POMIJAMY, gdy watek STA jest czyms zajety: przy zawieszonym
+            // wywolaniu COM dokladanie zadan tylko wydluzaloby kolejke (widac ja w /api/zdrowie).
+            _ = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    var (_, _, _, zajetyOd, _, _) = stan.OdczytajPelny();
+                    if (zajetyOd == null)
+                    {
+                        var wynik = await sfera.TestPolaczeniaAsync();   // sam loguje i ustawia StanMostu
+                        if (wynik.Sukces) return;
+                    }
+                    else
+                    {
+                        Dziennik.Zapisz("test", $"Pomijam test startowy - watek STA zajety od {zajetyOd:HH:mm:ss}");
+                    }
+                    await Task.Delay(TimeSpan.FromMinutes(5));
+                }
+            });
 
             bool restart;
             using (var tray = new TrayIkona(stan, sfera))

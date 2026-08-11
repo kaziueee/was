@@ -227,10 +227,32 @@ const OKNO_ROZMONTOWANIE_KFS_DNI = OKNO_ZWROTY_PRZYWOZKI_DNI;
 // to zrobila: user dodal FZ, MM i KFS, a w WMS nie pojawilo sie nic.
 const DOKUMENTY_OD = process.env.WMS_DOKUMENTY_OD ? new Date(process.env.WMS_DOKUMENTY_OD) : null;
 
+// WYJATKI: konkretne dokumenty magazynowe (numery jak w GT: "PZ 3123/2026", po przecinku),
+// ktore liczymy do stref BEZ WZGLEDU na date - i odciecie, i okno rodzaju.
+//
+// Po co osobna lista zamiast cofniecia daty: odciecie jest TEPE - cofniecie go o jeden dzien
+// wpuszcza wszystko z tego dnia, a tam siedza wlasnie widma, przed ktorymi ma chronic. Realny
+// przypadek (11.08.2026): FZ 156/K4/2026 od CPATRADING = PZ 3123/2026 z 01.07, czyli 18 dni
+// przed odcieciem - 20 z 29 SKU tej palety do dzis nie ma lokalizacji w WMS i stoi na K4.
+// Cofniecie odciecia na 01.07 wpuscilo by razem z nia FZ 158 i FZ 159 (33 tys. szt.), dawno
+// rozlozone poza WMS-em - czyli dokladnie te widma. Wyjatek jest waski i nazwany po numerze.
+//
+// SPRZATANIE: wpis zostaje az czlowiek go usunie - dokument rozlozony schodzi z ekranow sam
+// (pula jest capowana nieprzypisanym stanem K4, wiec po rozlozeniu daje zero), ale nie zaszkodzi
+// wyczyscic .env po fakcie. Numer nieistniejacy w GT jest bezkarny: nic nie dopasuje.
+const DOKUMENTY_WYJATKI = (process.env.WMS_DOKUMENTY_WYJATKI || '')
+  .split(',').map((s) => s.trim()).filter(Boolean);
+
 // Zla konfiguracja tej stalej wygasza cala funkcje, wiec musi krzyczec przy starcie - inaczej
 // objawem jest "puste listy" bez zadnej wskazowki, co je opustoszylo.
 (function ostrzezOKonfiguracji() {
   const kiedy = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  // Wyjatek omija odciecie, wiec nie moze byc cichy - inaczej za pol roku nikt nie bedzie
+  // wiedzial, czemu jedna stara paleta uparcie wisi na liscie.
+  if (DOKUMENTY_WYJATKI.length) {
+    console.log(`${kiedy} [gt-dokumenty] INFO: WMS_DOKUMENTY_WYJATKI - dokumenty liczone mimo `
+      + `daty: ${DOKUMENTY_WYJATKI.join(', ')}`);
+  }
   if (!DOKUMENTY_OD) {
     console.log(`${kiedy} [gt-dokumenty] INFO: WMS_DOKUMENTY_OD nie ustawione - brak odciecia. `
       + 'Dostawy rozlozone przed wdrozeniem (MM w Subiekcie / dwukrok /lok+/mm) pokaza sie jako '
@@ -256,6 +278,21 @@ function odKiedy(dni) {
   return zOkna > DOKUMENTY_OD ? zOkna : DOKUMENTY_OD;
 }
 
+// "Dokument miesci sie w oknie ALBO jest na liscie wyjatkow" - jedno miejsce, bo warunek daty
+// musi byc IDENTYCZNY w zapytaniu o kandydatow i w zapytaniu o kubelki (patrz komentarz przy
+// pobierzDostawyK4): rozjazd daje kandydata, dla ktorego rozbicie nie znajduje dokumentu.
+// `warunekDaty` bywa CASE-em (okno zalezne od typu zrodla), stad gotowe wyrazenie SQL zamiast
+// nazwy parametru. `alias` to alias dokumentu MAGAZYNOWEGO (PZ/PW/MM) - wyjatki nazywaja
+// dokument magazynowy, nie zrodlowy (numer FZ nie wystarczy: jedna FZ moze miec kilka PZ).
+function zWyjatkami(warunekDaty, alias, parametry) {
+  if (!DOKUMENTY_WYJATKI.length) return warunekDaty;
+  const placeholders = DOKUMENTY_WYJATKI.map((nr, i) => {
+    parametry[`wyj${i}`] = nr;
+    return `@wyj${i}`;
+  }).join(', ');
+  return `(${warunekDaty} OR ${alias}.dok_NrPelny IN (${placeholders}))`;
+}
+
 // Zapytanie ODWROTNE do pobierzDostawyK4: tam pytamy "co przyszlo na TE towary", tu "ktore
 // towary maja w ogole zwrot na K4". Potrzebne do listy zwrotow, ktora nie zna z gory zbioru
 // SKU (karta produktu zna - stad tamten kierunek).
@@ -272,6 +309,7 @@ const TW_RODZAJ_TOWAR = 1;
 // z typem, bo to dwa rozne zjawiska - patrz komentarz przy OKNO_* wyzej.
 async function pobierzTowaryZeZrodlemK4(zrodloTyp) {
   const od = odKiedy(zrodloTyp === FZ_TYP ? OKNO_DOSTAWY_DNI : OKNO_ZWROTY_PRZYWOZKI_DNI);
+  const parametry = { pzTyp: PZ_TYP, zrodloTyp, mag: MAG_K4, od, rodzaj: TW_RODZAJ_TOWAR };
   const { recordset } = await query(`
     SELECT DISTINCT o.ob_TowId AS tw_id, t.tw_Symbol AS symbol, t.tw_Nazwa AS nazwa,
            t.tw_PodstKodKresk AS ean, t.tw_Pole1 AS lok_gt
@@ -279,8 +317,9 @@ async function pobierzTowaryZeZrodlemK4(zrodloTyp) {
     JOIN dok_Pozycja o ON o.ob_DokMagId = pz.dok_Id
     JOIN dok__Dokument zr ON zr.dok_Id = pz.dok_DoDokId AND zr.dok_Typ = @zrodloTyp
     JOIN tw__Towar t ON t.tw_Id = o.ob_TowId AND t.tw_Rodzaj = @rodzaj
-    WHERE pz.dok_Typ = @pzTyp AND o.ob_MagId = @mag AND pz.dok_DataWyst >= @od
-  `, { pzTyp: PZ_TYP, zrodloTyp, mag: MAG_K4, od, rodzaj: TW_RODZAJ_TOWAR });
+    WHERE pz.dok_Typ = @pzTyp AND o.ob_MagId = @mag
+      AND ${zWyjatkami('pz.dok_DataWyst >= @od', 'pz', parametry)}
+  `, parametry);
 
   return recordset.map((r) => ({
     artykul_gt_id: String(r.tw_id),
@@ -526,6 +565,7 @@ const RODZAJE_STREF = Object.fromEntries(
 // przyjecia, jak zwroty/przywozki.
 async function pobierzTowaryZPrzyjeciamiWewnK4() {
   const od = odKiedy(OKNO_ZWROTY_PRZYWOZKI_DNI);
+  const parametry = { pwTyp: PW_TYP, mag: MAG_K4, od, rodzaj: TW_RODZAJ_TOWAR, automat: KONTO_KOMPLETACJI };
   const { recordset } = await query(`
     SELECT DISTINCT o.ob_TowId AS tw_id, t.tw_Symbol AS symbol, t.tw_Nazwa AS nazwa,
            t.tw_PodstKodKresk AS ean, t.tw_Pole1 AS lok_gt
@@ -534,8 +574,8 @@ async function pobierzTowaryZPrzyjeciamiWewnK4() {
     JOIN tw__Towar t ON t.tw_Id = o.ob_TowId AND t.tw_Rodzaj = @rodzaj
     WHERE dok.dok_Typ = @pwTyp AND o.ob_MagId = @mag
       AND ISNULL(dok.dok_Wystawil, '') <> @automat
-      AND dok.dok_DataWyst >= @od
-  `, { pwTyp: PW_TYP, mag: MAG_K4, od, rodzaj: TW_RODZAJ_TOWAR, automat: KONTO_KOMPLETACJI });
+      AND ${zWyjatkami('dok.dok_DataWyst >= @od', 'dok', parametry)}
+  `, parametry);
 
   return recordset.map((r) => ({
     artykul_gt_id: String(r.tw_id),
@@ -571,7 +611,7 @@ async function pobierzTowaryZPrzywozkamiK4() {
     WHERE dok.dok_Typ = @mmTyp AND dok.dok_OdbiorcaId = @mag
       AND dok.dok_MagId IN (${zewnPlaceholders})
       AND ISNULL(dok.dok_Uwagi, '') NOT LIKE 'WMS-RUCH:%'
-      AND dok.dok_DataWyst >= @od
+      AND ${zWyjatkami('dok.dok_DataWyst >= @od', 'dok', parametry)}
   `, parametry);
 
   return recordset.map((r) => ({
@@ -620,7 +660,7 @@ async function pobierzDostawyK4(twIds) {
       JOIN dok__Dokument zr ON zr.dok_Id = dok.dok_DoDokId AND zr.dok_Typ IN (@fzTyp, @kfsTyp)
       LEFT JOIN kh__Kontrahent kh ON kh.kh_Id = dok.dok_PlatnikId
       WHERE dok.dok_Typ = @pzTyp AND o.ob_MagId = @mag
-        AND dok.dok_DataWyst >= CASE WHEN zr.dok_Typ = @fzTyp THEN @od ELSE @odDrobne END
+        AND ${zWyjatkami('dok.dok_DataWyst >= CASE WHEN zr.dok_Typ = @fzTyp THEN @od ELSE @odDrobne END', 'dok', parametry)}
         AND o.ob_TowId IN (${placeholders})
       GROUP BY o.ob_TowId, dok.dok_Id, dok.dok_NrPelny, zr.dok_Typ, zr.dok_NrPelny, kh.kh_Symbol, dok.dok_DataWyst
 
@@ -637,7 +677,7 @@ async function pobierzDostawyK4(twIds) {
       WHERE dok.dok_Typ = @mmTyp AND dok.dok_OdbiorcaId = @mag
         AND dok.dok_MagId IN (${zewnPlaceholders})
         AND ISNULL(dok.dok_Uwagi, '') NOT LIKE 'WMS-RUCH:%'
-        AND dok.dok_DataWyst >= @odDrobne
+        AND ${zWyjatkami('dok.dok_DataWyst >= @odDrobne', 'dok', parametry)}
         AND o.ob_TowId IN (${placeholders})
       GROUP BY o.ob_TowId, dok.dok_Id, dok.dok_NrPelny, mz.mag_Symbol, dok.dok_DataWyst
 
@@ -654,7 +694,7 @@ async function pobierzDostawyK4(twIds) {
       JOIN tw__Towar t ON t.tw_Id = o.ob_TowId AND t.tw_Rodzaj = @rodzajTow
       WHERE dok.dok_Typ = @pwTyp AND o.ob_MagId = @mag
         AND ISNULL(dok.dok_Wystawil, '') <> @automat
-        AND dok.dok_DataWyst >= @odDrobne
+        AND ${zWyjatkami('dok.dok_DataWyst >= @odDrobne', 'dok', parametry)}
         AND o.ob_TowId IN (${placeholders})
       GROUP BY o.ob_TowId, dok.dok_Id, dok.dok_NrPelny, dok.dok_DataWyst
 

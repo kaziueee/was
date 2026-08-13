@@ -10,6 +10,7 @@ const gtBridge = require('./gt-bridge');
 const gtFields = require('./gt-fields');
 const gtDokumenty = require('./gt-dokumenty');
 const awarie = require('./awarie');
+const { magazynyRuchu } = require('./ruchy-model');
 const { MAGAZYN_GT_ID } = require('../config/magazyny');
 
 // Ruchy aktualnie obslugiwane (in-flight) - blokada per ruchId w obrebie procesu Node.
@@ -134,9 +135,17 @@ async function wykonajRuchGTWewn(ruchId) {
     }
   }
 
-  const magazyny = new Set();
-  if (zrodlo) magazyny.add(zrodlo.magazyn);
-  if (cel) magazyny.add(cel.magazyn);
+  // Magazyny do przeliczenia pol GT - z lokalizacji ruchu ORAZ z puli (rozlozenie nie ma
+  // lokalizacji zrodlowej). Dlaczego pula musi tu byc: services/ruchy-model.js.
+  const magazyny = magazynyRuchu({
+    magZrodlo: zrodlo?.magazyn,
+    magCel: cel?.magazyn,
+    magPula: ruch.mag_zrodlo_pula,
+    wmsZnaPule: !!ruch.mag_zrodlo_pula && !!db.prepare(
+      `SELECT 1 FROM stany_lokalizacji s JOIN lokalizacje l ON l.id = s.lokalizacja_id
+       WHERE s.artykul_gt_id = ? AND l.magazyn = ? LIMIT 1`
+    ).get(ruch.artykul_gt_id, ruch.mag_zrodlo_pula),
+  });
 
   let lokOk = true;
   let bladLok = null;

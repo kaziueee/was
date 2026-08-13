@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db/database');
 const { MAGAZYNY_WMS, MAGAZYNY_ZEWNETRZNE } = require('../config/magazyny');
 const { wykonajRuchGT } = require('../services/ruchy-gt');
+const { magazynyRuchu } = require('../services/ruchy-model');
 const gtFields = require('../services/gt-fields');
 const { pobierzStanyGt, dostepneWGt } = require('../services/gt-produkty');
 const gtDokumenty = require('../services/gt-dokumenty');
@@ -951,16 +952,23 @@ router.delete('/:id', async (req, res, next) => {
   // lokalizacyjne GT (tw_Pole1/tw_Pole8). Tworzenie ruchu zsynchronizowalo je do stanu
   // PO ruchu (czesto pustego), wiec samo cofniecie ilosci zostawiloby GT z nieaktualna
   // lokalizacja => NZ. Resolwujemy magazyny zanim ruszymy stany.
-  const magazyny = new Set();
+  // Ta sama regula co przy wystawianiu ruchu (services/ruchy-model.js): liczy sie tez
+  // magazyn PULI, bo rozlozenie nie ma lokalizacji zrodlowej.
+  let magZrodlo = null;
   if (ruch.lok_zrodlo_id) {
-    const z = db.prepare('SELECT magazyn FROM lokalizacje WHERE id = ?').get(ruch.lok_zrodlo_id);
-    if (z) magazyny.add(z.magazyn);
+    magZrodlo = db.prepare('SELECT magazyn FROM lokalizacje WHERE id = ?').get(ruch.lok_zrodlo_id)?.magazyn ?? null;
   }
   let magCel = null;
   if (ruch.lok_cel_id) {
-    const c = db.prepare('SELECT magazyn FROM lokalizacje WHERE id = ?').get(ruch.lok_cel_id);
-    if (c) { magazyny.add(c.magazyn); magCel = c.magazyn; }
+    magCel = db.prepare('SELECT magazyn FROM lokalizacje WHERE id = ?').get(ruch.lok_cel_id)?.magazyn ?? null;
   }
+  const magazyny = magazynyRuchu({
+    magZrodlo, magCel, magPula: ruch.mag_zrodlo_pula,
+    wmsZnaPule: !!ruch.mag_zrodlo_pula && !!db.prepare(
+      `SELECT 1 FROM stany_lokalizacji s JOIN lokalizacje l ON l.id = s.lokalizacja_id
+       WHERE s.artykul_gt_id = ? AND l.magazyn = ? LIMIT 1`
+    ).get(ruch.artykul_gt_id, ruch.mag_zrodlo_pula),
+  });
 
   db.exec('BEGIN');
   try {

@@ -143,6 +143,18 @@ async function synchronizujLokalizacje(artykulGtId, magazyny) {
     } catch (err) {
       pomijajK4 = false;
     }
+    // WYJATEK: pole w GT jest PUSTE, a WMS zna dom. Guard wyzej chroni TRESC, ktorej WMS nie
+    // zna (zapas "A1/P5" dopisany recznie w Subiekcie) - przy pustym polu nie ma czego chronic,
+    // a czlowiek szukajacy towaru z poziomu GT zostaje bez adresu do najblizszego ruchu na SKU.
+    // Czesto na zawsze: przy rozkladaniu etapami reszta stanu potrafi zejsc sprzedaza (deficyt
+    // zamyka sie SAM, poza WMS), wiec nic juz nie odpali dosylki. Puste = takze samo "+StD48":
+    // dopisek stref to nie adres. Zapis pominie ten dopisek, job stref przywroci go w 10 min.
+    if (pomijajK4 && pola.miejsce_na_magazynie) {
+      try {
+        const mapa = await pobierzAktualnePolaLokalizacji([artykulGtId]);
+        if (!bezAdnotacjiStref(mapa.get(String(artykulGtId))?.tw_Pole1)) pomijajK4 = false;
+      } catch (err) { /* GT nieczytelny - zostaw guard, lepiej nie ruszac pola */ }
+    }
     if (!pomijajK4) {
       ustawienia.push('tw_Pole1 = @pole1');
       parametry.pole1 = pola.miejsce_na_magazynie;

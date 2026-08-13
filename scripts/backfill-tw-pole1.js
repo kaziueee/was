@@ -55,7 +55,11 @@ const ZAPISZ = process.argv.includes('--zapisz');
   for (const s of sku) {
     const oczekiwane = gtFields.obliczPolaLokalizacji(s.id).miejsce_na_magazynie;
     if (!oczekiwane) continue;                  // WMS tez nic nie wie - nie ma co wpisac
-    const wGt = (polaGt.get(String(s.id))?.tw_Pole1 || '').trim();
+    // Adnotacja stref (" +StD48") to DOPISEK joba, nie adres - porownujemy pole bez niej.
+    // Bez tego SKU z otwarta dostawa trafialo do "rozjechanych" (adres zgodny co do znaku),
+    // a pole zlozone z SAMEGO dopiska ("+StD48" przy pustym adresie) nie liczylo sie jako puste
+    // i nie bylo uzupelniane - a to wlasnie ono zostaje po pominietej synchronizacji K4.
+    const wGt = gtFields.bezAdnotacjiStref(polaGt.get(String(s.id))?.tw_Pole1);
     if (wGt === oczekiwane) { zgodne++; continue; }
     (wGt === '' ? doZapisu : rozjechane).push({ ...s, oczekiwane, wGt });
   }

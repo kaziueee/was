@@ -26,4 +26,12 @@ npm install
 node app.js
 ```
 
-Szczegóły architektury i konwencji w [CLAUDE.md](CLAUDE.md).
+## Dokumentacja
+
+- **[docs/opis.md](docs/opis.md)** — zacznij tutaj: założenia, stack, schemat, bezpieczeństwo,
+  logowanie, konwencje
+- [docs/architektura.md](docs/architektura.md) — diagramy (kontekst, kanały do GT, przepływ ruchu, joby)
+- [docs/zasady.md](docs/zasady.md) — reguły per element + gdzie są egzekwowane w kodzie
+- [CLAUDE.md](CLAUDE.md) — pełny kontekst i dziennik decyzji (źródło prawdy)
+
+PDF-y obok plików `.md` odświeża `node scripts/docs-pdf.js`.

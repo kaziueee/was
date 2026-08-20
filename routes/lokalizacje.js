@@ -603,6 +603,19 @@ router.put('/:id', (req, res) => {
     return res.status(400).json({ blad: `Pole "typ" musi byc jednym z: ${TYPY.join(', ')}` });
   }
 
+  // Zmiana magazynu = poprawka pomylki przy zakladaniu (K4 zamiast K4G), NIE sposob na
+  // przeniesienie towaru: przepiecie zajetej lokalizacji przerzuciloby jej stan miedzy
+  // magazynami w WMS bez dokumentu w GT (lamie regule #1 i inwariant sumy). Wiersz ze
+  // stanem 0 tez blokuje - na K4 to wciaz DOM artykulu, ktory po cichu zmienilby magazyn.
+  if (nowyMagazyn !== lokalizacja.magazyn) {
+    const { pozycje } = db.prepare('SELECT COUNT(*) AS pozycje FROM stany_lokalizacji WHERE lokalizacja_id = ?').get(id);
+    if (pozycje > 0) {
+      return res.status(409).json({
+        blad: `Nie mozna zmienic magazynu - lokalizacja ma przypisany towar (${pozycje} poz.). Najpierw przenies towar (MM/LOK) albo zwolnij slot.`,
+      });
+    }
+  }
+
   const c = rozbierzKod(nowyKod, nowyMagazyn);
   // typ: jesli podany jawnie -> nadpisanie reczne (wyjatek); inaczej wyliczony z reguly
   const nowyTyp = typ !== undefined ? typ : c.typ;
@@ -640,7 +653,22 @@ router.delete('/:id', (req, res) => {
     return res.status(409).json({ blad: 'Nie mozna usunac - lokalizacja ma zapisana historie stanow. Oznacz ja jako nieaktywna (aktywna=0).' });
   }
 
-  db.prepare('DELETE FROM lokalizacje WHERE id = ?').run(id);
+  // `ruchy` trzyma FK na lok_zrodlo_id/lok_cel_id, wiec pusta lokalizacja z historia ruchow
+  // wywalala DELETE na FOREIGN KEY constraint (500 "blad serwera") zamiast czytelnego 409.
+  const { ruchow } = db.prepare('SELECT COUNT(*) AS ruchow FROM ruchy WHERE lok_zrodlo_id = ? OR lok_cel_id = ?').get(id, id);
+  if (ruchow > 0) {
+    return res.status(409).json({ blad: `Nie mozna usunac - lokalizacja wystepuje w historii ruchow (${ruchow}). Oznacz ja jako nieaktywna (aktywna=0).` });
+  }
+
+  try {
+    db.prepare('DELETE FROM lokalizacje WHERE id = ?').run(id);
+  } catch (err) {
+    // strazak na przyszle tabele z FK na lokalizacje - lepiej czytelne 409 niz 500 z loga awarii
+    if (String(err?.message).includes('FOREIGN KEY')) {
+      return res.status(409).json({ blad: 'Nie mozna usunac - lokalizacja jest powiazana z innymi danymi. Oznacz ja jako nieaktywna (aktywna=0).' });
+    }
+    throw err;
+  }
   audyt.zapisz({
     uzytkownik: req.body?.operator ?? null, akcja: 'lokalizacja_usuniecie', magazyn: lokalizacja.magazyn, lokalizacja: lokalizacja.kod,
     przed: { kod: lokalizacja.kod, magazyn: lokalizacja.magazyn }, wynik: 'ok',

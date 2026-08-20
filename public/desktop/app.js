@@ -2071,6 +2071,7 @@ async function odswiezLokalizacje() {
 }
 
 const TYPY_LOK = ['paleta', 'trawers', 'polka', 'inny'];
+const MAGAZYNY_LOK = ['K4', 'K4G'];
 
 // Staly, widoczny dropdown typu w kolumnie Typ - zmiana = PUT {typ} (reczne nadpisanie
 // reguly). Kolor selecta odzwierciedla wybrany typ. Zapis w miejscu (bez przeladowania
@@ -2109,6 +2110,44 @@ function budujSelectTypu(l) {
   return sel;
 }
 
+// Dropdown magazynu w kolumnie Magazyn - zmiana = PUT {magazyn}. Sluzy do poprawiania
+// pomylki przy zakladaniu (K4 zamiast K4G); backend odrzuca zmiane, gdy lokalizacja ma
+// przypisany towar. Zapis w miejscu, revert przy bledzie - jak przy typie.
+function budujSelectMagazynu(l) {
+  const sel = document.createElement('select');
+  sel.className = 'lok-mag-select';
+  for (const m of MAGAZYNY_LOK) {
+    const o = document.createElement('option');
+    o.value = m; o.textContent = m;
+    if (m === l.magazyn) o.selected = true;
+    sel.appendChild(o);
+  }
+  sel.title = 'Zmień magazyn lokalizacji (tylko gdy jest pusta)';
+
+  let obecny = l.magazyn;
+  sel.addEventListener('change', async () => {
+    if (sel.value === obecny) return;
+    sel.disabled = true;
+    try {
+      const zapisana = await api(`/api/lokalizacje/${l.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ magazyn: sel.value }),
+      });
+      obecny = sel.value; l.magazyn = sel.value;
+      pokazKomunikat(`Magazyn ${l.kod} zmieniony na ${sel.value}.`, 'ok');
+      // magazyn wspoltworzy typ (K4G -> zawsze paleta), wiec lista musi sie przerysowac
+      odswiezLokalizacje();
+      return zapisana;
+    } catch (err) {
+      sel.value = obecny;
+      pokazKomunikat(err.message, 'blad');
+    } finally {
+      sel.disabled = false;
+    }
+  });
+  return sel;
+}
+
 function renderujLokalizacje(lista) {
   const tbody = el('lok-tbody');
   tbody.innerHTML = '';
@@ -2119,7 +2158,7 @@ function renderujLokalizacje(lista) {
     const alejkaStr = l.alejka ? `${l.alejka}${l.strona ?? ''}` : '–';
     tr.innerHTML = `
       <td><strong>${l.kod}</strong></td>
-      <td>${l.magazyn}</td>
+      <td></td>
       <td></td>
       <td>${l.hala ?? '–'}</td>
       <td>${alejkaStr}</td>
@@ -2128,7 +2167,8 @@ function renderujLokalizacje(lista) {
     `;
     const akcje = tr.lastElementChild;
 
-    // Typ = staly, widoczny dropdown (edycja typu, ktory czasem sie zmienia)
+    // Magazyn i typ = stale, widoczne dropdowny (obie rzeczy bywaja do poprawienia)
+    tr.children[1].appendChild(budujSelectMagazynu(l));
     tr.children[2].appendChild(budujSelectTypu(l));
 
     const btnZawartosc = document.createElement('button');

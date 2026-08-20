@@ -395,6 +395,8 @@ main {
 .lok-typ-inny    { background: #f3e5f5; color: #7b1fa2; }
 .lok-typ-select { padding: 0.15rem 0.35rem; font-size: 0.82rem; font-weight: 600; border: 1px solid #bbb; border-radius: 10px; cursor: pointer; }
 .lok-typ-select:disabled { opacity: 0.5; }
+.lok-mag-select { padding: 0.15rem 0.35rem; font-size: 0.82rem; font-weight: 600; border: 1px solid #bbb; border-radius: 10px; cursor: pointer; background: #fff; }
+.lok-mag-select:disabled { opacity: 0.5; }
 
 .import-blok {
   margin-bottom: 1rem;

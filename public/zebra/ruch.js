@@ -51,6 +51,10 @@ let powrotDoWyszukiwania = false;
 // tej listy, a nie do czystego skanu. { lokalizacja, zawartosc } albo null.
 let ostatniaZawartoscLok = null;
 let powrotDoLokalizacji = false;
+// Kod lokalizacji, ktorej zawartosc JEST TERAZ na ekranie (krok "wybor"), albo null gdy krok
+// pokazuje co innego (rozklad produktu, wyniki wyszukiwania). Czysci go przygotujKrokWybor -
+// czyli kazdy renderer przed rysowaniem - wiec nie da sie o niego zapomniec przy nowym trybie.
+let widocznaLokalizacja = null;
 
 // Magazyny OBSLUGIWANE NA ZEBRZE - z nich ida wybory celu/zrodla i wiersze rozkladu.
 // Bez tych z naZebrze:false (K4R/Reklamacje - proces biurkowy, nie robota na hali).
@@ -183,7 +187,7 @@ function wstecz() {
     // z rozkladu otwartego z wynikow wyszukiwania -> wroc do wynikow;
     // z samej listy / rozkladu po skanie -> wyjscie z kreatora
     if (powrotDoLokalizacji && ostatniaZawartoscLok) {
-      obsluzLokalizacje(ostatniaZawartoscLok);
+      wrocDoLokalizacji(ostatniaZawartoscLok);
     } else if (powrotDoWyszukiwania && ostatniaListaArtykulow) {
       obsluzListaArtykulow(ostatniaListaArtykulow, false);
     } else {
@@ -296,6 +300,7 @@ function reset() {
   powrotDoWyszukiwania = false;
   ostatniaZawartoscLok = null;
   powrotDoLokalizacji = false;
+  widocznaLokalizacja = null;
 
   el('input-start').value = '';
   el('input-wybor-skan').value = '';
@@ -379,7 +384,8 @@ function obsluzLokalizacje({ lokalizacja, zawartosc }) {
   naglowekWyborHtml = `<div class="ekran-sku"><h1>${lokalizacja.kod}</h1>`
     + `<span class="chip">${lokalizacja.magazyn}</span></div>`;
   przygotujKrokWybor(); // kontekst jest w gornym naglowku - sekcje rozkladu chowamy
-  el('wybor-hint').textContent = '';
+  widocznaLokalizacja = lokalizacja.kod; // PO przygotujKrokWybor (ono zeruje marker)
+  el('wybor-hint').textContent = 'Tap = przenieś stąd · 🔍 = karta produktu';
   el('input-wybor-skan').placeholder = 'Skanuj produkt';
 
   trybWyboru = 'wybor';
@@ -388,11 +394,47 @@ function obsluzLokalizacje({ lokalizacja, zawartosc }) {
   fokusBezKlawiatury(el('input-wybor-skan'));
 }
 
+// Wstecz z karty produktu wraca na zawartosc lokalizacji - ale kopia w pamieci moze byc juz
+// nieaktualna: wlasnie stad cos przenieslismy, a petla "➕ Dalej" nie resetuje kreatora, wiec
+// lista pokazywalaby ilosci sprzed ruchu. Rysujemy wiec kopie OD RAZU (ekran nie miga pustka
+// i przezywa brak sieci), a w tle doczytujemy lokalizacje na nowo i podmieniamy liste.
+let zadanieOdswiezeniaLok = 0;
+async function wrocDoLokalizacji(zapamietana) {
+  obsluzLokalizacje(zapamietana);
+  const kod = zapamietana.lokalizacja.kod;
+  const token = ++zadanieOdswiezeniaLok; // starsza odpowiedz nie moze nadpisac nowszego widoku
+  let dane;
+  try {
+    const res = await fetch(`/api/lokalizacje/skan/${encodeURIComponent(kod)}`);
+    if (!res.ok) return;   // np. lokalizacja usunieta - zostaw to, co bylo, bez alarmu
+    dane = await res.json();
+  } catch {
+    return;                // brak sieci: kopia z pamieci jest lepsza niz pusty ekran
+  }
+  // Odpowiedz sie zestarzala - magazynier zdazyl juz gdzies wejsc (inny krok, rozklad produktu
+  // po skanie SKU z tej listy, inna lokalizacja). Marker mowi, CO jest teraz na ekranie, wiec
+  // spozniona odpowiedz nie ma jak nadpisac cudzego widoku.
+  if (token !== zadanieOdswiezeniaLok || kroki.wybor.classList.contains('hidden')) return;
+  if (widocznaLokalizacja !== kod) return;
+  if (dane.typ !== 'lokalizacja') return;
+  if (dane.zawartosc.length === 0) {
+    // ostatnia sztuka zeszla z polki - pusta lista mowi prawde, nieaktualna klamie
+    el('lista-wyboru').innerHTML = '';
+    opcjeWyboru = [];
+    ostatniaZawartoscLok = null;
+    widocznaLokalizacja = null;
+    pokazKomunikat(`Lokalizacja ${kod} jest już pusta`, 'info');
+    return;
+  }
+  obsluzLokalizacje(dane);
+}
+
 // zeskanowano SKU lub EAN -> wybierz lokalizacje zrodlowa
 // przywraca krok "wybor" do stanu bazowego - chowa wszystkie opcjonalne elementy
 // (naglowek-karta, tytul rozkladu, podsumowanie, etykieta pola, checkbox), zeby
 // kazdy tryb (szukaj / zawartosc lokalizacji / rozklad artykulu) wlaczyl tylko swoje.
 function przygotujKrokWybor() {
+  widocznaLokalizacja = null; // ktorykolwiek tryb by tu wszedl, zawartosci lokalizacji juz nie ma
   el('wybor-naglowek').innerHTML = '';
   el('wybor-naglowek').classList.add('hidden');
   el('wybor-tytul').classList.add('hidden');
@@ -936,6 +978,7 @@ function renderujWybor(opcje, onWybierz) {
   opcje.forEach((opcja) => {
     const btn = document.createElement('button');
     btn.type = 'button';
+    btn.className = 'poz-przenies';
     const rezTekst = opcja.rez > 0 ? ` <span class="rez">(rez ${opcja.rez})</span>` : '';
     const ilosc = opcja.ilosc !== undefined ? `<span class="ilosc">${opcja.ilosc} szt.${rezTekst}</span>` : '';
     const badge = opcja.statusBadge ? ` ${opcja.statusBadge}` : '';
@@ -943,14 +986,40 @@ function renderujWybor(opcje, onWybierz) {
     const podetykieta2 = opcja.podetykieta2 ? `<span class="stany-magazynowe">${opcja.podetykieta2}</span>` : '';
     btn.innerHTML = `<span class="etykieta-glowna"><span>${opcja.etykieta}${badge}</span>${podetykieta}${podetykieta2}</span>${ilosc}`;
     btn.addEventListener('click', () => onWybierz(opcja));
-    lista.appendChild(btn);
+
+    // Wiersz ma DWA cele dotykowe: tresc = "przenies stad" (dotychczasowe zachowanie),
+    // lupa = "zbadaj towar" (pelny rozklad SKU, jak po skanie produktu). Bez lupy z
+    // zawartosci lokalizacji nie dalo sie zajrzec w INNE lokalizacje towaru, rezerwacje
+    // ani zestawy - jedyna droga dalej prowadzila prosto w "Dokad i ile?".
+    const wiersz = document.createElement('div');
+    wiersz.className = 'poz-wiersz';
+    wiersz.appendChild(btn);
+    const symbol = opcja.artykul && opcja.artykul.artykul_symbol;
+    if (symbol) {
+      const lupa = document.createElement('button');
+      lupa.type = 'button';
+      lupa.className = 'poz-karta';
+      lupa.title = `Karta produktu ${symbol}`;
+      lupa.setAttribute('aria-label', `Karta produktu ${symbol}`);
+      lupa.textContent = '🔍';
+      lupa.addEventListener('click', () => otworzKarteZListy(opcja));
+      wiersz.appendChild(lupa);
+    }
+    lista.appendChild(wiersz);
   });
+}
+
+// Wejscie w rozklad produktu z zawartosci lokalizacji - dokladnie to, co robi skan SKU.
+// Wstecz wraca do tej samej zawartosci lokalizacji, a nie do czystego skanu.
+function otworzKarteZListy(opcja) {
+  powrotDoLokalizacji = true;
+  wykonajSkan(opcja.artykul.artykul_symbol);
 }
 
 function wybierzOpcje(opcja) {
   // t_GT z listy zawartosci lokalizacji: nie ma stanu WMS tutaj -> idz przez rozklad produktu.
   // Zapamietaj, ze Wstecz ma wrocic do zawartosci lokalizacji (a nie do czystego skanu).
-  if (opcja.tylkoGt) { powrotDoLokalizacji = true; wykonajSkan(opcja.artykul.artykul_symbol); return; }
+  if (opcja.tylkoGt) { otworzKarteZListy(opcja); return; }
   stan.artykul = opcja.artykul;
   stan.zrodlo = opcja.zrodlo;
   stan.iloscSugestia = opcja.iloscSugestia ?? null;

@@ -188,11 +188,21 @@ namespace GtBridge.Services
             catch (Exception ex)
             {
                 var blad = OpisBledu(ex);
-                _stan.ZapiszBlad($"MM: {blad}");
+                bool biznesowy = CzyBiznesowy(ex);
+                // Odmowa biznesowa NIE jest awaria mostu: Sfera odpowiedziala, sesja zyje, kolejne
+                // MM przejda. Zapisujemy ja jako osobny stan, zeby ikona w trayu i kropka "Most"
+                // w WMS zostaly zielone - czerwien rezerwujemy dla awarii, ktore wymagaja reakcji.
+                if (biznesowy) _stan.ZapiszOdmowa($"MM odrzucone: {blad}");
+                else _stan.ZapiszBlad($"MM: {blad}");
                 // Pelny wyjatek (typ + HRESULT + stos) tylko do pliku - Node dostaje sam opis.
-                Dziennik.Zapisz("mm", $"BLAD po {zegar.ElapsedMilliseconds} ms :: {etykieta} :: {blad} :: {ex.GetType().Name}"
+                Dziennik.Zapisz("mm", $"{(biznesowy ? "ODMOWA" : "BLAD")} po {zegar.ElapsedMilliseconds} ms :: {etykieta} :: {blad} :: {ex.GetType().Name}"
                     + (ex is COMException c ? $" HRESULT=0x{(uint)c.ErrorCode:X8}" : "") + $" :: {ex.Message}");
-                return Task.FromResult(new DokumentResponse { Sukces = false, Blad = blad });
+                return Task.FromResult(new DokumentResponse
+                {
+                    Sukces = false,
+                    Blad = blad,
+                    Rodzaj = biznesowy ? "biznesowy" : "techniczny",
+                });
             }
         }
 
@@ -215,6 +225,19 @@ namespace GtBridge.Services
                 return Task.FromResult(new DokumentResponse { Sukces = false, Blad = blad });
             }
         }
+
+        // HRESULT-y, przy ktorych Sfera po prostu ODMOWILA wystawienia dokumentu - dane sie nie
+        // zgadzaja, ale GT i sesja dzialaja normalnie. Takie odmowy nie zapalaja czerwonej kropki
+        // "Most" w WMS (zob. DokumentResponse.Rodzaj) i nie sa powodem do restartu mostu.
+        // Lista jest WASKA celowo: wszystko, czego nie rozpoznajemy, zostaje bledem technicznym,
+        // bo lepiej raz zapalic alarm za duzo niz przegapic realna awarie Sfery.
+        private static readonly HashSet<uint> BledyBiznesowe = new()
+        {
+            0x80040F60, // brak towaru na magazynie zrodlowym (za malo sztuk do przesuniecia)
+        };
+
+        private static bool CzyBiznesowy(Exception ex) =>
+            ex is COMException com && BledyBiznesowe.Contains((uint)com.ErrorCode);
 
         // Tlumaczy wyjatki COM Sfery na czytelny komunikat (HRESULT-y z gta.chm).
         private static string OpisBledu(Exception ex)

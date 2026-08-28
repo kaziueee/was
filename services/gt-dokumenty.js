@@ -29,6 +29,13 @@ const { KUBELKI_STREF, PRIORYTET_PRZYDZIALU, przydzielZwroty } = rozbicieStanu;
 const KLUCZ_PREFIX = 'WMS-RUCH:';
 function kluczRuchu(ruchId) { return `${KLUCZ_PREFIX}${ruchId}`; }
 
+// Odczytuje id ruchu WMS z Uwag dokumentu ("WMS-RUCH:5500 | Lukasz Glapa | ..." -> 5500).
+// null, gdy Uwagi nie sa nasze (dokument wystawiony recznie w Subiekcie albo przez kogos innego).
+function idRuchuZUwag(uwagi) {
+  const m = String(uwagi ?? '').match(/WMS-RUCH:(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+
 // Formatuje czas ruchu (data_ruchu z SQLite jest w UTC bez znacznika strefy) na czas
 // scienny w Polsce, np. "02.07.2026 11:45". Niezalezne od strefy serwera Node.
 function formatCzasPL(dbTimestamp) {
@@ -67,6 +74,51 @@ async function znajdzMMpoKluczu(ruchId) {
     );
     if (!recordset.length) return null;
     return { dok_Id: recordset[0].dok_Id, dok_NrPelny: recordset[0].dok_NrPelny, ilosc: Number(recordset[0].ilosc) };
+  } catch (err) {
+    return { blad: err.message };
+  }
+}
+
+// Szuka w GT dokumentow MM, ktore moga byc RECZNYM POWTORZENIEM danego ruchu: ten sam towar,
+// ten sam magazyn zrodlowy, ta sama ilosc, wystawione przez WMS (maja nasz klucz w Uwagach),
+// ale przypisane do INNEGO ruchu. Zwraca [{ dok_Id, dok_NrPelny, ruchId }], [] (brak) albo
+// { blad } gdy GT SQL niedostepny - NIGDY nie rzuca (wywolujacy decyduje).
+//
+// To tylko PRZESIEW po stronie GT (tanie, indeksowalne warunki). O tym, czy kandydat naprawde
+// zastepuje nasz ruch, decyduje services/ruchy-kolejka.js na danych z SQLite - tam sprawdzamy
+// kierunek, status i okno czasowe. Podzial jest celowy: regula "co jest duplikatem" ma byc
+// testowalna bez bazy GT.
+//
+// dok_MagId to magazyn ZRODLOWY dokumentu MM (magazyn docelowy nie ma wlasnej kolumny w
+// dok__Dokument - kierunek domykamy przez powiazany ruch WMS). dok_DataWyst jest data bez
+// godziny, wiec bierzemy od DNIA ruchu z doba zapasu (data_ruchu jest w UTC, dokument
+// dostaje date scienna) - precyzyjne okno liczymy i tak na czasach ruchow z SQLite.
+async function znajdzPowtorzeniaMM({ ruchId, artykulGtId, magZrodloId, ilosc, dataRuchu }) {
+  const odDnia = new Date(String(dataRuchu).replace(' ', 'T') + 'Z');
+  if (isNaN(odDnia.getTime())) return [];
+  odDnia.setUTCDate(odDnia.getUTCDate() - 1);
+  try {
+    const { recordset } = await query(
+      `SELECT TOP 20 d.dok_Id, d.dok_NrPelny, d.dok_Uwagi
+       FROM dok__Dokument d
+       WHERE d.dok_Typ = @typ AND d.dok_MagId = @mag AND d.dok_DataWyst >= @odDnia
+         AND d.dok_Uwagi LIKE @wzorzecNasz AND d.dok_Uwagi NOT LIKE @wzorzecWlasny
+         AND EXISTS (SELECT 1 FROM dok_Pozycja p
+                     WHERE p.ob_DokMagId = d.dok_Id AND p.ob_TowId = @tw AND p.ob_Ilosc = @ilosc)
+       ORDER BY d.dok_Id DESC`,
+      {
+        typ: MM_TYP,
+        mag: Number(magZrodloId),
+        tw: Number(artykulGtId),
+        ilosc: Number(ilosc),
+        odDnia: odDnia.toISOString().slice(0, 10),
+        wzorzecNasz: `${KLUCZ_PREFIX}%`,
+        wzorzecWlasny: `${kluczRuchu(ruchId)} |%`,
+      }
+    );
+    return recordset
+      .map((r) => ({ dok_Id: r.dok_Id, dok_NrPelny: r.dok_NrPelny, ruchId: idRuchuZUwag(r.dok_Uwagi) }))
+      .filter((r) => r.ruchId && r.ruchId !== Number(ruchId));
   } catch (err) {
     return { blad: err.message };
   }
@@ -774,7 +826,7 @@ function rozbijStanK4(stanGt, sumaWms, dokumenty, opcje = {}) {
 }
 
 module.exports = {
-  znajdzMM, znajdzMMpoKluczu, kluczRuchu, budujUwagiMM, pobierzZkRezerwujaceK4,
+  znajdzMM, znajdzMMpoKluczu, znajdzPowtorzeniaMM, kluczRuchu, idRuchuZUwag, budujUwagiMM, pobierzZkRezerwujaceK4,
   pobierzDostawyK4, pobierzTowaryZeZwrotamiK4, pobierzTowaryZDostawamiK4,
   pobierzTowaryZPrzywozkamiK4, pobierzTowaryZPrzyjeciamiWewnK4, rozbijStanK4, iloscRozlozonaZDokumentu,
   pobierzRozmontowaniaK4, pobierzRozmontowaniaZeStanuOd, przydzielDlaZestawow, przydzielZwroty,

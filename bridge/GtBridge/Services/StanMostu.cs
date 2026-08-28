@@ -3,7 +3,13 @@ using System.Threading;
 
 namespace GtBridge.Services
 {
-    public enum StanPolaczenia { Nieznany, Ok, Blad }
+    // Odmowa = Sfera odpowiedziala i odmowila wystawienia dokumentu (np. brak towaru na magazynie
+    // zrodlowym). Most i sesja Sfery dzialaja - to NIE jest awaria, wiec ikona i kropka "Most"
+    // w WMS zostaja zielone. Osobny stan (a nie Ok) po to, zeby tresc odmowy byla widoczna
+    // w dymku ikony i w /api/zdrowie. Powod: incydent NERG0319 (2026-08-28) - 17 odmow "Brak
+    // towaru" pod rzad trzymalo w calym WMS czerwony alarm "Sfera zglosila blad" przy calkowicie
+    // zdrowym moscie, co skonczylo sie trzema niepotrzebnymi restartami mostu.
+    public enum StanPolaczenia { Nieznany, Ok, Blad, Odmowa }
 
     // Wspoldzielony, watkowo-bezpieczny stan mostu (Faza C#9): dla ikony w trayu ORAZ dla
     // endpointu /api/zdrowie, ktory czyta go Node (routes/status.js).
@@ -32,6 +38,7 @@ namespace GtBridge.Services
 
         public void ZapiszOk(string komunikat) => Ustaw(StanPolaczenia.Ok, komunikat);
         public void ZapiszBlad(string komunikat) => Ustaw(StanPolaczenia.Blad, komunikat);
+        public void ZapiszOdmowa(string komunikat) => Ustaw(StanPolaczenia.Odmowa, komunikat);
 
         private void Ustaw(StanPolaczenia stan, string komunikat)
         {

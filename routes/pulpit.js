@@ -65,19 +65,26 @@ function zajetosc() {
 // --- zaleglosci / kolejka pracy ---
 function zaleglosci() {
   const ruchy = db.prepare(
-    "SELECT status, COUNT(*) AS c, MIN(data_ruchu) AS najstarszy FROM ruchy WHERE status IN ('pending','error') GROUP BY status"
+    "SELECT status, COUNT(*) AS c, MIN(data_ruchu) AS najstarszy FROM ruchy WHERE status IN ('pending','error','wstrzymany') GROUP BY status"
   ).all();
   const mapRuchy = new Map(ruchy.map((r) => [r.status, r]));
   const pending = mapRuchy.get('pending') || { c: 0, najstarszy: null };
   const error = mapRuchy.get('error') || { c: 0, najstarszy: null };
+  // 'wstrzymany' liczy sie do tego samego kafla co 'pending': to wciaz ruch czekajacy na
+  // czlowieka, tylko job juz sam po niego nie wraca - tym bardziej ma byc widoczny.
+  // 'duplikat' NIE wchodzi: jest zamkniety, nikt nie ma z nim nic do zrobienia.
+  const wstrzymane = mapRuchy.get('wstrzymany') || { c: 0, najstarszy: null };
 
   const rozjazdy = db.prepare(
     "SELECT COUNT(*) AS c, MIN(wykryty) AS najstarszy FROM rozjazdy WHERE status = 'nowy'"
   ).get();
 
   return {
-    ruchy_pending: pending.c,
-    ruchy_pending_wiek_dni: wiekDni(pending.najstarszy),
+    ruchy_pending: pending.c + wstrzymane.c,
+    ruchy_pending_wiek_dni: wiekDni(
+      [pending.najstarszy, wstrzymane.najstarszy].filter(Boolean).sort()[0] ?? null
+    ),
+    ruchy_wstrzymane: wstrzymane.c,
     ruchy_error: error.c,
     ruchy_error_wiek_dni: wiekDni(error.najstarszy),
     rozjazdy_nowe: rozjazdy.c,

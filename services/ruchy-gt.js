@@ -12,6 +12,7 @@ const gtDokumenty = require('./gt-dokumenty');
 const awarie = require('./awarie');
 const { magazynyRuchu } = require('./ruchy-model');
 const { MAGAZYN_GT_ID } = require('../config/magazyny');
+const { klasyfikujOdpowiedzMostu, czyWstrzymac, dopasujPowtorzenie, czyPowtorzenieZamykaRuch } = require('./ruchy-kolejka');
 
 // Ruchy aktualnie obslugiwane (in-flight) - blokada per ruchId w obrebie procesu Node.
 // Chroni przed jednoczesnym wystawieniem dwoch dokumentow MM dla tego samego ruchu, gdy
@@ -39,6 +40,52 @@ async function wykonajRuchGT(ruchId) {
   }
 }
 
+// Opis ruchu w postaci, ktora rozumie services/ruchy-kolejka.js (magazyny sprowadzone do
+// symboli, niezaleznie od tego, czy stoja w lokalizacji WMS, w polu "zewnetrzny" czy w puli).
+const RUCH_Z_MAGAZYNAMI = `
+  SELECT r.id, r.artykul_gt_id, r.ilosc, r.status, r.data_ruchu,
+         COALESCE(lz.magazyn, r.mag_zrodlo_zewnetrzny, r.mag_zrodlo_pula) AS mag_zrodlo,
+         COALESCE(lc.magazyn, r.mag_cel_zewnetrzny) AS mag_cel
+  FROM ruchy r
+  LEFT JOIN lokalizacje lz ON lz.id = r.lok_zrodlo_id
+  LEFT JOIN lokalizacje lc ON lc.id = r.lok_cel_id
+  WHERE r.id = ?`;
+
+// Czy magazynier zrobil to samo przesuniecie jeszcze raz, recznie? Zwraca { ruchId, dokNr,
+// data_ruchu } albo null. Pytanie ma sens dopiero przy PONOWIENIU: swiezy ruch nie moze byc
+// duplikatem samego siebie.
+//
+// Dlaczego to w ogole istnieje (incydent NERG0319, 2026-08-28): gdy MM odbije sie od Sfery,
+// magazynier widzi blad i powtarza operacje od nowa - nie czeka na job. Powstaje drugi ruch,
+// ktory zabiera towar, a pierwszy zostaje w kolejce bez szans: kazde ponowienie dostaje juz
+// "Brak towaru na magazynie zrodlowym" i zapala alarm Sfery w calym WMS.
+//
+// GT SQL niedostepny -> null (nie zgadujemy; ruch po prostu zostaje w kolejce jak dotad).
+async function znajdzRecznePowtorzenie(ruch, magZrodlo, magCel, magZrodloId) {
+  const kandydaci = await gtDokumenty.znajdzPowtorzeniaMM({
+    ruchId: ruch.id,
+    artykulGtId: ruch.artykul_gt_id,
+    magZrodloId,
+    ilosc: ruch.ilosc,
+    dataRuchu: ruch.data_ruchu,
+  });
+  if (!Array.isArray(kandydaci) || !kandydaci.length) return null;
+
+  // Dokument mowi tylko "to byl ruch #N". Reszte dowodu (kierunek, status, okno czasowe)
+  // czytamy z WMS i oceniamy czysta regula - patrz services/ruchy-kolejka.js.
+  const zDanymi = kandydaci
+    .map((k) => {
+      const w = db.prepare(RUCH_Z_MAGAZYNAMI).get(k.ruchId);
+      return w ? { ...w, ruchId: k.ruchId, dokNr: k.dok_NrPelny } : null;
+    })
+    .filter(Boolean);
+
+  return dopasujPowtorzenie(
+    { id: ruch.id, artykul_gt_id: ruch.artykul_gt_id, ilosc: ruch.ilosc, data_ruchu: ruch.data_ruchu, mag_zrodlo: magZrodlo, mag_cel: magCel },
+    zDanymi
+  );
+}
+
 async function wykonajRuchGTWewn(ruchId) {
   const ruch = db.prepare('SELECT * FROM ruchy WHERE id = ?').get(ruchId);
   if (!ruch) throw new Error(`Ruch ${ruchId} nie istnieje`);
@@ -48,6 +95,8 @@ async function wykonajRuchGTWewn(ruchId) {
 
   let dokOk = true;
   let bladDok = null;
+  // Ile razy Sfera odmowila temu ruchowi (licznik z bazy; brak polaczenia z mostem go nie rusza).
+  let odmowySfery = ruch.mm_odmowy ?? 0;
 
   if (ruch.typ === 'MM' && !ruch.dok_gt_numer) {
     // Zrodlo bez lokalizacji WMS: magazyn zewnetrzny (przyjecie z MAG/LS) albo nieprzypisana
@@ -82,6 +131,31 @@ async function wykonajRuchGTWewn(ruchId) {
           wystawiac = false;
           db.prepare('UPDATE ruchy SET dok_gt_numer = ?, dok_gt_id = ? WHERE id = ?').run(istn.dok_NrPelny, istn.dok_Id, ruchId);
           awarie.blad('most-gt', `Adoptowano istniejacy dokument MM ${istn.dok_NrPelny} dla ruchu #${ruchId} (prewencja duplikatu - zgubiona odpowiedz HTTP przy poprzedniej probie)`, { ruchId });
+        } else {
+          // Naszego dokumentu nie ma. Zanim wystawimy kolejny MM: czy magazynier nie powtorzyl
+          // tego przesuniecia recznie (nowy ruch, ten sam towar/kierunek/ilosc)? Jesli tak, ten
+          // ruch jest juz nieaktualny - towar zabral tamten dokument. Wystawienie MM teraz albo
+          // odbije sie od Sfery ("brak towaru") i bedzie zapalac alarm w kolko, albo - gdyby stan
+          // wrocil - przesunelo by towar DRUGI RAZ. Zamykamy jako 'duplikat'.
+          const powtorzenie = await znajdzRecznePowtorzenie(ruch, magazynZrodlowy, magazynDocelowy, magZrodloId);
+          if (powtorzenie) {
+            // Stanow WMS nie ruszamy w zadnym wariancie - tu decydujemy tylko, czy sprawa jest
+            // zamknieta, czy trafia do czlowieka (czyPowtorzenieZamykaRuch wyjasnia dlaczego).
+            const zamkniety = czyPowtorzenieZamykaRuch(ruch);
+            const skad = `to samo przesuniecie wykonal ruch #${powtorzenie.ruchId}`
+              + `${powtorzenie.dokNr ? ` (${powtorzenie.dokNr})` : ''}`;
+            const opis = zamkniety
+              ? `Zamkniety jako duplikat: ${skad}. Stany WMS bez zmian, MM nie zostal wystawiony.`
+              : `Wyglada na powtorzenie: ${skad}. MM nie zostal wystawiony, ponawianie zatrzymane`
+                + ' - sprawdz stany i albo usun ten ruch (cofnie zmiane w WMS), albo kliknij "Ponow".';
+            db.prepare('UPDATE ruchy SET status = ?, blad_opis = ? WHERE id = ?')
+              .run(zamkniety ? 'duplikat' : 'wstrzymany', opis, ruchId);
+            awarie.blad('most-gt', `Ruch #${ruchId} ${zamkniety ? 'zamkniety jako duplikat' : 'wstrzymany jako mozliwe powtorzenie'} ruchu #${powtorzenie.ruchId}`, {
+              ruchId, artykul: ruch.artykul_gt_id, symbol: ruch.artykul_symbol, ilosc: ruch.ilosc,
+              z: magazynZrodlowy, do: magazynDocelowy, dokument: powtorzenie.dokNr,
+            });
+            return db.prepare('SELECT * FROM ruchy WHERE id = ?').get(ruchId);
+          }
         }
       }
 
@@ -122,7 +196,15 @@ async function wykonajRuchGTWewn(ruchId) {
           }
         } else {
           dokOk = false;
-          bladDok = odpowiedz.blad ?? odpowiedz.dane?.blad ?? `Most GT zwrocil status ${odpowiedz.status}`;
+          // Odmowa Sfery liczy sie do limitu ponawiania, brak polaczenia z mostem NIE. Most bywa
+          // wylaczony (restart peceta, aktualizacja) i wtedy ruch ma spokojnie poczekac - to caly
+          // sens kolejki. Sfera, ktora odpowiedziala "nie", sama zdania nie zmieni.
+          const klasyfikacja = klasyfikujOdpowiedzMostu(odpowiedz);
+          bladDok = klasyfikacja.opis;
+          if (klasyfikacja.odSfery) {
+            db.prepare('UPDATE ruchy SET mm_odmowy = mm_odmowy + 1 WHERE id = ?').run(ruchId);
+            odmowySfery = (db.prepare('SELECT mm_odmowy FROM ruchy WHERE id = ?').get(ruchId)?.mm_odmowy) ?? 0;
+          }
           // Do LOGU, nie tylko do blad_opis. Tresc bledu Sfery jest kasowana z wiersza `ruchy`
           // przy pierwszym udanym ponowieniu (status 'ok', blad_opis = NULL), wiec bez tego wpisu
           // po awarii nie zostaje zaden slad - dokladnie tak stracilismy przyczyne 2026-08-05.
@@ -158,10 +240,21 @@ async function wykonajRuchGTWewn(ruchId) {
   }
 
   if (dokOk && lokOk) {
-    db.prepare("UPDATE ruchy SET status = 'ok', blad_opis = NULL WHERE id = ?").run(ruchId);
+    // Udalo sie - licznik odmow zerujemy, zeby ewentualna przyszla awaria zaczynala od zera.
+    db.prepare("UPDATE ruchy SET status = 'ok', blad_opis = NULL, mm_odmowy = 0 WHERE id = ?").run(ruchId);
   } else {
     const opisy = [bladDok, bladLok ? `Sync lokalizacji GT: ${bladLok}` : null].filter(Boolean);
-    db.prepare("UPDATE ruchy SET status = 'pending', blad_opis = ? WHERE id = ?").run(opisy.join(' | '), ruchId);
+    // Po LIMIT_ODMOW_SFERY odmowach dokumentu przestajemy ponawiac automatycznie. Ruch NIE ginie
+    // (stan 'wstrzymany', przyciski "Ponow"/"Usun" w Logu) - przestaje tylko wracac co 5 minut po
+    // te sama odpowiedz i zapalac alarm Sfery w calym WMS. Wstrzymuje wylacznie odmowa DOKUMENTU:
+    // zalegly sync pol lokalizacyjnych nie dotyka Sfery i nic nie kosztuje przy ponowieniu.
+    const wstrzymany = !dokOk && czyWstrzymac(odmowySfery);
+    if (wstrzymany) {
+      opisy.push(`Wstrzymano automatyczne ponawianie po ${odmowySfery} odmowach Sfery`
+        + ' - usun przyczyne i kliknij "Ponow", albo usun ruch z kolejki.');
+    }
+    db.prepare('UPDATE ruchy SET status = ?, blad_opis = ? WHERE id = ?')
+      .run(wstrzymany ? 'wstrzymany' : 'pending', opisy.join(' | '), ruchId);
   }
 
   return db.prepare('SELECT * FROM ruchy WHERE id = ?').get(ruchId);

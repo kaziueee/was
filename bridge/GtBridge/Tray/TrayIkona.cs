@@ -80,14 +80,23 @@ namespace GtBridge.Tray
         private void Odswiez()
         {
             var (st, kom, czas) = _stan.Odczytaj();
+            // Odmowa Sfery (brak towaru) = most zdrowy, wiec ikona zostaje zielona; tresc odmowy
+            // widac w dymku i w etykiecie. Czerwien znaczy "cos wymaga reakcji przy pececie".
             _ikona.Icon = st switch
             {
                 StanPolaczenia.Ok => _zielona,
+                StanPolaczenia.Odmowa => _zielona,
                 StanPolaczenia.Blad => _czerwona,
                 _ => _szara,
             };
             string godz = czas.HasValue ? czas.Value.ToString("HH:mm") : "-";
-            string etykieta = st switch { StanPolaczenia.Ok => "OK", StanPolaczenia.Blad => "BLAD", _ => "..." };
+            string etykieta = st switch
+            {
+                StanPolaczenia.Ok => "OK",
+                StanPolaczenia.Odmowa => "ODMOWA",
+                StanPolaczenia.Blad => "BLAD",
+                _ => "...",
+            };
             string tekst = $"Most WMS :5000 - {etykieta} {godz}\n{kom}";
             _ikona.Text = tekst.Length > 63 ? tekst.Substring(0, 62) + "…" : tekst;
         }

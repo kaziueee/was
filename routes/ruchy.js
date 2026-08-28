@@ -908,8 +908,12 @@ router.get('/', (req, res) => {
   res.json(db.prepare('SELECT * FROM ruchy ORDER BY data_ruchu DESC').all());
 });
 
-// POST /api/ruchy/:id/retry - ponawia probe doslania ruchu 'pending' do GT
-// (dokument MM jesli brakuje numeru, oraz sync pol lokalizacyjnych)
+// POST /api/ruchy/:id/retry - ponawia probe doslania ruchu do GT (dokument MM jesli brakuje
+// numeru, oraz sync pol lokalizacyjnych). Dziala dla 'pending' i dla 'wstrzymany' - ten drugi
+// to ruch, ktoremu Sfera odmowila tyle razy, ze job przestal go ponawiac sam. Reczne "Ponow"
+// znaczy "przyczyna usunieta, sprobuj jeszcze raz", wiec zeruje licznik odmow i wraca do kolejki.
+// 'duplikat' NIE wraca: to ruch juz wykonany innym dokumentem, ponowienie zrobiloby MM drugi raz
+// (a gdyby detekcja sie pomylila - jest "Usun", ktore cofa stany WMS).
 router.post('/:id/retry', async (req, res, next) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) {
@@ -918,8 +922,14 @@ router.post('/:id/retry', async (req, res, next) => {
 
   const ruch = db.prepare('SELECT * FROM ruchy WHERE id = ?').get(id);
   if (!ruch) return res.status(404).json({ blad: 'Ruch nie istnieje' });
-  if (ruch.status !== 'pending') {
-    return res.status(409).json({ blad: `Ruch ma status '${ruch.status}' - ponawianie dotyczy tylko 'pending'` });
+  if (ruch.status === 'duplikat') {
+    return res.status(409).json({ blad: `Ruch zamkniety jako duplikat - to przesuniecie wykonal juz inny dokument. ${ruch.blad_opis ?? ''}`.trim() });
+  }
+  if (ruch.status !== 'pending' && ruch.status !== 'wstrzymany') {
+    return res.status(409).json({ blad: `Ruch ma status '${ruch.status}' - ponawianie dotyczy 'pending' i 'wstrzymany'` });
+  }
+  if (ruch.status === 'wstrzymany') {
+    db.prepare("UPDATE ruchy SET status = 'pending', mm_odmowy = 0 WHERE id = ?").run(id);
   }
 
   try {
@@ -930,19 +940,26 @@ router.post('/:id/retry', async (req, res, next) => {
 });
 
 // DELETE /api/ruchy/:id - usuwa bledny ruch z kolejki i COFA zmiane stanow WMS.
-// Dozwolone tylko dla 'pending' bez dok_gt_numer: dokument MM nie zostal wystawiony
-// w GT, wiec WMS przesunal stan, a GT nie - usuniecie przywraca stan WMS sprzed ruchu
+// Dozwolone dla ruchow BEZ dok_gt_numer, czyli takich, ktorych dokument MM nie powstal
+// w GT: WMS przesunal stan, a GT nie - usuniecie przywraca stan WMS sprzed ruchu
 // (inwariant: suma WMS = stan GT). Ruch z dok_gt_numer jest juz zaksiegowany w GT -
 // nie kasujemy go (trzeba odwrotnego MM), zwracamy 409. Alternatywa dla 'retry', gdy
 // ruch nie ma szans przejsc (np. towar zarezerwowany - retry zawsze odbije sie od Sfery).
+//
+// Statusy: 'pending' (w kolejce), 'wstrzymany' (job juz go nie ponawia) oraz 'duplikat'.
+// Ten ostatni jest tu wyjsciem awaryjnym: przy duplikacie stanow NIE cofamy automatycznie,
+// bo powtorzony ruch zwykle je juz uporzadkowal - ale gdyby detekcja sie pomylila, czlowiek
+// musi miec czym cofnac. Zamkniete 'ok' zostaja nietykalne.
+const STATUSY_USUWALNE = new Set(['pending', 'wstrzymany', 'duplikat']);
+
 router.delete('/:id', async (req, res, next) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ blad: 'Niepoprawne id ruchu' });
 
   const ruch = db.prepare('SELECT * FROM ruchy WHERE id = ?').get(id);
   if (!ruch) return res.status(404).json({ blad: 'Ruch nie istnieje' });
-  if (ruch.status !== 'pending') {
-    return res.status(409).json({ blad: `Usunac mozna tylko ruch 'pending' (ten ma status '${ruch.status}')` });
+  if (!STATUSY_USUWALNE.has(ruch.status)) {
+    return res.status(409).json({ blad: `Usunac mozna ruch 'pending', 'wstrzymany' albo 'duplikat' (ten ma status '${ruch.status}')` });
   }
   if (ruch.dok_gt_numer) {
     return res.status(409).json({ blad: `Ruch ma dokument GT ${ruch.dok_gt_numer} - jest zaksiegowany w GT. Cofnij go odwrotnym MM, nie usuwaniem.` });

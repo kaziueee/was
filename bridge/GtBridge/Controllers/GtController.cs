@@ -37,10 +37,14 @@ namespace GtBridge.Controllers
             return Ok(new ZdrowieResponse
             {
                 Zyje = true,
+                // "odmowa" = ostatni dokument odrzucila Sfera z powodu danych (brak towaru), ale
+                // most dziala. WMS traktuje to jak stan zdrowy (front zapala alarm tylko na
+                // "blad"), a komunikat i tak niesie tresc odmowy - zob. StanPolaczenia.Odmowa.
                 Sfera = stan switch
                 {
                     StanPolaczenia.Ok => "ok",
                     StanPolaczenia.Blad => "blad",
+                    StanPolaczenia.Odmowa => "odmowa",
                     _ => "nieznany",
                 },
                 Komunikat = komunikat,

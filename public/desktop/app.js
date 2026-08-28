@@ -64,6 +64,8 @@ const BADGE_KLASY = {
   nowy: 'badge-warn',
   otwarta: 'badge-warn',
   pending: 'badge-warn',
+  wstrzymany: 'badge-warn',      // job juz go nie ponawia - czeka na czlowieka
+  duplikat: 'badge-neutral',     // zamkniety: to przesuniecie wykonal inny dokument
   wyjasniony: 'badge-ok',
   zamknieta: 'badge-neutral',
   ok: 'badge-ok',
@@ -929,11 +931,15 @@ function wierszLog(r, { zKolumnamiSku }) {
     <td>${wynik ? badge(wynik) : '–'}</td>
     ${dok}
     <td>${r.uzytkownik ?? '–'}</td>`;
-  // kolumna Akcje tylko w glownym Logu (nie w modalu historii); przyciski gdy ruch wciaz pending
+  // kolumna Akcje tylko w glownym Logu (nie w modalu historii). "Ponow" ma sens dla ruchu, ktory
+  // wciaz moze przejsc (pending / wstrzymany po limicie odmow). Duplikat dostaje samo "Usun" -
+  // ponowienie zrobiloby MM drugi raz, ale gdyby wykrycie bylo falszywe, trzeba miec czym cofnac.
   if (zKolumnamiSku) {
     const tdAkcje = document.createElement('td');
-    if (r.ruch_id && r.ruch_status === 'pending') {
+    if (r.ruch_id && (r.ruch_status === 'pending' || r.ruch_status === 'wstrzymany')) {
       tdAkcje.appendChild(przyciskPonowRuch(r.ruch_id));
+      tdAkcje.appendChild(przyciskUsunRuch(r.ruch_id));
+    } else if (r.ruch_id && r.ruch_status === 'duplikat') {
       tdAkcje.appendChild(przyciskUsunRuch(r.ruch_id));
     }
     tr.appendChild(tdAkcje);

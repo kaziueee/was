@@ -70,6 +70,16 @@ if (!kolumnyRuchow.some((k) => k.name === 'mm_proby')) {
   console.log('Migracja: dodano kolumne mm_proby do ruchy');
 }
 
+// migracja: licznik ODMOW SFERY (osobny od mm_proby). mm_proby liczy kazde wywolanie mostu,
+// takze te, ktore nie doszly do Sfery - a limit ponawiania ma reagowac wylacznie na "Sfera
+// powiedziala nie" (brak towaru, blad zapisu). Gdy mostu nie ma (restart peceta, aktualizacja),
+// ruch ma czekac dowolnie dlugo i dogonic sie sam. Zerowany po udanym doslaniu.
+// Patrz services/ruchy-kolejka.js i CLAUDE.md "Kolejka ruchow".
+if (!kolumnyRuchow.some((k) => k.name === 'mm_odmowy')) {
+  db.exec('ALTER TABLE ruchy ADD COLUMN mm_odmowy INTEGER NOT NULL DEFAULT 0');
+  console.log('Migracja: dodano kolumne mm_odmowy do ruchy');
+}
+
 // migracja: dodaj zapas_kod do stany_lokalizacji - adnotacja "zapas" dla K4
 // (wyjatek: towar w 2 miejscach, np. zbior A1 + nadmiar P5 -> GT tw_Pole1 "A1/P5").
 // Decyzja A z PROGRESS.md - nie dzielimy ilosci, to tylko wskaznik.

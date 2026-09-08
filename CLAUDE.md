@@ -132,6 +132,14 @@ Tabele: `lokalizacje`, `stany_lokalizacji`, `ruchy`, `rozjazdy`
 
 Typy ruchów: `LOK` (lokalizowanie po PZ/FZ, bez dokumentu GT), `MM` (przesunięcie, generuje MM w GT)
 
+## Strefy: co dostaje sztukę, gdy stanu nie starcza
+
+`rozbijStanK4` (`services/rozbicie-stanu.js`) dzieli stan GT na kubełki stref, półkę i „do sprawdzenia". Dokumenty przychodowe żyją w oknie (dostawy 90 dni, drobnica 14) i **znikają dopiero po rozłożeniu w WMS** (`ruchy.zrodlo_dok`), więc regularnie sumują się do większej liczby sztuk, niż leży na K4. Wtedy ktoś musi ustąpić — kolejność zjadania: `do sprawdzenia → PÓŁKA → dostawa → drobnica od NAJSTARSZEJ`.
+
+**W obrębie drobnicy (zwrot / PW / przywózka) decyduje DATA, nie rodzaj (zmiana 2026-09-08).** Wcześniej najmocniej chroniona była przywózka — przy założeniu, że „nie sprowadza się towaru z MAG/LS, gdy stan jest na K4, więc remis praktycznie nie zachodzi". Założenie okazało się fałszywe: Kajtek przywozi pojedyncze sztuki pod konkretne zamówienie, towar schodzi WZ-ką tego samego dnia, a MM nikt w WMS nie rozkłada (od 19.07: 648 rozłożeń z PZ wobec 22 z MM) — dokument wisi więc pełne 14 dni jako **widmo** i co przeliczenie zgłasza się po sztukę. Pomiar na produkcji: **49 z 58 SKU z przywózką (84%) ma stan K4 = 0**, dla zwrotów to 7 ze 140 (5%). Skutek był taki, że zwrot z 03.09 oddawał swoją jedyną sztukę przywózce z 28.08 i **znikał z listy zwrotów**, choć fizycznie leżał w strefie zwrotów (zgłoszenie LEG60369 + MATJBF94). Reguła: przy niedoborze sztuki dostaje **nowszy dokument** — starszy dużo częściej zdążył zejść. Remis dat (`dok_DataWyst` ma rozdzielczość dnia) rozstrzyga `PRIORYTET_PRZYDZIALU`: zwrot > PW > przywózka.
+
+**Dostawa stoi poza tym wyścigiem** (`GRUPA_PRZYDZIALU`) — sięga po budżet po całej drobnicy, czyli schodzi pierwsza. Bez tego świeża paleta wypchnęłaby starszy zwrot, a to nadal decyzja usera z 2026-07-17. Rozpoznanie samego rodzaju (`PZ ← KFS` = zwrot, `MM z MAG/LS/BRK` = przywózka) było i jest poprawne — problem nigdy nie leżał w rozpoznaniu dokumentu, tylko w podziale niewystarczającego stanu.
+
 > Moduł inwentaryzacji usunięty (2026-06-25) — tabele `inwentaryzacje`/`pozycje_inwentaryzacji`, route `/api/inwentaryzacja`, ekran Zebry i panel desktopu już nie istnieją. Do zrobienia od nowa. Most C# nadal ma endpointy RW/PW (nieużywane).
 
 ## Ekrany Zebry

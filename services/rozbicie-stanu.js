@@ -83,36 +83,64 @@ function przydzielZwroty(rozmontowania, zwroty, oknoDni = OKNO_ROZMONTOWANIE_KFS
 // Kolejnosc ZJADANIA stanu K4 - co schodzi, gdy stan GT spada (sprzedaz, RW, rozchod
 // zewnetrzny, MM zrobione w Subiekcie, MM na Reklamacje). Decyzja usera 2026-07-17:
 //
-//   do sprawdzenia -> POLKA -> dostawa -> zwrot -> przywozka
+//   do sprawdzenia -> POLKA -> dostawa -> drobnica od NAJSTARSZEJ (zwrot / PW / przywozka)
 //
 // Sedno: konsumentow NIE rozpoznajemy. Kazdy z nich robi dokladnie jedno - zbija st_Stan na K4.
 // Skoro polka jest RESZTA z odejmowania, kazdy zjada ja sam z siebie i nie ma listy typow
 // dokumentow do utrzymania (regula przeszla test na magazynie K4R, o ktorym nikt nie wiedzial).
 //
-// Dlaczego taka kolejnosc miedzy strefami (gdy polka = 0, a strefy sa dwie):
-//   dostawa 1. - duza, prosta paleta; przy pustej polce towar jest tam, gdzie ona stoi.
-//                Pomylka jest GLOSNA: zasada 6 sprawdzi stan i rzuci bledem przy rozkladaniu.
-//   zwrot   2. - "zawsze niepewny", wiec chroniony w srodku. Zjedzony po cichu kasuje zadanie
-//                "odnies na regal" i sztuki zostaja w strefie, o ktorych nikt sie nie dowie.
-//   przywozka 3. - nie sprowadza sie towaru z MAG/LS, gdy stan jest na K4, wiec remis z paleta
-//                  praktycznie nie zachodzi. Ostatnie miejsce jest dla niej bezpieczne.
-// W obrebie rodzaju: FIFO - najstarszy dokument zjadany pierwszy (najdluzej wisi = najwieksza
-// szansa, ze to widmo).
+// Dlaczego dostawa schodzi pierwsza: to duza, prosta paleta; przy pustej polce towar jest tam,
+// gdzie ona stoi, a pomylka jest GLOSNA - zasada 6 sprawdzi stan i rzuci bledem przy rozkladaniu.
+// Drobnica (zwrot / PW / przywozka) jest chroniona za nia: zjedzona po cichu kasuje zadanie
+// "odnies na regal", a sztuki zostaja w strefie i nikt sie o nich nie dowie.
+//
+// MIEDZY RODZAJAMI DROBNICY DECYDUJE DATA, NIE RODZAJ (zmiana 2026-09-08, zgloszenie
+// LEG60369 + MATJBF94). Do tej pory przywozka byla chroniona najmocniej ("nie sprowadza sie
+// towaru z MAG/LS, gdy stan jest na K4, wiec remis praktycznie nie zachodzi") - i to zalozenie
+// okazalo sie nieprawdziwe. Kajtek przywozi na K4 pojedyncze sztuki pod konkretne zamowienie
+// i towar schodzi WZ-ka tego samego dnia, ale MM nikt w WMS nie rozklada, wiec dokument wisi
+// pelne okno drobnicy jako WIDMO i co przeliczenie zglasza sie po sztuke. Zmierzone na
+// produkcji (okno 14 dni, K4): 49 z 58 SKU z przywozka (84%) ma stan K4 = 0, czyli towaru juz
+// nie ma; dla zwrotow to 7 ze 140 (5%). Efekt: zwrot z 03.09 oddawal swoja jedyna sztuke
+// przywozce z 28.08 i znikal z listy zwrotow, choc fizycznie lezal w strefie zwrotow.
+//
+// Regula: przy niedoborze stanu sztuki dostaje NOWSZY dokument - starszy z duzo wiekszym
+// prawdopodobienstwem zdazyl zejsc. Remis dat (dok_DataWyst ma rozdzielczosc DNIA, wiec remis
+// jest czesty) rozstrzyga PRIORYTET_PRZYDZIALU: zwrot > PW > przywozka, czyli najpierw ten
+// rodzaj, ktorego blednie skasowane zadanie boli najbardziej.
 //
 // !!! W PETLI PRZYDZIELAMY BUDZET, wiec kolejnosc jest ODWROTNA do kolejnosci zjadania:
 // kto schodzi PIERWSZY, dostaje resztowke, czyli musi byc w petli OSTATNI. Latwo napisac na
 // odwrot i dostac wynik, ktory wyglada sensownie. Test to pilnuje.
-// przyjecie_wewn (PW) wciete miedzy zwrot a przywozke: to tez drobnica lezaca w szufladzie
-// (nie na polce pickowej), wiec chroniona przed zjedzeniem jak zwrot. Wzgledna kolejnosc
-// dostawa > zwrot > przywozka zachowana (test tego pilnuje).
-const PRIORYTET_PRZYDZIALU = { przywozka: 0, przyjecie_wewn: 1, zwrot: 2, dostawa: 3 };
+//
+// GRUPA_PRZYDZIALU = "czy ten rodzaj konkuruje data". Dostawa stoi osobno (grupa 1 = przydzial
+// po calej drobnicy = zjadana pierwsza), zeby swieza paleta nie wypchnela starszego zwrotu -
+// to nadal decyzja usera z 2026-07-17 i test tego pilnuje.
+const GRUPA_DROBNICA = 0;
+const GRUPA_PRZYDZIALU = { zwrot: GRUPA_DROBNICA, przyjecie_wewn: GRUPA_DROBNICA,
+  przywozka: GRUPA_DROBNICA, dostawa: 1 };
+
+// Tie-break przy tej samej dacie - w obrebie drobnicy. Dla dostawy wartosc nie ma znaczenia
+// (rozstrzyga grupa), ale zostaje spojna z kolejnoscia zjadania: dostawa schodzi pierwsza.
+const PRIORYTET_PRZYDZIALU = { zwrot: 0, przyjecie_wewn: 1, przywozka: 2, dostawa: 3 };
 
 // Nieznany rodzaj ladowal dotad na kubelku `dostawa` (`kubelki[d.rodzaj] || kubelki.dostawa`),
 // czyli po zmianie wskoczylby od razu na PIERWSZE miejsce zjadania i jego zadanie znikaloby
-// najszybciej. Dajemy mu priorytet -1 = przydzial pierwszy = zjadany ostatni: widoczny wiersz
-// jest mniejszym zlem niz cicho skasowane zadanie. Prawdziwym zabezpieczeniem jest test
-// sprawdzajacy, ze KUBELKI_STREF i PRIORYTET_PRZYDZIALU maja te same klucze.
+// najszybciej. Dajemy mu przydzial jako drobnicy z priorytetem -1 = przydzial pierwszy =
+// zjadany ostatni: widoczny wiersz jest mniejszym zlem niz cicho skasowane zadanie. Prawdziwym
+// zabezpieczeniem jest test sprawdzajacy, ze KUBELKI_STREF, GRUPA_PRZYDZIALU
+// i PRIORYTET_PRZYDZIALU maja te same klucze.
 const priorytet = (rodzaj) => PRIORYTET_PRZYDZIALU[rodzaj] ?? -1;
+const grupa = (rodzaj) => GRUPA_PRZYDZIALU[rodzaj] ?? GRUPA_DROBNICA;
+
+// Kolejnosc, w jakiej dokumenty siegaja po budzet stanu: drobnica przed dostawa, w obrebie
+// grupy nowszy dokument pierwszy, a remis dat rozstrzyga rodzaj. Dla samych dostaw wychodzi
+// dokladnie to, co wczesniej (jeden rodzaj -> sort po dacie malejaco).
+function porownajPrzydzial(a, b) {
+  return grupa(a.rodzaj) - grupa(b.rodzaj)
+    || String(b.data ?? '').localeCompare(String(a.data ?? ''))
+    || priorytet(a.rodzaj) - priorytet(b.rodzaj);
+}
 
 // Rozbija stan K4 na rozlaczne czesci, ktore NIE nachodza na siebie:
 //   dostawy    - PZ<-FZ, paleta od dostawcy (rozkladana dowolnie, dol/gora, w czesciach)
@@ -148,11 +176,10 @@ function rozbijStanK4(stanGt, sumaWms, dokumenty, { artykul_gt_id, magazyn = MAG
   const polkaKopia = Math.max(Number(sumaWms) || 0, 0);
   const kubelki = { dostawa: [], zwrot: [], przywozka: [], przyjecie_wewn: [] };
 
-  // stabilny sort: priorytet przydzialu, a w obrebie rodzaju najnowszy pierwszy (= najstarszy
-  // dostaje resztowke = jest zjadany pierwszy). `data` to 'YYYY-MM-DD' albo null.
-  const wgPrzydzialu = [...(dokumenty || [])].sort((a, b) =>
-    priorytet(a.rodzaj) - priorytet(b.rodzaj)
-    || String(b.data ?? '').localeCompare(String(a.data ?? '')));
+  // stabilny sort: drobnica przed dostawa, dalej najnowszy dokument pierwszy (= najstarszy
+  // dostaje resztowke = jest zjadany pierwszy), remis dat rozstrzyga rodzaj. `data` to
+  // 'YYYY-MM-DD' albo null - patrz porownajPrzydzial.
+  const wgPrzydzialu = [...(dokumenty || [])].sort(porownajPrzydzial);
 
   for (const d of wgPrzydzialu) {
     if (zostalo <= 0) break;
@@ -195,6 +222,6 @@ function rozbijStanK4(stanGt, sumaWms, dokumenty, { artykul_gt_id, magazyn = MAG
 }
 
 module.exports = {
-  MAG_KOD_K4, KUBELKI_STREF, PRIORYTET_PRZYDZIALU, priorytet,
+  MAG_KOD_K4, KUBELKI_STREF, PRIORYTET_PRZYDZIALU, GRUPA_PRZYDZIALU, priorytet, porownajPrzydzial,
   przydzielZwroty, rozbijStanK4,
 };

@@ -19,7 +19,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { rozbijStanK4, KUBELKI_STREF, PRIORYTET_PRZYDZIALU } = require('../services/rozbicie-stanu');
+const { rozbijStanK4, KUBELKI_STREF, PRIORYTET_PRZYDZIALU, GRUPA_PRZYDZIALU } =
+  require('../services/rozbicie-stanu');
 
 // Wyciaga klucze najwyzszego poziomu z literalu obiektu `<nazwa> = { ... }` w tekscie zrodla.
 // Front (public/zebra/ruch.js, public/desktop/app.js) to zwykly JS przegladarki (globalne el/
@@ -107,8 +108,10 @@ test('polka_klamie mierzy sprzedaz, ktorej WMS nie zauwazyl', () => {
   assert.equal(rozbijStanK4(40, 10, dostawa).polka_klamie, 0);
 });
 
-test('kolejnosc przy pustej polce: dostawa -> zwrot -> przywozka', () => {
-  // Kazdy rodzaj po 10 szt., polka pusta. Obnizamy stan i patrzymy, co znika pierwsze.
+test('kolejnosc przy pustej polce i tej samej dacie: dostawa -> przywozka -> zwrot', () => {
+  // Kazdy rodzaj po 10 szt., ta sama data, polka pusta. Obnizamy stan i patrzymy, co znika
+  // pierwsze. Rowna data jest tu istotna: to jedyny przypadek, w ktorym o kolejnosci decyduje
+  // RODZAJ. Gdy daty sie roznia, rozstrzyga data (nizej: przypadek LEG60369).
   const d = [dok('dostawa', 10, '2026-07-20'), dok('zwrot', 10, '2026-07-20'), dok('przywozka', 10, '2026-07-20')];
 
   // Pelny stan: wszystko sie miesci.
@@ -117,11 +120,13 @@ test('kolejnosc przy pustej polce: dostawa -> zwrot -> przywozka', () => {
   // Brakuje 5 -> zjada DOSTAWA (pierwsza w kolejnosci zjadania).
   assert.deepEqual(sumy(rozbijStanK4(25, 0, d)), { dostawa: 5, zwrot: 10, przywozka: 10, polka: 0, reszta: 0 });
 
-  // Brakuje 15 -> dostawa na zerze, zaczyna schodzic ZWROT.
-  assert.deepEqual(sumy(rozbijStanK4(15, 0, d)), { dostawa: 0, zwrot: 5, przywozka: 10, polka: 0, reszta: 0 });
+  // Brakuje 15 -> dostawa na zerze, zaczyna schodzic PRZYWOZKA (84% przywozek w oknie to
+  // dokumenty, ktorych towar juz zszedl - patrz rozbicie-stanu.js).
+  assert.deepEqual(sumy(rozbijStanK4(15, 0, d)), { dostawa: 0, zwrot: 10, przywozka: 5, polka: 0, reszta: 0 });
 
-  // Brakuje 25 -> zostaje sama PRZYWOZKA (ostatnia w kolejnosci zjadania).
-  assert.deepEqual(sumy(rozbijStanK4(5, 0, d)), { dostawa: 0, zwrot: 0, przywozka: 5, polka: 0, reszta: 0 });
+  // Brakuje 25 -> zostaje sam ZWROT (ostatni w kolejnosci zjadania, bo jego zadanie
+  // "odnies z wozka na regal" skasowane po cichu nie ma jak sie odtworzyc).
+  assert.deepEqual(sumy(rozbijStanK4(5, 0, d)), { dostawa: 0, zwrot: 5, przywozka: 0, polka: 0, reszta: 0 });
 });
 
 test('polka schodzi PRZED kazda strefa', () => {
@@ -161,7 +166,7 @@ test('PW (przyjecie wewn) widoczny mimo jednoczesnej dostawy - przypadek NERE953
   assert.equal(r.wDrodze + r.polka + r.reszta, 314);
 });
 
-test('PW schodzi przed przywozka, ale po dostawie i zwrocie (chroniony jak drobnica)', () => {
+test('remis dat w drobnicy: schodzi dostawa, potem przywozka, PW, na koncu zwrot', () => {
   const d = [dok('dostawa', 10, '2026-07-20'), dok('zwrot', 10, '2026-07-20'),
     dok('przyjecie_wewn', 10, '2026-07-20'), dok('przywozka', 10, '2026-07-20')];
   // pelny stan: wszystko sie miesci
@@ -170,12 +175,31 @@ test('PW schodzi przed przywozka, ale po dostawie i zwrocie (chroniony jak drobn
     { ...sumy(pelny), pw: sumaPw(pelny) },
     { dostawa: 10, zwrot: 10, przywozka: 10, polka: 0, reszta: 0, pw: 10 }
   );
-  // brakuje 25 -> znika dostawa(10) + zwrot(10) + PW(5); przywozka nietknieta
+  // brakuje 25 -> znika dostawa(10) + przywozka(10) + PW(5); zwrot nietkniety.
+  // Przy tej samej dacie rozstrzyga rodzaj, a najmocniej chroniony jest zwrot: jego zadanie
+  // ("odnies sztuke z wozka na regal") skasowane po cichu nie ma jak sie odtworzyc.
   const chudy = rozbijStanK4(15, 0, d);
   assert.deepEqual(
     { ...sumy(chudy), pw: sumaPw(chudy) },
-    { dostawa: 0, zwrot: 0, przywozka: 10, polka: 0, reszta: 0, pw: 5 }
+    { dostawa: 0, zwrot: 10, przywozka: 0, polka: 0, reszta: 0, pw: 5 }
   );
+});
+
+test('w drobnicy data bije rodzaj: swiezy zwrot zabiera sztuke starej przywozce (LEG60369)', () => {
+  // Zgloszenie z produkcji 2026-09-08. Kajtek przywozi na K4 pojedyncze sztuki pod zamowienie
+  // (MM 379 z 28.08, 2 szt.) i towar schodzi WZ-ka tego samego dnia, ale MM nikt w WMS nie
+  // rozklada - dokument wisi cale okno drobnicy jako widmo. Zwrot (KFS 3264/K4/2026 z 03.09)
+  // dostawal wtedy 0 szt. i znikal z listy zwrotow, choc to on lezal w strefie.
+  const przywozkaWidmo = dok('przywozka', 2, '2026-08-28');
+  const zwrotSwiezy = dok('zwrot', 1, '2026-09-03');
+  const r = rozbijStanK4(1, 0, [przywozkaWidmo, zwrotSwiezy]);
+  assert.deepEqual(sumy(r), { dostawa: 0, zwrot: 1, przywozka: 0, polka: 0, reszta: 0 });
+
+  // ...i odwrotnie: gdy to przywozka jest swiezsza, nie klamiemy na jej niekorzysc
+  const zwrotStary = dok('zwrot', 1, '2026-08-28');
+  const przywozkaSwieza = dok('przywozka', 1, '2026-09-03');
+  const odwrotnie = rozbijStanK4(1, 0, [zwrotStary, przywozkaSwieza]);
+  assert.deepEqual(sumy(odwrotnie), { dostawa: 0, zwrot: 0, przywozka: 1, polka: 0, reszta: 0 });
 });
 
 test('rodzaj bije date: swieza dostawa schodzi przed starym zwrotem', () => {
@@ -188,14 +212,27 @@ test('rodzaj bije date: swieza dostawa schodzi przed starym zwrotem', () => {
 
 test('KOLEJNOSC PRZYDZIALU jest ODWROTNA do kolejnosci zjadania', () => {
   // Straznik przed najlatwiejsza pomylka w tym pliku. Kto schodzi pierwszy (dostawa),
-  // musi miec NAJWYZSZY priorytet przydzialu, bo dostaje resztowke budzetu.
-  assert.ok(PRIORYTET_PRZYDZIALU.dostawa > PRIORYTET_PRZYDZIALU.zwrot,
-    'dostawa schodzi przed zwrotem => przydzial dostawy jest PO zwrocie');
-  assert.ok(PRIORYTET_PRZYDZIALU.zwrot > PRIORYTET_PRZYDZIALU.przywozka,
-    'zwrot schodzi przed przywozka => przydzial zwrotu jest PO przywozce');
+  // musi siegac po budzet OSTATNI, bo dostaje resztowke.
+  assert.ok(GRUPA_PRZYDZIALU.dostawa > GRUPA_PRZYDZIALU.zwrot,
+    'dostawa schodzi przed drobnica => przydzial dostawy jest PO drobnicy');
+  // Wewnatrz drobnicy kolejnosc rozstrzyga DATA (nowszy dokument pierwszy) - patrz zgloszenie
+  // LEG60369. PRIORYTET_PRZYDZIALU jest juz tylko tie-breakiem przy tej samej dacie i tam
+  // najmocniej chroniony (= siegajacy po budzet pierwszy) jest zwrot.
+  assert.deepEqual(
+    [GRUPA_PRZYDZIALU.zwrot, GRUPA_PRZYDZIALU.przywozka, GRUPA_PRZYDZIALU.przyjecie_wewn],
+    [GRUPA_PRZYDZIALU.zwrot, GRUPA_PRZYDZIALU.zwrot, GRUPA_PRZYDZIALU.zwrot],
+    'zwrot, przywozka i PW konkuruja w JEDNEJ grupie - inaczej rodzaj znow bilby date');
+  assert.ok(PRIORYTET_PRZYDZIALU.zwrot < PRIORYTET_PRZYDZIALU.przyjecie_wewn
+    && PRIORYTET_PRZYDZIALU.przyjecie_wewn < PRIORYTET_PRZYDZIALU.przywozka,
+    'remis dat: zwrot chroniony przed PW, PW przed przywozka');
 });
 
-test('kazdy rodzaj z KUBELKI_STREF ma priorytet (czwarty rodzaj nie wypadnie po cichu)', () => {
+test('kazdy rodzaj z KUBELKI_STREF ma grupe i priorytet (czwarty rodzaj nie wypadnie po cichu)', () => {
+  assert.deepEqual(
+    Object.keys(KUBELKI_STREF).sort(),
+    Object.keys(GRUPA_PRZYDZIALU).sort(),
+    'KUBELKI_STREF i GRUPA_PRZYDZIALU musza opisywac te same rodzaje'
+  );
   // Ten sam blad trafil sie juz cztery razy - za kazdym razem dlatego, ze ktos skladal
   // liste rodzajow recznie i o jednym zapomnial. KUBELKI_STREF to kanoniczna lista rodzajow
   // (gt-dokumenty buduje z niej RODZAJE_STREF), wiec straznik anchoruje na niej.

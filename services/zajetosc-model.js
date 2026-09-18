@@ -22,10 +22,12 @@ const STATUSY = {
   NIETKNIETA: 'nietknieta',
 };
 
-// Kolejnosc = kolejnosc zakladek na ekranie i kolumn w podsumowaniu. Idzie od "na pewno
-// zajete" do "na pewno wolne", a tuz PRZED wolnymi stoi kubelek posredni: slot fizycznie
-// pusty, ale z wlascicielem. Opisy sa tu, a nie we froncie, zeby nazwa statusu i jego
-// znaczenie nie rozjechaly sie miedzy warstwami.
+// Kolejnosc = kolejnosc zakladek na ekranie i kolumn w podsumowaniu. Zaczyna od tego, po co
+// sie tu przychodzi ("gdzie moge to polozyc"): najpierw WOLNE, zaraz za nimi kubelek posredni
+// (slot pusty, ale z wlascicielem - do sprawdzenia), a dopiero potem to, czego ruszyc nie mozna.
+// "Nigdy nietkniete" na koncu, bo to podzbior wolnych z zastrzezeniem, nie osobna robota.
+// Opisy sa tu, a nie we froncie, zeby nazwa statusu i jego znaczenie nie rozjechaly sie
+// miedzy warstwami.
 // `nazwa`/`opis` to ETYKIETY W UI (front bierze je z /slowniki), wiec z polskimi znakami.
 //
 // "Wolne do sprawdzenia" (kod `pusta_polka`) to dom SKU ze stanem 0: polka jest pusta, ale
@@ -34,10 +36,10 @@ const STATUSY = {
 // sciezka "Czysc zera"), a nie tylko jak to wyglada. Do liczby WOLNYCH nadal sie NIE liczy:
 // nie dasz tego miejsca innemu towarowi, dopoki ktos nie potwierdzi, ze wlasciciel nie wraca.
 const OPISY_STATUSOW = [
+  { kod: STATUSY.WOLNA, nazwa: 'Wolne', opis: 'Puste w WMS i w GT; slot był już kiedyś używany' },
+  { kod: STATUSY.PUSTA_POLKA, nazwa: 'Wolne do sprawdzenia', opis: 'Półka pusta, ale przypisana do SKU — może czekać na uzupełnienie; nie liczy się do wolnych' },
   { kod: STATUSY.ZAJETA, nazwa: 'Zajęte', opis: 'WMS wie, że leży tu towar' },
   { kod: STATUSY.TYLKO_GT, nazwa: 'Tylko GT', opis: 'WMS nic nie wie, ale pola GT opisują tu towar ze stanem' },
-  { kod: STATUSY.PUSTA_POLKA, nazwa: 'Wolne do sprawdzenia', opis: 'Półka pusta, ale przypisana do SKU — może czekać na uzupełnienie; nie liczy się do wolnych' },
-  { kod: STATUSY.WOLNA, nazwa: 'Wolne', opis: 'Puste w WMS i w GT; slot był już kiedyś używany' },
   { kod: STATUSY.NIETKNIETA, nazwa: 'Nigdy nietknięte', opis: 'Jak wyżej, ale WMS nigdy nie zapisał tu żadnego ruchu' },
 ];
 

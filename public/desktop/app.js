@@ -360,7 +360,7 @@ function renderujPulpitStanPerMagazyn(zajetosc) {
     const pasek = `<div class="kafel-pasek"><span style="width:${m.procent}%"></span></div>`;
     const czesci = [`${zGt ? 'wolne' : 'wolne wg WMS'} ${m.wolnych} z ${m.magazynowych}`];
     if (m.zajeta) czesci.push(`zajęte ${m.zajeta}`);
-    if (m.pusta_polka) czesci.push(`puste półki ${m.pusta_polka}`);
+    if (m.pusta_polka) czesci.push(`wolne do sprawdzenia ${m.pusta_polka}`);
     if (m.poza_analiza) czesci.push(`poza analizą ${m.poza_analiza}`);
     czesci.push(zGt
       ? (m.obliczono ? `stan na ${formatGodzine(m.obliczono)}` : 'sprawdzone w GT')

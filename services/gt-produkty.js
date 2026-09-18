@@ -29,8 +29,12 @@ function budujStanyGt(wpisyStanow) {
   return stany_gt;
 }
 
-// Szuka towaru po dokladnym symbolu lub EAN. Zwraca null, jesli nie znaleziono.
-async function pobierzProdukt(identyfikator) {
+// Sama TOZSAMOSC towaru po dokladnym symbolu lub EAN - bez stanow. Zwraca null, jesli nie
+// znaleziono. To jest odpowiedz na pytanie "jakie tw_Id kryje sie pod tym kodem", i tylko GT
+// zna na nie aktualna odpowiedz: symbol w Subiekcie wolno zmienic, tw_Id nigdy (zob.
+// services/kartoteka.js). Osobno od pobierzProdukt, bo skan dociaga stany i tak zbiorczo
+// (dolaczDaneGt) - drugie zapytanie o te same liczby byloby zmarnowane.
+async function znajdzTowarPoKodzie(identyfikator) {
   const towary = await query(`
     SELECT TOP 1 tw_Id, tw_Symbol, tw_Nazwa, tw_PodstKodKresk
     FROM tw__Towar
@@ -40,15 +44,21 @@ async function pobierzProdukt(identyfikator) {
   const towar = towary.recordset[0];
   if (!towar) return null;
 
-  const stanyMap = await pobierzStanyGt([towar.tw_Id]);
-
   return {
     artykul_gt_id: String(towar.tw_Id),
     symbol: towar.tw_Symbol,
     nazwa: towar.tw_Nazwa,
     ean: towar.tw_PodstKodKresk || null,
-    stany_gt: stanyMap.get(String(towar.tw_Id)),
   };
+}
+
+// Jak wyzej, ale ze stanami GT - dla wywolan, ktore potrzebuja obu naraz.
+async function pobierzProdukt(identyfikator) {
+  const towar = await znajdzTowarPoKodzie(identyfikator);
+  if (!towar) return null;
+
+  const stanyMap = await pobierzStanyGt([towar.artykul_gt_id]);
+  return { ...towar, stany_gt: stanyMap.get(String(towar.artykul_gt_id)) };
 }
 
 // Pobiera stany GT (tw_Stan) dla listy tw_Id - jedno zapytanie zbiorcze.
@@ -812,6 +822,8 @@ async function rozkladZgodnosci() {
 
 module.exports = {
   pobierzProdukt,
+  znajdzTowarPoKodzie,
+  pobierzPodstawoweInfo,
   szukajProdukty,
   szukajPoLokalizacjiGt,
   kodJestTokenemLokalizacji,   // eksport dla testu (czysta funkcja, bez GT/SQLite)

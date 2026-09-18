@@ -118,17 +118,18 @@
 
   // Rezerwacje i zestawy dla biezacej pozycji - te same rozwijane sekcje co na ekranie Ruch
   // (przygotujRezerwacjeZk / przygotujZestawy z ruch.js, globalne). Kontekst best-effort: gdy GT
-  // nie odpowie, po prostu ich nie ma - nie blokuje rozkladania. Jeden fetch /skan/:symbol daje
-  // stany_gt (rezerwacja K4) i w_zestawach.
+  // nie odpowie, po prostu ich nie ma - nie blokuje rozkladania. Jeden fetch /skan-id/:tw_Id daje
+  // stany_gt (rezerwacja K4) i w_zestawach. Po tw_Id, nie po symbolu - symbol to kopia kartoteki
+  // GT i bywa nieaktualny (zob. services/kartoteka.js).
   async function pokazKontekstProduktu(p) {
     const boxRez = el('zwroty-rez-zk');
     const boxZest = el('zwroty-zestawy');
     boxRez.classList.add('hidden'); boxRez.innerHTML = '';
     boxZest.classList.add('hidden'); boxZest.innerHTML = '';
     try {
-      // Jeden przebieg: /skan (stany_gt -> rezerwacje/zestawy + stanK4/zapas) i /k4-dom (dom WMS).
+      // Jeden przebieg: /skan-id (stany_gt -> rezerwacje/zestawy + stanK4/zapas) i /k4-dom (dom WMS).
       const [resSkan, resDom] = await Promise.all([
-        fetch(`/api/lokalizacje/skan/${encodeURIComponent(p.artykul_symbol)}`),
+        fetch(`/api/lokalizacje/skan-id/${encodeURIComponent(p.artykul_gt_id)}`),
         fetch(`/api/lokalizacje/k4-dom/${encodeURIComponent(p.artykul_gt_id)}`),
       ]);
       if (lista[idx] !== p) return;   // pozycja zmieniona w miedzyczasie (szybkie taps)

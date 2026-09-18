@@ -2,7 +2,9 @@ const express = require('express');
 const db = require('../db/database');
 const { MAGAZYNY_WMS } = require('../config/magazyny');
 const { podzielNaSlowa, LIMIT_WYSZUKIWANIA } = require('../services/wyszukiwanie');
-const { pobierzProdukt, szukajProdukty, szukajPoLokalizacjiGt, pobierzStanyGt } = require('../services/gt-produkty');
+const { znajdzTowarPoKodzie, pobierzPodstawoweInfo, szukajProdukty, szukajPoLokalizacjiGt, pobierzStanyGt } = require('../services/gt-produkty');
+const kartoteka = require('../services/kartoteka');
+const { unikalneIdy } = require('../services/kartoteka-model');
 const { pobierzStatusLokalizacjiGt, synchronizujLokalizacje, pobierzPrzegladLokalizacji } = require('../services/gt-fields');
 const gtDokumenty = require('../services/gt-dokumenty');
 const gtZestawy = require('../services/gt-zestawy');
@@ -62,18 +64,21 @@ router.get('/', (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
-// lokalizacje WMS z zapasem dla danego SKU (lub null gdy brak)
-function lokalizacjeDlaArtykulu(symbol) {
-  const wiersze = db.prepare(
-    `SELECT s.lokalizacja_id, l.kod, l.magazyn, s.artykul_gt_id, s.artykul_symbol, s.artykul_nazwa, s.ilosc, s.zapas_kod, s.ostatnia_zmiana
-     FROM stany_lokalizacji s
-     JOIN lokalizacje l ON l.id = s.lokalizacja_id
-     WHERE s.artykul_symbol = ? AND s.ilosc > 0
-     ORDER BY l.kod`
-  ).all(symbol);
+// --- tozsamosc artykulu: kluczem jest tw_Id, nie symbol ---
+//
+// `stany_lokalizacji.artykul_symbol` to KOPIA z GT zapisana przy wstawieniu wiersza (odswieza ja
+// services/kartoteka.js). Symbol w Subiekcie wolno zmienic, tw_Id nie - wiec kopia moze wskazywac
+// na towar, ktory dzis nazywa sie inaczej, albo (gdy stary symbol zostal przejety przez inna
+// karte) na DWA rozne towary naraz. Tak powstal incydent "Ulica Sezamkowa" z 2026-09-16: lookup
+// po symbolu sklejal Berta i Erniego w jedna karte, a skan poprawnego, nowego symbolu mowil
+// "brak lokalizacji WMS" mimo 39 szt. na polkach. Dlatego kod ze skanu rozwiazuje na tw_Id GT
+// (master kartoteki), a WMS pytamy juz TYLKO po tw_Id.
 
+const KOLUMNY_LOKALIZACJI = `s.lokalizacja_id, l.kod, l.magazyn, s.artykul_gt_id, s.artykul_symbol,
+  s.artykul_nazwa, s.ilosc, s.zapas_kod, s.ostatnia_zmiana`;
+
+function kartaZWierszy(wiersze) {
   if (wiersze.length === 0) return null;
-
   return {
     artykul_gt_id: wiersze[0].artykul_gt_id,
     artykul_symbol: wiersze[0].artykul_symbol,
@@ -82,13 +87,50 @@ function lokalizacjeDlaArtykulu(symbol) {
   };
 }
 
-// lokalizacje WMS z zapasem dla SKU znalezionego po EAN (lub null gdy brak)
-function lokalizacjeDlaArtykuluPoEan(ean) {
-  const wiersz = db.prepare(
-    'SELECT artykul_symbol FROM stany_lokalizacji WHERE artykul_ean = ? AND ilosc > 0 LIMIT 1'
-  ).get(ean);
-  if (!wiersz) return null;
-  return lokalizacjeDlaArtykulu(wiersz.artykul_symbol);
+// lokalizacje WMS z zapasem dla tw_Id (lub null gdy brak) - jedyny pewny klucz
+function lokalizacjeDlaArtykuluPoId(artykulGtId) {
+  return kartaZWierszy(db.prepare(
+    `SELECT ${KOLUMNY_LOKALIZACJI}
+     FROM stany_lokalizacji s
+     JOIN lokalizacje l ON l.id = s.lokalizacja_id
+     WHERE s.artykul_gt_id = ? AND s.ilosc > 0
+     ORDER BY l.kod`
+  ).all(String(artykulGtId)));
+}
+
+// tw_Id, ktore w kopii WMS nosza dany symbol / EAN. Wiecej niz jedno = KOLIZJA: dwa rozne
+// towary pod jednym kodem. Nie rozstrzygamy jej zgadywaniem (dawne `wiersze[0]` pokazywalo
+// pierwszy alfabetycznie i doklejalo mu cudze polki) - wybor nalezy do czlowieka.
+function idyPoSymbolu(symbol) {
+  return unikalneIdy(db.prepare(
+    'SELECT DISTINCT artykul_gt_id FROM stany_lokalizacji WHERE artykul_symbol = ? AND ilosc > 0'
+  ).all(symbol).map((w) => w.artykul_gt_id));
+}
+
+function idyPoEan(ean) {
+  return unikalneIdy(db.prepare(
+    'SELECT DISTINCT artykul_gt_id FROM stany_lokalizacji WHERE artykul_ean = ? AND ilosc > 0'
+  ).all(ean).map((w) => w.artykul_gt_id));
+}
+
+// Tozsamosc do wyboru przy kolizji - etykiety z kopii WMS (GT wlasnie nie odpowiada, inaczej
+// nie bylibysmy na tej sciezce). Bierzemy dowolny wiersz artykulu, takze z iloscia 0.
+function artykulyPoIdach(idy) {
+  const stmt = db.prepare(
+    'SELECT artykul_gt_id, artykul_symbol, artykul_nazwa FROM stany_lokalizacji WHERE artykul_gt_id = ? LIMIT 1'
+  );
+  return idy.map((id) => stmt.get(String(id))).filter(Boolean);
+}
+
+// AWARYJNY lookup po kopii symbolu/EAN - dla kodow, ktorych GT nie zna (lokalne dane testowe)
+// oraz na czas, gdy GT nie odpowiada. Zwraca {karta}, {kolizja: [tw_Id, ...]} albo null.
+function kartaLokalnaPoKodzie(kod) {
+  for (const idy of [idyPoSymbolu(kod), idyPoEan(kod)]) {
+    if (idy.length === 0) continue;
+    if (idy.length > 1) return { kolizja: idy };
+    return { karta: lokalizacjeDlaArtykuluPoId(idy[0]) };
+  }
+  return null;
 }
 
 // szukanie artykulow po (czesci) nazwy wsrod wszystkich artykulow, ktore
@@ -140,9 +182,29 @@ function sumaStanowLokalnych(stany) {
   return stany.reduce((suma, s) => suma + s.ilosc, 0);
 }
 
-// GET /api/lokalizacje/artykul/:symbol - lokalizacje WMS z zapasem dla danego SKU
+// GET /api/lokalizacje/artykul-id/:artykul_gt_id - lokalizacje WMS z zapasem dla tw_Id.
+// Wariant do uzytku wewnetrznego: kto ma tw_Id (desktop ma je przy kazdym produkcie), pyta tedy
+// i nie zalezy od tego, czy kopia symbolu jest aktualna.
+router.get('/artykul-id/:artykul_gt_id', (req, res) => {
+  const wynik = lokalizacjeDlaArtykuluPoId(req.params.artykul_gt_id);
+  if (!wynik) {
+    return res.status(404).json({ blad: 'Brak lokalizacji WMS z zapasem dla tego artykulu' });
+  }
+  res.json(wynik);
+});
+
+// GET /api/lokalizacje/artykul/:symbol - lokalizacje WMS z zapasem dla danego SKU.
+// Szuka po KOPII symbolu, wiec moze trafic na kolizje (jeden symbol, dwa tw_Id) - wtedy 409
+// zamiast cichego wyboru pierwszego z brzegu.
 router.get('/artykul/:symbol', (req, res) => {
-  const wynik = lokalizacjeDlaArtykulu(req.params.symbol);
+  const idy = idyPoSymbolu(req.params.symbol);
+  if (idy.length > 1) {
+    return res.status(409).json({
+      blad: `Symbol ${req.params.symbol} nosza w WMS ${idy.length} rozne artykuly (tw_Id ${idy.join(', ')}) - kopia symbolu jest nieaktualna. Otworz towar z listy produktow.`,
+      artykuly: artykulyPoIdach(idy),
+    });
+  }
+  const wynik = idy.length === 1 ? lokalizacjeDlaArtykuluPoId(idy[0]) : null;
   if (!wynik) {
     return res.status(404).json({ blad: 'Brak lokalizacji WMS z zapasem dla tego SKU' });
   }
@@ -312,25 +374,32 @@ router.get('/skan/:kod', async (req, res, next) => {
       return res.json(await dolaczDaneGt({ typ: 'lokalizacja', lokalizacja, zawartosc }));
     }
 
-    const wynikSymbol = lokalizacjeDlaArtykulu(kod);
-    if (wynikSymbol) {
-      return res.json(await dolaczDaneGt({ typ: 'artykul', ...wynikSymbol }));
-    }
+    // SKU / EAN: tozsamosc rozstrzyga GT (master kartoteki), a WMS pytamy juz po tw_Id.
+    // Kolejnosc jest odwrotna niz do 2026-09-18, kiedy lokalny lookup po kopii symbolu wygrywal
+    // z GT - i przy zamienionych symbolach pokazywal cudze polki albo "brak lokalizacji" dla
+    // towaru, ktory WMS mial rozlozony (patrz komentarz przy lokalizacjeDlaArtykuluPoId).
+    // Dodatkowe zapytanie do GT nic nie kosztuje w praktyce: dolaczDaneGt i tak wola GT nizej.
+    let towarGt = null;
+    try {
+      towarGt = await znajdzTowarPoKodzie(kod);
+    } catch (err) { /* GT niedostepne - ponizej awaryjny lookup po kopii w WMS */ }
 
-    const wynikEan = lokalizacjeDlaArtykuluPoEan(kod);
-    if (wynikEan) {
-      return res.json(await dolaczDaneGt({ typ: 'artykul', ...wynikEan }));
-    }
-
-    const produktGt = await pobierzProdukt(kod);
-    if (produktGt) {
-      // Produkt z katalogu GT (najczesciej skan EAN). Wiersze stany_lokalizacji czesto
-      // nie maja zapisanego artykul_ean, wiec lookup po EAN (wyzej) ich nie znajduje -
-      // sprobuj jeszcze dolaczyc istniejace lokalizacje WMS po symbolu z GT, zeby skan
-      // EAN zlokalizowanego towaru dawal to samo co skan/wpis SKU (zrodlo, nie "brak").
-      const wynikPoSymbolu = lokalizacjeDlaArtykulu(produktGt.symbol);
-      const payload = wynikPoSymbolu ?? artykulZGt(produktGt);
+    if (towarGt) {
+      kartoteka.odswiezZProduktu(towarGt);   // przy okazji naprawia zestarzala kopie symbolu/nazwy/EAN
+      const payload = lokalizacjeDlaArtykuluPoId(towarGt.artykul_gt_id) ?? artykulZGt(towarGt);
       return res.json(await dolaczDaneGt({ typ: 'artykul', ...payload }));
+    }
+
+    // GT nie zna kodu (albo nie odpowiada) - probujemy po KOPII symbolu/EAN w WMS.
+    const lokalne = kartaLokalnaPoKodzie(kod);
+    if (lokalne?.kolizja) {
+      // Jeden kod, dwa rozne tw_Id - nie zgadujemy, ktory. Front dostaje liste do wyboru.
+      return res.json(await dolaczDaneGt({
+        typ: 'lista_artykulow', artykuly: artykulyPoIdach(lokalne.kolizja), kolizja_symbolu: kod,
+      }));
+    }
+    if (lokalne?.karta) {
+      return res.json(await dolaczDaneGt({ typ: 'artykul', ...lokalne.karta }));
     }
 
     if (kod.length >= 2) {
@@ -342,7 +411,12 @@ router.get('/skan/:kod', async (req, res, next) => {
       try {
         const [poNazwie, poLok] = await Promise.all([
           szukajProdukty(kod).catch(() => []),
-          szukajPoLokalizacjiGt(kodLok).catch(() => []), // znormalizowany kod lokalizacji (bez myslnika tez)
+          // szukajPoLokalizacjiGt samo zrownuje zapis z myslnikiem i bez (golyKod), wiec
+          // dostaje kod prosto ze skanu. Do 2026-09-18 stala tu nieistniejaca zmienna `kodLok`:
+          // ReferenceError lecial w tym samym `try`, ktory lapie niedostepnosc GT, wiec CALE
+          // szukanie po katalogu GT bylo po cichu martwe - wyniki po nazwie dawala wylacznie
+          // historia WMS, a towary bez lokalizacji nie znajdowaly sie w ogole.
+          szukajPoLokalizacjiGt(kod).catch(() => []),
         ]);
         const mapa = new Map();
         for (const p of [...poNazwie, ...poLok]) mapa.set(String(p.artykul_gt_id), p);
@@ -366,6 +440,40 @@ router.get('/skan/:kod', async (req, res, next) => {
     }
 
     res.status(404).json({ blad: 'Nie znaleziono SKU, EAN, lokalizacji ani nazwy artykulu w WMS ani w GT' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/lokalizacje/skan-id/:artykul_gt_id - ta sama karta produktu co /skan dla SKU, ale gdy
+// tw_Id jest juz znane i nie ma czego rozwiazywac: odswiezenie po zapisie ruchu na Zebrze,
+// kontekst produktu na ekranie Zwroty. Wczesniej te miejsca wolaly /skan z KOPIA symbolu, czyli
+// wracaly do systemu po nazwie, ktora mogla sie w GT juz zmienic.
+router.get('/skan-id/:artykul_gt_id', async (req, res, next) => {
+  try {
+    const id = req.params.artykul_gt_id;
+    let payload = lokalizacjeDlaArtykuluPoId(id);
+
+    if (!payload) {
+      // Brak zapasu w WMS - tozsamosc bierzemy z GT (jak artykulZGt przy skanie kodu),
+      // a gdy GT nie odpowiada, z dowolnego wiersza kopii (takze z iloscia 0).
+      let towar = null;
+      try {
+        const info = await pobierzPodstawoweInfo([id]);
+        const t = info.get(String(id));
+        if (t) towar = { artykul_gt_id: String(id), symbol: t.tw_Symbol, nazwa: t.tw_Nazwa, ean: t.tw_PodstKodKresk || null };
+      } catch (err) { /* GT niedostepne */ }
+      if (towar) {
+        kartoteka.odswiezZProduktu(towar);
+        payload = artykulZGt(towar);
+      } else {
+        const [kopia] = artykulyPoIdach([id]);
+        if (!kopia) return res.status(404).json({ blad: 'Nie znaleziono artykulu o tym tw_Id' });
+        payload = { ...kopia, lokalizacje: [] };
+      }
+    }
+
+    res.json(await dolaczDaneGt({ typ: 'artykul', ...payload }));
   } catch (err) {
     next(err);
   }

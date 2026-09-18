@@ -120,6 +120,24 @@ Wszystkie inwarianty są egzekwowane w backendzie. Dodając nową regułę: najp
 
 **„Lokalizacja K4 przeżywa stan 0" — dlaczego osobny wiersz (2026-07-19).** K4 to magazyn zbioru: SKU ma tam jedno STAŁE miejsce, a ilość spada do zera przy każdym wyczerpaniu półki. Pusta półka czeka na uzupełnienie i **nie przestaje być adresem** — po tym adresie człowiek szuka towaru w GT (wydruk / wyszukiwanie po `tw_Pole1`), czytają go `/lokalizacje/k4-dom`, uzupełnienia, rozmontowania i ścieżki. Reguła żyła wyłącznie jako komentarz w `routes/ruchy.js` i przez to była łamana w DWÓCH miejscach naraz: `obliczPolaLokalizacji` miało `AND s.ilosc > 0` (wiersz był, ale pole GT szło puste = „wyczyść"), a `DELETE /ruchy/:id` kasowało sam wiersz przy cofnięciu ruchu na K4 (np. nieudanego uzupełnienia na pustą półkę). Dwie różne drogi, jeden skutek: SKU traciło adres w GT. **K4G jest celowo odwrotne** — tam ilość jest częścią tekstu pola (`kod(ilosc)`), więc zero naprawdę znaczy „nie ma czego pokazać".
 
+## Tożsamość towaru: `tw_Id`, nie symbol
+
+**Kluczem artykułu jest `artykul_gt_id` (= `tw_Id`). Symbol, nazwa i EAN w `stany_lokalizacji` to KOPIA kartoteki GT** — etykieta do pokazania człowiekowi, nie identyfikator. `tw_Id` jest w GT niezmienne, symbol wolno przestawić w każdej chwili (i bywa przestawiany: na produkcji 2026-09-18 rozjechane były 3 symbole i 11 nazw na 2888 artykułów).
+
+Do 2026-09-18 kopia była zapisywana raz — przy wstawieniu wiersza — i **nic jej nie odświeżało**, a `/skan/:kod` szukał po niej w WMS *przed* zapytaniem GT. Wystarczyła jedna zamiana symboli w Subiekcie, żeby ekran zaczął kłamać w dwie strony (incydent **„Ulica Sezamkowa", 2026-09-16**): ktoś zamienił karty dwóch plusz-figurek — `tw_Id` 93795 dostało `SES66146B` „Bert", a `SES66146E` przeszło na `tw_Id` 93796 „Erni" (przeklikane ręcznie, razem z polami lokalizacyjnymi — `tw_Pole8` Erniego dostało hand-typed `M2-G6-P4 ` bez ilości). Od tej chwili:
+- skan `SES66146E` **sklejał dwa towary w jedną kartę**: nagłówek z `wiersze[0]` (Erni), a pod nim półki obu — 49 szt. Berta pokazane jako Erni,
+- skan `SES66146B` mówił **„brak lokalizacji WMS"** mimo 39 szt. na półkach (żaden wiersz nie nosił jeszcze nowego symbolu) — i zapraszał do przypisania od nowa. Magazynier w 40 minut wystawił **8 prawdziwych dokumentów MM** w GT, goniąc obraz, który się przed nim przestawiał.
+
+Reguły, które z tego wynikają:
+
+1. **Kod ze skanu rozwiązuje GT** (`znajdzTowarPoKodzie` — master kartoteki), a WMS pytamy już **tylko po `tw_Id`** (`lokalizacjeDlaArtykuluPoId`). Dodatkowe zapytanie nic nie kosztuje: `dolaczDaneGt` i tak woła GT.
+2. **Kto ma `tw_Id`, nie wraca do systemu po symbolu.** Do tego są `/api/lokalizacje/artykul-id/:tw_Id` (desktop: rozjazdy, modal produktu, podpowiedzi lokalizacji) i `/api/lokalizacje/skan-id/:tw_Id` (Zebra: odświeżenie po zapisie, kontekst na Zwrotach). Lookup po symbolu (`/artykul/:symbol`) zostaje dla wywołań, które mają sam kod.
+3. **Kopia leczy się sama** — `services/kartoteka.js`: przy skanie (tożsamość i tak przyszła z GT, więc za darmo) oraz jobem raz na dobę dla reszty asortymentu. Puste pole w GT niczego nie kasuje, pusty EAN w WMS uzupełniamy z GT. Zmiana tożsamości idzie do Logu zmian jako `kartoteka_sync` (`system:kartoteka`, domyślnie ukryta — filtr U+A). Zaległości od ręki: `node scripts/odswiez-kartoteke.js` (dry-run, `--zapisz` zapisuje).
+4. **Przy kolizji nie zgadujemy.** Gdy jeden kod niesie w WMS >1 `tw_Id` (stary symbol przejęty przez inną kartę), `/skan` oddaje **listę do wyboru** (`kolizja_symbolu`), a `/artykul/:symbol` — 409. Dawne ciche `wiersze[0]` brało pierwszy alfabetycznie i doklejało mu cudze półki. Ta ścieżka odpala się tylko wtedy, gdy GT nie odpowiada albo nie zna kodu — przy żywym GT kolizji nie ma, bo tożsamość rozstrzyga `tw_Id`.
+5. **`ruchy` i `audyt` zostają nietknięte** — tam symbol jest zapisem historycznym („tak nazywał się ten towar w chwili zdarzenia"). To dzięki niemu dało się odtworzyć ten incydent. Otwarte `rozjazdy` odświeżają się same: job czyta symbol z tej samej kopii.
+
+Tą samą zmianą naprawiony jest martwy fragment wyszukiwania po nazwie: w `/skan` stała nieistniejąca zmienna `kodLok`, a `ReferenceError` lądował w `catch`, który udawał „GT niedostępne" — przez co lista wyników po nazwie pochodziła **wyłącznie** z historii WMS, nigdy z katalogu GT.
+
 ## Schemat bazy (już w 001_init.sql)
 
 Tabele: `lokalizacje`, `stany_lokalizacji`, `ruchy`, `rozjazdy`

@@ -27,6 +27,7 @@ const rozjazdyJob = require('./services/rozjazdy');
 const wagaGabJob = require('./services/waga-gabarytowa-job');
 const strefyWGtJob = require('./services/strefy-w-gt-job');
 const rozmontowaniaJob = require('./services/rozmontowania');
+const kartotekaJob = require('./services/kartoteka');
 const backupJob = require('./services/backup');
 const reconciliacjaMM = require('./services/reconciliacja-mm');
 const pulpitSnapshot = require('./services/pulpit-snapshot');
@@ -95,6 +96,7 @@ rozjazdyJob.start();
 wagaGabJob.start();
 strefyWGtJob.start();
 rozmontowaniaJob.start();
+kartotekaJob.start();   // odswiezanie kopii kartoteki GT (symbol/nazwa/EAN) w stany_lokalizacji
 backupJob.start();
 reconciliacjaMM.start();
 pulpitSnapshot.start();

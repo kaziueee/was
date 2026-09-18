@@ -344,7 +344,7 @@ async function wykonajSkan(kod, zrodloInput = el('input-start')) {
       obsluzLokalizacje(dane);
     } else if (dane.typ === 'lista_artykulow') {
       ostatnieZapytanieNazwa = kod; // zapamietaj wpisany tekst - zostanie w polu wynikow
-      obsluzListaArtykulow(dane.artykuly, dane.obciete);
+      obsluzListaArtykulow(dane.artykuly, dane.obciete, dane.kolizja_symbolu);
     } else {
       obsluzArtykul(dane);
     }
@@ -885,14 +885,19 @@ function renderujRozklad(opcje, onWybierz) {
   });
 }
 
-// znaleziono kilka artykulow po (czesci) nazwy -> wybierz konkretny artykul
-function obsluzListaArtykulow(artykuly, obciete) {
+// znaleziono kilka artykulow po (czesci) nazwy -> wybierz konkretny artykul.
+// `kolizjaSymbolu` (kod ze skanu) = inny powod tej samej listy: JEDEN symbol/EAN nosza w WMS
+// dwa rozne towary, bo w Subiekcie ktos przepiął symbol (zob. services/kartoteka.js). Wtedy
+// wybor nalezy do czlowieka - serwer celowo nie zgaduje.
+function obsluzListaArtykulow(artykuly, obciete, kolizjaSymbolu = null) {
   ostatniaListaArtykulow = artykuly;
   powrotDoWyszukiwania = false; // jestesmy NA liscie wynikow - Wstecz stad = czysty skan
 
   naglowekWyborHtml = ''; // brak SKU w gornym pasku - towar jeszcze nie wybrany
   przygotujKrokWybor();
-  el('wybor-tytul').textContent = `Znaleziono ${liczbaArtykulow(artykuly.length)} — wybierz`;
+  el('wybor-tytul').textContent = kolizjaSymbolu
+    ? `„${kolizjaSymbolu}” to w WMS ${liczbaArtykulow(artykuly.length)} — wybierz`
+    : `Znaleziono ${liczbaArtykulow(artykuly.length)} — wybierz`;
   el('wybor-tytul').classList.remove('hidden');
   el('wybor-hint').textContent = '';
   el('input-wybor-skan').placeholder = 'Skanuj SKU lub EAN';
@@ -905,7 +910,9 @@ function obsluzListaArtykulow(artykuly, obciete) {
   pokazKrok('wybor');
   el('input-wybor-skan').focus({ preventScroll: true });
 
-  if (obciete) {
+  if (kolizjaSymbolu) {
+    pokazKomunikat(`Ten sam kod nosi ${artykuly.length} różnych towarów — symbol zmieniony w Subiekcie. Wybierz właściwy.`, 'blad');
+  } else if (obciete) {
     pokazKomunikat(`Pokazano pierwsze ${artykuly.length} wyników — zawęź wyszukiwanie`, 'info');
   }
 }
@@ -1818,14 +1825,16 @@ async function zatwierdz() {
   pokazSukces(tekst, null, pozostalo);
 }
 
-// Path 1: po zapisie pobierz swieze dane produktu (/skan/:symbol) - do decyzji "Dalej"
+// Path 1: po zapisie pobierz swieze dane produktu (/skan-id/:artykul_gt_id) - do decyzji "Dalej"
 // oraz do ponownego otwarcia produktu DOKLADNIE ta sama logika co po skanie (rozklad K4/K4G
 // + wiersze "BRAK LOKALIZACJI" dla niezlokalizowanego stanu). null gdy blad / nie artykul.
+// Wracamy po tw_Id, nie po symbolu: symbol to kopia kartoteki GT i moze byc nieaktualny
+// (zob. services/kartoteka.js) - wtedy wrocilibysmy do innego towaru niz ten wlasnie ruszany.
 async function odswiezDaneProduktu() {
   const a = stan.artykul;
   if (!a) return null;
   try {
-    const res = await fetch(`/api/lokalizacje/skan/${encodeURIComponent(a.artykul_symbol)}`);
+    const res = await fetch(`/api/lokalizacje/skan-id/${encodeURIComponent(a.artykul_gt_id)}`);
     if (!res.ok) return null;
     const dane = await res.json();
     return dane.typ === 'artykul' ? dane : null;

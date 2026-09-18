@@ -636,7 +636,8 @@ async function otworzRozwiazanie(rozjazd, tr) {
 
   let dane;
   try {
-    dane = await api(`/api/lokalizacje/artykul/${encodeURIComponent(rozjazd.artykul_symbol)}`);
+    // po tw_Id, nie po symbolu - symbol w wierszu rozjazdu to kopia kartoteki GT (services/kartoteka.js)
+    dane = await api(`/api/lokalizacje/artykul-id/${encodeURIComponent(rozjazd.artykul_gt_id)}`);
   } catch (err) {
     pokazKomunikat(`Rozjazd może być już nieaktualny (${err.message}) - użyj "Wykryj teraz".`, 'info');
     return;
@@ -2483,7 +2484,7 @@ async function mmZaladujLokZrodlo(inputEl, brakEl, mag, produkt) {
   inputEl.classList.remove('hidden');
   if (brakEl) brakEl.classList.add('hidden');
   try {
-    const dane = await api(`/api/lokalizacje/artykul/${encodeURIComponent(produkt.symbol)}`);
+    const dane = await api(`/api/lokalizacje/artykul-id/${encodeURIComponent(produkt.artykul_gt_id)}`);
     if (mag === 'K4') {
       // K4 = 1 SKU = 1 lokalizacja; stan zrodla ZAWSZE z GT (Subiekt = master), nie z kopii
       // WMS (ta bywa nieaktualna). Dostepne do MM = stan GT - rezerwacja.
@@ -2986,7 +2987,7 @@ async function renderModalRozklad() {
   // lokalizacje WMS z zapasem + stale miejsce K4 (tez puste, ilosc 0) + zapas_kod
   let loki = [];
   try {
-    const dane = await api(`/api/lokalizacje/artykul/${encodeURIComponent(modalProdukt.symbol)}`);
+    const dane = await api(`/api/lokalizacje/artykul-id/${encodeURIComponent(modalProdukt.artykul_gt_id)}`);
     loki = dane.lokalizacje;
   } catch { loki = []; }
   let k4Zapas = null;

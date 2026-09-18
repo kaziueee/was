@@ -352,12 +352,19 @@ function renderujPulpitStanPerMagazyn(zajetosc) {
   const cont = el('pulpit-stan');
   const NAZWY = { K4: 'K4 Hala', K4G: 'K4 Góra' };
   for (const m of zajetosc || []) {
+    // Ten widok dostaje dane albo z samej wms.db (zrodlo 'wms'), albo ze snapshotu sprzed
+    // rozbicia na rodzaje miejsc (zrodlo 'gt', bez `grupy`). Podpis idzie ZA zrodlem, a nie
+    // na sztywno - inaczej kafel opisywalby zweryfikowane w GT liczby jako niesprawdzone,
+    // czyli klamalby w te sama strone, co przed poprawka ze snapshotem.
+    const zGt = m.zrodlo !== 'wms';
     const pasek = `<div class="kafel-pasek"><span style="width:${m.procent}%"></span></div>`;
-    const czesci = [`wolne wg WMS ${m.wolnych} z ${m.magazynowych}`];
+    const czesci = [`${zGt ? 'wolne' : 'wolne wg WMS'} ${m.wolnych} z ${m.magazynowych}`];
     if (m.zajeta) czesci.push(`zajęte ${m.zajeta}`);
     if (m.pusta_polka) czesci.push(`puste półki ${m.pusta_polka}`);
     if (m.poza_analiza) czesci.push(`poza analizą ${m.poza_analiza}`);
-    czesci.push('bez weryfikacji w GT');
+    czesci.push(zGt
+      ? (m.obliczono ? `stan na ${formatGodzine(m.obliczono)}` : 'sprawdzone w GT')
+      : 'bez weryfikacji w GT');
 
     const kafel = pulpitKafel({
       etykieta: `${NAZWY[m.magazyn] || m.magazyn} — zajętość`,

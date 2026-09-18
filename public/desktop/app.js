@@ -82,6 +82,7 @@ const panele = {
   produkty: { sekcja: 'panel-produkty', zaladowano: false, odswiez: odswiezProdukty },
   rozjazdy: { sekcja: 'panel-rozjazdy', zaladowano: false, odswiez: odswiezRozjazdy },
   lokalizacje: { sekcja: 'panel-lokalizacje', zaladowano: false, odswiez: odswiezLokalizacje },
+  zajetosc: { sekcja: 'panel-zajetosc', zaladowano: false, odswiez: odswiezZajetosc },
   mm: { sekcja: 'panel-mm', zaladowano: false, odswiez: () => {} },
   uzupelnienia: { sekcja: 'panel-uzupelnienia', zaladowano: false, odswiez: odswiezUzupelnienia },
   zwroty: { sekcja: 'panel-zwroty', zaladowano: false, odswiez: odswiezZwroty },
@@ -99,7 +100,13 @@ const panele = {
 // kazdy ma swoj stan; grupa dokłada tylko warstwe nawigacji.
 // Kolejnosc = kolejnosc podzakladek w index.html, od najczestszej pracy do najrzadszej;
 // pierwszy jest domyslny (wejscie na sam #ruchy).
-const GRUPY = { ruchy: { domyslny: 'uzupelnienia', panele: ['uzupelnienia', 'dostawy', 'do-sprawdzenia', 'rozjazdy', 'mm'] } };
+// Grupa 'lokalizacje' ma panel o tej samej nazwie co ona sama - to celowe: #lokalizacje
+// ma dalej prowadzic tam, gdzie prowadzilo (linki, zakladki przegladarki, kafle pulpitu),
+// a "Wolne miejsca" dokladaja sie jako druga podzakladka pod ta sama glowna zakladka.
+const GRUPY = {
+  ruchy: { domyslny: 'uzupelnienia', panele: ['uzupelnienia', 'dostawy', 'do-sprawdzenia', 'rozjazdy', 'mm'] },
+  lokalizacje: { domyslny: 'lokalizacje', panele: ['lokalizacje', 'zajetosc'] },
+};
 
 // panel -> grupa, do zaznaczania wlasciwej zakladki glownej i pokazania paska podzakladek
 const GRUPA_PANELU = Object.fromEntries(
@@ -122,12 +129,17 @@ function pokazPanel(nazwa, pod) {
     btn.classList.toggle('aktywny', btn.dataset.panel === glowna);
   });
 
-  // Pasek podzakladek Ruchow - widoczny tylko wewnatrz grupy
-  const pasek = el('podzakladki-ruchy');
-  pasek.classList.toggle('hidden', GRUPA_PANELU[nazwa] !== 'ruchy');
-  pasek.querySelectorAll('.podzakladka').forEach((a) => {
-    a.classList.toggle('aktywna', a.dataset.pod === nazwa);
-  });
+  // Paski podzakladek - kazda grupa ma swoj <nav id="podzakladki-<grupa>">, widoczny tylko
+  // wewnatrz tej grupy. Petla po GRUPY, a nie po nazwie na sztywno: druga grupa (Lokalizacje)
+  // inaczej dolozylaby drugi prawie identyczny kawalek kodu.
+  for (const grupa of Object.keys(GRUPY)) {
+    const pasek = el(`podzakladki-${grupa}`);
+    if (!pasek) continue;
+    pasek.classList.toggle('hidden', GRUPA_PANELU[nazwa] !== grupa);
+    pasek.querySelectorAll('.podzakladka').forEach((a) => {
+      a.classList.toggle('aktywna', a.dataset.pod === nazwa);
+    });
+  }
 
   // Zestawienia to jedna strona - adres #zestawienia/<raport> nie przelacza tresci, tylko
   // wskazuje sekcje do przewiniecia. Zapamietujemy ja tu, bo przewijac mozna dopiero PO
@@ -282,17 +294,26 @@ function renderujPulpitKolejke(d) {
   kafle.forEach((x) => cont.appendChild(x));
 }
 
+// Kafel zajetosci liczy sie BEZ GT (pulpit ma sie otwierac natychmiast), wiec mowi
+// "wolne wg WMS" - a nie "wolne". Roznica jest duza i realna: czesc pustych w WMS slotow
+// ma towar opisany wylacznie w polach GT. Od tego jest klikniecie w kafel -> "Wolne miejsca",
+// gdzie backend dopytuje GT i pokazuje, ile z tych slotow naprawde da sie zajac.
 function renderujPulpitStan(zajetosc) {
   const cont = el('pulpit-stan');
   cont.innerHTML = '';
   const NAZWY = { K4: 'K4 Hala', K4G: 'K4 Góra' };
   for (const m of zajetosc || []) {
     const pasek = `<div class="kafel-pasek"><span style="width:${m.procent}%"></span></div>`;
+    const czesci = [`zajęte ${m.zajeta}`];
+    if (m.pusta_polka) czesci.push(`puste półki ${m.pusta_polka}`);
+    czesci.push(`wolne wg WMS ${m.wolnych}`);
+    if (m.poza_analiza) czesci.push(`poza analizą ${m.poza_analiza}`);
     const kafel = pulpitKafel({
       etykieta: `${NAZWY[m.magazyn] || m.magazyn} — zajętość`,
       wartosc: `${m.procent}%`,
-      podpis: `${m.zajetych}/${m.aktywnych} · wolnych ${m.wolnych}`,
+      podpis: czesci.join(' · '),
       wariant: m.procent >= 90 ? 'red' : (m.procent >= 75 ? 'amber' : 'ok'),
+      onKlik: () => { location.hash = '#lokalizacje/zajetosc'; },
     });
     kafel.insertAdjacentHTML('beforeend', pasek);
     cont.appendChild(kafel);
@@ -2063,6 +2084,15 @@ el('form-nowy-karton').addEventListener('submit', async (e) => {
 
 // === LOKALIZACJE ===
 
+// Slowniki (typy, przeznaczenia, statusy) przychodza z backendu i sa cache'owane na czas
+// zycia strony. Front ich nie powtarza u siebie - inaczej dopisanie przeznaczenia w
+// services/lokalizacje-model.js wymagaloby pamietania o drugim pliku, w innym jezyku.
+let slownikiLok = null;
+async function slowniki() {
+  if (!slownikiLok) slownikiLok = await api('/api/lokalizacje/slowniki');
+  return slownikiLok;
+}
+
 async function odswiezLokalizacje() {
   const magazyn = el('lok-magazyn').value;
   const q = el('lok-q').value.trim();
@@ -2071,13 +2101,13 @@ async function odswiezLokalizacje() {
   if (q) params.set('q', q);
 
   try {
+    await slowniki();
     renderujLokalizacje(await api(`/api/lokalizacje?${params}`));
   } catch (err) {
     pokazKomunikat(err.message, 'blad');
   }
 }
 
-const TYPY_LOK = ['paleta', 'trawers', 'polka', 'inny'];
 const MAGAZYNY_LOK = ['K4', 'K4G'];
 
 // Staly, widoczny dropdown typu w kolumnie Typ - zmiana = PUT {typ} (reczne nadpisanie
@@ -2086,7 +2116,7 @@ const MAGAZYNY_LOK = ['K4', 'K4G'];
 function budujSelectTypu(l) {
   const sel = document.createElement('select');
   const koloruj = () => { sel.className = `lok-typ-select${sel.value ? ` lok-typ-${sel.value}` : ''}`; };
-  for (const t of TYPY_LOK) {
+  for (const t of slownikiLok.typy) {
     const o = document.createElement('option');
     o.value = t; o.textContent = t;
     if (t === l.typ) o.selected = true;
@@ -2109,6 +2139,43 @@ function budujSelectTypu(l) {
       pokazKomunikat(`Typ ${l.kod} zmieniony na „${sel.value}".`, 'ok');
     } catch (err) {
       sel.value = obecny; koloruj();
+      pokazKomunikat(err.message, 'blad');
+    } finally {
+      sel.disabled = false;
+    }
+  });
+  return sel;
+}
+
+// Dropdown przeznaczenia - po co ten slot jest (towar / kartony / strefa przyjec / inne).
+// To NIE jest blokada: na strefie przyjec wolno polozyc biezaca dostawe i backend tego nie
+// odrzuca. Przeznaczenie wycina slot wylacznie z rachunku "ile mam wolnego miejsca na towar",
+// bo pusta strefa przyjec nie jest wolnym miejscem - jest pusta strefa przyjec.
+function budujSelectPrzeznaczenia(l, poZmianie) {
+  const sel = document.createElement('select');
+  sel.className = 'lok-mag-select';
+  for (const p of slownikiLok.przeznaczenia) {
+    const o = document.createElement('option');
+    o.value = p.kod; o.textContent = p.nazwa;
+    if (p.kod === (l.przeznaczenie || 'towar')) o.selected = true;
+    sel.appendChild(o);
+  }
+  sel.title = 'Do czego sluzy ta lokalizacja (nie blokuje odkladania towaru)';
+
+  let obecne = l.przeznaczenie || 'towar';
+  sel.addEventListener('change', async () => {
+    if (sel.value === obecne) return;
+    sel.disabled = true;
+    try {
+      await api(`/api/lokalizacje/${l.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ przeznaczenie: sel.value }),
+      });
+      obecne = sel.value; l.przeznaczenie = sel.value;
+      pokazKomunikat(`${l.kod}: przeznaczenie „${sel.selectedOptions[0].textContent}".`, 'ok');
+      if (poZmianie) poZmianie();
+    } catch (err) {
+      sel.value = obecne;
       pokazKomunikat(err.message, 'blad');
     } finally {
       sel.disabled = false;
@@ -2167,6 +2234,7 @@ function renderujLokalizacje(lista) {
       <td><strong>${l.kod}</strong></td>
       <td></td>
       <td></td>
+      <td></td>
       <td>${l.hala ?? '–'}</td>
       <td>${alejkaStr}</td>
       <td>${l.aktywna ? 'tak' : 'nie'}</td>
@@ -2174,9 +2242,11 @@ function renderujLokalizacje(lista) {
     `;
     const akcje = tr.lastElementChild;
 
-    // Magazyn i typ = stale, widoczne dropdowny (obie rzeczy bywaja do poprawienia)
+    // Magazyn, typ i przeznaczenie = stale, widoczne dropdowny (kazda z tych rzeczy bywa
+    // do poprawienia, a wejscie w tryb edycji dla jednego pola bylo by drozsze niz zysk)
     tr.children[1].appendChild(budujSelectMagazynu(l));
     tr.children[2].appendChild(budujSelectTypu(l));
+    tr.children[3].appendChild(budujSelectPrzeznaczenia(l));
 
     const btnZawartosc = document.createElement('button');
     btnZawartosc.type = 'button';
@@ -2244,7 +2314,7 @@ async function przelaczZawartosc(lokalizacja, tr) {
   const wiersz = document.createElement('tr');
   wiersz.className = 'wiersz-zawartosc';
   const td = document.createElement('td');
-  td.colSpan = 5;
+  td.colSpan = 8;
 
   if (dane.zawartosc.length === 0) {
     td.innerHTML = '<p class="hint">Lokalizacja jest pusta.</p>';
@@ -2357,6 +2427,373 @@ el('btn-import-wykonaj').addEventListener('click', async () => {
     el('btn-import-wykonaj').disabled = false;
   }
 });
+
+// === WOLNE MIEJSCA (przeglad zajetosci) ===
+//
+// Ekran odpowiada na pytanie "gdzie moge to polozyc". Statusy liczy backend
+// (services/zajetosc-model.js) - front tylko filtruje gotowy zbior i pozwala go oznaczac.
+// Caly zbior (~2 tys. wierszy) siedzi w pamieci, bo przelaczanie zakladek i regalow ma byc
+// natychmiastowe, a jedno pytanie do GT na wejscie wystarcza.
+
+let zajDane = null;                   // { pozycje, podsumowanie } z ostatniego pobrania
+let zajStatus = '';                   // aktywna zakladka statusu ('' = wszystkie)
+let zajPodsumowanieStale = false;     // oznaczono przeznaczenie -> kafle sa sprzed zmiany
+const zajZaznaczone = new Set();      // id lokalizacji zaznaczonych do oznaczenia hurtem
+
+const ZAJ_WARIANT = {                 // kolor znacznika statusu (klasy .badge-*)
+  zajeta: 'neutral', pusta_polka: 'info', tylko_gt: 'warn', wolna: 'ok', nietknieta: 'ok',
+};
+
+function zajOpisStatusu(kod) {
+  return (slownikiLok?.statusy ?? []).find((s) => s.kod === kod) ?? { kod, nazwa: kod, opis: '' };
+}
+
+async function odswiezZajetosc() {
+  el('zaj-czas').textContent = 'Liczę zajętość (pytam też GT o pola lokalizacyjne)...';
+  try {
+    await slowniki();
+    zajDane = await api('/api/lokalizacje/zajetosc');
+    zajZaznaczone.clear();
+    zajPodsumowanieStale = false;
+    el('zaj-czas').textContent = `Stan na ${new Date().toLocaleTimeString('pl')} · `
+      + `${zajDane.pozycje.length} aktywnych lokalizacji`;
+    zajWypelnijFiltry();
+    renderujZajetosc();
+  } catch (err) {
+    zajDane = null;
+    el('zaj-tbody').innerHTML = '';
+    el('zaj-kafle').innerHTML = '';
+    el('zaj-zakladki').innerHTML = '';
+    el('zaj-czas').textContent = '';
+    pokazKomunikat(err.message, 'blad');
+  }
+}
+
+// Regaly, poziomy i przeznaczenia do selectow - z DANYCH, nie z listy w kodzie: regaly bywaja
+// dokladane, a poziom zalezy od rodzaju regalu (P1-P6 na polkach, brak na paletach).
+function zajWypelnijFiltry() {
+  const regaly = [...new Set(zajDane.pozycje.map((p) => p.regal).filter(Boolean))].sort();
+  const poziomy = [...new Set(zajDane.pozycje.map((p) => p.poziom).filter((x) => x != null))].sort((a, b) => a - b);
+
+  const ustaw = (id, opcje, etykietaPusta) => {
+    const sel = el(id);
+    const wybrane = sel.value;
+    sel.innerHTML = `<option value="">${etykietaPusta}</option>`
+      + opcje.map((o) => `<option value="${o.wartosc}">${o.nazwa}</option>`).join('');
+    sel.value = wybrane;                       // filtr przezywa odswiezenie
+  };
+
+  ustaw('zaj-regal', regaly.map((r) => ({ wartosc: r, nazwa: `Regał ${r}` })), 'Wszystkie regały');
+  ustaw('zaj-poziom', poziomy.map((p) => ({ wartosc: p, nazwa: `Poziom P${p}` })), 'Wszystkie poziomy');
+  ustaw('zaj-przeznaczenie', slownikiLok.przeznaczenia.map((p) => ({ wartosc: p.kod, nazwa: p.nazwa })), 'Każde przeznaczenie');
+
+  // Wybor w pasku zaznaczenia tez ma przezyc odswiezenie - oznaczanie strefy to seria
+  // zmian pod rzad, a kazda konczy sie przeliczeniem listy.
+  const selZazn = el('zaj-zazn-przeznaczenie');
+  const wybraneZazn = selZazn.value;
+  selZazn.innerHTML = slownikiLok.przeznaczenia.map((p) => `<option value="${p.kod}">${p.nazwa}</option>`).join('');
+  if (wybraneZazn) selZazn.value = wybraneZazn;
+}
+
+// Filtry poza statusem - na tym zbiorze liczymy liczniki zakladek, zeby zakladka pokazywala
+// "ile tego jest TUTAJ", a nie w calym magazynie.
+function zajFiltrujBezStatusu() {
+  if (!zajDane) return [];
+  const magazyn = el('zaj-magazyn').value;
+  const regal = el('zaj-regal').value;
+  const poziom = el('zaj-poziom').value;
+  const przezn = el('zaj-przeznaczenie').value;
+  const q = el('zaj-q').value.trim().toUpperCase();
+
+  return zajDane.pozycje.filter((p) => {
+    if (magazyn && p.magazyn !== magazyn) return false;
+    if (regal && p.regal !== regal) return false;
+    if (poziom && String(p.poziom) !== poziom) return false;
+    if (przezn && (p.przeznaczenie || 'towar') !== przezn) return false;
+    if (q) {
+      const wKodzie = p.kod.toUpperCase().includes(q);
+      const wTowarach = [...p.towary, ...p.gt].some((t) =>
+        String(t.artykul_symbol ?? t.symbol ?? '').toUpperCase().includes(q)
+        || String(t.artykul_nazwa ?? t.nazwa ?? '').toUpperCase().includes(q));
+      if (!wKodzie && !wTowarach) return false;
+    }
+    return true;
+  });
+}
+
+function renderujZajetosc() {
+  if (!zajDane) return;
+  const widoczneBezStatusu = zajFiltrujBezStatusu();
+  const widoczne = zajStatus ? widoczneBezStatusu.filter((p) => p.status === zajStatus) : widoczneBezStatusu;
+
+  zajRenderKafle();
+  zajRenderZakladki(widoczneBezStatusu);
+  zajRenderTabele(widoczne);
+  zajRenderZaznaczenie();
+}
+
+// Kafle podsumowania - ta sama arytmetyka co kafel na pulpicie, ale juz ZWERYFIKOWANA w GT:
+// "wolne" znaczy tu naprawde wolne, a nie "bez wiersza w WMS".
+function zajRenderKafle() {
+  const cont = el('zaj-kafle');
+  cont.innerHTML = '';
+  const NAZWY = { K4: 'K4 Hala', K4G: 'K4 Góra' };
+  for (const m of zajDane.podsumowanie) {
+    const czesci = [`zajęte ${m.zajeta}`];
+    if (m.pusta_polka) czesci.push(`puste półki ${m.pusta_polka}`);
+    if (m.tylko_gt) czesci.push(`tylko GT ${m.tylko_gt}`);
+    if (m.poza_analiza) czesci.push(`poza analizą ${m.poza_analiza}`);
+    const kafel = pulpitKafel({
+      etykieta: `${NAZWY[m.magazyn] || m.magazyn} — wolnych`,
+      wartosc: m.wolnych,
+      podpis: `z ${m.magazynowych} slotów na towar · ${czesci.join(' · ')}`,
+      wariant: m.procent >= 90 ? 'red' : (m.procent >= 75 ? 'amber' : 'ok'),
+    });
+    kafel.insertAdjacentHTML('beforeend',
+      `<div class="kafel-pasek"><span style="width:${m.procent}%"></span></div>`);
+    cont.appendChild(kafel);
+  }
+  if (zajPodsumowanieStale) {
+    cont.insertAdjacentHTML('beforeend',
+      '<div class="kafel kafel-amber"><div class="kafel-etykieta">Podsumowanie sprzed zmiany'
+      + ' przeznaczenia</div><div class="kafel-podpis">Kliknij „Odśwież", żeby przeliczyć.</div></div>');
+  }
+}
+
+function zajRenderZakladki(zbior) {
+  const cont = el('zaj-zakladki');
+  cont.innerHTML = '';
+  const pozycje = [{ kod: '', nazwa: 'Wszystkie', opis: 'Wszystkie aktywne lokalizacje po filtrach' },
+    ...(slownikiLok.statusy ?? [])];
+
+  for (const s of pozycje) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'podzakladka' + (zajStatus === s.kod ? ' aktywna' : '');
+    const ile = s.kod ? zbior.filter((p) => p.status === s.kod).length : zbior.length;
+    btn.textContent = `${s.nazwa} (${ile})`;
+    btn.title = s.opis;
+    btn.addEventListener('click', () => { zajStatus = s.kod; renderujZajetosc(); });
+    cont.appendChild(btn);
+  }
+}
+
+function zajRenderTabele(widoczne) {
+  const tbody = el('zaj-tbody');
+  tbody.innerHTML = '';
+  el('zaj-brak').classList.toggle('hidden', widoczne.length > 0);
+  el('zaj-zazn-wszystkie').checked = widoczne.length > 0 && widoczne.every((p) => zajZaznaczone.has(p.id));
+
+  // Limit rysowania: przy "Wszystkie" bez filtrow to ponad 2 tys. wierszy z selectami w kazdym.
+  // Pokazujemy pierwsze LIMIT i mowimy wprost, ze reszta czeka na filtr - to szybsze niz
+  // paginacja, a ekran i tak sluzy do pracy na wycinku (regal, poziom, status).
+  const LIMIT = 300;
+  const rysowane = widoczne.slice(0, LIMIT);
+
+  // Sloty poza analiza (kartony, strefa przyjec) zostaja NA LISCIE - inaczej nie dalo by sie
+  // ich odtagowac - ale sa wyraznie oznaczone, zeby nikt nie szukal roznicy miedzy licznikiem
+  // zakladki (wszystko, co widac) a kaflem (tylko sloty na towar).
+  const magazynowe = new Set(slownikiLok.przeznaczenia.filter((x) => x.liczDoWolnych).map((x) => x.kod));
+
+  for (const p of rysowane) {
+    const tr = document.createElement('tr');
+    const opis = zajOpisStatusu(p.status);
+    const poza = !magazynowe.has(p.przeznaczenie || 'towar');
+    if (poza) tr.classList.add('zaj-poza');
+    tr.innerHTML = `
+      <td></td>
+      <td><strong>${p.kod}</strong></td>
+      <td>${p.magazyn}</td>
+      <td><span class="lok-typ lok-typ-${p.typ}">${p.typ}</span></td>
+      <td></td>
+      <td><span class="badge badge-${ZAJ_WARIANT[p.status] ?? 'neutral'}" title="${opis.opis}">${opis.nazwa}</span>`
+      + (poza ? ' <span class="badge badge-neutral" title="Nie liczy się do wolnego miejsca na towar">poza analizą</span>' : '')
+      + `</td>
+      <td>${zajOpisZawartosci(p)}</td>
+      <td></td>
+    `;
+
+    const zazn = document.createElement('input');
+    zazn.type = 'checkbox';
+    zazn.checked = zajZaznaczone.has(p.id);
+    zazn.addEventListener('change', () => {
+      if (zazn.checked) zajZaznaczone.add(p.id); else zajZaznaczone.delete(p.id);
+      zajRenderZaznaczenie();
+    });
+    tr.children[0].appendChild(zazn);
+
+    // Zmiana przeznaczenia przesuwa slot do/z analizy, wiec kafle robia sie nieaktualne.
+    // NIE przeladowujemy jednak calego przegladu: to kolejny przebieg po kartotece GT, a
+    // oznaczanie strefy to zwykle seria zmian pod rzad. Kafle same mowia, ze sa nieswieze.
+    tr.children[4].appendChild(budujSelectPrzeznaczenia(p, () => {
+      zajPodsumowanieStale = true;
+      renderujZajetosc();
+    }));
+
+    if (p.gt.length > 0) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-small';
+      btn.textContent = 'Przypisz';
+      btn.addEventListener('click', () => zajPrzelaczSzczegoly(p, tr));
+      tr.lastElementChild.appendChild(btn);
+    }
+    tbody.appendChild(tr);
+  }
+
+  if (widoczne.length > LIMIT) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="8" class="hint">Pokazano ${LIMIT} z ${widoczne.length} — zawęź filtrem (magazyn, regał, poziom, status).</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+// Krotki opis "co tu leży": z WMS, gdy wie, a z GT, gdy to jedyne zrodlo.
+function zajOpisZawartosci(p) {
+  if (p.towary.length > 0) {
+    const pierwszy = p.towary[0];
+    const reszta = p.towary.length > 1 ? ` +${p.towary.length - 1}` : '';
+    return `<span class="opis">${pierwszy.artykul_symbol} · ${pierwszy.ilosc} szt.${reszta}</span>`;
+  }
+  if (p.gt.length > 0) {
+    const symbole = p.gt.slice(0, 3).map((t) => t.symbol).join(', ');
+    const reszta = p.gt.length > 3 ? ` +${p.gt.length - 3}` : '';
+    return `<span class="opis">wg GT: ${symbole}${reszta}</span>`;
+  }
+  return '<span class="hint">—</span>';
+}
+
+// Rozwiniecie wiersza "tylko GT": co GT widzi na tym miejscu i ile z tego nie ma jeszcze
+// lokalizacji w WMS. Przypisanie idzie normalna sciezka LOK bez zrodla (POST /api/ruchy/lok) -
+// backend sam pilnuje limitu "ilosc <= stan GT - suma WMS" i reguly 1 SKU = 1 lokalizacja na K4.
+function zajPrzelaczSzczegoly(p, tr) {
+  const istniejacy = tr.nextElementSibling;
+  if (istniejacy?.classList.contains('wiersz-szczegoly')) { istniejacy.remove(); return; }
+  document.querySelectorAll('#zaj-tbody .wiersz-szczegoly').forEach((w) => w.remove());
+
+  const wiersz = document.createElement('tr');
+  wiersz.className = 'wiersz-szczegoly';
+  const td = document.createElement('td');
+  td.colSpan = 8;
+
+  const tabela = document.createElement('table');
+  tabela.className = 'tabela tabela-zagniezdzona';
+  tabela.innerHTML = '<thead><tr><th>Symbol</th><th>Nazwa</th><th>Stan GT</th>'
+    + '<th>Nieprzypisane</th><th>Ile tutaj</th><th></th></tr></thead><tbody></tbody>';
+  const tbody = tabela.querySelector('tbody');
+
+  for (const t of p.gt) {
+    const wt = document.createElement('tr');
+    const ostrzezenie = t.zgodny_magazyn ? ''
+      : ` <span class="badge badge-warn" title="Kod tej lokalizacji należy do ${p.magazyn}, a GT opisuje go w polu magazynu ${t.magazyn} — do sprawdzenia">pole ${t.magazyn}</span>`;
+    wt.innerHTML = `<td><strong>${t.symbol}</strong>${ostrzezenie}</td><td>${t.nazwa}</td>`
+      + `<td>${t.stan} (${t.magazyn})</td><td>${t.nieprzypisane}</td><td></td><td></td>`;
+
+    const ilosc = document.createElement('input');
+    ilosc.type = 'number';
+    ilosc.min = '1';
+    ilosc.value = t.nieprzypisane > 0 ? t.nieprzypisane : '';
+    ilosc.style.width = '6rem';
+    wt.children[4].appendChild(ilosc);
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-small btn-primary';
+    btn.textContent = 'Przypisz tutaj';
+    btn.disabled = t.nieprzypisane <= 0;
+    btn.title = t.nieprzypisane > 0 ? `Przypisz do ${p.kod}` : 'Cały stan GT jest już rozłożony w WMS';
+    btn.addEventListener('click', () => zajPrzypisz(p, t, Number(ilosc.value), btn));
+    wt.children[5].appendChild(btn);
+
+    const btnKarta = document.createElement('button');
+    btnKarta.type = 'button';
+    btnKarta.className = 'btn btn-small';
+    btnKarta.textContent = 'Karta';
+    btnKarta.addEventListener('click', () =>
+      otworzProduktPoSymbolu({ artykul_symbol: t.symbol, artykul_gt_id: t.artykul_gt_id }));
+    wt.children[5].appendChild(btnKarta);
+
+    tbody.appendChild(wt);
+  }
+
+  td.appendChild(tabela);
+  wiersz.appendChild(td);
+  tr.after(wiersz);
+}
+
+async function zajPrzypisz(p, t, ilosc, btn) {
+  if (!Number.isFinite(ilosc) || ilosc <= 0) {
+    pokazKomunikat('Podaj ilość większą od zera.', 'blad');
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const wynik = await api('/api/ruchy/lok', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        artykul_gt_id: t.artykul_gt_id, artykul_symbol: t.symbol, artykul_nazwa: t.nazwa,
+        artykul_ean: t.ean, lok_cel_id: p.id, ilosc, operator: operator(),
+      }),
+    });
+    pokazKomunikat(wynik.status === 'ok'
+      ? `${t.symbol}: ${ilosc} szt. przypisane do ${p.kod}.`
+      : `Zapisano, oczekuje: ${wynik.blad_opis ?? ''}`, wynik.status === 'ok' ? 'ok' : 'info');
+    odswiezZajetosc();
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+    btn.disabled = false;
+  }
+}
+
+function zajRenderZaznaczenie() {
+  const pasek = el('zaj-zaznaczenie');
+  pasek.classList.toggle('hidden', zajZaznaczone.size === 0);
+  el('zaj-zazn-licznik').textContent = `Zaznaczono ${zajZaznaczone.size}`;
+}
+
+// Oznaczenie hurtem. Strefy to zwykle cale rzedy albo poziomy (kartony siedza na P5-P6),
+// wiec klikanie ich po jednym gwarantowaloby, ze nikt tego nie otaguje do konca.
+async function zajZapiszZaznaczenie() {
+  const przeznaczenie = el('zaj-zazn-przeznaczenie').value;
+  const ids = [...zajZaznaczone];
+  if (ids.length === 0) return;
+  const nazwa = slownikiLok.przeznaczenia.find((p) => p.kod === przeznaczenie)?.nazwa ?? przeznaczenie;
+  if (!confirm(`Oznaczyć ${ids.length} lokalizacji jako „${nazwa}"?`)) return;
+
+  el('btn-zaj-zazn-zapisz').disabled = true;
+  try {
+    const w = await api('/api/lokalizacje/przeznaczenie', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, przeznaczenie, operator: operator() }),
+    });
+    pokazKomunikat(`Zmieniono przeznaczenie: ${w.zmienionych} z ${ids.length}.`, 'ok');
+    await odswiezZajetosc();
+  } catch (err) {
+    pokazKomunikat(err.message, 'blad');
+  } finally {
+    el('btn-zaj-zazn-zapisz').disabled = false;
+  }
+}
+
+el('btn-zaj-odswiez').addEventListener('click', odswiezZajetosc);
+el('btn-zaj-zazn-zapisz').addEventListener('click', zajZapiszZaznaczenie);
+el('btn-zaj-zazn-wyczysc').addEventListener('click', () => {
+  zajZaznaczone.clear();
+  renderujZajetosc();
+});
+el('zaj-zazn-wszystkie').addEventListener('change', (e) => {
+  const widoczne = zajStatus
+    ? zajFiltrujBezStatusu().filter((p) => p.status === zajStatus)
+    : zajFiltrujBezStatusu();
+  for (const p of widoczne) {
+    if (e.target.checked) zajZaznaczone.add(p.id); else zajZaznaczone.delete(p.id);
+  }
+  renderujZajetosc();
+});
+for (const id of ['zaj-magazyn', 'zaj-regal', 'zaj-poziom', 'zaj-przeznaczenie']) {
+  el(id).addEventListener('change', renderujZajetosc);
+}
+el('zaj-q').addEventListener('input', renderujZajetosc);
 
 // === MM PANEL ===
 

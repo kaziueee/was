@@ -1136,3 +1136,21 @@ main {
 @media (max-width: 640px) {
   .par-siatka { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* --- Wolne miejsca (przeglad zajetosci) --- */
+/* Slot poza analiza (kartony / strefa przyjec) - zostaje na liscie, zeby dalo sie go
+   odtagowac, ale ma byc widac na pierwszy rzut oka, ze nie liczy sie do wolnego miejsca. */
+.zaj-poza td { opacity: 0.62; }
+.zaj-poza td:first-child,
+.zaj-poza select { opacity: 1; }
+
+#zaj-zaznaczenie {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+/* Selektor po ID wygrywa z .hidden (klasa), wiec bez tej linii pasek zaznaczenia nie chce
+   sie schowac - ta sama pulapka, co przy .pulpit-kafle.hidden i .podzakladki.hidden. */
+#zaj-zaznaczenie.hidden { display: none; }

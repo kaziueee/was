@@ -2,7 +2,7 @@
 
 // Pulpit magazyniera (Faza 5) - jeden agregat metryk do desktopowej zakladki "Pulpit".
 // Wszystkie sekcje poza `statusy` licza sie z lokalnej wms.db w milisekundach (bez mostu GT):
-//   zajetosc  - zajete/wolne lokalizacje per magazyn (lokalizacje + stany_lokalizacji)
+//   zajetosc  - zajete/puste/wolne lokalizacje per magazyn (lokalizacje + stany_lokalizacji)
 //   zaleglosci- ruchy pending/error, rozjazdy nowe (kolejka pracy)
 //   trendy    - MM/LOK, nowe SKU na K4, naplyw do BRK w oknach 1/7/30 dni (audyt)
 //   ludzie    - ranking magazynierow z audytu
@@ -14,6 +14,7 @@
 const express = require('express');
 const db = require('../db/database');
 const snapshot = require('../services/pulpit-snapshot');
+const { statusLokalizacji, podsumuj } = require('../services/zajetosc-model');
 
 const router = express.Router();
 
@@ -35,30 +36,34 @@ function placeholders(tab) {
 }
 
 // --- zajetosc lokalizacji ---
+// Ten sam model, co ekran "Wolne miejsca" (services/zajetosc-model), ale w trybie TANIM:
+// bez GT. Kafel ma sie policzyc w milisekundach przy kazdym wejsciu na pulpit, a pytanie
+// "czy pola GT opisuja ten slot" wymaga przebiegu po kartotece GT - to robota ekranu, nie kafla.
+// Stad `wGt: false` i `historia: true`: wszystko puste laduje w jednym kubelku 'wolna',
+// ktory front podpisuje uczciwie jako "wolne wg WMS" (ekran pokaze, ile z nich naprawde jest
+// wolnych). Rozroznienie zajete / pusta polka (dom SKU ze stanem 0) zostaje - to czysta
+// wiedza WMS i nie kosztuje nic.
 function zajetosc() {
-  const aktywne = db.prepare(
-    "SELECT magazyn, COUNT(*) AS c FROM lokalizacje WHERE aktywna = 1 GROUP BY magazyn"
-  ).all();
-  const zajete = db.prepare(`
-    SELECT l.magazyn, COUNT(DISTINCT l.id) AS c
-    FROM lokalizacje l JOIN stany_lokalizacji s ON s.lokalizacja_id = l.id
-    WHERE l.aktywna = 1 AND s.ilosc > 0
-    GROUP BY l.magazyn
+  const wiersze = db.prepare(`
+    SELECT l.magazyn, l.przeznaczenie,
+           COUNT(s.id) AS pozycji, COALESCE(SUM(s.ilosc), 0) AS sztuk
+    FROM lokalizacje l LEFT JOIN stany_lokalizacji s ON s.lokalizacja_id = l.id
+    WHERE l.aktywna = 1
+    GROUP BY l.id
   `).all();
 
-  const mapAkt = new Map(aktywne.map((r) => [r.magazyn, r.c]));
-  const mapZaj = new Map(zajete.map((r) => [r.magazyn, r.c]));
+  const pozycje = wiersze.map((w) => ({
+    magazyn: w.magazyn,
+    przeznaczenie: w.przeznaczenie,
+    status: statusLokalizacji({ sztuk: Number(w.sztuk), pozycji: w.pozycji, wGt: false, historia: true }),
+  }));
 
-  return MAGAZYNY_WMS.map((mag) => {
-    const aktywnych = mapAkt.get(mag) || 0;
-    const zajetych = mapZaj.get(mag) || 0;
-    return {
-      magazyn: mag,
-      aktywnych,
-      zajetych,
-      wolnych: Math.max(0, aktywnych - zajetych),
-      procent: aktywnych > 0 ? Math.round((zajetych / aktywnych) * 100) : 0,
-    };
+  // Magazyny bez ani jednej lokalizacji tez maja miec kafel (zerowy), stad dopelnienie.
+  const policzone = new Map(podsumuj(pozycje).map((w) => [w.magazyn, w]));
+  return MAGAZYNY_WMS.map((mag) => policzone.get(mag) ?? {
+    magazyn: mag, aktywnych: 0, magazynowych: 0, poza_analiza: 0,
+    zajeta: 0, pusta_polka: 0, tylko_gt: 0, wolna: 0, nietknieta: 0,
+    wolnych: 0, zajmowanych: 0, procent: 0,
   });
 }
 

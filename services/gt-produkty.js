@@ -7,12 +7,15 @@
 
 const { query, naCzesci } = require('./gt-sql');
 const db = require('../db/database');
-const { MAGAZYNY, MAGAZYNY_RAZEM, MAGAZYNY_ZAPAS_K4 } = require('../config/magazyny');
+const { MAGAZYNY, MAGAZYNY_RAZEM, MAGAZYNY_ZAPAS_K4, MAGAZYN_GT_ID } = require('../config/magazyny');
 const { escapeLike, podzielNaSlowa, LIMIT_WYSZUKIWANIA } = require('./wyszukiwanie');
 const { pobierzPrzegladLokalizacji } = require('./gt-fields');
 // wprost z adnotacja-stref (a nie przez re-eksport z gt-fields) - czysty modul bez SQLite/GT
 const { bezAdnotacjiStref } = require('./adnotacja-stref');
-const { golyKod } = require('./lokalizacje-model');
+// kodJestTokenemLokalizacji zyje w modelu lokalizacji (czysty, bez SQLite/GT) - tu tylko
+// wolamy i re-eksportujemy, zeby "ten kod jest opisany w GT" mialo JEDNA definicje
+// wspolna ze skanem lokalizacji i przegladem zajetosci.
+const { golyKod, kodJestTokenemLokalizacji, tokenyLokalizacjiZPola } = require('./lokalizacje-model');
 const { bazySymboluWariantu } = require('./kolejnosc-obchodu');
 
 // buduje stany_gt w stalej kolejnosci K4, K4G, MAG, LS - kazdy magazyn ma
@@ -156,21 +159,6 @@ async function szukajProdukty(fraza, limit = LIMIT_WYSZUKIWANIA) {
   return wyniki;
 }
 
-// Czy kod jest PELNYM czlonem lokalizacji w polu GT - pola sa skompresowane, np.
-// "M2-B3-P3 / M2-B4-P3", "C14P1 /L19P3 /", a czlony rozdziela '/', spacja, ',' lub ';'.
-// Dzieki temu skan "C16" NIE lapie "M2-C16-P2" (podciag), tylko lokalizacje faktycznie "C16".
-//
-// Porownujemy po formie GOLEJ (bez myslnikow), bo pola GT sa pisane RECZNIE i ta sama polka
-// bywa tam zapisana na oba sposoby - w danych produkcyjnych siedzi obok siebie "M2-B3-P3"
-// i "C14P1". Skan "A1P1" wchodzi do WMS jako kanoniczne "A1-P1" (jedna lokalizacja), wiec bez
-// tego zrownania towary opisane w GT jako "A1P1" nie pokazywalyby sie na tej lokalizacji.
-// Myslnik jest tu ORTOGRAFIA, nie znaczeniem - "A1-P1" i "A1P1" to ta sama polka.
-function kodJestTokenemLokalizacji(pole, kodUp) {
-  if (!pole) return false;
-  const cel = golyKod(kodUp);
-  return String(pole).toUpperCase().split(/[\s/,;]+/).some((token) => golyKod(token) === cel);
-}
-
 // Szuka towarow po KODZIE LOKALIZACJI w polach wlasnych GT (tw_Pole1 = miejsce K4,
 // tw_Pole8 = lokalizacja K4G). Uzywane, gdy skanujemy/wpisujemy kod lokalizacji towaru,
 // ktory jest tylko w GT (t_GT) i nie ma wiersza w WMS `lokalizacje`. Dopasowanie
@@ -213,6 +201,54 @@ async function szukajPoLokalizacjiGt(fraza, limit = LIMIT_WYSZUKIWANIA) {
     ean: t.tw_PodstKodKresk || null,
     stany_gt: stanyMap.get(String(t.tw_Id)),
   }));
+}
+
+// Mapa "kod lokalizacji (forma gola) -> towary, ktore GT opisuje na tym miejscu".
+// Odwrotnosc szukajPoLokalizacjiGt: tamta odpowiada na "co lezy na TEJ polce", ta robi jeden
+// przebieg po calej kartotece - do przegladu zajetosci, ktory pyta o 2000 lokalizacji naraz
+// (2000 zapytan punktowych bylo by nie do przyjecia).
+//
+// Ten sam filtr co w szukajPoLokalizacjiGt - tw_Rodzaj=1 i stan K4/K4G > 0 - i z tego samego
+// powodu: w innych kategoriach (ksiazki, meble) tw_Pole1 znaczy autora/pomieszczenie, wiec bez
+// filtra "ma stan na naszym magazynie" do mapy wpadaja nazwiska i "OPRAWA: BROSZUROWA".
+// Stan > 0 niesie tez sens biznesowy: "GT twierdzi, ze COS tam LEZY". Wpis wskazujacy slot przy
+// stanie 0 to pusty dom w GT - miejsce fizycznie wolne, wiec nie ma go blokowac.
+async function pobierzLokalizacjeZPolGt() {
+  const { recordset } = await query(`
+    SELECT t.tw_Id, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk, t.tw_Pole1, t.tw_Pole8,
+           COALESCE(k4.st_Stan, 0) AS stan_k4, COALESCE(k4g.st_Stan, 0) AS stan_k4g
+    FROM tw__Towar t
+    LEFT JOIN tw_Stan k4  ON k4.st_TowId  = t.tw_Id AND k4.st_MagId  = @magK4
+    LEFT JOIN tw_Stan k4g ON k4g.st_TowId = t.tw_Id AND k4g.st_MagId = @magK4g
+    WHERE t.tw_Rodzaj = 1
+      AND (LEN(ISNULL(t.tw_Pole1, '')) > 0 OR LEN(ISNULL(t.tw_Pole8, '')) > 0)
+      AND (COALESCE(k4.st_Stan, 0) > 0 OR COALESCE(k4g.st_Stan, 0) > 0)
+  `, { magK4: MAGAZYN_GT_ID.K4, magK4g: MAGAZYN_GT_ID.K4G });
+
+  // tw_Pole1 opisuje K4, tw_Pole8 - K4G. Wpis liczy sie tylko wtedy, gdy towar ma stan
+  // na TYM magazynie: adres K4 przy pustym K4 (a stanie na gorze) nie zajmuje polki na dole.
+  const mapa = new Map();
+  for (const t of recordset) {
+    const pola = [
+      { pole: t.tw_Pole1, magazyn: 'K4', stan: Number(t.stan_k4) },
+      { pole: t.tw_Pole8, magazyn: 'K4G', stan: Number(t.stan_k4g) },
+    ];
+    for (const { pole, magazyn, stan } of pola) {
+      if (!pole || stan <= 0) continue;
+      for (const kod of new Set(tokenyLokalizacjiZPola(pole))) {
+        if (!mapa.has(kod)) mapa.set(kod, []);
+        mapa.get(kod).push({
+          artykul_gt_id: String(t.tw_Id),
+          symbol: t.tw_Symbol,
+          nazwa: t.tw_Nazwa,
+          ean: t.tw_PodstKodKresk || null,
+          magazyn,
+          stan,
+        });
+      }
+    }
+  }
+  return mapa;
 }
 
 function sumaStanow(stanyGt) {
@@ -826,7 +862,8 @@ module.exports = {
   pobierzPodstawoweInfo,
   szukajProdukty,
   szukajPoLokalizacjiGt,
-  kodJestTokenemLokalizacji,   // eksport dla testu (czysta funkcja, bez GT/SQLite)
+  kodJestTokenemLokalizacji,   // re-eksport z lokalizacje-model (czysta funkcja, bez GT/SQLite)
+  pobierzLokalizacjeZPolGt,
   listujProdukty,
   pobierzProduktyZUniwersum,
   pobierzK4NiskieStany,

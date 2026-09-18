@@ -30,3 +30,21 @@ test('wielkosc liter i puste pole', () => {
   assert.equal(kodJestTokenemLokalizacji('', 'A1-P1'), false);
   assert.equal(kodJestTokenemLokalizacji(null, 'A1-P1'), false);
 });
+
+// tw_Pole8 (K4G) jest skladane przez WMS jako "kod(ilosc); kod(ilosc)" - nawias z iloscia
+// jest czescia ZAPISU, nie kodu. Bez jego zdjecia "M2C6P2(3)" nie rownalo sie "M2C6P2", wiec
+// skan lokalizacji K4G nie pokazywal towarow "tylko GT" w ogole: na produkcji taki ksztalt
+// ma 1071 z 1511 niepustych pol (sprawdzone 2026-09-18).
+test('ilosc w nawiasie (tw_Pole8) nie psuje dopasowania', () => {
+  assert.ok(kodJestTokenemLokalizacji('M2-C6-P2(3)', 'M2-C6-P2'));
+  assert.ok(kodJestTokenemLokalizacji('M2-C3-P3(126); M2-C4-P3(288)', 'M2-C4-P3'));
+  assert.ok(kodJestTokenemLokalizacji('A7-P2(1140); M2-F31-P2(2400)', 'A7P2'));
+  // obcięcie pola ("...") nie moze robic z sasiada trafienia
+  assert.equal(kodJestTokenemLokalizacji('M2-A1-P2(3); M2-B...', 'M2-B1-P2'), false);
+});
+
+// Dopisek stref ("+StD20") dokleja do tw_Pole1 job strefowy - to nie jest czesc adresu.
+test('dopisek stref nie jest lokalizacja', () => {
+  assert.ok(kodJestTokenemLokalizacji('M2-J14-P2 +StD20 +StZ3', 'M2-J14-P2'));
+  assert.equal(kodJestTokenemLokalizacji('+StD20', 'D20'), false);
+});

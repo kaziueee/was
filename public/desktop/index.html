@@ -56,6 +56,11 @@
       <a href="#ruchy/mm" class="podzakladka" data-pod="mm">MM</a>
     </nav>
 
+    <nav id="podzakladki-lokalizacje" class="podzakladki hidden">
+      <a href="#lokalizacje" class="podzakladka" data-pod="lokalizacje">Lista lokalizacji</a>
+      <a href="#lokalizacje/zajetosc" class="podzakladka" data-pod="zajetosc">Wolne miejsca</a>
+    </nav>
+
     <!-- Panel Pulpit (Faza 5) - dashboard. Role-aware: sekcje .pulpit-admin widoczne
          tylko dla admina; magazynier widzi kolejke pracy + swoje liczby. -->
     <section id="panel-pulpit" class="panel">
@@ -245,11 +250,58 @@
 
       <table class="tabela">
         <thead>
-          <tr><th>Kod</th><th>Magazyn</th><th>Typ</th><th>Hala</th><th>Alejka / str.</th><th>Aktywna</th><th></th></tr>
+          <tr><th>Kod</th><th>Magazyn</th><th>Typ</th><th>Przeznaczenie</th><th>Hala</th><th>Alejka / str.</th><th>Aktywna</th><th></th></tr>
         </thead>
         <tbody id="lok-tbody"></tbody>
       </table>
       <p id="lok-brak" class="hint hidden">Brak lokalizacji do wyświetlenia.</p>
+    </section>
+
+    <!-- Panel "Wolne miejsca" - rozwiniecie kafla zajetosci z pulpitu. Odpowiada na pytanie
+         "gdzie moge to polozyc", na ktore sama tabela stanow WMS odpowiada zle w dwie strony:
+         slot bez wiersza bywa pelny (towar opisany tylko w GT), a slot z zerem na K4 to dom
+         SKU, ktory czeka na uzupelnienie. Statusy liczy backend (services/zajetosc-model). -->
+    <section id="panel-zajetosc" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Wolne miejsca</h2>
+        <div class="filtry">
+          <select id="zaj-magazyn">
+            <option value="">Wszystkie magazyny</option>
+            <option value="K4">K4</option>
+            <option value="K4G">K4 Góra</option>
+          </select>
+          <select id="zaj-regal"><option value="">Wszystkie regały</option></select>
+          <select id="zaj-poziom"><option value="">Wszystkie poziomy</option></select>
+          <select id="zaj-przeznaczenie"><option value="">Każde przeznaczenie</option></select>
+          <input type="text" id="zaj-q" placeholder="Szukaj kodu / SKU...">
+          <button type="button" id="btn-zaj-odswiez" class="btn">Odśwież</button>
+        </div>
+      </div>
+
+      <div id="zaj-kafle" class="pulpit-kafle"></div>
+      <p id="zaj-czas" class="hint"></p>
+
+      <nav id="zaj-zakladki" class="podzakladki"></nav>
+
+      <div id="zaj-zaznaczenie" class="mm-szukaj-panel hidden">
+        <strong id="zaj-zazn-licznik"></strong>
+        <span>oznacz jako:</span>
+        <select id="zaj-zazn-przeznaczenie"></select>
+        <button type="button" id="btn-zaj-zazn-zapisz" class="btn btn-primary btn-small">Zastosuj</button>
+        <button type="button" id="btn-zaj-zazn-wyczysc" class="btn btn-small">Odznacz</button>
+        <span class="hint">Przeznaczenie nie blokuje odkładania towaru — wycina slot tylko z rachunku wolnego miejsca.</span>
+      </div>
+
+      <table class="tabela">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="zaj-zazn-wszystkie" title="Zaznacz wszystkie widoczne"></th>
+            <th>Kod</th><th>Mag.</th><th>Typ</th><th>Przeznaczenie</th><th>Status</th><th>Co tu leży</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="zaj-tbody"></tbody>
+      </table>
+      <p id="zaj-brak" class="hint hidden">Brak lokalizacji spełniających filtry.</p>
     </section>
 
     <!-- Panel MM -->

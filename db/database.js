@@ -110,6 +110,16 @@ if (!kolumnyLok.some((k) => k.name === 'typ')) {
   console.log(`Migracja: dodano cechy strukturalne lokalizacji (backfill ${wiersze.length} wierszy)`);
 }
 
+// migracja: przeznaczenie lokalizacji (do czego ten slot sluzy) - 'towar' domyslnie,
+// 'kartony' / 'przyjecia' / 'inne' dla miejsc, ktore NIE sa magazynem towaru. To etykieta
+// do analizy wolnego miejsca, a NIE blokada: na strefie przyjec wolno polozyc biezaca
+// dostawe i zaden endpoint tego nie odrzuca (decyzja usera 2026-09-18). Patrz
+// services/lokalizacje-model.js PRZEZNACZENIA.
+if (!kolumnyLok.some((k) => k.name === 'przeznaczenie')) {
+  db.exec("ALTER TABLE lokalizacje ADD COLUMN przeznaczenie TEXT NOT NULL DEFAULT 'towar'");
+  console.log('Migracja: dodano kolumne przeznaczenie do lokalizacje (domyslnie towar)');
+}
+
 // migracja: usun kolumne poziom - wynika wprost z kodu lokalizacji, nie trzymamy osobno
 if (kolumnyLok.some((k) => k.name === 'poziom')) {
   db.exec('ALTER TABLE lokalizacje DROP COLUMN poziom');

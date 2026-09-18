@@ -9,7 +9,10 @@ const { pobierzStatusLokalizacjiGt, synchronizujLokalizacje, pobierzPrzegladLoka
 const gtDokumenty = require('../services/gt-dokumenty');
 const gtZestawy = require('../services/gt-zestawy');
 const audyt = require('../services/audyt');
-const { rozbierzKod, normalizujKodLokalizacji, kanonicznyKodSiatki, golyKod, TYPY } = require('../services/lokalizacje-model');
+const { rozbierzKod, normalizujKodLokalizacji, kanonicznyKodSiatki, golyKod, TYPY,
+  PRZEZNACZENIA, PRZEZNACZENIA_KODY } = require('../services/lokalizacje-model');
+const { OPISY_STATUSOW } = require('../services/zajetosc-model');
+const { przegladZajetosci } = require('../services/zajetosc');
 
 const router = express.Router();
 
@@ -552,6 +555,71 @@ router.put('/plan/:artykul_gt_id', (req, res) => {
   res.json({ tekst });
 });
 
+// GET /api/lokalizacje/slowniki - listy wartosci dla frontu (typy, przeznaczenia, statusy).
+// Front ich NIE powtarza u siebie: kazda taka kopia zyje wlasnym zyciem do pierwszej zmiany
+// w configu (a przeznaczenia beda rosly - "reklamacje", "sezonowe"...).
+router.get('/slowniki', (req, res) => {
+  res.json({ typy: TYPY, przeznaczenia: PRZEZNACZENIA, statusy: OPISY_STATUSOW });
+});
+
+// GET /api/lokalizacje/zajetosc - przeglad "co jest wolne, a co tylko wyglada na wolne".
+// MUSI stac przed '/:id', inaczej Express potraktuje "zajetosc" jako id.
+//
+// GT niedostepny -> 503, a nie czesciowa odpowiedz. Bez pol wlasnych GT nie da sie odroznic
+// slotu pustego od takiego, na ktorym towar lezy, tylko WMS o nim nie wie - a ekran mowiacy
+// "wolne" o zajetym miejscu jest gorszy niz ekran, ktory sie nie otworzyl. Ta sama zasada,
+// co w Sciezkach ("nie zgadujemy").
+router.get('/zajetosc', async (req, res, next) => {
+  try {
+    res.json(await przegladZajetosci());
+  } catch (err) {
+    if (err?.code || /GT|SQL|ECONN|ETIMEOUT|ELOGIN/i.test(String(err?.message))) {
+      return res.status(503).json({ blad: `Baza GT niedostepna - przeglad zajetosci wymaga pol lokalizacyjnych GT. ${err.message}` });
+    }
+    next(err);
+  }
+});
+
+// PUT /api/lokalizacje/przeznaczenie - oznaczenie HURTEM (kartony, strefa przyjec).
+// Tez przed '/:id'. Hurt jest tu istotny, a nie wygodny: strefy to zwykle cale rzedy albo
+// poziomy (na produkcji wolne sloty siedza glownie na P5-P6 w regalach E-J), wiec klikanie
+// ich po jednym gwarantowaloby, ze nikt tego nie otaguje do konca.
+router.put('/przeznaczenie', (req, res) => {
+  const { ids, przeznaczenie } = req.body ?? {};
+
+  if (!PRZEZNACZENIA_KODY.includes(przeznaczenie)) {
+    return res.status(400).json({ blad: `Pole "przeznaczenie" musi byc jednym z: ${PRZEZNACZENIA_KODY.join(', ')}` });
+  }
+  const idy = (Array.isArray(ids) ? ids : []).map(Number).filter(Number.isInteger);
+  if (idy.length === 0) return res.status(400).json({ blad: 'Pole "ids" musi byc niepusta lista id lokalizacji' });
+
+  const wiersze = db.prepare(
+    `SELECT id, kod, magazyn, przeznaczenie FROM lokalizacje WHERE id IN (${idy.map(() => '?').join(', ')})`
+  ).all(...idy);
+
+  const upd = db.prepare('UPDATE lokalizacje SET przeznaczenie = ? WHERE id = ?');
+  let zmienionych = 0;
+  db.exec('BEGIN');
+  try {
+    for (const w of wiersze) {
+      if (w.przeznaczenie === przeznaczenie) continue;   // bez pustych UPDATE-ow i pustych wpisow w audycie
+      upd.run(przeznaczenie, w.id);
+      zmienionych += 1;
+      audyt.zapisz({
+        uzytkownik: req.uzytkownik?.imie ?? req.body?.operator ?? null, akcja: 'lokalizacja_przeznaczenie',
+        magazyn: w.magazyn, lokalizacja: w.kod,
+        przed: { przeznaczenie: w.przeznaczenie }, po: { przeznaczenie }, wynik: 'ok',
+      });
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  res.json({ zmienionych, znalezionych: wiersze.length, przeznaczenie });
+});
+
 // GET /api/lokalizacje/:id - szczegoly lokalizacji + jej zawartosc
 router.get('/:id', (req, res) => {
   const id = Number(req.params.id);
@@ -695,7 +763,7 @@ router.put('/:id', (req, res) => {
   const lokalizacja = db.prepare('SELECT * FROM lokalizacje WHERE id = ?').get(id);
   if (!lokalizacja) return res.status(404).json({ blad: 'Lokalizacja nie znaleziona' });
 
-  const { kod, magazyn, aktywna, typ } = req.body ?? {};
+  const { kod, magazyn, aktywna, typ, przeznaczenie } = req.body ?? {};
 
   // Jak w POST: do bazy idzie postac kanoniczna (edycja to tez droga, ktora "L3P3" mogloby
   // wrocic do bazy - i znow zniknac ze skanu).
@@ -709,6 +777,9 @@ router.put('/:id', (req, res) => {
   }
   if (typ !== undefined && !TYPY.includes(typ)) {
     return res.status(400).json({ blad: `Pole "typ" musi byc jednym z: ${TYPY.join(', ')}` });
+  }
+  if (przeznaczenie !== undefined && !PRZEZNACZENIA_KODY.includes(przeznaczenie)) {
+    return res.status(400).json({ blad: `Pole "przeznaczenie" musi byc jednym z: ${PRZEZNACZENIA_KODY.join(', ')}` });
   }
 
   // Zmiana magazynu = poprawka pomylki przy zakladaniu (K4 zamiast K4G), NIE sposob na
@@ -727,12 +798,15 @@ router.put('/:id', (req, res) => {
   const c = rozbierzKod(nowyKod, nowyMagazyn);
   // typ: jesli podany jawnie -> nadpisanie reczne (wyjatek); inaczej wyliczony z reguly
   const nowyTyp = typ !== undefined ? typ : c.typ;
+  // przeznaczenie: WYLACZNIE decyzja czlowieka - nie ma reguly, ktora wyliczylaby z kodu,
+  // ze na "G8-P2" stoja kartony. Niepodane = bez zmiany.
+  const nowePrzezn = przeznaczenie !== undefined ? przeznaczenie : lokalizacja.przeznaczenie;
 
   try {
     db.prepare(
       `UPDATE lokalizacje SET kod = ?, magazyn = ?, aktywna = ?,
-         hala = ?, regal = ?, alejka = ?, strona = ?, kolumna = ?, typ = ? WHERE id = ?`
-    ).run(nowyKod, nowyMagazyn, nowaAktywna, c.hala, c.regal, c.alejka, c.strona, c.kolumna, nowyTyp, id);
+         hala = ?, regal = ?, alejka = ?, strona = ?, kolumna = ?, typ = ?, przeznaczenie = ? WHERE id = ?`
+    ).run(nowyKod, nowyMagazyn, nowaAktywna, c.hala, c.regal, c.alejka, c.strona, c.kolumna, nowyTyp, nowePrzezn, id);
   } catch (err) {
     if (err.errcode === SQLITE_CONSTRAINT_UNIQUE) {
       return res.status(409).json({ blad: `Lokalizacja o kodzie "${nowyKod}" juz istnieje` });
@@ -742,8 +816,8 @@ router.put('/:id', (req, res) => {
 
   audyt.zapisz({
     uzytkownik: req.body?.operator ?? null, akcja: 'lokalizacja_edycja', magazyn: nowyMagazyn, lokalizacja: nowyKod,
-    przed: { kod: lokalizacja.kod, magazyn: lokalizacja.magazyn, aktywna: lokalizacja.aktywna, typ: lokalizacja.typ },
-    po: { kod: nowyKod, magazyn: nowyMagazyn, aktywna: nowaAktywna, typ: nowyTyp }, wynik: 'ok',
+    przed: { kod: lokalizacja.kod, magazyn: lokalizacja.magazyn, aktywna: lokalizacja.aktywna, typ: lokalizacja.typ, przeznaczenie: lokalizacja.przeznaczenie },
+    po: { kod: nowyKod, magazyn: nowyMagazyn, aktywna: nowaAktywna, typ: nowyTyp, przeznaczenie: nowePrzezn }, wynik: 'ok',
   });
   res.json(db.prepare('SELECT * FROM lokalizacje WHERE id = ?').get(id));
 });

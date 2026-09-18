@@ -86,6 +86,80 @@ function normalizujKodLokalizacji(kodSurowy) {
 // Uzywane przez fallback lookupu dla starych, niekanonicznych wierszy.
 const golyKod = (kodSurowy) => String(kodSurowy ?? '').trim().toUpperCase().replace(/[\s-]/g, '');
 
+// Poziom polki z kodu (-P<n>). Nie ma go w bazie jako kolumny - wynika wprost z kodu -
+// ale przydaje sie do filtrow i do oznaczania hurtem ("wszystkie P5-P6 w regalach E-J to
+// kartony"). Kod spoza siatki albo bez poziomu -> null.
+function poziomZKodu(kod) {
+  const m = String(kod ?? '').trim().toUpperCase().match(/P(\d+)$/);
+  return m ? Number(m[1]) : null;
+}
+
 const TYPY = ['paleta', 'trawers', 'polka', 'inny'];
 
-module.exports = { rozbierzKod, normalizujKodLokalizacji, kanonicznyKodSiatki, golyKod, TYPY };
+// PRZEZNACZENIE lokalizacji - po co ten slot w ogole jest. Osobne od `typ` (ksztalt polki,
+// wyliczany z kodu): tu decyduje CZLOWIEK, bo z kodu "G8-P2" nie wynika, ze stoja tam kartony.
+//
+// To ETYKIETA DO ANALIZY, a nie blokada: na strefie przyjec czy w kartonach wolno polozyc
+// towar (np. biezaca dostawa) i zaden endpoint tego nie odrzuca. Przeznaczenie mowi tylko,
+// czy slot ma sie liczyc do pytania "ile mam wolnego miejsca na towar" - bo pusta strefa
+// przyjec nie jest wolnym miejscem, tylko pusta strefa przyjec.
+//
+// `liczDoWolnych` jest FLAGA NA DEFINICJI, nie reczna lista gdzie indziej (lekcja z
+// config/magazyny.js): nowe przeznaczenie dodaje sie tutaj i samo wypada z sum tam, gdzie
+// trzeba - zamiast czekac, az ktos dopisze je do listy wykluczen w drugim pliku.
+const PRZEZNACZENIA = [
+  // `nazwa` jest ETYKIETA W UI (front bierze ja z /slowniki), wiec z polskimi znakami -
+  // tak samo jak nazwy magazynow w config/magazyny.js.
+  { kod: 'towar', nazwa: 'Towar', liczDoWolnych: true },
+  { kod: 'kartony', nazwa: 'Kartony', liczDoWolnych: false },
+  { kod: 'przyjecia', nazwa: 'Strefa przyjęć', liczDoWolnych: false },
+  { kod: 'inne', nazwa: 'Inne (nie licz)', liczDoWolnych: false },
+];
+const PRZEZNACZENIA_KODY = PRZEZNACZENIA.map((p) => p.kod);
+const PRZEZNACZENIE_DOMYSLNE = 'towar';
+const PRZEZNACZENIA_MAGAZYNOWE = new Set(PRZEZNACZENIA.filter((p) => p.liczDoWolnych).map((p) => p.kod));
+
+// Czy slot ma sie liczyc do analizy wolnego miejsca na TOWAR. Nieznane/puste przeznaczenie
+// (wiersze sprzed migracji) traktujemy jak 'towar' - domyslnie kazdy slot jest magazynowy.
+function liczyDoWolnych(przeznaczenie) {
+  if (!przeznaczenie) return true;
+  return PRZEZNACZENIA_MAGAZYNOWE.has(przeznaczenie);
+}
+
+// --- tokeny lokalizacji z pol wlasnych GT (tw_Pole1 / tw_Pole8) ---
+//
+// Pola GT to TEKST pisany recznie i skladany przez WMS, nie kod lokalizacji:
+//   tw_Pole1: "M2-J14-P2"  |  "C14P1 /L19P3 /"  |  "M2-J14-P2 +StD20"  (dopisek stref)
+//   tw_Pole8: "M2-C3-P3(126); M2-C4-P3(288)"                          (kod + ilosc)
+// Rozbijamy to na kody w formie GOLEJ (bez myslnikow), bo ta sama polka siedzi w GT w obu
+// ortografiach ("M2-B3-P3" obok "C14P1") - myslnik jest tu ortografia, nie znaczeniem.
+//
+// Nawias z iloscia MUSI zlecic: bez tego zaden kod z tw_Pole8 nie pasowal do niczego
+// ("M2C6P2(3)" != "M2C6P2"), a taki ksztalt ma 1071 z 1511 niepustych pol na produkcji -
+// czyli skan lokalizacji K4G nie pokazywal towarow "tylko GT" w ogole.
+const ILOSC_W_NAWIASIE = /\(\s*\d+(?:[.,]\d+)?\s*\)$/;
+
+function tokenyLokalizacjiZPola(pole) {
+  if (!pole) return [];
+  const { bezAdnotacjiStref } = require('./adnotacja-stref');   // czyste, bez SQLite/GT
+  return bezAdnotacjiStref(pole)
+    .toUpperCase()
+    .split(/[\s/,;]+/)
+    .map((token) => golyKod(token.replace(ILOSC_W_NAWIASIE, '')))
+    .filter((token) => token.length >= 2);
+}
+
+// Czy `kod` wystepuje w polu GT jako PELNY CZLON (nie dowolny podciag - "C16" to nie
+// "M2-C16-P2"). Czysta funkcja: uzywa jej i skan lokalizacji (gt-produkty), i przeglad
+// zajetosci (services/zajetosc) - jedna definicja "ten kod jest opisany w GT".
+function kodJestTokenemLokalizacji(pole, kod) {
+  const cel = golyKod(kod);
+  if (!cel) return false;
+  return tokenyLokalizacjiZPola(pole).includes(cel);
+}
+
+module.exports = {
+  rozbierzKod, normalizujKodLokalizacji, kanonicznyKodSiatki, golyKod, TYPY, poziomZKodu,
+  tokenyLokalizacjiZPola, kodJestTokenemLokalizacji,
+  PRZEZNACZENIA, PRZEZNACZENIA_KODY, PRZEZNACZENIE_DOMYSLNE, liczyDoWolnych,
+};

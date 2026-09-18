@@ -148,7 +148,27 @@ Tabele: `lokalizacje`, `stany_lokalizacji`, `ruchy`, `rozjazdy`
 
 **Kod w bazie trzymamy WYŁĄCZNIE w postaci kanonicznej (2026-08-04).** Zapis (`POST /lokalizacje`, `/import`, `PUT /:id`) przepuszcza kod przez `normalizujKodLokalizacji` — inaczej powstaje wiersz, którego **żaden lookup już nie znajdzie**: każde szukanie normalizuje wejście do `L3-P3`, więc wiersz zapisany dosłownie jako `L3P3` jest niewidoczny dla skanu, mimo że leży na nim towar. Tak zniknęły na produkcji `L3P3` (216 szt.) i `C17P3` (495 szt.) — objawiało się to jako „część lokalizacji w regale L się nie czyta". Dodatkowo taki kod nie pasuje do `WZORZEC_KODU`, więc wiersz dostawał `typ='inny'` i puste cechy (wypadał z filtrów). Lookup ma jeszcze **fallback po formie gołej** (`REPLACE(kod,'-','')`, tylko dla kodów z siatki regałów — `kanonicznyKodSiatki`), żeby stare wiersze dało się odczytać przed migracją. Sprzątanie bazy: `node scripts/napraw-kody-lokalizacji.js` (dry-run; `--zapisz` poprawia kod + cechy, kolizje z istniejącym kanonicznym kodem tylko raportuje — scalenie stanów to decyzja człowieka).
 
+**Dopasowanie ignoruje też nawias z ilością (2026-09-18).** `tw_Pole8` składa WMS jako `kod(ilosc); kod(ilosc)`, a `kodJestTokenemLokalizacji` porównywało goły token — więc `M2C6P2(3)` **nigdy** nie równało się `M2C6P2`. Taki kształt ma **1071 z 1511** niepustych `tw_Pole8` na produkcji, czyli skan lokalizacji K4G nie pokazywał towarów „tylko GT" w ogóle (błąd niewidoczny, bo objawiał się pustą listą, a nie awarią). Tokenizer mieszka teraz w `services/lokalizacje-model.js` (`tokenyLokalizacjiZPola` — zdejmuje dopisek stref i `(n)`, porównuje po gołej formie) i jest **jedną** definicją dla skanu lokalizacji i dla przeglądu zajętości.
+
 Typy ruchów: `LOK` (lokalizowanie po PZ/FZ, bez dokumentu GT), `MM` (przesunięcie, generuje MM w GT)
+
+## Wolne miejsca (przegląd zajętości)
+
+Kafel „K4 — zajętość" na pulpicie jest klikalny i prowadzi do ekranu `#lokalizacje/zajetosc` (desktop, druga podzakładka Lokalizacji). Odpowiada na pytanie „gdzie mogę to położyć", na które sama tabela `stany_lokalizacji` odpowiada **źle w dwie strony**:
+- slot **bez wiersza** w WMS bywa pełny — towar opisany jest wyłącznie w polach GT (produkcja 2026-09-18: **68 z 231** „wolnych" slotów miało towar wg GT),
+- slot z **wierszem 0 szt.** na K4 jest pusty, ale nie wolny — to dom SKU czekający na uzupełnienie (inwariant „Lokalizacja K4 przeżywa stan 0").
+
+Statusy liczy czysty `services/zajetosc-model.js` (testy `test/zajetosc-model.test.js`, bez SQLite i GT): `zajeta` → `pusta_polka` → `tylko_gt` → `wolna` / `nietknieta`. Kolejność warunków = **prawda WMS przed domysłem z GT**: wiersz w `stany_lokalizacji` zawsze wygrywa (zasada #2), GT rozstrzyga tylko tam, gdzie WMS milczy. `wolna` vs `nietknieta` = czy slot w ogóle występuje w `ruchy`/audycie. Zbieranie danych (SQLite + jeden przebieg po kartotece GT) w `services/zajetosc.js`, endpoint `GET /api/lokalizacje/zajetosc`.
+
+- **Historia z audytu liczy się tylko dla zdarzeń z `artykul_gt_id`** — rozróżnienie strukturalne, nie lista akcji do utrzymywania. Edycja samej lokalizacji (magazyn, typ, przeznaczenie) też zostawia kod w audycie, ale nie mówi nic o tym, co leży na półce: gdyby liczyła się jako historia, samo otagowanie strefy kartonów zmieniałoby „nigdy nietknięte" na „wolne", czyli tagowanie udawałoby, że ktoś tam zajrzał.
+- **Brak GT → 503**, nie częściowa odpowiedź (ta sama zasada, co w Ścieżkach). Ekran mówiący „wolne" o zajętym miejscu jest gorszy niż ekran, który się nie otworzył.
+- **Kafel na pulpicie liczy się BEZ GT** (ma się otwierać natychmiast), więc podpisuje się „wolne wg WMS" i celowo różni się od ekranu — różnica stoi w podpisie kafla, a nie w domyśle użytkownika.
+- **Wpis GT w polu drugiego magazynu nie jest odsiewany.** Kod lokalizacji jest unikalny globalnie, więc magazyn wynika z kodu; gdy GT opisuje kod K4 w „Lokalizacji Górnej", slot i tak pokazujemy jako „tylko GT" i oznaczamy rozjazd. Ciche odsianie zrobiłoby z zajętego miejsca wolne — to jedyny błąd, którego ten ekran nie może popełnić.
+- Wiersz „tylko GT" rozwija się do listy SKU z ilością nieprzypisaną (`stan GT − suma WMS`) i **przypisuje towar na miejscu** — normalną ścieżką `POST /ruchy/lok` bez źródła, więc limitów (`≤ stan GT − suma WMS`, K4 = cała ilość, 1 SKU = 1 lokalizacja) pilnuje backend, nie ekran.
+
+**`lokalizacje.przeznaczenie`** (`towar` domyślnie / `kartony` / `przyjecia` / `inne`) — po co ten slot jest. Osobne od `typ` (kształt półki, wyliczany z kodu): z kodu `G8-P2` nie wynika, że stoją tam kartony, więc decyduje **człowiek**. **To etykieta do analizy, NIE blokada** — na strefie przyjęć wolno położyć bieżącą dostawę i żaden endpoint tego nie odrzuca (decyzja usera 2026-09-18); przeznaczenie wycina slot wyłącznie z rachunku „ile mam wolnego miejsca na towar", bo pusta strefa przyjęć nie jest wolnym miejscem, tylko pustą strefą przyjęć. Flaga `liczDoWolnych` siedzi **na definicji** w `services/lokalizacje-model.js`, a nie na liście wykluczeń w drugim pliku (lekcja z `config/magazyny.js`). Oznaczanie hurtem: `PUT /api/lokalizacje/przeznaczenie {ids, przeznaczenie}` — strefy to zwykle całe rzędy albo poziomy (na produkcji wolne sloty siedzą głównie na P5–P6 w regałach E–J), więc klikanie po jednym gwarantowałoby, że nikt tego nie otaguje do końca. Sloty poza analizą **zostają na liście** (inaczej nie dałoby się ich odtagować), tylko wyszarzone i z etykietą.
+
+Listy wartości (typy, przeznaczenia, statusy) front bierze z `GET /api/lokalizacje/slowniki` — nie powtarza ich u siebie, bo każda taka kopia żyje własnym życiem do pierwszej zmiany w configu.
 
 ## Strefy: co dostaje sztukę, gdy stanu nie starcza
 
@@ -282,7 +302,7 @@ Wpisy jobów podpisują się `uzytkownik: 'system:<job>'` (np. `system:rozjazdy`
 
 ## Stan obecny
 
-Zbudowane i działające: baza + `routes/` (lokalizacje, ruchy, magazyny, produkty, rozjazdy, sciezki), most C# (`/api/mm`, `/api/lok`), ekran Zebry „Ruch towaru", moduł Ścieżki (Faza 6: ścieżka „Ostatnie sztuki" + raport), panel desktopu (produkty, rozjazdy, ruchy, lokalizacje, MM), job rozjazdów.
+Zbudowane i działające: baza + `routes/` (lokalizacje, ruchy, magazyny, produkty, rozjazdy, sciezki), most C# (`/api/mm`, `/api/lok`), ekran Zebry „Ruch towaru", moduł Ścieżki (Faza 6: ścieżka „Ostatnie sztuki" + raport), panel desktopu (produkty, rozjazdy, ruchy, lokalizacje, wolne miejsca, MM), job rozjazdów.
 
 Do zrobienia od nowa: moduł inwentaryzacji (usunięty 2026-06-25).
 

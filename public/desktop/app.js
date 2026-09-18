@@ -2507,6 +2507,15 @@ function zajOpisStatusu(kod) {
   return (slownikiLok?.statusy ?? []).find((s) => s.kod === kod) ?? { kod, nazwa: kod, opis: '' };
 }
 
+// Czy wiersz nalezy do aktywnej zakladki. Zakladka pokazuje statusy ze swojego `obejmuje`
+// (z backendu) - "Wolne" obejmuje takze "nigdy nietkniete", zeby liczba na kaflu i lista pod
+// nia znaczyly to samo. Pusty `zajStatus` = zakladka "Wszystkie".
+function zajStatusPasuje(status) {
+  if (!zajStatus) return true;
+  const def = zajOpisStatusu(zajStatus);
+  return (def.obejmuje ?? [def.kod]).includes(status);
+}
+
 async function odswiezZajetosc() {
   el('zaj-czas').textContent = 'Liczę zajętość (pytam też GT o pola lokalizacyjne)...';
   try {
@@ -2593,7 +2602,7 @@ function zajFiltrujBezStatusu() {
 function renderujZajetosc() {
   if (!zajDane) return;
   const widoczneBezStatusu = zajFiltrujBezStatusu();
-  const widoczne = zajStatus ? widoczneBezStatusu.filter((p) => p.status === zajStatus) : widoczneBezStatusu;
+  const widoczne = widoczneBezStatusu.filter((p) => zajStatusPasuje(p.status));
 
   zajRenderKafle();
   zajRenderZakladki(widoczneBezStatusu);
@@ -2634,7 +2643,7 @@ function zajRenderZakladki(zbior) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'podzakladka' + (zajStatus === s.kod ? ' aktywna' : '');
-    const ile = s.kod ? zbior.filter((p) => p.status === s.kod).length : zbior.length;
+    const ile = s.kod ? zbior.filter((p) => (s.obejmuje ?? [s.kod]).includes(p.status)).length : zbior.length;
     btn.textContent = `${s.nazwa} (${ile})`;
     btn.title = s.opis;
     btn.addEventListener('click', () => { zajStatus = s.kod; renderujZajetosc(); });
@@ -2846,9 +2855,7 @@ el('btn-zaj-zazn-wyczysc').addEventListener('click', () => {
   renderujZajetosc();
 });
 el('zaj-zazn-wszystkie').addEventListener('change', (e) => {
-  const widoczne = zajStatus
-    ? zajFiltrujBezStatusu().filter((p) => p.status === zajStatus)
-    : zajFiltrujBezStatusu();
+  const widoczne = zajFiltrujBezStatusu().filter((p) => zajStatusPasuje(p.status));
   for (const p of widoczne) {
     if (e.target.checked) zajZaznaczone.add(p.id); else zajZaznaczone.delete(p.id);
   }

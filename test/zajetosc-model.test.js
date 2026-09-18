@@ -129,3 +129,20 @@ test('rodzaj bez ani jednego slotu nadal jest na liście (kafel zerowy, nie znik
   assert.equal(wynik.find((g) => g.kod === 'k4_polka').slotow, 0);
   assert.equal(wynik.find((g) => g.kod === 'k4_polka').procent, 0);
 });
+
+// STRAZNIK: zakladka "Wolne" musi pokazywac dokladnie to, co liczy kafel (STATUSY_WOLNE).
+// Rozjazd objawil sie na produkcji jako "na kaflu 20, na liscie 1" - kafel liczyl wolne razem
+// z nigdy nietknietymi, a zakladka filtrowala po samym statusie 'wolna'.
+test('zakladka Wolne obejmuje te same statusy, co liczba na kaflu', () => {
+  const { OPISY_STATUSOW, STATUSY_WOLNE } = require('../services/zajetosc-model');
+  const wolne = OPISY_STATUSOW.find((s) => s.kod === STATUSY.WOLNA);
+  assert.deepEqual([...wolne.obejmuje].sort(), [...STATUSY_WOLNE].sort());
+});
+
+test('kazda zakladka ma `obejmuje` (front filtruje po nim, nie po samym kodzie)', () => {
+  const { OPISY_STATUSOW } = require('../services/zajetosc-model');
+  for (const s of OPISY_STATUSOW) {
+    assert.ok(Array.isArray(s.obejmuje) && s.obejmuje.length > 0, `brak obejmuje dla ${s.kod}`);
+    assert.ok(s.obejmuje.includes(s.kod), `${s.kod} musi obejmowac sam siebie`);
+  }
+});

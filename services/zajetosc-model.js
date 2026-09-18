@@ -35,12 +35,24 @@ const STATUSY = {
 // Nazwa mowi, co z tym zrobic (pojsc i sprawdzic, czy towar wroci - a jesli nie, zwolnic slot
 // sciezka "Czysc zera"), a nie tylko jak to wyglada. Do liczby WOLNYCH nadal sie NIE liczy:
 // nie dasz tego miejsca innemu towarowi, dopoki ktos nie potwierdzi, ze wlasciciel nie wraca.
+//
+// `obejmuje` = statusy, ktore pokazuje ta zakladka. Zwykle jeden - swoj wlasny - ale zakladka
+// WOLNE obejmuje TAKZE 'nietknieta', bo kafel liczy dokladnie to samo (STATUSY_WOLNE). Bez tego
+// klikniecie kafla "20 wolnych" pokazywalo liste z jedna pozycja, a pozostale 19 siedzialo
+// w sasiedniej zakladce - liczba na kaflu i lista pod nia musza znaczyc TO SAMO.
+// "Nigdy nietkniete" zostaje osobna zakladka jako PODZBIOR wolnych (zastrzezenie "nikt tego
+// nigdy nie potwierdzil"), a nie jako rozlaczny kubelek.
 const OPISY_STATUSOW = [
-  { kod: STATUSY.WOLNA, nazwa: 'Wolne', opis: 'Puste w WMS i w GT; slot był już kiedyś używany' },
-  { kod: STATUSY.PUSTA_POLKA, nazwa: 'Wolne do sprawdzenia', opis: 'Półka pusta, ale przypisana do SKU — może czekać na uzupełnienie; nie liczy się do wolnych' },
-  { kod: STATUSY.ZAJETA, nazwa: 'Zajęte', opis: 'WMS wie, że leży tu towar' },
-  { kod: STATUSY.TYLKO_GT, nazwa: 'Tylko GT', opis: 'WMS nic nie wie, ale pola GT opisują tu towar ze stanem' },
-  { kod: STATUSY.NIETKNIETA, nazwa: 'Nigdy nietknięte', opis: 'Jak wyżej, ale WMS nigdy nie zapisał tu żadnego ruchu' },
+  { kod: STATUSY.WOLNA, nazwa: 'Wolne', obejmuje: [STATUSY.WOLNA, STATUSY.NIETKNIETA],
+    opis: 'Puste w WMS i w GT — tu da się coś położyć (z nigdy nietkniętymi)' },
+  { kod: STATUSY.PUSTA_POLKA, nazwa: 'Wolne do sprawdzenia', obejmuje: [STATUSY.PUSTA_POLKA],
+    opis: 'Półka pusta, ale przypisana do SKU — może czekać na uzupełnienie; nie liczy się do wolnych' },
+  { kod: STATUSY.ZAJETA, nazwa: 'Zajęte', obejmuje: [STATUSY.ZAJETA],
+    opis: 'WMS wie, że leży tu towar' },
+  { kod: STATUSY.TYLKO_GT, nazwa: 'Tylko GT', obejmuje: [STATUSY.TYLKO_GT],
+    opis: 'WMS nic nie wie, ale pola GT opisują tu towar ze stanem' },
+  { kod: STATUSY.NIETKNIETA, nazwa: 'Nigdy nietknięte', obejmuje: [STATUSY.NIETKNIETA],
+    opis: 'Podzbiór wolnych: WMS nigdy nie zapisał tu żadnego ruchu' },
 ];
 
 // Statusy oznaczajace "tu da sie cos polozyc". Flaga na definicji, nie lista w drugim

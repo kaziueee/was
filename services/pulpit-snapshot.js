@@ -119,8 +119,8 @@ async function odswiez() {
   // miejsca jest zajete", a nie "ile WMS o sobie wie". Zapisujemy samo podsumowanie (kilka
   // liczb per magazyn) - pozycje to ~2 tys. wierszy i nikt ich na pulpicie nie oglada.
   try {
-    const { podsumowanie } = await przegladZajetosci();
-    STMT_ZAPIS.run({ klucz: 'zajetosc', wartosc: JSON.stringify(podsumowanie) });
+    const { podsumowanie, wolne_grupy } = await przegladZajetosci();
+    STMT_ZAPIS.run({ klucz: 'zajetosc', wartosc: JSON.stringify({ podsumowanie, wolne_grupy }) });
   } catch (e) {
     awarie.blad('pulpit-snapshot', `nie policzono zajetosci: ${e.message}`);
   }

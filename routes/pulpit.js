@@ -49,9 +49,19 @@ function placeholders(tab) {
 function zajetosc() {
   const snap = snapshot.odczytaj('zajetosc');
   if (snap) {
-    return snap.wartosc.map((w) => ({ ...w, zrodlo: 'gt', obliczono: snap.obliczono }));
+    // Stary snapshot (sprzed rozbicia na rodzaje miejsc) trzymal sama tablice per magazyn.
+    // Moze lezec w bazie jeszcze przez godzine po wdrozeniu, wiec czytamy obie postacie.
+    const podsumowanie = Array.isArray(snap.wartosc) ? snap.wartosc : snap.wartosc.podsumowanie;
+    const grupy = Array.isArray(snap.wartosc) ? null : snap.wartosc.wolne_grupy;
+    return {
+      magazyny: podsumowanie.map((w) => ({ ...w, zrodlo: 'gt', obliczono: snap.obliczono })),
+      grupy: grupy ? grupy.map((g) => ({ ...g, zrodlo: 'gt', obliczono: snap.obliczono })) : null,
+    };
   }
-  return zajetoscZWms();
+  // Bez snapshotu nie liczymy rodzajow miejsc: "wolne" bez weryfikacji w GT to nie jest
+  // liczba, na ktorej ktos ma oprzec decyzje "gdzie polozyc palete". Front pokazuje wtedy
+  // stary widok per magazyn z dopiskiem "bez weryfikacji w GT".
+  return { magazyny: zajetoscZWms(), grupy: null };
 }
 
 // Rachunek awaryjny: ten sam model, co ekran, ale w trybie TANIM - bez GT. `wGt: false` i

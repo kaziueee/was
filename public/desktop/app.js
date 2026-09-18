@@ -316,18 +316,48 @@ function renderujPulpitKolejke(d) {
 function renderujPulpitStan(zajetosc) {
   const cont = el('pulpit-stan');
   cont.innerHTML = '';
+  // Zweryfikowane w GT liczby przychodza w `grupy` - wolne miejsce w rozbiciu na rodzaje
+  // (K4 Góra / K4 półka / K4). To JEDNO miejsce, w ktorym stoi ta liczba: ekran "Wolne miejsca"
+  // liczy ja tym samym modelem, wiec kafel i ekran nie moga sie rozjechac.
+  if (zajetosc?.grupy) {
+    for (const g of zajetosc.grupy) cont.appendChild(kafelWolnegoMiejsca(g));
+    return;
+  }
+  renderujPulpitStanPerMagazyn(zajetosc?.magazyny ?? []);
+}
+
+// Kafel jednego rodzaju miejsca. Wartosc = wolne (wolne + nigdy nietkniete, bo oba znacza
+// "da sie tu cos polozyc"), a zastrzezenie o nietknietych stoi w podpisie - ta sama liczba,
+// co zakladka "Nigdy nietkniete" na ekranie.
+function kafelWolnegoMiejsca(g, onKlik) {
+  const czesci = [`z ${g.slotow} · zajęte ${g.procent}%`];
+  if (g.nietknietych) czesci.push(`w tym ${g.nietknietych} nigdy nietkniętych`);
+  if (g.obliczono) czesci.push(`stan na ${formatGodzine(g.obliczono)}`);
+  const kafel = pulpitKafel({
+    etykieta: `Wolne — ${g.nazwa}`,
+    wartosc: g.wolnych,
+    podpis: czesci.join(' · '),
+    wariant: g.procent >= 95 ? 'red' : (g.procent >= 85 ? 'amber' : 'ok'),
+    onKlik: onKlik ?? (() => { zajGrupaZadana = g.kod; location.hash = '#lokalizacje/zajetosc'; }),
+  });
+  kafel.title = g.opis || '';
+  kafel.insertAdjacentHTML('beforeend',
+    `<div class="kafel-pasek"><span style="width:${g.procent}%"></span></div>`);
+  return kafel;
+}
+
+// Widok awaryjny: bez snapshotu nie znamy rodzajow miejsc (patrz routes/pulpit.js), wiec
+// pokazujemy to, co da sie policzyc z samej wms.db - i mowimy, ze nie jest zweryfikowane.
+function renderujPulpitStanPerMagazyn(zajetosc) {
+  const cont = el('pulpit-stan');
   const NAZWY = { K4: 'K4 Hala', K4G: 'K4 Góra' };
   for (const m of zajetosc || []) {
-    const zGt = m.zrodlo !== 'wms';
     const pasek = `<div class="kafel-pasek"><span style="width:${m.procent}%"></span></div>`;
-    const czesci = [`${zGt ? 'wolne' : 'wolne wg WMS'} ${m.wolnych} z ${m.magazynowych}`];
+    const czesci = [`wolne wg WMS ${m.wolnych} z ${m.magazynowych}`];
     if (m.zajeta) czesci.push(`zajęte ${m.zajeta}`);
     if (m.pusta_polka) czesci.push(`puste półki ${m.pusta_polka}`);
-    if (zGt && m.tylko_gt) czesci.push(`tylko GT ${m.tylko_gt}`);
     if (m.poza_analiza) czesci.push(`poza analizą ${m.poza_analiza}`);
-    czesci.push(zGt
-      ? (m.obliczono ? `stan na ${formatGodzine(m.obliczono)}` : 'sprawdzone w GT')
-      : 'bez weryfikacji w GT');
+    czesci.push('bez weryfikacji w GT');
 
     const kafel = pulpitKafel({
       etykieta: `${NAZWY[m.magazyn] || m.magazyn} — zajętość`,
@@ -2459,6 +2489,7 @@ el('btn-import-wykonaj').addEventListener('click', async () => {
 let zajDane = null;                   // { pozycje, podsumowanie } z ostatniego pobrania
 let zajStatus = '';                   // aktywna zakladka statusu ('' = wszystkie)
 let zajPodsumowanieStale = false;     // oznaczono przeznaczenie -> kafle sa sprzed zmiany
+let zajGrupaZadana = null;            // rodzaj miejsca wybrany kaflem (z pulpitu albo z ekranu)
 const zajZaznaczone = new Set();      // id lokalizacji zaznaczonych do oznaczenia hurtem
 
 const ZAJ_WARIANT = {                 // kolor znacznika statusu (klasy .badge-*)
@@ -2504,6 +2535,14 @@ function zajWypelnijFiltry() {
     sel.value = wybrane;                       // filtr przezywa odswiezenie
   };
 
+  ustaw('zaj-grupa', (zajDane.wolne_grupy ?? []).map((g) => ({ wartosc: g.kod, nazwa: g.nazwa })),
+    'Każdy rodzaj miejsca');
+  // rodzaj wybrany kaflem (takze tym z pulpitu) wchodzi dopiero teraz - select musial istniec
+  if (zajGrupaZadana) {
+    el('zaj-grupa').value = zajGrupaZadana;
+    zajStatus = 'wolna';
+    zajGrupaZadana = null;
+  }
   ustaw('zaj-regal', regaly.map((r) => ({ wartosc: r, nazwa: `Regał ${r}` })), 'Wszystkie regały');
   ustaw('zaj-poziom', poziomy.map((p) => ({ wartosc: p, nazwa: `Poziom P${p}` })), 'Wszystkie poziomy');
   ustaw('zaj-przeznaczenie', slownikiLok.przeznaczenia.map((p) => ({ wartosc: p.kod, nazwa: p.nazwa })), 'Każde przeznaczenie');
@@ -2521,6 +2560,7 @@ function zajWypelnijFiltry() {
 function zajFiltrujBezStatusu() {
   if (!zajDane) return [];
   const magazyn = el('zaj-magazyn').value;
+  const grupa = el('zaj-grupa').value;
   const regal = el('zaj-regal').value;
   const poziom = el('zaj-poziom').value;
   const przezn = el('zaj-przeznaczenie').value;
@@ -2528,6 +2568,7 @@ function zajFiltrujBezStatusu() {
 
   return zajDane.pozycje.filter((p) => {
     if (magazyn && p.magazyn !== magazyn) return false;
+    if (grupa && p.grupa !== grupa) return false;
     if (regal && p.regal !== regal) return false;
     if (poziom && String(p.poziom) !== poziom) return false;
     if (przezn && (p.przeznaczenie || 'towar') !== przezn) return false;
@@ -2553,26 +2594,21 @@ function renderujZajetosc() {
   zajRenderZaznaczenie();
 }
 
-// Kafle podsumowania - ta sama arytmetyka co kafel na pulpicie, ale juz ZWERYFIKOWANA w GT:
-// "wolne" znaczy tu naprawde wolne, a nie "bez wiersza w WMS".
+// Kafle = wolne miejsce w rozbiciu na RODZAJE (K4 Góra / K4 półka / K4), bo "ile mam wolnego"
+// bez tego rozbicia nie mowi, czy zmiesci sie paleta. Te same trzy liczby stoja na pulpicie -
+// jeden model (zajetosc-model.podsumujWolne), wiec nie maja jak sie rozjechac.
+// Klikniecie kafla filtruje tabele do tego rodzaju i pokazuje wolne; ile z nich jest "nigdy
+// nietknietych", widac w podpisie i w zakladce obok.
 function zajRenderKafle() {
   const cont = el('zaj-kafle');
   cont.innerHTML = '';
-  const NAZWY = { K4: 'K4 Hala', K4G: 'K4 Góra' };
-  for (const m of zajDane.podsumowanie) {
-    const czesci = [`zajęte ${m.zajeta}`];
-    if (m.pusta_polka) czesci.push(`puste półki ${m.pusta_polka}`);
-    if (m.tylko_gt) czesci.push(`tylko GT ${m.tylko_gt}`);
-    if (m.poza_analiza) czesci.push(`poza analizą ${m.poza_analiza}`);
-    const kafel = pulpitKafel({
-      etykieta: `${NAZWY[m.magazyn] || m.magazyn} — wolnych`,
-      wartosc: m.wolnych,
-      podpis: `z ${m.magazynowych} slotów na towar · ${czesci.join(' · ')}`,
-      wariant: m.procent >= 90 ? 'red' : (m.procent >= 75 ? 'amber' : 'ok'),
-    });
-    kafel.insertAdjacentHTML('beforeend',
-      `<div class="kafel-pasek"><span style="width:${m.procent}%"></span></div>`);
-    cont.appendChild(kafel);
+  for (const g of zajDane.wolne_grupy ?? []) {
+    cont.appendChild(kafelWolnegoMiejsca(g, () => {
+      el('zaj-grupa').value = g.kod;
+      el('zaj-magazyn').value = '';
+      zajStatus = 'wolna';
+      renderujZajetosc();
+    }));
   }
   if (zajPodsumowanieStale) {
     cont.insertAdjacentHTML('beforeend',
@@ -2811,7 +2847,7 @@ el('zaj-zazn-wszystkie').addEventListener('change', (e) => {
   }
   renderujZajetosc();
 });
-for (const id of ['zaj-magazyn', 'zaj-regal', 'zaj-poziom', 'zaj-przeznaczenie']) {
+for (const id of ['zaj-magazyn', 'zaj-grupa', 'zaj-regal', 'zaj-poziom', 'zaj-przeznaczenie']) {
   el(id).addEventListener('change', renderujZajetosc);
 }
 el('zaj-q').addEventListener('input', renderujZajetosc);

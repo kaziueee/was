@@ -75,3 +75,57 @@ test('magazyny nie mieszaja sie ze soba', () => {
   ]);
   assert.deepEqual(wynik.map((w) => [w.magazyn, w.procent]), [['K4', 100], ['K4G', 0]]);
 });
+
+// --- rodzaje wolnego miejsca ---
+// "Ile mam wolnego" bez rozbicia nie mowi, czy zmiesci sie paleta: polka regalowa na K4
+// i miejsce paletowe na gorze to dwa rozne zasoby.
+
+const { grupaMiejsca, podsumujWolne } = require('../services/zajetosc-model');
+
+test('rodzaj miejsca: K4 półka przed K4 (pierwsze dopasowanie wygrywa)', () => {
+  assert.equal(grupaMiejsca({ magazyn: 'K4', typ: 'polka' }), 'k4_polka');
+  assert.equal(grupaMiejsca({ magazyn: 'K4', typ: 'trawers' }), 'k4');
+  assert.equal(grupaMiejsca({ magazyn: 'K4', typ: 'paleta' }), 'k4');
+  assert.equal(grupaMiejsca({ magazyn: 'K4', typ: 'inny' }), 'k4');
+  // na gorze wszystko jest paletowe - typ nie ma znaczenia
+  assert.equal(grupaMiejsca({ magazyn: 'K4G', typ: 'polka' }), 'k4g');
+  assert.equal(grupaMiejsca({ magazyn: 'BRK', typ: 'paleta' }), null);
+});
+
+test('wolne w rozbiciu na rodzaje: nigdy nietkniete LICZY sie do wolnych', () => {
+  const [k4g, polka, k4] = podsumujWolne([
+    { magazyn: 'K4G', typ: 'paleta', przeznaczenie: 'towar', status: STATUSY.WOLNA },
+    { magazyn: 'K4G', typ: 'paleta', przeznaczenie: 'towar', status: STATUSY.NIETKNIETA },
+    { magazyn: 'K4G', typ: 'paleta', przeznaczenie: 'towar', status: STATUSY.ZAJETA },
+    { magazyn: 'K4', typ: 'polka', przeznaczenie: 'towar', status: STATUSY.NIETKNIETA },
+    { magazyn: 'K4', typ: 'trawers', przeznaczenie: 'towar', status: STATUSY.ZAJETA },
+    { magazyn: 'K4', typ: 'paleta', przeznaczenie: 'towar', status: STATUSY.WOLNA },
+  ]);
+
+  assert.deepEqual([k4g.kod, polka.kod, k4.kod], ['k4g', 'k4_polka', 'k4']);
+  // oba statusy "da sie tu cos polozyc" ida do jednej liczby, nietkniete tylko jako zastrzezenie
+  assert.equal(k4g.wolnych, 2);
+  assert.equal(k4g.nietknietych, 1);
+  assert.equal(k4g.slotow, 3);
+  assert.equal(k4g.procent, 33);
+  assert.equal(polka.wolnych, 1);
+  assert.equal(k4.wolnych, 1);
+  assert.equal(k4.slotow, 2);
+});
+
+test('strefy poza analizą nie wchodzą do żadnego rodzaju miejsca', () => {
+  const [, , k4] = podsumujWolne([
+    { magazyn: 'K4', typ: 'paleta', przeznaczenie: 'kartony', status: STATUSY.WOLNA },
+    { magazyn: 'K4', typ: 'paleta', przeznaczenie: 'przyjecia', status: STATUSY.WOLNA },
+    { magazyn: 'K4', typ: 'paleta', przeznaczenie: 'towar', status: STATUSY.WOLNA },
+  ]);
+  assert.equal(k4.slotow, 1);
+  assert.equal(k4.wolnych, 1);
+});
+
+test('rodzaj bez ani jednego slotu nadal jest na liście (kafel zerowy, nie znikający)', () => {
+  const wynik = podsumujWolne([{ magazyn: 'K4G', typ: 'paleta', przeznaczenie: 'towar', status: STATUSY.WOLNA }]);
+  assert.equal(wynik.length, 3);
+  assert.equal(wynik.find((g) => g.kod === 'k4_polka').slotow, 0);
+  assert.equal(wynik.find((g) => g.kod === 'k4_polka').procent, 0);
+});

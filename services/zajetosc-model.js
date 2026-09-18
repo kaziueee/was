@@ -53,6 +53,53 @@ function statusLokalizacji({ sztuk = 0, pozycji = 0, wGt = false, historia = fal
   return historia ? STATUSY.WOLNA : STATUSY.NIETKNIETA;
 }
 
+// --- RODZAJE WOLNEGO MIEJSCA ---
+// "Ile mam wolnego" to za malo, zeby cokolwiek z tym zrobic: palety nie polozysz na polce
+// regalowej, a drobnicy nie ma sensu wozic na gore. Stad trzy rozlaczne kubelki, ktore
+// odpowiadaja trzem roznym pytaniom magazyniera:
+//   K4G       - miejsce paletowe na gorze (zapas)
+//   K4 polka  - polka regalowa na dole (drobnica, regaly E-J w hali 1)
+//   K4        - reszta dolu: palety, trawersy i miejsca nazwane
+// Pierwsze dopasowanie wygrywa, wiec K4 POLKA musi stac przed K4 (ten sam wzorzec, co
+// grupaObchodu w services/kolejnosc-obchodu.js). Rozdzial idzie po `typ`, ktory i tak jest
+// wyliczany z kodu - nie po nowej kolumnie.
+const GRUPY_MIEJSC = [
+  { kod: 'k4g', nazwa: 'K4 Góra', opis: 'Miejsca paletowe na górze', pasuje: (p) => p.magazyn === 'K4G' },
+  { kod: 'k4_polka', nazwa: 'K4 półka', opis: 'Półki regałowe na K4 — drobnica', pasuje: (p) => p.magazyn === 'K4' && p.typ === 'polka' },
+  { kod: 'k4', nazwa: 'K4', opis: 'Reszta K4: palety, trawersy, miejsca nazwane', pasuje: (p) => p.magazyn === 'K4' },
+];
+
+function grupaMiejsca(pozycja) {
+  return GRUPY_MIEJSC.find((g) => g.pasuje(pozycja))?.kod ?? null;
+}
+
+// Wolne miejsce w rozbiciu na te trzy rodzaje. `wolnych` to suma 'wolna' + 'nietknieta' -
+// oba znacza "tu da sie cos polozyc", roznia sie tylko PEWNOSCIA (czy WMS kiedykolwiek ten
+// slot widzial). Dlatego naglowkowa liczba je laczy, a `nietknietych` stoi obok jako zastrzezenie
+// - i jako ta sama liczba, ktora pokazuje zakladka "Nigdy nietkniete".
+function podsumujWolne(pozycje) {
+  const wynik = GRUPY_MIEJSC.map((g) => ({
+    kod: g.kod, nazwa: g.nazwa, opis: g.opis,
+    slotow: 0, wolnych: 0, nietknietych: 0, zajmowanych: 0, procent: 0,
+  }));
+  const wgKodu = new Map(wynik.map((w) => [w.kod, w]));
+
+  for (const p of pozycje) {
+    if (!liczyDoWolnych(p.przeznaczenie)) continue;     // kartony / strefa przyjec
+    const w = wgKodu.get(grupaMiejsca(p));
+    if (!w) continue;
+    w.slotow += 1;
+    if (STATUSY_WOLNE.has(p.status)) w.wolnych += 1;
+    if (p.status === STATUSY.NIETKNIETA) w.nietknietych += 1;
+  }
+
+  for (const w of wynik) {
+    w.zajmowanych = w.slotow - w.wolnych;
+    w.procent = w.slotow > 0 ? Math.round((w.zajmowanych / w.slotow) * 100) : 0;
+  }
+  return wynik;
+}
+
 // Podsumowanie per magazyn. `poza_analiza` to sloty o przeznaczeniu innym niz magazynowe
 // (kartony, strefa przyjec) - NIE sa wolnym miejscem na towar, wiec wypadaja ze wszystkich
 // licznikow i maja wlasny. Przeznaczenie nie blokuje odkladania tam towaru; wypada tylko
@@ -90,4 +137,7 @@ function podsumuj(pozycje) {
   return [...wynik.values()];
 }
 
-module.exports = { STATUSY, STATUSY_WOLNE, OPISY_STATUSOW, statusLokalizacji, podsumuj };
+module.exports = {
+  STATUSY, STATUSY_WOLNE, OPISY_STATUSOW, GRUPY_MIEJSC,
+  statusLokalizacji, grupaMiejsca, podsumuj, podsumujWolne,
+};

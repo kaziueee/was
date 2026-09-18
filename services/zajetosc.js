@@ -14,7 +14,7 @@
 const db = require('../db/database');
 const { pobierzLokalizacjeZPolGt } = require('./gt-produkty');
 const { golyKod, poziomZKodu } = require('./lokalizacje-model');
-const { statusLokalizacji, podsumuj } = require('./zajetosc-model');
+const { statusLokalizacji, grupaMiejsca, podsumuj, podsumujWolne } = require('./zajetosc-model');
 
 // Sloty, ktorych WMS kiedykolwiek dotknal. Dwa zrodla, bo zadne samo nie wystarcza:
 //   ruchy  - FK na lokalizacje, wiec przezywa zmiane kodu, ale tylko ruchy towaru,
@@ -131,7 +131,7 @@ async function przegladZajetosci() {
       zgodny_magazyn: t.magazyn === l.magazyn,
     }));
 
-    return {
+    const pozycja = {
       ...l,
       poziom: poziomZKodu(l.kod),
       sztuk: Number(stan.sztuk),
@@ -145,9 +145,11 @@ async function przegladZajetosci() {
         historia: historia.has(golyKod(l.kod)),
       }),
     };
+    // rodzaj miejsca (K4G / K4 polka / K4) - z modelu, zeby front nie powtarzal reguly
+    return { ...pozycja, grupa: grupaMiejsca(pozycja) };
   });
 
-  return { pozycje, podsumowanie: podsumuj(pozycje) };
+  return { pozycje, podsumowanie: podsumuj(pozycje), wolne_grupy: podsumujWolne(pozycje) };
 }
 
 module.exports = { przegladZajetosci };

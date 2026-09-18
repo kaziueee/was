@@ -51,13 +51,26 @@ async function api(url, opts) {
 // zimą. Doklejamy 'Z' (jawnie: to jest UTC) i formatujemy w strefie przeglądarki. String bez
 // 'Z' NIE wystarczy: `new Date("2026-08-05 14:48")` przeglądarka czyta jako czas lokalny,
 // czyli błąd zostałby ten sam, tylko mniej widoczny.
+function dataZBazy(s) {
+  if (!s) return null;
+  const dt = new Date(String(s).replace(' ', 'T') + 'Z');
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
 function formatDatetime(s) {
   if (!s) return '–';
-  const dt = new Date(String(s).replace(' ', 'T') + 'Z');
-  if (isNaN(dt.getTime())) return String(s).slice(0, 16);   // nieznany format - pokaż jak jest
+  const dt = dataZBazy(s);
+  if (!dt) return String(s).slice(0, 16);   // nieznany format - pokaż jak jest
   const dwie = (n) => String(n).padStart(2, '0');
   return `${dt.getFullYear()}-${dwie(dt.getMonth() + 1)}-${dwie(dt.getDate())} `
     + `${dwie(dt.getHours())}:${dwie(dt.getMinutes())}`;
+}
+
+// Sama godzina z tego samego znacznika (kafle: "stan na 14:48"). Przez dataZBazy, a nie
+// wlasnym new Date() - inaczej wrocilby blad z 2026-08-05 (godziny o 2 h za male).
+function formatGodzine(s) {
+  const dt = dataZBazy(s);
+  return dt ? dt.toLocaleTimeString('pl', { hour: '2-digit', minute: '2-digit' }) : '–';
 }
 
 const BADGE_KLASY = {
@@ -294,20 +307,28 @@ function renderujPulpitKolejke(d) {
   kafle.forEach((x) => cont.appendChild(x));
 }
 
-// Kafel zajetosci liczy sie BEZ GT (pulpit ma sie otwierac natychmiast), wiec mowi
-// "wolne wg WMS" - a nie "wolne". Roznica jest duza i realna: czesc pustych w WMS slotow
-// ma towar opisany wylacznie w polach GT. Od tego jest klikniecie w kafel -> "Wolne miejsca",
-// gdzie backend dopytuje GT i pokazuje, ile z tych slotow naprawde da sie zajac.
+// Kafel zajetosci pokazuje liczby ZWERYFIKOWANE w GT (ze snapshotu, `zrodlo:'gt'`) - te
+// same, co ekran "Wolne miejsca". Bez weryfikacji kafel potrafil pokazac "25% zajete" tam,
+// gdzie ekran mowil 0 wolnych, bo wszystkie puste w WMS sloty mialy towar opisany wylacznie
+// w polach GT. Gdy snapshotu jeszcze nie ma (pierwsze minuty po starcie, padniety Subiekt),
+// backend schodzi na rachunek z samej wms.db - i wtedy MOWIMY to wprost, zamiast podawac
+// niesprawdzona liczbe jako pewna.
 function renderujPulpitStan(zajetosc) {
   const cont = el('pulpit-stan');
   cont.innerHTML = '';
   const NAZWY = { K4: 'K4 Hala', K4G: 'K4 Góra' };
   for (const m of zajetosc || []) {
+    const zGt = m.zrodlo !== 'wms';
     const pasek = `<div class="kafel-pasek"><span style="width:${m.procent}%"></span></div>`;
-    const czesci = [`zajęte ${m.zajeta}`];
+    const czesci = [`${zGt ? 'wolne' : 'wolne wg WMS'} ${m.wolnych} z ${m.magazynowych}`];
+    if (m.zajeta) czesci.push(`zajęte ${m.zajeta}`);
     if (m.pusta_polka) czesci.push(`puste półki ${m.pusta_polka}`);
-    czesci.push(`wolne wg WMS ${m.wolnych}`);
+    if (zGt && m.tylko_gt) czesci.push(`tylko GT ${m.tylko_gt}`);
     if (m.poza_analiza) czesci.push(`poza analizą ${m.poza_analiza}`);
+    czesci.push(zGt
+      ? (m.obliczono ? `stan na ${formatGodzine(m.obliczono)}` : 'sprawdzone w GT')
+      : 'bez weryfikacji w GT');
+
     const kafel = pulpitKafel({
       etykieta: `${NAZWY[m.magazyn] || m.magazyn} — zajętość`,
       wartosc: `${m.procent}%`,
@@ -401,7 +422,7 @@ async function odswiezPulpit() {
   const podpisy = [];
   if (d.teraz) podpisy.push('odświeżono ' + new Date(d.teraz).toLocaleTimeString('pl'));
   if (d.statusy && d.statusy.obliczono) {
-    podpisy.push('statusy: stan na ' + new Date(d.statusy.obliczono.replace(' ', 'T') + 'Z').toLocaleTimeString('pl'));
+    podpisy.push('statusy: stan na ' + formatGodzine(d.statusy.obliczono));
   }
   czas.textContent = podpisy.join(' · ');
 

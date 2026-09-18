@@ -2,7 +2,8 @@
 
 // Snapshot metryk pulpitu drogich do policzenia na zywo (Faza 5). Dzis: rozklad
 // statusow zgodnosci GT<->WMS (rozkladZgodnosci krzyzuje ~2300 SKU z GT, kilka
-// sekund + wymaga zywego mostu). Zamiast liczyc przy kazdym otwarciu pulpitu -
+// sekund + wymaga zywego mostu), liczniki kafli "do zrobienia" i zajetosc lokalizacji
+// zweryfikowana w polach GT. Zamiast liczyc przy kazdym otwarciu pulpitu -
 // godzinny job zapisuje wynik do tabeli pulpit_snapshot. Pulpit czyta gotowe
 // liczby: laduje sie natychmiast i pokazuje statusy nawet gdy most chwilowo padnie
 // (z adnotacja "stan na HH:MM").
@@ -19,6 +20,7 @@ const doRozlozenia = require('./do-rozlozenia');
 // Bierzemy stamtad `zbierz`, zeby nie miec drugiej implementacji - kafel i lista MUSZA
 // pokazywac te sama liczbe.
 const doSprawdzenia = require('../routes/do-sprawdzenia');
+const { przegladZajetosci } = require('./zajetosc');
 const awarie = require('./awarie');
 
 const DOMYSLNY_INTERWAL_MS = 60 * 60 * 1000; // 1 godzina (jak job rozjazdow)
@@ -109,6 +111,18 @@ async function odswiez() {
     STMT_ZAPIS.run({ klucz: 'kafle_do_zrobienia', wartosc: JSON.stringify(await policzKafle()) });
   } catch (e) {
     awarie.blad('pulpit-snapshot', `nie policzono kafli: ${e.message}`);
+  }
+
+  // Zajetosc ZWERYFIKOWANA w GT. Bez tego kafel liczyl sam z WMS i potrafil pokazac "25%
+  // zajete" tam, gdzie ekran "Wolne miejsca" mowil 0 wolnych - bo wszystkie puste w WMS sloty
+  // mialy towar opisany wylacznie w polach GT. Naglowkowa liczba na pulpicie ma znaczyc "ile
+  // miejsca jest zajete", a nie "ile WMS o sobie wie". Zapisujemy samo podsumowanie (kilka
+  // liczb per magazyn) - pozycje to ~2 tys. wierszy i nikt ich na pulpicie nie oglada.
+  try {
+    const { podsumowanie } = await przegladZajetosci();
+    STMT_ZAPIS.run({ klucz: 'zajetosc', wartosc: JSON.stringify(podsumowanie) });
+  } catch (e) {
+    awarie.blad('pulpit-snapshot', `nie policzono zajetosci: ${e.message}`);
   }
 
   return statusy;

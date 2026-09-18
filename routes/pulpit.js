@@ -2,7 +2,8 @@
 
 // Pulpit magazyniera (Faza 5) - jeden agregat metryk do desktopowej zakladki "Pulpit".
 // Wszystkie sekcje poza `statusy` licza sie z lokalnej wms.db w milisekundach (bez mostu GT):
-//   zajetosc  - zajete/puste/wolne lokalizacje per magazyn (lokalizacje + stany_lokalizacji)
+//   zajetosc  - zajete/puste/wolne lokalizacje per magazyn (ze snapshotu, zweryfikowane w GT;
+//               fallback na rachunek z samej wms.db, gdy snapshotu jeszcze nie ma)
 //   zaleglosci- ruchy pending/error, rozjazdy nowe (kolejka pracy)
 //   trendy    - MM/LOK, nowe SKU na K4, naplyw do BRK w oknach 1/7/30 dni (audyt)
 //   ludzie    - ranking magazynierow z audytu
@@ -36,14 +37,27 @@ function placeholders(tab) {
 }
 
 // --- zajetosc lokalizacji ---
-// Ten sam model, co ekran "Wolne miejsca" (services/zajetosc-model), ale w trybie TANIM:
-// bez GT. Kafel ma sie policzyc w milisekundach przy kazdym wejsciu na pulpit, a pytanie
-// "czy pola GT opisuja ten slot" wymaga przebiegu po kartotece GT - to robota ekranu, nie kafla.
-// Stad `wGt: false` i `historia: true`: wszystko puste laduje w jednym kubelku 'wolna',
-// ktory front podpisuje uczciwie jako "wolne wg WMS" (ekran pokaze, ile z nich naprawde jest
-// wolnych). Rozroznienie zajete / pusta polka (dom SKU ze stanem 0) zostaje - to czysta
-// wiedza WMS i nie kosztuje nic.
+// Kafel pokazuje liczby ZWERYFIKOWANE w GT - ze snapshotu (godzinny job), tak jak statusy
+// zgodnosci i kafle "do zrobienia". Powod jest twardy: liczona samym WMS-em zajetosc potrafi
+// pokazac "25% zajete" tam, gdzie ekran "Wolne miejsca" mowi 0 wolnych, bo kazdy pusty w WMS
+// slot ma towar opisany wylacznie w polach GT. Naglowkowa liczba ma znaczyc "ile miejsca jest
+// zajete", a nie "ile WMS o sobie wie" - inaczej kafel klamie dokladnie w tym przypadku, dla
+// ktorego ten ekran powstal.
+//
+// Snapshot moze byc pusty (pierwsze minuty po starcie, padniety GT) - wtedy schodzimy na
+// rachunek lokalny i front MOWI to wprost ("wolne wg WMS"), zamiast udawac zweryfikowane dane.
 function zajetosc() {
+  const snap = snapshot.odczytaj('zajetosc');
+  if (snap) {
+    return snap.wartosc.map((w) => ({ ...w, zrodlo: 'gt', obliczono: snap.obliczono }));
+  }
+  return zajetoscZWms();
+}
+
+// Rachunek awaryjny: ten sam model, co ekran, ale w trybie TANIM - bez GT. `wGt: false` i
+// `historia: true` znacza, ze wszystko puste laduje w jednym kubelku 'wolna'. Rozroznienie
+// zajete / pusta polka (dom SKU ze stanem 0) zostaje - to czysta wiedza WMS i nie kosztuje nic.
+function zajetoscZWms() {
   const wiersze = db.prepare(`
     SELECT l.magazyn, l.przeznaczenie,
            COUNT(s.id) AS pozycji, COALESCE(SUM(s.ilosc), 0) AS sztuk
@@ -60,11 +74,14 @@ function zajetosc() {
 
   // Magazyny bez ani jednej lokalizacji tez maja miec kafel (zerowy), stad dopelnienie.
   const policzone = new Map(podsumuj(pozycje).map((w) => [w.magazyn, w]));
-  return MAGAZYNY_WMS.map((mag) => policzone.get(mag) ?? {
-    magazyn: mag, aktywnych: 0, magazynowych: 0, poza_analiza: 0,
-    zajeta: 0, pusta_polka: 0, tylko_gt: 0, wolna: 0, nietknieta: 0,
-    wolnych: 0, zajmowanych: 0, procent: 0,
-  });
+  return MAGAZYNY_WMS.map((mag) => ({
+    ...(policzone.get(mag) ?? {
+      magazyn: mag, aktywnych: 0, magazynowych: 0, poza_analiza: 0,
+      zajeta: 0, pusta_polka: 0, tylko_gt: 0, wolna: 0, nietknieta: 0,
+      wolnych: 0, zajmowanych: 0, procent: 0,
+    }),
+    zrodlo: 'wms',   // front podpisuje kafel "wolne wg WMS" - patrz komentarz wyzej
+  }));
 }
 
 // --- zaleglosci / kolejka pracy ---

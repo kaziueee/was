@@ -4,11 +4,34 @@ const { MAGAZYNY_WMS, MAGAZYNY_ZEWNETRZNE } = require('../config/magazyny');
 const { wykonajRuchGT } = require('../services/ruchy-gt');
 const { magazynyRuchu } = require('../services/ruchy-model');
 const gtFields = require('../services/gt-fields');
-const { pobierzStanyGt, dostepneWGt } = require('../services/gt-produkty');
+const { pobierzStanyGt, dostepneWGt, czyZestaw } = require('../services/gt-produkty');
 const gtDokumenty = require('../services/gt-dokumenty');
 const audyt = require('../services/audyt');
 
 const router = express.Router();
+
+// ZESTAW (tw_Rodzaj = 8) NIE DOSTAJE MIEJSCA W WMS - straznik dla kazdego endpointu, ktory
+// kladzie towar na lokalizacji. Zestaw nie lezy na polce jako paczka: jego stan to zapis
+// ksiegowy, a fizycznie sa to skladniki na swoich wlasnych polkach (decyzja usera 2026-09-22).
+// Wiersz WMS na zestawie jest wiec zawsze nieprawda o miejscu - i wpisuje ta nieprawde do
+// GT (tw_Pole1), skad czyta ja czlowiek szukajacy towaru w Subiekcie.
+//
+// Regula siedzi w BACKENDZIE, bo do tej pory zyla tylko jako wiedza w glowach - i przez
+// 5 tygodni zostala zlamana 5 razy, ostatni raz 21.09. Jeden wiersz w WMS otwiera zestaw
+// na CZTERY ekrany naraz (Zgodnosc, "Do zlokalizowania", obchod "Ostatnie sztuki",
+// zajetosc), wiec lataniem ekranow tego nie zalatwimy (CLAUDE.md, zasada 5).
+//
+// Granica jest jednokierunkowa: blokujemy WEJSCIE na lokalizacje, nie wyjscie z niej.
+// MM z lokalizacji na magazyn zewnetrzny (np. zestaw na BRK) zostaje dozwolone - inaczej
+// piec istniejacych wierszy nie mialoby jak opuscic WMS.
+const BLAD_ZESTAW = 'Zestaw (komplet) nie ma wlasnej lokalizacji - fizycznie leza jego skladniki, '
+  + 'kazdy na swojej polce. Zlokalizuj skladniki, a zestaw zostaw bez miejsca.';
+
+// Zwraca komunikat bledu albo null (mozna dzialac). GT niedostepne = przepuszczamy,
+// zob. czyZestaw w services/gt-produkty.js.
+async function bladGdyZestaw(artykulGtId) {
+  return (await czyZestaw(artykulGtId)) === true ? BLAD_ZESTAW : null;
+}
 
 // POST /api/ruchy/mm - zapisz przesuniecie MM i wystaw dokument MM w GT przez most C#
 router.post('/mm', async (req, res, next) => {
@@ -31,6 +54,13 @@ router.post('/mm', async (req, res, next) => {
   }
   if (celZewnetrzny && !MAGAZYNY_ZEWNETRZNE.includes(String(mag_cel_zewnetrzny).trim().toUpperCase())) {
     return res.status(400).json({ blad: `Pole "mag_cel_zewnetrzny" musi byc jednym z: ${MAGAZYNY_ZEWNETRZNE.join(', ')}` });
+  }
+
+  // Tylko gdy celem jest lokalizacja WMS - wyprowadzenie zestawu na magazyn zewnetrzny
+  // (BRK, K4R) zostaje dozwolone, zob. BLAD_ZESTAW.
+  if (celWMS) {
+    const bladZestaw = await bladGdyZestaw(artykul_gt_id);
+    if (bladZestaw) return res.status(409).json({ blad: bladZestaw });
   }
 
   const zrodlo = db.prepare('SELECT * FROM lokalizacje WHERE id = ?').get(lok_zrodlo_id);
@@ -205,6 +235,11 @@ router.post('/lok', async (req, res, next) => {
   if (!maZrodlo && (!artykul_symbol || !artykul_nazwa)) {
     return res.status(400).json({ blad: 'Pola "artykul_symbol" i "artykul_nazwa" sa wymagane, gdy produkt nie ma jeszcze lokalizacji w WMS (lok_zrodlo_id = null)' });
   }
+
+  // Dotyczy tez przeniesienia istniejacego wiersza: zestawu nie przestawiamy na inna polke,
+  // tylko zdejmujemy z WMS (sciezka "Czysc zera").
+  const bladZestaw = await bladGdyZestaw(artykul_gt_id);
+  if (bladZestaw) return res.status(409).json({ blad: bladZestaw });
 
   let zrodlo = null;
   let stanZrodlo = null;
@@ -432,6 +467,9 @@ router.post('/przyjecie', async (req, res, next) => {
   const ilo = Number(ilosc);
   if (!Number.isFinite(ilo) || ilo <= 0) return res.status(400).json({ blad: 'Pole "ilosc" musi byc liczba > 0' });
 
+  const bladZestaw = await bladGdyZestaw(artykul_gt_id);
+  if (bladZestaw) return res.status(409).json({ blad: bladZestaw });
+
   const zrodloMag = String(mag_zrodlo_zewnetrzny).trim().toUpperCase();
 
   const cel = db.prepare('SELECT * FROM lokalizacje WHERE id = ?').get(lok_cel_id);
@@ -558,6 +596,9 @@ router.post('/rozloz', async (req, res, next) => {
   if (!Number.isInteger(lok_cel_id)) return res.status(400).json({ blad: 'Pole "lok_cel_id" jest wymagane' });
   const ilo = Number(ilosc);
   if (!Number.isFinite(ilo) || ilo <= 0) return res.status(400).json({ blad: 'Pole "ilosc" musi byc liczba > 0' });
+
+  const bladZestaw = await bladGdyZestaw(artykul_gt_id);
+  if (bladZestaw) return res.status(409).json({ blad: bladZestaw });
 
   const cel = db.prepare('SELECT * FROM lokalizacje WHERE id = ?').get(lok_cel_id);
   if (!cel) return res.status(404).json({ blad: 'Lokalizacja docelowa nie istnieje' });

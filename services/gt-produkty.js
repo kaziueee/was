@@ -9,7 +9,7 @@ const { query, naCzesci } = require('./gt-sql');
 const db = require('../db/database');
 const { MAGAZYNY, MAGAZYNY_RAZEM, MAGAZYNY_ZAPAS_K4, MAGAZYN_GT_ID } = require('../config/magazyny');
 const { escapeLike, podzielNaSlowa, LIMIT_WYSZUKIWANIA } = require('./wyszukiwanie');
-const { pobierzPrzegladLokalizacji } = require('./gt-fields');
+const { pobierzPrzegladLokalizacji, RODZAJ_ZESTAW } = require('./gt-fields');
 // wprost z adnotacja-stref (a nie przez re-eksport z gt-fields) - czysty modul bez SQLite/GT
 const { bezAdnotacjiStref } = require('./adnotacja-stref');
 // kodJestTokenemLokalizacji zyje w modelu lokalizacji (czysty, bez SQLite/GT) - tu tylko
@@ -262,6 +262,27 @@ async function dostepneWGt(artykul_gt_id, magazyn) {
   const stany = await pobierzStanyGt([artykul_gt_id]);
   const w = stany.get(String(artykul_gt_id))?.[magazyn] ?? { ilosc: 0, rezerwacja: 0 };
   return { stan: w.ilosc, rezerwacja: w.rezerwacja, dostepne: w.ilosc - w.rezerwacja };
+}
+
+// Czy towar jest ZESTAWEM (tw_Rodzaj = 8) - jedno pytanie do GT, uzywane przez endpointy
+// ruchow jako straznik "zestaw nie dostaje miejsca w WMS" (zob. routes/ruchy.js).
+//
+// Zwraca `null`, gdy GT nie odpowiada - swiadomie, zeby wywolujacy PRZEPUSCIL ruch.
+// Bilans bledow jest niesymetryczny: przepuszczony zestaw to jeden wiersz do skasowania
+// (zdarzylo sie 5 razy w 5 tygodni), a zablokowany ruch przy padnietym GT zatrzymuje
+// odkladanie CALEGO magazynu. Tozsamosc towaru nie jest tez inwariantem stanu - przed
+// nadpisaniem stanow chronia osobne, twarde warunki (deficyt, rezerwacje), ktore i tak
+// wymagaja GT i same zwracaja 503.
+async function czyZestaw(artykulGtId) {
+  const id = Number(artykulGtId);
+  if (!Number.isInteger(id)) return null;
+  try {
+    const { recordset } = await query('SELECT tw_Rodzaj FROM tw__Towar WHERE tw_Id = @id', { id });
+    if (!recordset.length) return null;      // towaru nie ma w GT - nie nam o tym rozstrzygac
+    return Number(recordset[0].tw_Rodzaj) === RODZAJ_ZESTAW;
+  } catch (err) {
+    return null;
+  }
 }
 
 // === Sortowanie/agregacja dla listujProdukty i pobierzProduktyZUniwersum ===
@@ -829,13 +850,13 @@ async function pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny
 }
 
 // Rozklad statusow zgodnosci GT<->WMS dla calego "zbioru WMS" (~2300-2400 SKU).
-// Zwraca liczniki 5 stanow ZGODNOSC po zgodnosci OGOLNEJ (najgorszy z K4/K4G) -
+// Zwraca liczniki stanow ZGODNOSC (z ZEST wlacznie) po zgodnosci OGOLNEJ (najgorszy z K4/K4G) -
 // to samo pole, co badge na liscie Produkty i filtr Zgodnosc. Uzywane przez
 // job pulpit-snapshot (Faza 5) - drogie (krzyzuje caly zbior z GT), wiec liczone
 // godzinnym jobem, nie na zywo przy otwarciu pulpitu.
 async function rozkladZgodnosci() {
   const ids = await pobierzZbiorWmsIds({});
-  const licznik = { OK: 0, NZ: 0, t_GT: 0, BD: 0, OF: 0 };
+  const licznik = { OK: 0, NZ: 0, t_GT: 0, BD: 0, OF: 0, ZEST: 0 };
   if (ids.length === 0) return { licznik, razem: 0 };
 
   const [podstawoweMap, przegladMap] = await Promise.all([
@@ -873,6 +894,7 @@ module.exports = {
   pobierzStanyGt,
   rozkladZgodnosci,
   dostepneWGt,
+  czyZestaw,
   sumaRazem,
   sumaZapasK4,
   LIMIT_WYSZUKIWANIA,

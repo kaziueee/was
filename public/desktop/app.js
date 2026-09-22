@@ -483,6 +483,7 @@ const ZGODNOSC_BADGE = {
   t_GT: 'badge-info',
   NZ: 'badge-err',
   BD: 'badge-neutral',
+  ZEST: 'badge-neutral',   // zestaw - "nie dotyczy", nie zadanie
 };
 
 const PROD_LIMIT = 50;

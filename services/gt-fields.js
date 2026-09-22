@@ -216,8 +216,11 @@ async function pobierzAktualnePolaLokalizacji(artykulGtIds) {
       return `@id${i}`;
     }).join(', ');
 
+    // tw_Rodzaj jedzie razem z polami, bo od niego zalezy werdykt zgodnosci (rodzaj 8 =
+    // zestaw = "nie dotyczy", zob. ZGODNOSC.ZESTAW). Widok ma wiersz dla KAZDEGO towaru
+    // (sprawdzone na produkcji: 94588 = COUNT(tw__Towar)), wiec nie gubi nikogo.
     const { recordset } = await query(
-      `SELECT tw_Id, tw_Pole1, tw_Pole8 FROM vwPolaWlasne_Towar WHERE tw_Id IN (${warunki})`,
+      `SELECT tw_Id, tw_Pole1, tw_Pole8, tw_Rodzaj FROM vwPolaWlasne_Towar WHERE tw_Id IN (${warunki})`,
       parametry
     );
     for (const r of recordset) wynik.set(String(r.tw_Id), r);
@@ -270,8 +273,17 @@ async function pobierzStatusLokalizacjiGt(artykulGtIds) {
 // 4 stany zgodnosci pola lokalizacyjnego (K4 albo K4G) miedzy WMS i GT -
 // kolumna "Zgodnosc" w tabeli kontrolnej Produkty (desktop). Krotkie kody
 // (nie emoji), bo sluza tez jako wartosci filtra w UI.
-const ZGODNOSC = { NIEZGODNE: 'NZ', TYLKO_GT: 't_GT', ZGODNE: 'OK', PUSTE: 'BD', OBCIETE: 'OF' };
+const ZGODNOSC = { NIEZGODNE: 'NZ', TYLKO_GT: 't_GT', ZGODNE: 'OK', PUSTE: 'BD', OBCIETE: 'OF', ZESTAW: 'ZEST' };
 // OF = pole GT za krotkie na wszystkie lokalizacje K4G, ale sumy WMS i GT sie zgadzaja - nie blad
+// ZEST = towar rodzaju 8 (komplet). NIE MA wlasnej polki: lezy rozlozony na skladniki, a jego
+// stan to zapis ksiegowy, nie paczka na regale (decyzja usera 2026-09-22: "zestaw nigdy nie ma
+// lokalizacji"). Pytanie "czy lokalizacja WMS zgadza sie z GT" po prostu go nie dotyczy, wiec
+// zamiast BD/t_GT ("brak danych" / "do zlokalizowania" = zadanie, ktorego nikt nie wykona)
+// dostaje wlasny, terminalny werdykt. BEZ WYJATKU dla "a moze WMS zna jego miejsce" - te
+// nieliczne wiersze na produkcji okazaly sie pomylkami przypisania, nie multipakami.
+
+// tw_Rodzaj = 8: komplet/zestaw w GT (1 = zwykly towar).
+const RODZAJ_ZESTAW = 8;
 const PRIORYTET_ZGODNOSCI = [ZGODNOSC.NIEZGODNE, ZGODNOSC.TYLKO_GT, ZGODNOSC.OBCIETE, ZGODNOSC.ZGODNE, ZGODNOSC.PUSTE];
 
 function klasyfikujZgodnosc(wms, gt) {
@@ -341,6 +353,19 @@ async function pobierzPrzegladLokalizacji(artykulGtIds) {
     const gtK4 = bezAdnotacjiStref(polaGt?.tw_Pole1);   // dopisek stref nie jest adresem
     const gtK4gTekst = (polaGt?.tw_Pole8 || '').trim();
 
+    // Zestaw (rodzaj 8) - werdykt terminalny, przed jakimkolwiek porownaniem: on nie ma
+    // miejsca na regale, wiec kazdy inny status bylby zadaniem do wykonania, a takiego
+    // zadania nie ma. Tekst z GT zostawiamy do POKAZANIA (~90 kompletow ma tam recznie
+    // wpisany adres skladnikow - notatke czlowieka, ktorej nie kasujemy ani nie sprawdzamy).
+    if (Number(polaGt?.tw_Rodzaj) === RODZAJ_ZESTAW) {
+      wynik.set(id, {
+        k4: { gt_tekst: gtK4, stan: ZGODNOSC.ZESTAW },
+        k4g: { gt_tekst: gtK4gTekst, stan: ZGODNOSC.ZESTAW },
+        ogolna: ZGODNOSC.ZESTAW,
+      });
+      continue;
+    }
+
     // K4: porownanie TEKSTU lokalizacji. Ilosc w K4 zmienia sie przez sprzedaz w GT
     // (lokalizacja to stale miejsce SKU), wiec ilosci celowo NIE porownujemy.
     const k4 = { gt_tekst: gtK4, stan: klasyfikujZgodnosc(oczekiwane.miejsce_na_magazynie, gtK4) };
@@ -382,4 +407,5 @@ module.exports = {
   decyzjaAdnotacji,
   SKROTY_STREF,
   ZGODNOSC,
+  RODZAJ_ZESTAW,
 };

@@ -941,7 +941,7 @@ function obsluzListaArtykulow(artykuly, obciete, kolizjaSymbolu = null) {
 }
 
 // lewy pasek statusu zgodnosci karty (te same stany co badge: OK/OF, t_GT, NZ, BD)
-const ZGODNOSC_BAR = { OK: 'st-ok', OF: 'st-ok', t_GT: 'st-info', NZ: 'st-err', BD: 'st-neutral' };
+const ZGODNOSC_BAR = { OK: 'st-ok', OF: 'st-ok', t_GT: 'st-info', NZ: 'st-err', BD: 'st-neutral', ZEST: 'st-neutral' };
 function statusBarKlasa(zgodnosc) {
   return (zgodnosc && zgodnosc.ogolna && ZGODNOSC_BAR[zgodnosc.ogolna]) || 'st-neutral';
 }

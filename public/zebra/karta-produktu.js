@@ -36,7 +36,7 @@ function formatLokalizacjaGt(lokalizacjaGt) {
 }
 
 // klasa CSS badge'a statusu zgodnosci - te same stany co tabela desktopu (zgodnosc.ogolna)
-const ZGODNOSC_BADGE = { OK: 'zg-ok', OF: 'zg-ok', t_GT: 'zg-info', NZ: 'zg-err', BD: 'zg-neutral' };
+const ZGODNOSC_BADGE = { OK: 'zg-ok', OF: 'zg-ok', t_GT: 'zg-info', NZ: 'zg-err', BD: 'zg-neutral', ZEST: 'zg-neutral' };
 
 // kolorowy badge statusu zgodnosci WMS<->GT (OK / t_GT / NZ / BD / OF) - '' gdy brak danych
 function statusZgodnosciBadge(produkt) {

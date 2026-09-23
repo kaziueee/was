@@ -98,3 +98,27 @@ function fokusBezKlawiatury(inp) {
   if (list) { inp.dataset.list = list; inp.removeAttribute('list'); }
   inp.focus();
 }
+
+// --- potwierdzenie tozsamosci towaru przy skanie ---
+// Ekrany z checklista (obchod Sciezek, wozek Zwrotow) sprawdzaja, czy magazynier trzyma w rece
+// WLASCIWA pozycje, porownujac zeskanowany kod z symbolem/EAN-em z listy. Napis w liscie to
+// jednak KOPIA kartoteki GT (stany_lokalizacji, a w Zwrotach wrecz snapshot w pozycje_wozka),
+// a symbol wolno w Subiekcie przestawic w kazdej chwili - swiezo przemianowany towar nie
+// zgadzal sie wtedy z wlasna naklejka i ekran mowil "To inna pozycja" o dobrze wzietej sztuce.
+//
+// Rozstrzygamy wiec tw_Id: pytamy backend, co ten kod znaczy DZIS. Zapytanie leci WYLACZNIE po
+// nietrafieniu napisow (czyli raz na incydent, nie na kazdy skan), a gdy sie nie uda - brak
+// sieci, GT nie odpowiada - wracamy do dzisiejszego zachowania, czyli odmowy. Potwierdzamy
+// tylko jednoznaczna karte artykulu: 'lista_artykulow' (kolizja symbolu, szukanie po nazwie)
+// tozsamosci nie dowodzi.
+async function czyTenSamTowar(kod, artykulGtId) {
+  if (!kod || !artykulGtId) return false;
+  try {
+    const res = await fetch(`/api/lokalizacje/skan/${encodeURIComponent(kod)}`);
+    if (!res.ok) return false;
+    const dane = await res.json();
+    return dane.typ === 'artykul' && String(dane.artykul_gt_id) === String(artykulGtId);
+  } catch (err) {
+    return false;
+  }
+}

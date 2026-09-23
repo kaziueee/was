@@ -379,7 +379,7 @@
   // (to samo obejscie co normalizujKodLokalizacji w backendzie).
   const golyKod = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-  function obsluzSkanObchod(kod) {
+  async function obsluzSkanObchod(kod) {
     const p = lista[idx];
     if (!p) return;
     const cel = String(kod).trim().toUpperCase();
@@ -390,12 +390,20 @@
     const lokOk = sciezka.potwierdzaLokalizacja && golyKod(cel) === golyKod(p.lokalizacja_kod);
     if (lokOk || cel === symbol || (ean && cel === ean)) {
       odblokujLiczenie(false);
-    } else {
-      beep(false);
-      komunikat(sciezka.potwierdzaLokalizacja
-        ? `Zeskanowano „${cel}", a oczekiwano lokalizacji ${p.lokalizacja_kod}.`
-        : `Zeskanowano „${cel}", a oczekiwano ${symbol}. To inna pozycja.`, 'blad');
+      return;
     }
+    // Napisy sie nie zgadzaja - zanim powiemy "to inna pozycja", sprawdzamy tozsamosc po
+    // tw_Id (czyTenSamTowar w kreator.js). Symbol na liscie to kopia kartoteki GT i po
+    // zmianie w Subiekcie zostaje nieaktualny do najblizszego przebiegu joba - bez tego
+    // ekran odrzucalby wlasciwie wzieta sztuke, bo ma dzis inna naklejke.
+    if (await czyTenSamTowar(cel, p.artykul_gt_id)) {
+      odblokujLiczenie(false);
+      return;
+    }
+    beep(false);
+    komunikat(sciezka.potwierdzaLokalizacja
+      ? `Zeskanowano „${cel}", a oczekiwano lokalizacji ${p.lokalizacja_kod}.`
+      : `Zeskanowano „${cel}", a oczekiwano ${symbol}. To inna pozycja.`, 'blad');
   }
 
   async function zatwierdzPrzystanek() {

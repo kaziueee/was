@@ -255,14 +255,17 @@
   }
 
   // Skan towaru = KROK 2 (po lokalizacji): potwierdza, ze biore wlasciwa sztuke z wozka.
-  function obsluzSkanTowar(kod) {
+  async function obsluzSkanTowar(kod) {
     const p = lista[idx];
     if (!p) return;
     if (!lokCel) { beep(false); komunikat('Najpierw zeskanuj lokalizację.', 'blad'); return; }
     const cel = String(kod).trim().toUpperCase();
     const symbol = String(p.artykul_symbol || '').toUpperCase();
     const ean = String(p.artykul_ean || '').toUpperCase();
-    if (cel !== symbol && !(ean && cel === ean)) {
+    // Symbol pozycji wozka to SNAPSHOT z chwili zebrania (pozycje_wozka) - nie odswieza go
+    // nawet job kartoteki, wiec po zmianie symbolu w Subiekcie rozjezdza sie z naklejka na
+    // caly czas zycia wozka. Po nietrafieniu napisow rozstrzyga wiec tw_Id (kreator.js).
+    if (cel !== symbol && !(ean && cel === ean) && !(await czyTenSamTowar(cel, p.artykul_gt_id))) {
       beep(false);
       komunikat(`Zeskanowano „${cel}", a oczekiwano ${symbol}. To inna pozycja.`, 'blad');
       return;

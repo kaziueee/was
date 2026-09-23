@@ -992,7 +992,9 @@ function renderujListaArtykulow() {
       + (lok ? `<span class="poz-podpis poz-lok">${lok}</span>` : '')
       + `</span>`
       + `<span class="poz-strzalka">›</span>`;
-    btn.addEventListener('click', () => wykonajSkan(symbol));
+    // po tw_Id: wyniki z historii WMS nosza KOPIE symbolu, wiec po zmianie kartoteki
+    // w GT wejscie po napisie nie rozwiazuje sie na nic
+    btn.addEventListener('click', () => (p.artykul_gt_id ? wykonajSkanPoId(p.artykul_gt_id) : wykonajSkan(symbol)));
     kont.appendChild(btn);
   });
 }
@@ -1043,7 +1045,10 @@ function renderujWybor(opcje, onWybierz) {
 // Wstecz wraca do tej samej zawartosci lokalizacji, a nie do czystego skanu.
 function otworzKarteZListy(opcja) {
   powrotDoLokalizacji = true;
-  wykonajSkan(opcja.artykul.artykul_symbol);
+  const a = opcja.artykul;
+  // tw_Id, nie symbol: wiersze zawartosci lokalizacji niosa kopie kartoteki z WMS
+  if (a.artykul_gt_id) wykonajSkanPoId(a.artykul_gt_id);
+  else wykonajSkan(a.artykul_symbol);
 }
 
 function wybierzOpcje(opcja) {

@@ -131,6 +131,7 @@
     const dok = biezacaFaktura?.zrodlo_dok;
     if (!window.ruchOtworzArtykul) { komunikat('Ekran Ruch niedostępny.', 'blad'); return; }
     window.ruchOtworzArtykul(p.symbol || p.artykul_gt_id, {
+      artykul_gt_id: p.artykul_gt_id,
       powrot: () => {
         // wracamy do WPISU historii tej faktury, zeby Back z listy towarow szedl na liste
         // faktur (a nie z powrotem w produkt, ktory wlasnie rozlozylismy)

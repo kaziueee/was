@@ -561,7 +561,11 @@
         + `<span class="poz-rez">otwórz ›</span>`
         + `</span>`;
       div.addEventListener('click', () => {
-        if (window.ruchOtworzArtykul) window.ruchOtworzArtykul(w.artykul_symbol || w.artykul_gt_id);
+        // po tw_Id: symbol w audycie jest zapisem historycznym i po zmianie kartoteki
+        // w GT nie rozwiazuje sie na nic (tap byl wtedy martwy na zawsze)
+        if (window.ruchOtworzArtykul) {
+          window.ruchOtworzArtykul(w.artykul_symbol || w.artykul_gt_id, { artykul_gt_id: w.artykul_gt_id });
+        }
       });
       div.querySelector('.sciezki-zalatw').addEventListener('click', (e) => {
         e.stopPropagation();

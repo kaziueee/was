@@ -255,7 +255,8 @@ function renderujOstatnie() {
     b.className = 'ostatnie-chip';
     b.textContent = p.symbol;
     b.title = p.nazwa || p.symbol;
-    b.addEventListener('click', () => wykonajSkan(p.symbol));
+    // gt_id lezy w zapisie od poczatku; starsze wpisy w localStorage moga go nie miec
+    b.addEventListener('click', () => (p.gt_id ? wykonajSkanPoId(p.gt_id) : wykonajSkan(p.symbol)));
     listaP.appendChild(b);
   }
   for (const l of lok) {
@@ -354,6 +355,28 @@ async function wykonajSkan(kod, zrodloInput = el('input-start')) {
 }
 
 onScan(el('input-start'), wykonajSkan);
+
+// Otwarcie produktu po tw_Id - ta sama karta co po skanie, tylko bez rozwiazywania kodu.
+// Kto ma tw_Id (listy dostaw, przywozek, PW, "Do sprawdzenia", raport Sciezek, chipy
+// "ostatnie produkty"), NIE wraca do systemu po symbolu - symbol to kopia kartoteki GT,
+// a ta wolno w Subiekcie przestawic w kazdej chwili (zob. services/kartoteka.js). Wejscie
+// po symbolu konczylo sie wtedy "Nie znaleziono": w listach do najblizszego przebiegu joba
+// kartoteki, a w raporcie Sciezek TRWALE - tamtejszy symbol pochodzi z audytu, gdzie jest
+// zamrozony celowo ("tak nazywal sie ten towar w chwili zdarzenia").
+async function wykonajSkanPoId(artykulGtId) {
+  ukryjKomunikat();
+  try {
+    const res = await fetch(`/api/lokalizacje/skan-id/${encodeURIComponent(artykulGtId)}`);
+    const dane = await res.json();
+    if (!res.ok || dane.typ !== 'artykul') {
+      pokazKomunikat(dane?.blad || `Nie znaleziono artykulu (tw_Id ${artykulGtId})`, 'blad');
+      return;
+    }
+    obsluzArtykul(dane);
+  } catch (err) {
+    pokazKomunikat('Blad polaczenia z serwerem', 'blad');
+  }
+}
 
 // zeskanowano kod lokalizacji -> wybierz produkt do przeniesienia
 function obsluzLokalizacje({ lokalizacja, zawartosc }) {
@@ -2040,12 +2063,15 @@ window.pokazWidok = pokazWidok;
 
 // Otworz widok Ruch od razu dla danego SKU/lokalizacji (uzywane np. z raportu Sciezek).
 // opcje.powrot - funkcja wolana po zamknieciu ekranu sukcesu zamiast resetu kreatora.
+// opcje.artykul_gt_id - tozsamosc towaru; gdy jest, wchodzimy PO NIEJ, a `kod` sluzy juz
+// tylko za etykiete dla wywolan, ktore tw_Id nie maja (reczny skan, lokalizacja).
 // Ustawiamy PO pokazWidok, bo pokazWidok('ruch') czysci kontekst poprzedniego wejscia.
 window.ruchOtworzArtykul = (kod, opcje) => {
   pokazWidok('ruch');
   powrotDoZrodla = opcje?.powrot ?? null;
   history.pushState({ v: 'ruch' }, '');
-  if (kod) wykonajSkan(String(kod));
+  if (opcje?.artykul_gt_id) wykonajSkanPoId(opcje.artykul_gt_id);
+  else if (kod) wykonajSkan(String(kod));
 };
 el('btn-go-ruch').addEventListener('click', () => {
   pokazWidok('ruch');

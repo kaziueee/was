@@ -156,7 +156,8 @@
         if (!window.ruchOtworzArtykul) { komunikat('Ekran Ruch niedostępny.', 'blad'); return; }
         // powrot = history.back() zdejmuje wpis Ruchu i wraca na te liste, przeladowana -
         // przypisana pozycja znika sama (lista liczy sie na zywo z GT + kopii WMS)
-        window.ruchOtworzArtykul(p.symbol || p.artykul_gt_id, { powrot: () => history.back() });
+        window.ruchOtworzArtykul(p.symbol || p.artykul_gt_id,
+          { artykul_gt_id: p.artykul_gt_id, powrot: () => history.back() });
       });
       box.appendChild(div);
     }

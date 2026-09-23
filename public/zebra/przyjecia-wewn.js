@@ -60,7 +60,8 @@
         if (!window.ruchOtworzArtykul) { komunikat('Ekran Ruch niedostępny.', 'blad'); return; }
         // powrot = history.back() zdejmuje wpis Ruchu i wraca na te liste, przeladowana -
         // rozlozona pozycja znika sama (licznik liczy sie z ruchow)
-        window.ruchOtworzArtykul(p.symbol || p.artykul_gt_id, { powrot: () => history.back() });
+        window.ruchOtworzArtykul(p.symbol || p.artykul_gt_id,
+          { artykul_gt_id: p.artykul_gt_id, powrot: () => history.back() });
       });
       box.appendChild(div);
     }

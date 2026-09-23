@@ -285,6 +285,15 @@ async function czyZestaw(artykulGtId) {
   }
 }
 
+// Ile sztuk mozna wyprowadzic z magazynu: stan minus rezerwacja. Ta sama definicja, co
+// w dostepneWGt (zasada 6 - rezerwacje blokuja MM), tylko na gotowym wpisie stany_gt.
+// Rezerwacja jest wlasnoscia PARY (artykul, magazyn), wiec nie wolno jej sumowac miedzy
+// magazynami: 10 szt. na K4 w calosci zarezerwowanych i 10 wolnych na MAG to nie jest
+// "10 dostepnych na K4".
+function dostepneWMagazynie(wpis) {
+  return (wpis?.ilosc ?? 0) - (wpis?.rezerwacja ?? 0);
+}
+
 // === Sortowanie/agregacja dla listujProdukty i pobierzProduktyZUniwersum ===
 
 // Wyrazenie SQL sumujace stan (st_Stan) dla danego magazynu w obrebie GROUP BY
@@ -436,7 +445,7 @@ function sumaZapasK4(stany_gt) {
 // tylkoIdy - opcjonalna lista tw_Id do zawezenia wynikow (filtr stref w routes/produkty.js:
 // strefa nie jest kolumna w GT, wiec zbior liczy Node i podaje gotowe id). Pusta TABLICA
 // znaczy "nic nie pasuje" i musi dac 0 wynikow - dlatego rozrozniamy ja od null ("bez filtru").
-async function listujProdukty({ q, limit = 50, offset = 0, sort = 'sku', dir = 'asc', magazyny = [], zRezerwacja = false, pokazZablokowane = false, zestawienie = null, tylkoIdy = null } = {}) {
+async function listujProdukty({ q, limit = 50, offset = 0, sort = 'sku', dir = 'asc', magazyny = [], zRezerwacja = false, dostepne = false, pokazZablokowane = false, zestawienie = null, tylkoIdy = null } = {}) {
   const parametry = { limit, offset };
   let where = '1=1';
   if (zestawienie && !WARUNKI_ZESTAWIEN[zestawienie]) {
@@ -498,6 +507,10 @@ async function listujProdukty({ q, limit = 50, offset = 0, sort = 'sku', dir = '
   if (zRezerwacja) {
     const kody = magazyny.length > 0 ? magazyny : MAGAZYNY.map((m) => m.kod);
     warunkiHaving.push(`(${kody.map((m) => `${REZ_WYRAZENIA[m]} > 0`).join(' OR ')})`);
+  }
+  if (dostepne) {
+    const kody = magazyny.length > 0 ? magazyny : MAGAZYNY.map((m) => m.kod);
+    warunkiHaving.push(`(${kody.map((m) => `(${MAGAZYNY_WYRAZENIA[m]} - ${REZ_WYRAZENIA[m]}) > 0`).join(' OR ')})`);
   }
   const having = warunkiHaving.length > 0 ? `HAVING ${warunkiHaving.join(' AND ')}` : '';
 
@@ -776,7 +789,7 @@ async function pobierzPodstawoweInfo(ids) {
 // K4 -> k4g, inaczej -> ogolna). Kombinacje dajace zero wynikow (np.
 // magazyny=['LS'] + zgodnosc=['NZ']) zwracaja po prostu pusta liste - bez
 // specjalnej obslugi, tak jak ustalono (brak automatycznych blokad UI).
-async function pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny, zgodnosc, zRezerwacja, pokazZablokowane, tylkoIdy = null }) {
+async function pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny, zgodnosc, zRezerwacja, dostepne, pokazZablokowane, tylkoIdy = null }) {
   let ids = await pobierzZbiorWmsIds({ pokazZablokowane });
   // Filtr stref (zob. tylkoIdy w listujProdukty). Zawezamy PRZED pobraniem stanow/przegladu -
   // te zapytania sa najdrozsze w tym trybie, a strefy zwykle tna zbior do kilkuset pozycji.
@@ -830,6 +843,11 @@ async function pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny
   if (zRezerwacja) {
     const kody = magazyny.length > 0 ? magazyny : MAGAZYNY.map((m) => m.kod);
     produkty = produkty.filter((p) => kody.some((m) => p.stany_gt[m].rezerwacja > 0));
+  }
+
+  if (dostepne) {
+    const kody = magazyny.length > 0 ? magazyny : MAGAZYNY.map((m) => m.kod);
+    produkty = produkty.filter((p) => kody.some((m) => dostepneWMagazynie(p.stany_gt[m]) > 0));
   }
 
   if (zgodnosc.length > 0) {

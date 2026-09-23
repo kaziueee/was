@@ -153,6 +153,9 @@ router.get('/', async (req, res, next) => {
       zgodnosc.push(ZGODNOSC.OBCIETE);
     }
     const zRezerwacja = req.query.z_rezerwacja === '1';
+    // "Dostepne" = stan - rezerwacja > 0 (w ktoryms z wybranych magazynow). Osobny filtr od
+    // "z rezerwacja": tamten szuka towaru ZABLOKOWANEGO, ten - takiego, ktorym da sie ruszyc.
+    const dostepne = req.query.dostepne === '1';
     const pokazZablokowane = req.query.pokaz_zablokowane === '1';
     const strefy = parsujListe(req.query.strefa, KODY_STREF);
 
@@ -162,10 +165,10 @@ router.get('/', async (req, res, next) => {
 
     let lista, total, tryb;
     if (zgodnosc.length > 0) {
-      ({ produkty: lista, total } = await pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny, zgodnosc, zRezerwacja, pokazZablokowane, tylkoIdy }));
+      ({ produkty: lista, total } = await pobierzProduktyZUniwersum({ q, limit, offset, sort, dir, magazyny, zgodnosc, zRezerwacja, dostepne, pokazZablokowane, tylkoIdy }));
       tryb = 'zbior_wms';
     } else {
-      ({ produkty: lista, total } = await listujProdukty({ q, limit, offset, sort, dir, magazyny, zRezerwacja, pokazZablokowane, tylkoIdy }));
+      ({ produkty: lista, total } = await listujProdukty({ q, limit, offset, sort, dir, magazyny, zRezerwacja, dostepne, pokazZablokowane, tylkoIdy }));
       tryb = 'katalog';
     }
 

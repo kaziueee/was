@@ -515,6 +515,7 @@ async function odswiezProdukty() {
   if (strefy.length > 0) params.set('strefa', strefy.join(','));
 
   if (el('prod-rezerwacja').checked) params.set('z_rezerwacja', '1');
+  if (el('prod-dostepne').checked) params.set('dostepne', '1');
   if (el('prod-zablokowane').checked) params.set('pokaz_zablokowane', '1');
 
   try {
@@ -638,6 +639,10 @@ el('prod-zablokowane').addEventListener('change', () => {
   odswiezProdukty();
 });
 el('prod-rezerwacja').addEventListener('change', () => {
+  prodOffset = 0;
+  odswiezProdukty();
+});
+el('prod-dostepne').addEventListener('change', () => {
   prodOffset = 0;
   odswiezProdukty();
 });

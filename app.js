@@ -63,11 +63,17 @@ app.use('/api/blokady', blokadyRouter);
 // (backend = zrodlo prawdy dla "kto"; handlery w routes/* nie musza byc zmieniane). GET otwarte.
 // blokujUcznia(...) to FABRYKA - kazde uzycie musi byc wywolane. Podanie samej funkcji
 // (bez nawiasow) przekazaloby Expressowi fabryke jako middleware i trasa sypalaby 500.
-// Uczen ma dostep do Sciezek i zwrotow; ponizsze wyjatki to dokladnie to, czego wymaga
-// ekran Zwrotow na Zebrze (public/zebra/zwroty.js) - nic ponadto:
+// Uczen ma dostep do Sciezek, zwrotow i podgladu. Pierwsze dwa wyjatki to dokladnie to, czego
+// wymaga ekran Zwrotow na Zebrze (public/zebra/zwroty.js) - nic ponadto:
 //   /lokalizacje/kod/:kod - GET, rozwiazanie zeskanowanego kodu lokalizacji docelowej
 //   /ruchy/rozloz         - samo odlozenie; handler dodatkowo zaweza ucznia do kubelka 'zwrot'
-app.use('/api/lokalizacje', auth.wymagajSesjiNaZapisie, auth.blokujUcznia(['/kod']), lokalizacjeRouter);
+// Do tego sprawdzarka (ekran „Sprawdz", public/zebra/sprawdz.js): /lokalizacje/skan i /skan-id
+// to czysty odczyt „co tu lezy / gdzie to lezy", wiec uczen ma je otwarte - pytanie o miejsce
+// towaru zadaje na hali kazdy, a jedyna droga do odpowiedzi prowadzila dotad przez ekran Ruch,
+// czyli przez ekran wystawiajacy MM. Przepustki sa ZAWEZONE DO GET, zeby dopisany kiedys POST
+// pod tym prefiksem nie wpadl tu razem z odczytem (zob. blokujUcznia).
+app.use('/api/lokalizacje', auth.wymagajSesjiNaZapisie,
+  auth.blokujUcznia(['GET /kod', 'GET /skan', 'GET /skan-id']), lokalizacjeRouter);
 app.use('/api/ruchy', auth.wymagajSesjiNaZapisie, auth.blokujUcznia(['/rozloz']), blokady.middlewareRuch, ruchyRouter);
 app.use('/api/uzupelnienia', auth.wymagajSesjiNaZapisie, auth.blokujUcznia(), uzupelnieniaRouter);
 app.use('/api/sciezki', auth.wymagajSesjiNaZapisie, sciezkiRouter);

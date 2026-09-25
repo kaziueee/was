@@ -96,8 +96,10 @@ function zrodloEtykieta() {
 
 // fragment "wg GT" dla danego magazynu z lokalizacja_gt.tekst
 // (np. "K4: A2 | K4G: M5-A01-P2(215)" -> dla K4 "K4: A2"); '' gdy brak
-function gtLokDlaMagazynu(mag) {
-  const t = stan.artykul?.lokalizacja_gt?.tekst || '';
+// zrodlo domyslnie = artykul kreatora; sprawdzarka (sprawdz.js) podaje wlasny, zeby regula
+// parsowania pola GT zostala JEDNA (nie kopiowal jej drugi ekran)
+function gtLokDlaMagazynu(mag, zrodlo = stan.artykul) {
+  const t = zrodlo?.lokalizacja_gt?.tekst || '';
   if (!t) return '';
   const czesc = t.split(' | ').find((p) => p.startsWith(mag + ':'));
   return czesc ? czesc.replace(new RegExp('^' + mag + ':\\s*'), '').trim() : '';
@@ -2035,6 +2037,8 @@ function pokazWidok(nazwa, stan) {
   if (uzup) uzup.classList.toggle('hidden', nazwa !== 'uzupelnienia');
   const hist = el('widok-historia');
   if (hist) hist.classList.toggle('hidden', nazwa !== 'historia');
+  const sprawdz = el('widok-sprawdz');
+  if (sprawdz) sprawdz.classList.toggle('hidden', nazwa !== 'sprawdz');
   const sciezki = el('widok-sciezki');
   if (sciezki) sciezki.classList.toggle('hidden', nazwa !== 'sciezki');
   const zwroty = el('widok-zwroty');
@@ -2057,6 +2061,7 @@ function pokazWidok(nazwa, stan) {
   if (nazwa === 'ruch') { zrobione = []; reset(); } // #5: swieze wejscie czysci liste zrobionych
   if (nazwa === 'uzupelnienia' && window.uzupOtworz) window.uzupOtworz();
   if (nazwa === 'historia' && window.historiaOtworz) window.historiaOtworz();
+  if (nazwa === 'sprawdz' && window.sprawdzOtworz) window.sprawdzOtworz();
   if (nazwa === 'sciezki' && window.sciezkiOtworz) window.sciezkiOtworz();
   if (nazwa === 'zwroty' && window.zwrotyOtworz) window.zwrotyOtworz();
   if (nazwa === 'dostawy' && window.dostawyOtworz) window.dostawyOtworz(stan);
@@ -2100,10 +2105,15 @@ window.addEventListener('popstate', (e) => {
 (async () => { await initMagazyny(); })();
 pokazWidok('menu');
 
-// Rola „uczen" = tylko Sciezki. ALLOW-lista, nie deny-lista: chowamy KAZDY kafel menu poza
-// wymienionymi ponizej. Dzieki temu nowy kafel jest domyslnie niewidoczny dla ucznia i nikt
+// Rola „uczen" = Sciezki + sprawdzarka. ALLOW-lista, nie deny-lista: chowamy KAZDY kafel menu
+// poza wymienionymi ponizej. Dzieki temu nowy kafel jest domyslnie niewidoczny dla ucznia i nikt
 // nie musi pamietac o dopisaniu id (deny-lista zostala kiedys przy Dostawach i Przyjeciach).
-const MENU_DLA_UCZNIA = ['btn-go-sciezki', 'btn-pelny-ekran'];   // pelny ekran = nie funkcja magazynowa
+//
+// Sprawdzarka („Sprawdz") jest tu, bo nie da sie nia niczego zmienic - to czysty odczyt, a
+// pytanie „gdzie jest ten towar" zadaje na hali kazdy. Zgode dubluje backend: uczen dostaje
+// przepustke wylacznie na GET /skan i /skan-id (app.js), wiec widocznosc kafla nie jest
+// jedynym, co go tu wpuszcza.
+const MENU_DLA_UCZNIA = ['btn-go-sciezki', 'btn-go-sprawdz', 'btn-pelny-ekran'];   // pelny ekran = nie funkcja magazynowa
 
 // Uwaga: selektor celuje w POTOMKOW #widok-menu, wiec (a) nie rusza klasy .hidden samego
 // kontenera - pokazWidok przelacza nia caly widok, (b) nie dotyka kafli w podmenu innych

@@ -25,6 +25,9 @@
       <button type="button" id="btn-go-sciezki" class="btn-menu">Ścieżki<span>obchód magazynu · zwroty</span></button>
       <button type="button" id="btn-go-przyjecia" class="btn-menu">Przyjęcia<span>PW · do sprawdzenia · przywózka</span></button>
       <button type="button" id="btn-go-historia" class="btn-menu">Historia ruchów<span>ostatnie operacje na Zebrze</span></button>
+      <!-- Sprawdzarka: jedyny ekran magazynowy widoczny dla roli „uczen" poza Sciezkami
+           (MENU_DLA_UCZNIA w ruch.js) - czysty podglad, bez zadnego zapisu. -->
+      <button type="button" id="btn-go-sprawdz" class="btn-menu">Sprawdź<span>co leży na półce · gdzie leży towar (tylko podgląd)</span></button>
       <a class="btn-menu" href="produkty.html">Test wyszukiwania (GT)<span>podgląd karty produktu</span></a>
       <button type="button" id="btn-pelny-ekran" class="btn-menu btn-menu-2 btn-menu-srodek">⛶ Tryb pełnoekranowy</button>
     </main>
@@ -234,6 +237,34 @@
     </footer>
   </div>
   </div><!-- /widok-historia -->
+
+  <!-- WIDOK SPRAWDZ (sprawdzarka: "co tu lezy" / "gdzie to lezy", bez edycji - zob. sprawdz.js).
+       Pole skanu stoi NAD wynikiem i nigdy nie znika: caly sens ekranu to skanowac dalej. -->
+  <div id="widok-sprawdz" class="hidden">
+  <div class="ekran">
+    <header class="ekran-naglowek">
+      <div class="ekran-sku"><h1>Sprawdź</h1><span class="chip">tylko podgląd</span></div>
+    </header>
+    <main class="ekran-tresc">
+      <div id="spr-komunikat" class="komunikat hidden"></div>
+      <div class="pole-blok">
+        <div class="pole-skan">
+          <input type="text" id="spr-skan" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Skanuj lokalizację, SKU lub EAN">
+        </div>
+        <p class="pole-hint">Skanuj kolejne kody — ten ekran tylko pokazuje, nic nie zmienia. Można też wpisać nazwę.</p>
+      </div>
+      <div id="spr-karta" class="karta-info hidden"></div>
+      <div id="spr-podsumowanie" class="podsumowanie-stanu hidden"></div>
+      <!-- Rozklad ("gdzie lezy i ile") NAD drobiazgami: to jest odpowiedz, po ktora sie tu
+           przychodzi. Surowy tekst pol GT czyta sie dopiero potem. -->
+      <div id="spr-lista" class="lista"></div>
+      <div id="spr-fakty" class="spr-fakty hidden"></div>
+    </main>
+    <footer class="ekran-stopka">
+      <button type="button" id="spr-wstecz" class="btn-wstecz">← Wstecz</button>
+    </footer>
+  </div>
+  </div><!-- /widok-sprawdz -->
 
   <!-- WIDOK SCIEZKI (Faza 6: zadania obchodu magazynu z checklista) -->
   <div id="widok-sciezki" class="hidden">
@@ -535,6 +566,7 @@
   <script src="ruch.js"></script>
   <script src="uzupelnienia.js"></script>
   <script src="historia.js"></script>
+  <script src="sprawdz.js"></script>
   <script src="sciezki.js"></script>
   <script src="zwroty.js"></script>
   <script src="dostawy.js"></script>

@@ -97,18 +97,31 @@ function wymagajAdmin(req, res, next) {
 // przepuszczamy imiennie te odczyty, ktorych uczen potrzebuje do pracy.
 //
 // Uzycie: blokujUcznia() - cala trasa zamknieta; blokujUcznia(['/rozloz']) - wymieniona
-// podsciezka przepuszczona. Dopasowanie dokladne albo prefiksowe, wiec '/kod' lapie tez
-// '/kod/M2-J14-P2'. req.path jest liczony WZGLEDEM MOUNTA (app.use strzyga prefiks), wiec
-// podajemy '/rozloz', a nie '/api/ruchy/rozloz'.
+// podsciezka przepuszczona; blokujUcznia(['GET /skan']) - przepuszczona TYLKO ta metoda.
+// Dopasowanie dokladne albo prefiksowe, wiec '/kod' lapie tez '/kod/M2-J14-P2'. req.path jest
+// liczony WZGLEDEM MOUNTA (app.use strzyga prefiks), wiec podajemy '/rozloz', a nie
+// '/api/ruchy/rozloz'.
+//
+// Forma z metoda jest dla przepustek czysto ODCZYTOWYCH (sprawdzarka na Zebrze): gdy ktos
+// kiedys dopisze POST-a pod tym samym prefiksem, uczen nie dostanie go w pakiecie z odczytem.
+// Bez tego uprawnienie znaczyloby „ta podsciezka", a chcemy, by znaczylo „podglad".
 //
 // Przepuszczona trasa MUSI sama dociagnac regule, jesli obsluguje wiecej niz jeden przypadek
 // - patrz POST /ruchy/rozloz, gdzie uczen moze rozlozyc WYLACZNIE kubelek 'zwrot'.
 function blokujUcznia(przepusc = []) {
+  const wzorce = przepusc.map((wpis) => {
+    const czesci = String(wpis).trim().split(/\s+/);
+    return czesci.length > 1
+      ? { metoda: czesci[0].toUpperCase(), sciezka: czesci[1] }
+      : { metoda: null, sciezka: czesci[0] };
+  });
   return function (req, res, next) {
     if (!req.uzytkownik || req.uzytkownik.rola !== 'uczen') return next();
     const sciezka = req.path.replace(/\/+$/, '') || '/';
-    if (przepusc.some((p) => sciezka === p || sciezka.startsWith(p + '/'))) return next();
-    return res.status(403).json({ blad: 'Rola „uczen" ma dostep tylko do Sciezek i zwrotow' });
+    const wolno = wzorce.some((w) => (!w.metoda || w.metoda === req.method)
+      && (sciezka === w.sciezka || sciezka.startsWith(w.sciezka + '/')));
+    if (wolno) return next();
+    return res.status(403).json({ blad: 'Rola „uczen" ma dostep tylko do Sciezek, zwrotow i podgladu' });
   };
 }
 

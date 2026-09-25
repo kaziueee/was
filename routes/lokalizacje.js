@@ -254,6 +254,13 @@ async function dolaczDaneGt(payload) {
       gtZestawy.wZestawachMapa(idy),
     ]);
 
+    // GT odpowiedzial - od tego miejsca brak stanu znaczy "zero", a nie "nie wiem". Bez tej
+    // flagi obu przypadkow nie da sie odroznic na froncie (przy padnietym GT payload wraca
+    // BEZ stany_gt, dokladnie tak samo jak dla towaru, ktorego GT nie zna), wiec ekran musial
+    // zgadywac - a sprawdzarka na tym zgadywaniu pokazywala pewne "0 szt." dla towaru lezacego
+    // na polce. Ustawiamy tu, a nie na koncu: po tej linii nic juz nie wola GT.
+    payload.gt_ok = true;
+
     // {k4, k4g, ogolna} z enumem OK/t_GT/NZ/BD/OF (jak w tabeli desktopu) - do badge'a statusu na froncie
     const zgodnoscZPrzegladu = (id) => {
       const p = przegladMap.get(String(id));
@@ -333,6 +340,7 @@ async function dolaczDaneGt(payload) {
 
     return payload;
   } catch (err) {
+    payload.gt_ok = false;   // niedostepnosc GT nie blokuje WMS, ale ma byc WIDOCZNA
     return payload;
   }
 }

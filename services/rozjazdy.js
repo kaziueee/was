@@ -11,13 +11,13 @@
 const db = require('../db/database');
 const { pobierzStanyGt } = require('./gt-produkty');
 const audyt = require('./audyt');
+const { interwalMsZMinut } = require('./interwal');
 
 // K4 = pick floor z zywa sprzedaza (Sellasist zbija stan GT bez wiedzy WMS), wiec kopia WMS
 // szybko sie starzeje. Job scala WMS do GT - im czesciej, tym mniejsze okno rozjazdu na K4.
 // Domyslnie 10 min; nadpisywalne w .env przez ROZJAZDY_INTERWAL_MIN (minuty).
 function interwalZKonfiguracji() {
-  const min = Number(process.env.ROZJAZDY_INTERWAL_MIN);
-  return Number.isFinite(min) && min > 0 ? min * 60 * 1000 : 10 * 60 * 1000;
+  return interwalMsZMinut(process.env.ROZJAZDY_INTERWAL_MIN, 10, 'rozjazdy');
 }
 const DOMYSLNY_INTERWAL_MS = interwalZKonfiguracji();
 

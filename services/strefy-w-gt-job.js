@@ -33,12 +33,12 @@ const { query } = require('./gt-sql');
 const gtFields = require('./gt-fields');
 const gtDokumenty = require('./gt-dokumenty');
 const awarie = require('./awarie');
+const { interwalMsZMinut } = require('./interwal');
 
 const DOMYSLNY_INTERWAL_MIN = 10;
 
 function interwalMs() {
-  const min = Number(process.env.WMS_STREFY_INTERWAL_MIN);
-  return (Number.isFinite(min) && min > 0 ? min : DOMYSLNY_INTERWAL_MIN) * 60 * 1000;
+  return interwalMsZMinut(process.env.WMS_STREFY_INTERWAL_MIN, DOMYSLNY_INTERWAL_MIN, 'strefy-w-gt');
 }
 
 // Ile sztuk lezy w strefach, w rozbiciu na rodzaje - z tego samego rozbicia, co karta

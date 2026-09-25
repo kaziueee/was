@@ -323,6 +323,12 @@ Wpisy jobów podpisują się `uzytkownik: 'system:<job>'` (np. `system:rozjazdy`
 - GT < WMS w K4gora → ekran "rozjazdy", magazynier decyduje
 - Job detekcji co **10 min** (domyślnie; `ROZJAZDY_INTERWAL_MIN` w `.env`) w `services/rozjazdy.js` — auto-korekta K4 ściąga kopię WMS do stanu GT, więc częstszy przebieg = mniejsze okno rozjazdu na K4
 
+## Interwały jobów: minuty z `.env` zawsze przez `interwalMsZMinut`
+
+`setInterval` trzyma opóźnienie w **32 bitach** — wartość powyżej `2 147 483 647 ms` (~24,8 dnia) nie znaczy „bardzo rzadko", tylko **zwija się do 1 ms**, czyli job zaczyna lecieć tysiące razy na sekundę. Przy jobach, które PISZĄ do GT (`strefy-w-gt` → `tw_Pole1`, `waga-gabarytowa` → `pw_Dane`, `rozjazdy` → auto-korekta K4), jedna literówka w `.env` zamienia więc „wyłącz na chwilę" w młotek na Subiekta: pula połączeń zapycha się w kilka sekund, a każdy przebieg to realne UPDATE-y. Złapane 2026-09-25 przy próbie zaparkowania jobów na czas podglądu (`ROZJAZDY_INTERWAL_MIN=100000` → setki „operation timed out" na sekundę).
+
+Dlatego **żaden job nie mnoży minut sam** — wszystkie idą przez `services/interwal.js` (`interwalMsZMinut(surowe, domyslneMin, nazwa)`): ścina do limitu, mówi o tym w logu i sprowadza „brak wartości / śmieci / zero" do domyślnej. Czysta funkcja, testy w `test/interwal.test.js` (bez SQLite i GT). Dodając job z interwałem w `.env` — użyj jej, nie `min * 60 * 1000`.
+
 ## Stan obecny
 
 Zbudowane i działające: baza + `routes/` (lokalizacje, ruchy, magazyny, produkty, rozjazdy, sciezki), most C# (`/api/mm`, `/api/lok`), ekran Zebry „Ruch towaru", sprawdzarka „Sprawdź" (podgląd bez edycji, też dla ucznia), moduł Ścieżki (Faza 6: ścieżka „Ostatnie sztuki" + raport), panel desktopu (produkty, rozjazdy, ruchy, lokalizacje, wolne miejsca, MM), job rozjazdów.

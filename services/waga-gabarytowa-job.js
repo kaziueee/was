@@ -12,6 +12,7 @@ const { query } = require('./gt-sql');
 const audyt = require('./audyt');
 const awarie = require('./awarie');
 const kartony = require('./kartony');
+const { interwalMsZMinut } = require('./interwal');
 const {
   KOLUMNY, TYP_OBIEKTU_TOWAR, rozbierzWymiary, liczWageGabarytowaGt,
 } = require('./gt-atrybuty');
@@ -19,8 +20,7 @@ const {
 // Domyslnie 6 h - wymiary zmieniaja sie rzadko (zapis jest jednorazowy per produkt),
 // wiec czestszy przebieg tylko obciazalby GT. Nadpisywalne w .env.
 function interwalZKonfiguracji() {
-  const min = Number(process.env.WAGA_GAB_INTERWAL_MIN);
-  return Number.isFinite(min) && min > 0 ? min * 60_000 : 6 * 60 * 60_000;
+  return interwalMsZMinut(process.env.WAGA_GAB_INTERWAL_MIN, 6 * 60, 'waga-gab');
 }
 const DOMYSLNY_INTERWAL_MS = interwalZKonfiguracji();
 

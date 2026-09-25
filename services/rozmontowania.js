@@ -29,10 +29,12 @@ const { pobierzStanyGt } = require('./gt-produkty');
 const { wykonajRuchGT } = require('./ruchy-gt');
 const audyt = require('./audyt');
 const awarie = require('./awarie');
+const { interwalMsZMinut } = require('./interwal');
 
 const MAG = 'K4';
 const OPERATOR = 'auto-rozmontowanie';
 const INTERWAL_MIN = Number(process.env.WMS_ROZMONTOWANIA_INTERWAL_MIN) || 10;
+const INTERWAL_MS = interwalMsZMinut(process.env.WMS_ROZMONTOWANIA_INTERWAL_MIN, 10, 'rozmontowania');
 
 // Dzien wdrozenia. Bez niego job nie rusza - patrz bezpiecznik 1.
 function dataOdciecia() {
@@ -157,7 +159,7 @@ function start() {
     .then((w) => { if (w.dopisano) console.log(`[rozmontowania] dopisano ${w.dopisano}, pominieto ${w.pominieto}`); })
     .catch((err) => awarie.blad('rozmontowania', `Przebieg nie powiodl sie: ${err.message}`, {}));
   uruchom();
-  timer = setInterval(uruchom, INTERWAL_MIN * 60 * 1000);
+  timer = setInterval(uruchom, INTERWAL_MS);
   if (timer.unref) timer.unref();
 }
 function stop() { if (timer) clearInterval(timer); timer = null; }

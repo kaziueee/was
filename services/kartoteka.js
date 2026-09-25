@@ -28,6 +28,7 @@ const db = require('../db/database');
 const audyt = require('./audyt');
 const awarie = require('./awarie');
 const { roznice } = require('./kartoteka-model');
+const { interwalMsZMinut } = require('./interwal');
 
 const DOMYSLNY_INTERWAL_MIN = 24 * 60;
 // Pierwszy przebieg krotko po starcie: na pececie WMS bywa restartowany rzadziej niz raz na
@@ -36,8 +37,7 @@ const OPOZNIENIE_STARTU_MS = 2 * 60 * 1000;
 const PACZKA_SQLITE = 400;   // limit zmiennych w zapytaniu SQLite (SQLITE_MAX_VARIABLE_NUMBER)
 
 function interwalMs() {
-  const min = Number(process.env.WMS_KARTOTEKA_INTERWAL_MIN);
-  return (Number.isFinite(min) && min > 0 ? min : DOMYSLNY_INTERWAL_MIN) * 60 * 1000;
+  return interwalMsZMinut(process.env.WMS_KARTOTEKA_INTERWAL_MIN, DOMYSLNY_INTERWAL_MIN, 'kartoteka');
 }
 
 // Znormalizowana karta GT ({symbol, nazwa, ean}) z wiersza tw__Towar.

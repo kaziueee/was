@@ -39,14 +39,16 @@ Sygnały na ZK (`vwPolaWlasne_Dokument`, 1:1 po `dok_Id`):
 **Kanały:** DHL Connect, InPost, DPD, DHL, UPS, One, Orlen Paczka, Poczta Polska, Packeta, Emag, nieklasyfikowane.
 
 **Reguły (kolejność):**
-1. **DHL Connect** = Amazon **DE/FR** + Kaufland. Kaufland: `Kaufland%` / `Kaufland.de` / `[kaufland]`. Amazon DE/FR: `Am%_IDEA` (natywne) lub źródło Amazon + szablon DE/FR (`Std/Exp DE`, `Std FR`, `DE Second`, `DHLDE_EuroHermers`). **Amazon PL (`std-ez-pl`) NIE jest DHL Connect → InPost.**
+1. **DHL Connect** = dostawa nazywająca usługę wprost + Amazon **DE/FR** + Kaufland. Kolejno: `pwd_Tekst03` zawiera `connect` (dziś jedyna taka wartość w GT to `DHL DE Connect`); Kaufland: `Kaufland%` / `Kaufland.de` / `[kaufland]`; Amazon DE/FR: `Am%_IDEA` (natywne) lub źródło Amazon + szablon DE/FR (`Std/Exp DE`, `Std FR`, `DE Second`, `DHLDE_EuroHermers`). **Amazon PL (`std-ez-pl`) NIE jest DHL Connect → InPost** (numery `40x-`, czyli amazon.pl).
+
+   **Amazon DE/FR wchodzi DWIEMA drogami i po źródle widać tylko jedną (2026-09-28).** Natywna IDEA podpisuje się w `dok_NrPelnyOryg` (`Am###-..._IDEA`, 4002 ZK/120 dni na produkcji) i była rozpoznawana od początku. Ścieżka BaseLinkera podpisuje się `pwd_Tekst01 = marketplace` — **nie** `Amazon.de` — a platformę trzyma wyłącznie w uwagach, w formacie `Amazon_DE`/`Amazon_FR` **bez nawiasów kwadratowych**, więc nie łapał jej ani warunek po źródle, ani `[amazon`. Efekt: **1606 ZK / 120 dni szło w „nieklasyfikowane"**, mimo że `pwd_Tekst03` mówiło wprost `DHL DE Connect`. Co gorsza 1059 z tych 1606 nie ma w uwagach ŻADNEGO tagu platformy (`;[marketplace];`), więc reguła oparta na rozpoznaniu platformy i tak zostawiłaby dwie trzecie z nich — **dlatego decyduje metoda dostawy, nie platforma**: kurier jest tam wpisany, a nie wywnioskowany. Dopasowanie po fragmencie `connect`, żeby wariant krajowy (`DHL FR Connect`) i gołe `DHL Connect` znaczyły to samo.
 2. **Emag** = źródło `Emag*` / `[emag*]`.
 3. **Kurier** wg `pwd_Tekst03` (słownik w `services/kanaly.js`). M.in.: Empik salon / KURIER / „pobranie" → **DPD**, Empik paczkomat → **InPost**; „Allegro One Kurier DPD/DHL/UPS" → **DPD/DHL/UPS**; „Allegro One Punkt/Box…" → **One**; Packeta CZ/SK/HU → **Packeta**.
 4. Reszta (NULL/puste/Pigu/rezerwacje ręczne typu `BRAKI INWENTURA`) → **nieklasyfikowane**.
 
 > **Pigu** (Bałtyk: `remote_self`, `post_ee/lv/lt/fi`, `itela_smartpost`…) — celowo nieobsługiwane (na razie brak tych zamówień) → nieklasyfikowane.
 
-Weryfikacja: 12/12 testów brzegowych, ~98,5% pokrycia na 1000 ZK.
+Weryfikacja: 12/12 testów brzegowych, ~98,5% pokrycia na 1000 ZK. Reguły mają testy jednostkowe (`test/kanaly.test.js`, bez SQLite i GT) — przypadki wzięte z żywych ZK produkcji.
 
 ## Decyzje
 

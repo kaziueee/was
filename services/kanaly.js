@@ -16,6 +16,13 @@
 // Reguly maja kolejnosc: PLATFORMA (DHL Connect / Emag) wygrywa z kurierem.
 // Wyjatek: Amazon PL ("std-ez-pl") NIE jest DHL Connect - DHL Connect to tylko
 // Amazon DE/FR (+Kaufland). Zweryfikowane na zywej bazie Z_KAJTEK_IdeaERP.
+//
+// Amazon DE/FR wchodzi DWIEMA drogami i tylko jedna widac po zrodle:
+//   - natywna IDEA: pola wlasne puste, oryg "Am###-..._IDEA" (produkcja: 4002 ZK/120 dni),
+//   - BaseLinker: zrodlo "marketplace" (NIE "Amazon.de"), dostawa "DHL DE Connect",
+//     platforma tylko w uwagach jako "Amazon_DE"/"Amazon_FR" - bez nawiasu, wiec
+//     stary warunek uwagi.includes("[amazon") jej nie widzial (1606 ZK/120 dni szlo
+//     w "nieklasyfikowane"). Rozstrzyga dzis sama metoda dostawy, zob. jestConnect.
 
 const KANALY = [
   'DHL Connect', 'InPost', 'DPD', 'DHL', 'UPS', 'One',
@@ -106,6 +113,16 @@ function jestAmazonDeFr(zr, d, oryg, uw) {
   return amazon && szablonDeFr(d);                           // BaseLinker DE/FR (nie PL)
 }
 
+// Metoda dostawy potrafi nazwac usluge wprost ("DHL DE Connect" - integracja
+// BaseLinkera). To mocniejszy sygnal niz zgadywanie platformy z uwag: kurier jest
+// tu wpisany, a nie wywnioskowany. Dopasowanie po FRAGMENCIE, bo wariant krajowy
+// ("DHL DE Connect", "DHL FR Connect") i gole "DHL Connect" znacza to samo, a
+// zadna inna metoda dostawy w GT nie ma w nazwie slowa "connect" (sprawdzone:
+// jedyna wartosc pwd_Tekst03 ze slowem "connect" to "DHL DE Connect").
+function jestConnect(d) {
+  return d.includes('connect');
+}
+
 function jestEmag(zr, uw) {
   return zr.startsWith('emag') || uw.includes('[emag');
 }
@@ -118,6 +135,7 @@ function kanalZK({ zrodlo, dostawa, oryg, uwagi } = {}) {
   const uw = norm(uwagi);
 
   // 1) Platforma ma priorytet
+  if (jestConnect(d)) return 'DHL Connect';
   if (jestKaufland(zr, o, uw)) return 'DHL Connect';
   if (jestAmazonDeFr(zr, d, o, uw)) return 'DHL Connect';
   if (jestEmag(zr, uw)) return 'Emag';

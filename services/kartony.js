@@ -7,7 +7,7 @@
 
 const db = require('../db/database');
 const {
-  dobierzKartonZListy, liczWageKartonZListy, sprawdzKarton,
+  dobierzKartonZListy, liczWageKartonZListy, sprawdzKarton, ocenDocinkeZListy,
 } = require('../config/kartony');
 
 // Cache listy w pamieci: lista zmienia sie rzadko (recznie, z panelu admina), a czyta ja
@@ -47,6 +47,12 @@ function dobierzKarton(wymiary) {
 // null gdy brak wymiarow. Patrz config/kartony.liczWageKartonZListy.
 function liczWageGabarytowaKarton(wymiary) {
   return liczWageKartonZListy(aktywneKartony(), wymiary);
+}
+
+// Czy karton trzeba dociac, zeby paczka spadla w nizszy prog DHL (patrz config/kartony,
+// ocenDocinkeZListy). `waga` = waga rzeczywista z GT (tekst albo liczba, kg).
+function ocenDocinke(wymiary, waga) {
+  return ocenDocinkeZListy(aktywneKartony(), wymiary, waga);
 }
 
 function pobierz(id) {
@@ -142,6 +148,7 @@ module.exports = {
   aktywneKartony,
   dobierzKarton,
   liczWageGabarytowaKarton,
+  ocenDocinke,
   pobierz,
   dodaj,
   edytuj,

@@ -27,8 +27,9 @@ const DOMYSLNY_INTERWAL_MS = interwalZKonfiguracji();
 // Ile rekordow naraz poprawiamy w jednym UPDATE - jak we wsadzie wymiarow.
 const PACZKA = 300;
 
-// Uzgadnia JEDNA kolumne wagi gabarytowej (dhl albo kartonowa) z wymiarami: dla kazdego towaru
-// z wymiarami liczy oczekiwana wartosc funkcja `licz(rozbite)` i poprawia rozjazdy. Wspolny
+// Uzgadnia JEDNA kolumne wyliczana z wymiarow (waga gab. DHL, kartonowa, docinka): dla kazdego towaru
+// z wymiarami liczy oczekiwana wartosc funkcja `licz(rozbite, wiersz)` i poprawia rozjazdy.
+// `wiersz.waga` jest dla docinki (waga rozliczeniowa = max(rzeczywista, gabarytowa)). Wspolny
 // silnik dla obu pol - zeby nie powstal drugi wzor, ktory z czasem rozjedzie sie z pierwszym.
 // Zwraca {sprawdzone, poprawione, pominieteWyscigi, bledneWymiary, przyklady}.
 async function uzgodnijKolumne(kolumna, licz) {
@@ -36,6 +37,7 @@ async function uzgodnijKolumne(kolumna, licz) {
     `SELECT pwd_Id,
             pwd_IdObiektu,
             ${KOLUMNY.wymiary} AS wymiary,
+            ${KOLUMNY.waga} AS waga,
             ${kolumna} AS zapisana
      FROM pw_Dane
      WHERE pwd_TypObiektu = ${TYP_OBIEKTU_TOWAR}
@@ -47,7 +49,7 @@ async function uzgodnijKolumne(kolumna, licz) {
   for (const w of res.recordset) {
     const rozbite = rozbierzWymiary(w.wymiary);
     if (!rozbite) { bledneWymiary += 1; continue; }
-    const oczekiwana = licz(rozbite);
+    const oczekiwana = licz(rozbite, w);
     const zapisana = (w.zapisana || '').trim();
     if (oczekiwana !== null && oczekiwana !== zapisana) {
       doPoprawy.push({ pwd_Id: w.pwd_Id, tw_Id: w.pwd_IdObiektu, wymiary: w.wymiary, bylo: zapisana || null, ma: oczekiwana });
@@ -130,6 +132,26 @@ async function wykonajSpojnoscWagiGabarytowej() {
     }
   }
 
+  // Polecenie docinki - tylko gdy pole zalozone w Subiekcie (patrz KOLUMNY.docinka_karton).
+  // Ten sam silnik: zmiana listy kartonow, wymiarow albo wagi propaguje sie tu sama. Pusty
+  // tekst = "nie docinaj" - porownanie z trim() zapisanej wartosci, wiec '' i NULL sa rowne.
+  let docinka = null;
+  if (KOLUMNY.docinka_karton) {
+    docinka = await uzgodnijKolumne(
+      KOLUMNY.docinka_karton,
+      (rozbite, w) => kartony.ocenDocinke(rozbite, w.waga)?.tekst ?? ''
+    );
+    if (docinka.poprawione) {
+      audyt.zapisz({
+        uzytkownik: 'system:waga-gabarytowa',
+        akcja: 'docinka_przeliczona',
+        wynik: 'poprawione',
+        ilosc: docinka.poprawione,
+        szczegoly: { przyklady: docinka.przyklady },
+      });
+    }
+  }
+
   // `poprawione` to liczba REALNIE zmienionych wierszy - moze byc mniejsza niz doPoprawy.length,
   // gdy ktos w miedzyczasie zapisal nowe wymiary (patrz JOIN w uzgodnijKolumne).
   return {
@@ -138,6 +160,7 @@ async function wykonajSpojnoscWagiGabarytowej() {
     pominieteWyscigi: dhl.pominieteWyscigi,
     bledneWymiary: dhl.bledneWymiary,
     karton: karton && { poprawione: karton.poprawione, pominieteWyscigi: karton.pominieteWyscigi },
+    docinka: docinka && { poprawione: docinka.poprawione, pominieteWyscigi: docinka.pominieteWyscigi },
   };
 }
 

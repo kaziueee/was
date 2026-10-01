@@ -121,3 +121,71 @@ test('realny seed: plaski 30x20x2 -> A-KleinPacket 1,64 kg (goly wymiar dalby 0,
     { waga: '1,64', wagaGt: '1.64', karton_kod: 'A-KleinPacket', zrodlo: 'karton' }
   );
 });
+
+// --- ocenDocinkeZListy: docinka kartonu pod prog DHL ---
+
+const { ocenDocinkeZListy, PROGI_DHL } = require('../config/kartony');
+
+test('progi DHL wyprowadzone z umowy, rosnaco', () => {
+  assert.deepEqual(PROGI_DHL, [1, 3, 5, 10, 20, 31.5]);
+});
+
+test('plaski towar w wysokim kartonie: dotnij pod nizszy prog (NERF3885 54x28x6)', () => {
+  // Domyslnie P0 70x38x8 = 5,32 kg (prog 10). Docięty do 7 cm = 4,66 kg (prog 5): FR -24,13 zl.
+  const r = ocenDocinkeZListy(KARTONY, { dlugosc: 54, szerokosc: 28, wysokosc: 6 });
+  assert.equal(r.potrzebna, true);
+  assert.equal(r.karton_kod, 'P0');
+  assert.equal(r.do_cm, 7);
+  assert.equal(r.min_cm, 7);
+  assert.equal(r.rynek, 'FR');
+  assert.equal(r.oszczednosc_zl, 24.13);
+  assert.equal(r.tekst, 'DOTNIJ P0 do 7 cm');
+});
+
+test('"do" = najwyzsza wysokosc mieszczaca sie w progu, nie towar na styk (MOS41773 35x25x20)', () => {
+  // C2 44x38x28 = 11,70 kg. Prog 10 kg pozwala na 10*4000/(44*38) = 23,9 -> 23 cm (w dol).
+  const r = ocenDocinkeZListy(KARTONY, { dlugosc: 35, szerokosc: 25, wysokosc: 20 });
+  assert.equal(r.karton_kod, 'C2');
+  assert.equal(r.do_cm, 23);
+  assert.equal(r.min_cm, 21);
+  assert.ok(r.kg_po <= 10);
+});
+
+test('docinka moze wskazac INNY karton niz domyslny, gdy jego podstawa wychodzi taniej', () => {
+  // NERF7376 61x29x7: domyslny P0 (8 cm) nie da sie dociac (7+1 = 8). B6 64x38 do 8 cm = 4,86 kg.
+  const r = ocenDocinkeZListy(KARTONY, { dlugosc: 61, szerokosc: 29, wysokosc: 7 });
+  assert.equal(r.karton_domyslny, 'P0');
+  assert.equal(r.karton_kod, 'B6');
+  assert.equal(r.tekst, 'DOTNIJ B6 do 8 cm');
+});
+
+test('ciezki towar: waga rzeczywista trzyma prog, docinka nic nie da', () => {
+  const r = ocenDocinkeZListy(KARTONY, { dlugosc: 54, szerokosc: 28, wysokosc: 6 }, '6,2');
+  assert.equal(r.potrzebna, false);
+  assert.equal(r.tekst, '');
+});
+
+test('mala oszczednosc (ponizej progu zl) nie oznacza - 1->3 kg to ~2 zl', () => {
+  const LISTA_MALA = [{ kod: 'X', wysokosc: 10, szerokosc: 30, dlugosc: 30 }]; // 2,25 kg
+  const prod = { dlugosc: 28, szerokosc: 28, wysokosc: 3 };                     // do 4 cm = 0,9 kg
+  assert.equal(ocenDocinkeZListy(LISTA_MALA, prod).potrzebna, false);
+  assert.equal(ocenDocinkeZListy(LISTA_MALA, prod, 0, { progZl: 1 }).potrzebna, true);
+});
+
+test('karton juz w najlepszym progu: bez oznaczenia, karton domyslny podany', () => {
+  const r = ocenDocinkeZListy(KARTONY, { dlugosc: 18, szerokosc: 18, wysokosc: 5 });
+  assert.equal(r.potrzebna, false);
+  assert.equal(r.karton_kod, 'A1');
+});
+
+test('brak wymiarow albo brak pasujacego kartonu -> null', () => {
+  assert.equal(ocenDocinkeZListy(KARTONY, null), null);
+  assert.equal(ocenDocinkeZListy(KARTONY, { dlugosc: 500, szerokosc: 500, wysokosc: 500 }), null);
+});
+
+test('tekst miesci sie w polu GT (varchar 50) dla calej listy kartonow', () => {
+  for (const k of KARTONY) {
+    const t = `DOTNIJ ${k.kod} do ${Math.floor(k.wysokosc)} cm`;
+    assert.ok(t.length <= 50, t);
+  }
+});

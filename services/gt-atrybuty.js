@@ -46,6 +46,12 @@ const KOLUMNY = {
   // (zalozone przez usera 2026-07-23, potwierdzone w pw_Pole). Ustawione na null = feature "uspiony"
   // (liczymy i pokazujemy, ale nie czytamy/piszemy w GT) - bylo tak do czasu zalozenia pola.
   waga_gabarytowa_karton: 'pwd_Tekst10',
+  // Polecenie docinki kartonu dla pakujacego ("DOTNIJ B5 do 9 cm", puste = nie trzeba) - gdy
+  // najmniejszy pasujacy karton wpycha paczke w wyzszy prog DHL, a docięty by nie wpychal.
+  // Liczone z wymiarow + wagi + listy kartonow (services/kartony.ocenDocinke). null = pole jeszcze
+  // nie zalozone w Subiekcie: liczymy i pokazujemy na Parametrach, ale nie piszemy do GT.
+  // Po zalozeniu pola wpisz tu jego kolumne (sprawdz w pw_Pole, ktora pwd_TekstNN dostalo).
+  docinka_karton: null,
 };
 
 // Dzielnik wolumetryczny DHL: (dl * szer * wys w cm) / 4000 = kg.
@@ -174,6 +180,7 @@ async function pobierzAtrybuty(twIds) {
         waga_gabarytowa_karton: karton?.waga ?? null,
         karton_kod: karton?.karton_kod ?? null,
         karton_zrodlo: karton?.zrodlo ?? null,
+        docinka: rozbite ? kartony.ocenDocinke(rozbite, w.waga) : null,
       });
     }
   }
@@ -245,6 +252,30 @@ async function zapiszAtrybuty(artykulGtId, zmiany) {
     pola.push({ kolumna: KOLUMNY.waga, parametr: '@waga' });
     parametry.waga = tekst;
     zapisane.waga = tekst || null;
+  }
+
+  // Docinka zalezy i od wymiarow, i od wagi (waga rozliczeniowa = max z obu), a zapis bywa
+  // czesciowy - brakujaca polowe doczytujemy z GT, zeby polecenie nie bylo liczone z polowy danych.
+  if (KOLUMNY.docinka_karton && ('wymiary' in zmiany || 'waga' in zmiany)) {
+    let wymiaryTekst = 'wymiary' in zmiany ? parametry.wymiary : null;
+    let wagaTekst = 'waga' in zmiany ? parametry.waga : null;
+    if (wymiaryTekst === null || wagaTekst === null) {
+      try {
+        const obecne = await query(
+          `SELECT ${KOLUMNY.wymiary} AS wymiary, ${KOLUMNY.waga} AS waga FROM pw_Dane
+           WHERE pwd_TypObiektu = ${TYP_OBIEKTU_TOWAR} AND pwd_IdObiektu = @id`, { id });
+        const w = obecne.recordset?.[0] ?? {};
+        if (wymiaryTekst === null) wymiaryTekst = w.wymiary ?? '';
+        if (wagaTekst === null) wagaTekst = w.waga ?? '';
+      } catch (err) {
+        return { ok: false, blad: `Odczyt atrybutow (SQL): ${err.message}` };
+      }
+    }
+    const rozbite = rozbierzWymiary(wymiaryTekst);
+    const docinka = rozbite ? kartony.ocenDocinke(rozbite, wagaTekst) : null;
+    pola.push({ kolumna: KOLUMNY.docinka_karton, parametr: '@docinka' });
+    parametry.docinka = docinka?.tekst ?? '';
+    zapisane.docinka = docinka?.tekst || null;
   }
 
   if (pola.length === 0) return { ok: true, dane: { sukces: true, zapisane: {} } };

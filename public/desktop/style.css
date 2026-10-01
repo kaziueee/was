@@ -276,6 +276,12 @@ main {
   font-size: 0.85rem;
 }
 
+/* Polecenie docinki kartonu w modalu Parametry - ma odroznic sie od zwyklego opisu. */
+.opis.tekst-ostrzezenie {
+  color: #b36b00;
+  font-weight: 600;
+}
+
 .rez {
   color: #9b2226;
   font-size: 0.8rem;

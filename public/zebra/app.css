@@ -1145,6 +1145,10 @@ html, body {
   font-weight: 600;
   color: var(--color-primary);
 }
+/* Karton do dociecia - inny kolor, zeby polecenie nie wtopilo sie w zwykla wage. */
+.par-wyliczone.par-docinka {
+  color: var(--color-warning);
+}
 /* Etykieta i wyliczona wartosc w jednym wierszu - oszczedza ~40 px pionu,
    dzieki czemu przycisk Zapisz zostaje nad zgieciem na 360x536. */
 .par-gab {

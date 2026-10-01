@@ -46,12 +46,17 @@
   // Podglad wagi "z kartonu" liczy BACKEND (/api/kartony/dobierz) - lista kartonow jest edytowalna,
   // wiec nie da sie jej trzymac na sztywno tutaj. Debounced; best-effort (blad nie blokuje ekranu).
   let kartonTimer = null;
-  function pokazWageGabKarton(waga, kod, zrodlo) {
+  // `docinka` (z backendu, config/kartony.ocenDocinkeZListy): gdy potrzebna, linia mowi od razu
+  // polecenie dla pakujacego ("✂ B6 do 8 cm") i wage PO docieciu - to ta liczba idzie do progu DHL.
+  // Doklejone do tej samej linii, bo ekran Parametry musi sie zmiescic bez scrolla na 360x536.
+  function pokazWageGabKarton(waga, kod, zrodlo, docinka) {
     const val = el('par-waga-gab-karton');
     if (!val) return;
-    val.textContent = waga
-      ? (zrodlo === 'karton' ? `${waga} kg · ${kod}` : `${waga} kg · z wymiarów`)
-      : '—';
+    const dotnij = docinka?.potrzebna;
+    val.classList.toggle('par-docinka', !!dotnij);
+    val.textContent = !waga ? '—'
+      : dotnij ? `✂ ${docinka.karton_kod} do ${docinka.do_cm} cm · ${przecinek(docinka.kg_po, 2)} kg`
+      : zrodlo === 'karton' ? `${waga} kg · ${kod}` : `${waga} kg · z wymiarów`;
   }
   function odswiezWageGabKarton() {
     const d = liczba(el('par-dlugosc').value);
@@ -62,10 +67,13 @@
     kartonTimer = setTimeout(async () => {
       try {
         const q = new URLSearchParams({ dlugosc: d, szerokosc: s, wysokosc: w });
+        // Waga rzeczywista wchodzi do docinki (waga rozliczeniowa = max z rzeczywistej i gabarytowej).
+        const waga = liczba(el('par-waga').value);
+        if (waga !== null && waga > 0) q.set('waga', waga);
         const res = await fetch(`/api/kartony/dobierz?${q}`);
         if (!res.ok) return;
         const r = await res.json();
-        pokazWageGabKarton(r.waga_gabarytowa_karton, r.karton_kod, r.zrodlo);
+        pokazWageGabKarton(r.waga_gabarytowa_karton, r.karton_kod, r.zrodlo, r.docinka);
       } catch { /* podglad best-effort */ }
     }, 300);
   }
@@ -90,7 +98,7 @@
       if (d.wysokosc !== null) el('par-wysokosc').value = d.wysokosc;
       if (d.waga !== null) el('par-waga').value = String(d.waga).replace(',', '.');
       odswiezWageGab();
-      pokazWageGabKarton(d.waga_gabarytowa_karton, d.karton_kod, d.karton_zrodlo);
+      pokazWageGabKarton(d.waga_gabarytowa_karton, d.karton_kod, d.karton_zrodlo, d.docinka);
     } catch (err) {
       komunikat(err.message, 'blad');
     }
@@ -141,6 +149,7 @@
 
       if (dane.waga_gabarytowa) el('par-waga-gab').textContent = `${dane.waga_gabarytowa} kg`;
       pokazWageGabKarton(dane.waga_gabarytowa_karton, dane.karton_kod, dane.karton_zrodlo);
+      odswiezWageGabKarton(); // docinka zalezy tez od wagi - podglad z backendu, z aktualnymi polami
       const ostrz = (dane.ostrzezenia || []).join(' ');
       komunikat(ostrz ? `Zapisano ✓ — ${ostrz}` : 'Zapisano ✓', ostrz ? 'ostrzezenie' : 'sukces');
       if (powrot) setTimeout(() => powrot(true), 700);
@@ -162,4 +171,5 @@
   for (const id of ['par-dlugosc', 'par-szerokosc', 'par-wysokosc']) {
     el(id).addEventListener('input', () => { odswiezWageGab(); odswiezWageGabKarton(); });
   }
+  el('par-waga').addEventListener('input', odswiezWageGabKarton);
 })();

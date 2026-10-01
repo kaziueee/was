@@ -44,6 +44,7 @@ async function wycenaPoSku(sku, nadpisz = {}) {
   const over = { waga };
   if (nadpisz.tryb) over.tryb = nadpisz.tryb;
   if (nadpisz.bufor != null) over.bufor = +nadpisz.bufor;
+  if (nadpisz.anchor && nadpisz.anchor.nazwa) over.anchor = nadpisz.anchor; // reczna cena na Allegro/Amazon DE
 
   return {
     sku: row.tw_Symbol,

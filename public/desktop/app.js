@@ -2007,6 +2007,9 @@ el('form-nowy-user').addEventListener('submit', async (e) => {
 });
 
 // === CENNIK (kalkulator cen: SKU -> koszt zakupu z GT -> ceny per rynek) ===
+const CENNIK_EDYT = ['Allegro', 'Amazon DE'];   // rynki z edytowalną ceną (ręczna kotwica)
+let cennikAnchor = null;                          // { nazwa, cena } gdy cena wpisana ręcznie; null = baza
+
 function fmtCennik(n, d = 2) {
   return Number(n || 0).toLocaleString('pl-PL', { minimumFractionDigits: d, maximumFractionDigits: d });
 }
@@ -2020,6 +2023,7 @@ async function pobierzCennik(uzyjWagi) {
   const tryb = el('cennik-tryb').value;
   if (tryb && tryb !== 'marza') q.set('tryb', tryb);
   if (tryb === 'kotwica') { const b = el('cennik-bufor').value; if (b !== '') q.set('bufor', b); }
+  if (cennikAnchor) { q.set('anchor', cennikAnchor.nazwa); q.set('anchorCena', cennikAnchor.cena); } // ręczna cena
   const qs = q.toString();
   const url = `/api/cennik/${encodeURIComponent(sku)}${qs ? `?${qs}` : ''}`;
   try {
@@ -2050,28 +2054,46 @@ function renderCennik(d) {
     if (r.blad) {
       tr.innerHTML = `<td><strong>${ety}</strong></td><td colspan="4" class="opis">${r.blad}</td>`;
     } else {
-      const kolor = r.status === 'warn' ? '#8a5a00' : r.status === 'bad' ? '#a11d1d' : '#127a3e';
-      const txt = r.status === 'warn' ? 'podbite do progu' : 'OK';
+      const sym = SYM[r.waluta] || r.waluta;
+      // Allegro i Amazon DE: cena edytowalna (ręczna kotwica); reszta tylko do odczytu
+      const cenaCell = CENNIK_EDYT.includes(r.nazwa)
+        ? `<input type="number" step="any" min="0" class="cennik-cena" data-rynek="${r.nazwa}" value="${(+r.cena).toFixed(2)}" style="width:5.5rem;text-align:right"> <span class="opis">${sym}</span>`
+        : `<strong>${fmtCennik(r.cena)} ${sym}</strong>`;
+      let kolor = r.status === 'warn' ? '#8a5a00' : r.status === 'bad' ? '#a11d1d' : '#127a3e';
+      let txt = r.status === 'warn' ? 'podbite do progu' : 'OK';
+      if (r.reczna) { kolor = '#2563eb'; txt = 'ręczna ✎'; }
+      else if (r.dopasowane) { kolor = '#5b6676'; txt = 'dopasowane'; }
       tr.innerHTML =
         `<td><strong>${ety}</strong></td>` +
-        `<td style="text-align:right"><strong>${fmtCennik(r.cena)} ${SYM[r.waluta] || r.waluta}</strong></td>` +
+        `<td style="text-align:right">${cenaCell}</td>` +
         `<td style="text-align:right">${fmtCennik(r.zysk)} zł</td>` +
         `<td style="text-align:right">${fmtCennik(r.marza, 1)}%</td>` +
         `<td style="color:${kolor};font-weight:600">${txt}</td>`;
     }
     tbody.appendChild(tr);
   }
+  // wpisanie ceny na Allegro/Amazon DE -> ta cena jest kotwicą, reszta łapie jej zysk netto
+  tbody.querySelectorAll('.cennik-cena').forEach((inp) => {
+    inp.addEventListener('change', () => {
+      if (!(+inp.value > 0)) return;
+      cennikAnchor = { nazwa: inp.dataset.rynek, cena: +inp.value };
+      pobierzCennik(true);
+    });
+  });
+  el('cennik-baza').hidden = !cennikAnchor;   // "Wróć do bazy" tylko przy aktywnej ręcznej cenie
   el('cennik-brak').classList.add('hidden');
 }
 
 function odswiezCennik() {
-  el('form-cennik').addEventListener('submit', (e) => { e.preventDefault(); pobierzCennik(false); }); // nowe SKU -> waga z GT
-  el('cennik-waga').addEventListener('change', () => { if (el('cennik-sku').value.trim()) pobierzCennik(true); }); // ręczna korekta
+  el('form-cennik').addEventListener('submit', (e) => { e.preventDefault(); cennikAnchor = null; pobierzCennik(false); }); // nowe SKU -> waga z GT, czyść ręczną cenę
+  el('cennik-waga').addEventListener('change', () => { if (el('cennik-sku').value.trim()) pobierzCennik(true); }); // ręczna korekta wagi
   el('cennik-tryb').addEventListener('change', () => {
     el('cennik-bufor').hidden = el('cennik-tryb').value !== 'kotwica'; // bufor tylko przy kotwicy
-    if (el('cennik-sku').value.trim()) pobierzCennik(true); // przelicz, zachowując aktualną wagę
+    cennikAnchor = null;                                               // zmiana trybu = powrót do wyceny z kosztu
+    if (el('cennik-sku').value.trim()) pobierzCennik(true);
   });
   el('cennik-bufor').addEventListener('change', () => { if (el('cennik-sku').value.trim()) pobierzCennik(true); });
+  el('cennik-baza').addEventListener('click', () => { cennikAnchor = null; if (el('cennik-sku').value.trim()) pobierzCennik(true); }); // wróć do bazy
   setTimeout(() => el('cennik-sku').focus(), 50);
 }
 

@@ -159,6 +159,44 @@ function policzRynek(kosztPLN, r, g) {
   return policzFlat(kosztPLN, r, g);
 }
 
+// Zysk/marza dla rynku przy RECZNIE podanej cenie brutto (`cena`, w walucie rynku) - odwrotnosc
+// wyceny (cena -> zysk, zamiast koszt -> cena). Reuzywa tej samej matematyki kosztow/denomZysk co
+// policz* (duplikat "ogona", pokryty testem zgodnosci). zysk zwracany w zl (jak w policz*).
+function wycenaPrzyCenie(kosztPLN, r, g, cena) {
+  const pb = +cena || 0;
+  if (pb <= 0) return wynik(r, { blad: 'podaj cenę', status: 'bad' });
+  if (r.typ === 'allegro') {
+    const v = (+r.vat || 0) / 100, p = ((+r.prowizja || 0) + (+g.ads || 0)) / 100, obs = +g.obsluga || 0;
+    const denomZysk = 1 / (1 + v) - p;
+    const dost = doplataSmartAllegro(pb);
+    const pn = pb / (1 + v), zysk = pb * denomZysk - (kosztPLN + dost + obs);
+    return wynik(r, { cena: pb, zysk, marza: pn > 0 ? zysk / pn * 100 : 0, status: 'ok', reczna: true,
+      detal: { dostawaSmart: dost, oplataPct: pb > 0 ? (pb * p + dost) / pb * 100 : 0 } });
+  }
+  // flat + amazon-dhl: total = cena + wysylka klienta; prowizja+VAT od total
+  const S = +r.wysKlient || 0, v = (+r.vat || 0) / 100;
+  let kurs, kosztWys, p;
+  if (r.typ === 'amazon-dhl') {
+    kurs = kursDla('EUR', g);
+    if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });
+    const stawka = stawkaDHL(r.kraj, +g.waga || 0);
+    if (stawka == null) return wynik(r, { blad: 'waga > 31,5 kg', status: 'bad' });
+    kosztWys = stawka * (1 + (+g.paliwowa || 0) / 100) / kurs;
+    p = ((+r.prowizja || 0) / 100) * (1 + (+g.vatProwizji || 0) / 100);
+  } else {
+    kurs = kursDla(r.waluta, g);
+    if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });
+    kosztWys = +r.wysylka || 0;
+    p = (+r.prowizja || 0) / 100;
+  }
+  const koszty = kosztPLN / kurs + kosztWys + (+g.obsluga || 0) / kurs;
+  const denomZysk = 1 / (1 + v) - p;
+  const total = pb + S, pn = total / (1 + v);
+  const zysk = total * denomZysk - koszty;
+  return wynik(r, { cena: pb, zysk: zysk * kurs, marza: pn > 0 ? zysk / pn * 100 : 0, status: 'ok', reczna: true,
+    detal: { kosztWys, wysKlient: S } });
+}
+
 // Tryb 'kotwica': rynki bazowe (Allegro, Amazon DE, Kaufland DE) licza sie na marzy, a rynki z
 // flaga `kotwica` (Amazon FR/IT/ES/NL) celuja w TEN SAM zysk netto co Amazon DE + `bufor` (zl,
 // poduszka na drozsze zwroty) - zamiast wlasnej marzy. Dzieki temu wysoka wysylka na dalekich
@@ -177,10 +215,31 @@ function policzKotwica(kosztPLN, g) {
   });
 }
 
+// Reczna kotwica cenowa: na rynku `anchorNazwa` ustawiamy RECZNIE cene `anchorCena`, a pozostale
+// rynki liczymy tak, by trafic w TEN SAM zysk netto (zl) co rynek z reczna cena. "Wroc do bazy" =
+// wywolanie bez anchora. W panelu edytowalne sa Allegro i Amazon DE.
+function policzZRecznaCena(kosztPLN, g, anchorNazwa, anchorCena) {
+  const koszt = +kosztPLN || 0;
+  const r = RYNKI.find((x) => x.nazwa === anchorNazwa);
+  if (!r) return policzWszystkie(koszt, g);                 // nieznany rynek -> baza
+  const wA = wycenaPrzyCenie(koszt, r, g, anchorCena);
+  if (wA.blad) return policzWszystkie(koszt, g);            // zla cena -> baza
+  const gZysk = { ...g, tryb: 'zysk', celZysk: wA.zysk || 0 };
+  return RYNKI.map((x) => {
+    if (x.nazwa === anchorNazwa) return wA;                 // rynek z reczna cena - pokaz wpisana cene
+    const w = policzRynek(koszt, x, gZysk);
+    w.dopasowane = true;                                    // dopasowany do zysku recznej ceny
+    return w;
+  });
+}
+
 // Wszystkie rynki dla danego kosztu zakupu (PLN netto). `nadpisz` - czesciowe nadpisanie DOMYSLNE
-// (np. { waga, tryb } z panelu). Zwraca tablice wynikow gotowa do wyswietlenia.
+// (np. { waga, tryb } z panelu). `nadpisz.anchor = { nazwa, cena }` -> reczna kotwica cenowa.
+// Zwraca tablice wynikow gotowa do wyswietlenia.
 function policzWszystkie(kosztPLN, nadpisz = {}) {
   const g = { ...DOMYSLNE, ...nadpisz };
+  const a = nadpisz.anchor;
+  if (a && a.nazwa && +a.cena > 0) return policzZRecznaCena(+kosztPLN || 0, g, a.nazwa, +a.cena);
   if (g.tryb === 'kotwica') return policzKotwica(+kosztPLN || 0, g);
   return RYNKI.map((r) => policzRynek(+kosztPLN || 0, r, g));
 }
@@ -188,5 +247,5 @@ function policzWszystkie(kosztPLN, nadpisz = {}) {
 module.exports = {
   DOMYSLNE, RYNKI, DHL_STAWKI, ALLEGRO_PROGI,
   do99, totalCelu, kursDla, doplataSmartAllegro, stawkaDHL,
-  policzRynek, policzKotwica, policzWszystkie,
+  policzRynek, policzKotwica, wycenaPrzyCenie, policzZRecznaCena, policzWszystkie,
 };

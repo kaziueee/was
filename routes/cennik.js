@@ -16,6 +16,8 @@ router.get('/:sku', async (req, res, next) => {
     if (req.query.waga != null && req.query.waga !== '') nadpisz.waga = Number(req.query.waga);
     if (req.query.tryb) nadpisz.tryb = String(req.query.tryb);
     if (req.query.bufor != null && req.query.bufor !== '') nadpisz.bufor = Number(req.query.bufor);
+    if (req.query.anchor && req.query.anchorCena != null && req.query.anchorCena !== '')
+      nadpisz.anchor = { nazwa: String(req.query.anchor), cena: Number(req.query.anchorCena) };
     const wy = await wycenaPoSku(sku, nadpisz);
     if (!wy) return res.status(404).json({ blad: 'Nie znaleziono towaru: ' + sku });
     res.json(wy);

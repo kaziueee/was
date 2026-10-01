@@ -47,7 +47,7 @@
   // wiec nie da sie jej trzymac na sztywno tutaj. Debounced; best-effort (blad nie blokuje ekranu).
   let kartonTimer = null;
   // `docinka` (z backendu, config/kartony.ocenDocinkeZListy): gdy potrzebna, linia mowi od razu
-  // polecenie dla pakujacego ("✂ B6 do 8 cm") i wage PO docieciu - to ta liczba idzie do progu DHL.
+  // polecenie dla pakujacego ("✂ P0 do wymiaru") i wage PO docieciu - to ta liczba idzie do progu DHL.
   // Doklejone do tej samej linii, bo ekran Parametry musi sie zmiescic bez scrolla na 360x536.
   function pokazWageGabKarton(waga, kod, zrodlo, docinka) {
     const val = el('par-waga-gab-karton');
@@ -55,7 +55,7 @@
     const dotnij = docinka?.potrzebna;
     val.classList.toggle('par-docinka', !!dotnij);
     val.textContent = !waga ? '—'
-      : dotnij ? `✂ ${docinka.karton_kod} do ${docinka.do_cm} cm · ${przecinek(docinka.kg_po, 2)} kg`
+      : dotnij ? `✂ ${docinka.karton_kod} do wymiaru · ${przecinek(docinka.kg_po, 2)} kg`
       : zrodlo === 'karton' ? `${waga} kg · ${kod}` : `${waga} kg · z wymiarów`;
   }
   function odswiezWageGabKarton() {

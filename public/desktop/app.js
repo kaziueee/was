@@ -3482,7 +3482,7 @@ function pokazWageGabKarton(waga, kod, zrodlo, docinka) {
   const dotnij = waga && docinka?.potrzebna;
   opis.classList.toggle('tekst-ostrzezenie', !!dotnij);
   opis.textContent = !waga ? ''
-    : dotnij ? `— ✂ dotnij ${docinka.karton_kod} do ${docinka.do_cm} cm → ${String(docinka.kg_po.toFixed(2)).replace('.', ',')} kg`
+    : dotnij ? `— ✂ dotnij ${docinka.karton_kod} do wymiaru produktu ${docinka.wymiary} → ${String(docinka.kg_po.toFixed(2)).replace('.', ',')} kg`
       + (docinka.oszczednosc_zl ? ` (−${String(docinka.oszczednosc_zl.toFixed(2)).replace('.', ',')} zł/paczka ${docinka.rynek})` : ' (poza progiem 31,5 kg)')
     : zrodlo === 'karton' ? `— karton ${kod}` : '— brak pasującego kartonu, z wymiarów';
 }

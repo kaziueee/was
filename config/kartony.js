@@ -151,15 +151,11 @@ function liczWageKartonZListy(lista, wymiary) {
 }
 
 // --- Docinka kartonu ---------------------------------------------------------------------
-// Najmniejszy pasujacy karton bywa za WYSOKI dla plaskiego towaru: NERF3885 (54x28x6) dostaje
-// B5 (57x38x10) = 5,42 kg, czyli prog DHL 10 kg - a ten sam karton docięty do ~9 cm miesci sie
-// w progu 5 kg. Na FR to 24,13 zl roznicy na paczce (analiza sprzedazy FR, 2026-10-01). Pakujacy
-// tego nie policzy przy stole, wiec liczymy tu i wypisujemy mu gotowe polecenie do pola GT.
-//
-// Model: docinamy WYLACZNIE wysokosc kartonu (sciany pod klapami) - podstawa (szerokosc x dlugosc)
-// zostaje. Towar musi wejsc w podstawe (rotacja dozwolona), a trzeci wymiar + ZAPAS wyznacza
-// najnizsza mozliwa wysokosc. Sprawdzamy KAZDY karton z listy, nie tylko domyslny - inna podstawa
-// po docieciu bywa tansza.
+// Najmniejszy pasujacy karton bywa sporo wiekszy od towaru i wpycha paczke w wyzszy prog DHL:
+// NERF7376 (61x29x7) = 3,10 kg gabarytowej (prog 5), a w kartonie P0 70x38x8 = 5,32 kg (prog 10).
+// Na FR to 24,13 zl roznicy na paczce (analiza sprzedazy FR, 2026-10-01). Wtedy pakujacy dostaje
+// polecenie: dotnij karton do wymiaru produktu - paczka wazy wtedy tyle, co waga gabarytowa
+// samego towaru (pole "Waga gabarytowa DHL", pwd_Tekst09, ten sam wzor).
 //
 // Progi wagowe sa wspolne dla wszystkich rynkow DHL Parcel Connect (1/3/5/10/20/31,5 kg), ale
 // SKOK ceny na progu jest rozny (FR 5->10 kg = +24,13 zl, DE = +4,20 zl). Oznaczamy tylko, gdy
@@ -172,19 +168,13 @@ function liczWageKartonZListy(lista, wymiary) {
 
 const { DHL_STAWKI } = require('./rynki');
 
-const DOCINKA_ZAPAS_CM = 1;   // luz nad towarem po docieciu (wyscielka, zgiecie klap)
 const DOCINKA_PROG_ZL = 5;    // minimalna oszczednosc netto PLN na paczce, zeby oznaczyc
 
 // Gorne granice progow wagowych (kg) - z umowy DHL, wspolne dla rynkow.
 const PROGI_DHL = [...new Set(Object.values(DHL_STAWKI).flatMap((t) => t.map(([kg]) => kg)))]
   .sort((a, b) => a - b);
 
-// Najnizszy prog, w ktorym miesci sie waga, albo null (powyzej 31,5 kg = poza Parcel Connect).
-function progDla(kg) {
-  return PROGI_DHL.find((p) => kg <= p + 1e-9) ?? null;
-}
-
-// Stawka netto PLN na rynku `kraj` dla wagi rozliczeniowej, albo null (poza progami).
+// Stawka netto PLN na rynku `kraj` dla wagi rozliczeniowej, albo null (powyzej 31,5 kg).
 function stawkaDla(kraj, kg) {
   const hit = DHL_STAWKI[kraj].find(([max]) => kg <= max + 1e-9);
   return hit ? hit[1] : null;
@@ -203,87 +193,38 @@ function oszczednosc(z, na) {
   return { zl: max, kraj };
 }
 
-// PELNE centymetry: DHL mierzy paczke z zaokragleniem, wiec "7,5 cm" przy granicy progu to loteria,
-// a pakujacy i tak tnie na oko do kreski na miarce. "Do" zaokraglamy w dol, minimum w gore.
-const wDol = (n) => Math.floor(n + 1e-9);
-const wGore = (n) => Math.ceil(n - 1e-9);
 const fmtCm = (n) => String(n).replace('.', ',');
 
-// Najlepsza docinka jednego kartonu: probuje 3 sposoby ulozenia towaru (ktory bok idzie w gore),
-// zwraca {karton, doCm, minCm, kg, prog} o najnizszym progu albo null, gdy towar nie wchodzi.
-// doCm = do ilu cm MOZNA dociac i zostac w progu (wygodniej dla pakujacego niz "na styk"),
-// minCm = nizej nie schodzic (towar + zapas).
-function docinkaKartonu(k, p, wagaRzecz, zapas) {
-  const podstawa = [k.szerokosc, k.dlugosc].sort((a, b) => b - a);
-  const pole = k.szerokosc * k.dlugosc;
-  let best = null;
-  for (let i = 0; i < 3; i++) {
-    const gora = p[i];
-    const [a, b] = p.filter((_, j) => j !== i).sort((x, y) => y - x);
-    if (a > podstawa[0] || b > podstawa[1]) continue;
-    const minCm = wGore(gora + zapas);
-    if (minCm > k.wysokosc) continue;
-    const kgMin = Math.max(pole * minCm / DZIELNIK_DHL, WAGA_GAB_MIN);
-    const prog = progDla(Math.max(wagaRzecz, kgMin));
-    if (prog === null) continue;
-    const doCm = Math.max(minCm, Math.min(k.wysokosc, wDol(prog * DZIELNIK_DHL / pole)));
-    const kg = Math.max(pole * doCm / DZIELNIK_DHL, WAGA_GAB_MIN);
-    if (!best || prog < best.prog || (prog === best.prog && doCm > best.doCm)) {
-      best = { karton: k, doCm, minCm, kg, prog };
-    }
-  }
-  return best;
-}
-
-// Ocena docinki dla towaru. Zwraca null (brak wymiarow / brak pasujacego kartonu) albo:
-//   { potrzebna: false, karton_kod, ... }  - domyslny karton jest juz w najlepszym progu
-//   { potrzebna: true, karton_kod, do_cm, min_cm, kg_po, kg_przed, oszczednosc_zl, rynek, tekst }
-// `tekst` = gotowe polecenie do pola GT ("DOTNIJ B5 do 9,4 cm"); pusty, gdy docinka niepotrzebna.
-// Remis progow rozstrzyga: karton domyslny (ten, po ktory pakujacy i tak siegnie) > wyzsza
-// dopuszczalna wysokosc (mniej ciecia) > kolejnosc listy.
+// Ocena docinki dla towaru. Zwraca null (brak wymiarow / brak pasujacego kartonu - wtedy waga
+// "z kartonu" i tak jest waga samego produktu) albo:
+//   { potrzebna: false, karton_kod, kg_przed }  - karton nie podnosi progu (albo o grosze)
+//   { potrzebna: true, karton_kod, wymiary, kg_przed, kg_po, oszczednosc_zl, rynek, tekst }
+// `tekst` = gotowe polecenie do pola GT ("DOTNIJ P0 do 61x29x7"); pusty, gdy docinka niepotrzebna.
 function ocenDocinkeZListy(lista, wymiary, wagaRzecz = 0, opcje = {}) {
-  const zapas = opcje.zapasCm ?? DOCINKA_ZAPAS_CM;
   const progZl = opcje.progZl ?? DOCINKA_PROG_ZL;
   const dims = normalizujWymiary(wymiary);
   if (!dims) return null;
-  const domyslny = dobierzKartonZListy(lista, dims);
-  if (!domyslny) return null;
+  const karton = dobierzKartonZListy(lista, dims);
+  if (!karton) return null;
   const rzecz = Number(String(wagaRzecz ?? '').replace(',', '.'));
   const wr = Number.isFinite(rzecz) && rzecz > 0 ? rzecz : 0;
 
-  const kgPrzed = Math.max(wr, wagaGabarytowa(domyslny));
-  const baza = { karton_kod: domyslny.kod, kg_przed: +kgPrzed.toFixed(2), potrzebna: false, tekst: '' };
+  const kgPrzed = Math.max(wr, wagaGabarytowa(karton));
+  const kgPo = Math.max(wr, (dims.dlugosc * dims.szerokosc * dims.wysokosc) / DZIELNIK_DHL, WAGA_GAB_MIN);
+  const baza = { karton_kod: karton.kod, kg_przed: +kgPrzed.toFixed(2), potrzebna: false, tekst: '' };
 
-  const p = [dims.dlugosc, dims.szerokosc, dims.wysokosc];
-  // Klucz sortowania = kolejnosc remisow z naglowka; pierwszy na liscie wygrywa przy pelnym remisie.
-  const klucz = (d) => [d.prog, d.karton === domyslny ? 0 : 1, -d.doCm];
-  const lepszy = (a, b) => {
-    const ka = klucz(a), kb = klucz(b);
-    for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] < kb[i];
-    return false;
-  };
-  let best = null;
-  for (const k of lista) {
-    const d = docinkaKartonu(k, p, wr, zapas);
-    if (d && (!best || lepszy(d, best))) best = d;
-  }
-  // Docinka ma sens tylko, gdy realnie tnie (doCm ponizej wysokosci kartonu) i zmienia prog.
-  if (!best || best.doCm >= best.karton.wysokosc) return baza;
-  const kgPo = Math.max(wr, best.kg);
   const zysk = oszczednosc(kgPrzed, kgPo);
   if (zysk.zl < progZl) return baza;
 
+  const wymiaryTekst = [dims.dlugosc, dims.szerokosc, dims.wysokosc].map(fmtCm).join('x');
   return {
     ...baza,
     potrzebna: true,
-    karton_kod: best.karton.kod,
-    karton_domyslny: domyslny.kod,
-    do_cm: best.doCm,
-    min_cm: best.minCm,
+    wymiary: wymiaryTekst,
     kg_po: +kgPo.toFixed(2),
     oszczednosc_zl: Number.isFinite(zysk.zl) ? +zysk.zl.toFixed(2) : null,
     rynek: zysk.kraj,
-    tekst: `DOTNIJ ${best.karton.kod} do ${fmtCm(best.doCm)} cm`,
+    tekst: `DOTNIJ ${karton.kod} do ${wymiaryTekst}`,
   };
 }
 
@@ -319,7 +260,6 @@ module.exports = {
   liczWageKartonZListy,
   sprawdzKarton,
   PROGI_DHL,
-  DOCINKA_ZAPAS_CM,
   DOCINKA_PROG_ZL,
   ocenDocinkeZListy,
 };

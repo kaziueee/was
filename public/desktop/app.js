@@ -3482,7 +3482,8 @@ function pokazWageGabKarton(waga, kod, zrodlo, docinka) {
   const dotnij = waga && docinka?.potrzebna;
   opis.classList.toggle('tekst-ostrzezenie', !!dotnij);
   opis.textContent = !waga ? ''
-    : dotnij ? `— ✂ dotnij ${docinka.karton_kod} do wymiaru produktu ${docinka.wymiary} → ${String(docinka.kg_po.toFixed(2)).replace('.', ',')} kg`
+    : docinka?.wlasny_karton ? '— własny karton (op. zbiorcze = 1), bez kartonu dodatkowego'
+    : dotnij ? `— ✂ dotnij ${docinka.karton_kod} do ${docinka.wymiary} → ${String(docinka.kg_po.toFixed(2)).replace('.', ',')} kg`
       + (docinka.oszczednosc_zl ? ` (−${String(docinka.oszczednosc_zl.toFixed(2)).replace('.', ',')} zł/paczka ${docinka.rynek})` : ' (poza progiem 31,5 kg)')
     : zrodlo === 'karton' ? `— karton ${kod}` : '— brak pasującego kartonu, z wymiarów';
 }
@@ -3498,6 +3499,8 @@ function parOdswiezWageGabKarton() {
       // Waga rzeczywista wchodzi do docinki (waga rozliczeniowa = max z rzeczywistej i gabarytowej).
       const waga = parLiczba(el('mpar-waga').value);
       if (waga !== null && waga > 0) q.set('waga', waga);
+      // "Ilosc w op. zbiorczym" nie jest edytowalna w modalu - z kartoteki (renderModalParametry).
+      if (modalProdukt?.ilosc_zbiorcze != null) q.set('zbiorcze', modalProdukt.ilosc_zbiorcze);
       const r = await api(`/api/kartony/dobierz?${q}`);
       pokazWageGabKarton(r.waga_gabarytowa_karton, r.karton_kod, r.zrodlo, r.docinka);
     } catch { /* podglad best-effort - nie przeszkadza w zapisie */ }
@@ -3510,6 +3513,7 @@ async function renderModalParametry() {
   el('mpar-waga-gab').textContent = '—';
   try {
     const d = await api(`/api/produkty/${encodeURIComponent(modalProdukt.artykul_gt_id)}/atrybuty`);
+    modalProdukt.ilosc_zbiorcze = d.ilosc_zbiorcze ?? null;
     if (d.dlugosc !== null) el('mpar-dlugosc').value = d.dlugosc;
     if (d.szerokosc !== null) el('mpar-szerokosc').value = d.szerokosc;
     if (d.wysokosc !== null) el('mpar-wysokosc').value = d.wysokosc;

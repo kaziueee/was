@@ -162,6 +162,14 @@ function liczWageKartonZListy(lista, wymiary) {
 // docinka oszczedza >= DOCINKA_PROG_ZL na NAJDROZSZYM rynku - przeskok 1->3 kg za 2 zl nie jest
 // wart nozyka i zasmiecalby pole.
 //
+// Docięty karton nigdy nie lezy na towarze na styk - scianka tektury i zgiecie dokladaja swoje.
+// Liczymy wiec z wymiarem produktu + DOCINKA_ZAPAS_CM z KAZDEJ strony (decyzja usera 2026-10-01:
+// 0,5 cm). Bez tego oznaczalismy towary tuz pod progiem (SIM75818: 4,88 kg na styk, 5,51 kg
+// realnie), przy ktorych pakujacy cialby na darmo. Polecenie podaje ten sam wymiar z zapasem.
+//
+// Towar we WLASNYM kartonie wysylkowym ("Ilosc w opakowaniu zbiorczym" = 1, pwd_Tekst04) nie
+// dostaje kartonu dodatkowego, wiec nie ma czego docinac - pole zostaje puste.
+//
 // Waga rozliczeniowa = max(rzeczywista, gabarytowa): gdy towar jest ciezki, docinka nic nie da
 // i nie oznaczamy. Waga rzeczywista w GT ma historycznie MIESZANE jednostki (gramy jako liczby
 // calkowite) - nie zgadujemy; zawyzona waga po prostu tlumi oznaczenie (blad w bezpieczna strone).
@@ -169,6 +177,7 @@ function liczWageKartonZListy(lista, wymiary) {
 const { DHL_STAWKI } = require('./rynki');
 
 const DOCINKA_PROG_ZL = 5;    // minimalna oszczednosc netto PLN na paczce, zeby oznaczyc
+const DOCINKA_ZAPAS_CM = 0.5; // luz z kazdej strony towaru po docieciu (wymiar + 2 x zapas)
 
 // Gorne granice progow wagowych (kg) - z umowy DHL, wspolne dla rynkow.
 const PROGI_DHL = [...new Set(Object.values(DHL_STAWKI).flatMap((t) => t.map(([kg]) => kg)))]
@@ -195,28 +204,41 @@ function oszczednosc(z, na) {
 
 const fmtCm = (n) => String(n).replace('.', ',');
 
+// "Ilosc w opakowaniu zbiorczym" = 1 -> towar ma wlasny karton wysylkowy. Pole reczne (tekst),
+// wiec tolerujemy "1", " 1 ", "1,0"; wszystko inne (puste, "2", "0") = karton dodatkowy potrzebny.
+function maWlasnyKarton(iloscZbiorcze) {
+  const n = Number(String(iloscZbiorcze ?? '').trim().replace(',', '.'));
+  return String(iloscZbiorcze ?? '').trim() !== '' && n === 1;
+}
+
 // Ocena docinki dla towaru. Zwraca null (brak wymiarow / brak pasujacego kartonu - wtedy waga
 // "z kartonu" i tak jest waga samego produktu) albo:
 //   { potrzebna: false, karton_kod, kg_przed }  - karton nie podnosi progu (albo o grosze)
+//   { potrzebna: false, wlasny_karton: true }   - towar jedzie we wlasnym kartonie
 //   { potrzebna: true, karton_kod, wymiary, kg_przed, kg_po, oszczednosc_zl, rynek, tekst }
-// `tekst` = gotowe polecenie do pola GT ("DOTNIJ P0 do 61x29x7"); pusty, gdy docinka niepotrzebna.
+// `wymiary` w wyniku = wymiar DOCIETEGO kartonu (produkt + zapas z kazdej strony).
+// `tekst` = gotowe polecenie do pola GT ("DOTNIJ P0 do 62x30x8"); pusty, gdy docinka niepotrzebna.
+// opcje: { iloscZbiorcze (pwd_Tekst04), progZl, zapasCm }.
 function ocenDocinkeZListy(lista, wymiary, wagaRzecz = 0, opcje = {}) {
   const progZl = opcje.progZl ?? DOCINKA_PROG_ZL;
+  const zapas = opcje.zapasCm ?? DOCINKA_ZAPAS_CM;
   const dims = normalizujWymiary(wymiary);
   if (!dims) return null;
+  if (maWlasnyKarton(opcje.iloscZbiorcze)) return { potrzebna: false, wlasny_karton: true, karton_kod: null, tekst: '' };
   const karton = dobierzKartonZListy(lista, dims);
   if (!karton) return null;
   const rzecz = Number(String(wagaRzecz ?? '').replace(',', '.'));
   const wr = Number.isFinite(rzecz) && rzecz > 0 ? rzecz : 0;
 
   const kgPrzed = Math.max(wr, wagaGabarytowa(karton));
-  const kgPo = Math.max(wr, (dims.dlugosc * dims.szerokosc * dims.wysokosc) / DZIELNIK_DHL, WAGA_GAB_MIN);
+  const cel = [dims.dlugosc, dims.szerokosc, dims.wysokosc].map((n) => +(n + 2 * zapas).toFixed(2));
+  const kgPo = Math.max(wr, (cel[0] * cel[1] * cel[2]) / DZIELNIK_DHL, WAGA_GAB_MIN);
   const baza = { karton_kod: karton.kod, kg_przed: +kgPrzed.toFixed(2), potrzebna: false, tekst: '' };
 
   const zysk = oszczednosc(kgPrzed, kgPo);
   if (zysk.zl < progZl) return baza;
 
-  const wymiaryTekst = [dims.dlugosc, dims.szerokosc, dims.wysokosc].map(fmtCm).join('x');
+  const wymiaryTekst = cel.map(fmtCm).join('x');
   return {
     ...baza,
     potrzebna: true,
@@ -261,5 +283,7 @@ module.exports = {
   sprawdzKarton,
   PROGI_DHL,
   DOCINKA_PROG_ZL,
+  DOCINKA_ZAPAS_CM,
+  maWlasnyKarton,
   ocenDocinkeZListy,
 };

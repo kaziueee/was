@@ -122,31 +122,37 @@ test('realny seed: plaski 30x20x2 -> A-KleinPacket 1,64 kg (goly wymiar dalby 0,
   );
 });
 
-// --- ocenDocinkeZListy: docinka kartonu do wymiaru produktu ---
+// --- ocenDocinkeZListy: docinka kartonu do wymiaru produktu + 0,5 cm z kazdej strony ---
 
-const { ocenDocinkeZListy, PROGI_DHL } = require('../config/kartony');
+const { ocenDocinkeZListy, maWlasnyKarton, PROGI_DHL } = require('../config/kartony');
 
 test('progi DHL wyprowadzone z umowy, rosnaco', () => {
   assert.deepEqual(PROGI_DHL, [1, 3, 5, 10, 20, 31.5]);
 });
 
-test('karton podnosi prog: dotnij do wymiaru produktu (NERF7376 61x29x7)', () => {
-  // P0 70x38x8 = 5,32 kg (prog 10); sam produkt = 3,10 kg (prog 5) -> FR -24,13 zl.
+test('karton podnosi prog: dotnij do wymiaru produktu + zapas (NERF7376 61x29x7)', () => {
+  // P0 70x38x8 = 5,32 kg (prog 10); docięty 62x30x8 = 3,72 kg (prog 5) -> FR -24,13 zl.
   const r = ocenDocinkeZListy(KARTONY, { dlugosc: 61, szerokosc: 29, wysokosc: 7 });
   assert.equal(r.potrzebna, true);
   assert.equal(r.karton_kod, 'P0');
   assert.equal(r.kg_przed, 5.32);
-  assert.equal(r.kg_po, 3.1);
+  assert.equal(r.kg_po, 3.72);
   assert.equal(r.rynek, 'FR');
   assert.equal(r.oszczednosc_zl, 24.13);
-  assert.equal(r.tekst, 'DOTNIJ P0 do 61x29x7');
+  assert.equal(r.wymiary, '62x30x8');
+  assert.equal(r.tekst, 'DOTNIJ P0 do 62x30x8');
+});
+
+test('zapas z kazdej strony wycina towar tuz pod progiem (SIM75818 50x26x15)', () => {
+  // Na styk 4,88 kg (prog 5), z zapasem 51x27x16 = 5,51 kg -> ten sam prog co karton B4W (10).
+  const prod = { dlugosc: 50, szerokosc: 26, wysokosc: 15 };
+  assert.equal(ocenDocinkeZListy(KARTONY, prod).potrzebna, false);
+  assert.equal(ocenDocinkeZListy(KARTONY, prod, 0, { zapasCm: 0 }).potrzebna, true);
 });
 
 test('wymiary z przecinkiem w tekscie polecenia', () => {
-  const r = ocenDocinkeZListy(KARTONY, { dlugosc: 51.5, szerokosc: 38, wysokosc: 12.5 }); // B5W 8,12 -> 6,12
-  assert.equal(r.potrzebna, false); // ten sam prog 10 kg - docinka nic nie da
-  const r2 = ocenDocinkeZListy(KARTONY, { dlugosc: 35, szerokosc: 25, wysokosc: 20.5 }); // C2 11,70 -> 4,48
-  assert.equal(r2.tekst, 'DOTNIJ C2 do 35x25x20,5');
+  const r = ocenDocinkeZListy(KARTONY, { dlugosc: 35, szerokosc: 25, wysokosc: 20.5 }); // C2 11,70 -> 36x26x21,5
+  assert.equal(r.tekst, 'DOTNIJ C2 do 36x26x21,5');
 });
 
 test('ciezki towar: waga rzeczywista trzyma prog, docinka nic nie da', () => {
@@ -155,15 +161,29 @@ test('ciezki towar: waga rzeczywista trzyma prog, docinka nic nie da', () => {
   assert.equal(r.tekst, '');
 });
 
+test('wlasny karton (op. zbiorcze = 1): bez docinki, nawet gdy karton podnosi prog', () => {
+  const prod = { dlugosc: 61, szerokosc: 29, wysokosc: 7 };
+  const r = ocenDocinkeZListy(KARTONY, prod, 0, { iloscZbiorcze: '1' });
+  assert.equal(r.potrzebna, false);
+  assert.equal(r.wlasny_karton, true);
+  assert.equal(r.tekst, '');
+  assert.equal(ocenDocinkeZListy(KARTONY, prod, 0, { iloscZbiorcze: '2' }).potrzebna, true);
+});
+
+test('maWlasnyKarton: tylko jednoznaczne 1 (pole reczne)', () => {
+  for (const v of ['1', ' 1 ', '1,0', 1]) assert.equal(maWlasnyKarton(v), true, String(v));
+  for (const v of [null, '', '0', '2', '12', 'tak']) assert.equal(maWlasnyKarton(v), false, String(v));
+});
+
 test('mala oszczednosc (ponizej progu zl) nie oznacza - 1->3 kg to ~2 zl', () => {
   const LISTA_MALA = [{ kod: 'X', wysokosc: 10, szerokosc: 30, dlugosc: 30 }]; // 2,25 kg
-  const prod = { dlugosc: 28, szerokosc: 28, wysokosc: 3 };                     // 0,59 kg
+  const prod = { dlugosc: 28, szerokosc: 28, wysokosc: 3 };                     // 29x29x4 = 0,84 kg
   assert.equal(ocenDocinkeZListy(LISTA_MALA, prod).potrzebna, false);
   assert.equal(ocenDocinkeZListy(LISTA_MALA, prod, 0, { progZl: 1 }).potrzebna, true);
 });
 
 test('wyjscie spoza progow (>31,5 kg) zawsze warte docinki', () => {
-  const r = ocenDocinkeZListy(KARTONY, { dlugosc: 63, szerokosc: 59, wysokosc: 22 }); // XL 300 kg -> 20,44
+  const r = ocenDocinkeZListy(KARTONY, { dlugosc: 63, szerokosc: 59, wysokosc: 22 }); // XL 300 kg -> 22,08
   assert.equal(r.potrzebna, true);
   assert.equal(r.karton_kod, 'XL-Pocztex');
   assert.equal(r.oszczednosc_zl, null);

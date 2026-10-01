@@ -29,7 +29,7 @@ const PACZKA = 300;
 
 // Uzgadnia JEDNA kolumne wyliczana z wymiarow (waga gab. DHL, kartonowa, docinka): dla kazdego towaru
 // z wymiarami liczy oczekiwana wartosc funkcja `licz(rozbite, wiersz)` i poprawia rozjazdy.
-// `wiersz.waga` jest dla docinki (waga rozliczeniowa = max(rzeczywista, gabarytowa)). Wspolny
+// `wiersz.waga` i `wiersz.ilosc_zbiorcze` sa dla docinki (waga rozliczeniowa, wlasny karton). Wspolny
 // silnik dla obu pol - zeby nie powstal drugi wzor, ktory z czasem rozjedzie sie z pierwszym.
 // Zwraca {sprawdzone, poprawione, pominieteWyscigi, bledneWymiary, przyklady}.
 async function uzgodnijKolumne(kolumna, licz) {
@@ -38,6 +38,7 @@ async function uzgodnijKolumne(kolumna, licz) {
             pwd_IdObiektu,
             ${KOLUMNY.wymiary} AS wymiary,
             ${KOLUMNY.waga} AS waga,
+            ${KOLUMNY.ilosc_zbiorcze} AS ilosc_zbiorcze,
             ${kolumna} AS zapisana
      FROM pw_Dane
      WHERE pwd_TypObiektu = ${TYP_OBIEKTU_TOWAR}
@@ -139,7 +140,7 @@ async function wykonajSpojnoscWagiGabarytowej() {
   if (KOLUMNY.docinka_karton) {
     docinka = await uzgodnijKolumne(
       KOLUMNY.docinka_karton,
-      (rozbite, w) => kartony.ocenDocinke(rozbite, w.waga)?.tekst ?? ''
+      (rozbite, w) => kartony.ocenDocinke(rozbite, w.waga, w.ilosc_zbiorcze)?.tekst ?? ''
     );
     if (docinka.poprawione) {
       audyt.zapisz({

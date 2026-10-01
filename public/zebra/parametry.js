@@ -47,7 +47,7 @@
   // wiec nie da sie jej trzymac na sztywno tutaj. Debounced; best-effort (blad nie blokuje ekranu).
   let kartonTimer = null;
   // `docinka` (z backendu, config/kartony.ocenDocinkeZListy): gdy potrzebna, linia mowi od razu
-  // polecenie dla pakujacego ("✂ P0 do wymiaru") i wage PO docieciu - to ta liczba idzie do progu DHL.
+  // polecenie dla pakujacego ("✂ P0 do 62x30x8"); "wlasny karton" gdy op. zbiorcze = 1.
   // Doklejone do tej samej linii, bo ekran Parametry musi sie zmiescic bez scrolla na 360x536.
   function pokazWageGabKarton(waga, kod, zrodlo, docinka) {
     const val = el('par-waga-gab-karton');
@@ -55,7 +55,8 @@
     const dotnij = docinka?.potrzebna;
     val.classList.toggle('par-docinka', !!dotnij);
     val.textContent = !waga ? '—'
-      : dotnij ? `✂ ${docinka.karton_kod} do wymiaru · ${przecinek(docinka.kg_po, 2)} kg`
+      : docinka?.wlasny_karton ? 'własny karton'
+      : dotnij ? `✂ ${docinka.karton_kod} do ${docinka.wymiary}`
       : zrodlo === 'karton' ? `${waga} kg · ${kod}` : `${waga} kg · z wymiarów`;
   }
   function odswiezWageGabKarton() {
@@ -70,6 +71,8 @@
         // Waga rzeczywista wchodzi do docinki (waga rozliczeniowa = max z rzeczywistej i gabarytowej).
         const waga = liczba(el('par-waga').value);
         if (waga !== null && waga > 0) q.set('waga', waga);
+        // "Ilosc w op. zbiorczym" nie jest edytowalna tutaj - bierzemy ja z kartoteki (otworz).
+        if (biezacy?.ilosc_zbiorcze != null) q.set('zbiorcze', biezacy.ilosc_zbiorcze);
         const res = await fetch(`/api/kartony/dobierz?${q}`);
         if (!res.ok) return;
         const r = await res.json();
@@ -93,6 +96,7 @@
       const res = await fetch(`/api/produkty/${encodeURIComponent(biezacy.artykul_gt_id)}/atrybuty`);
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).blad || 'Nie udało się pobrać parametrów');
       const d = await res.json();
+      biezacy.ilosc_zbiorcze = d.ilosc_zbiorcze ?? null;
       if (d.dlugosc !== null) el('par-dlugosc').value = d.dlugosc;
       if (d.szerokosc !== null) el('par-szerokosc').value = d.szerokosc;
       if (d.wysokosc !== null) el('par-wysokosc').value = d.wysokosc;

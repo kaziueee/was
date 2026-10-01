@@ -20,6 +20,7 @@ router.get('/', (req, res) => {
 // z kartonu dla podanych wymiarow. Podglad na Parametrach; bez admin-guardu (uzywa magazynier).
 // zrodlo: 'karton' = zmiescil sie w kartonie; 'wymiar' = fallback na gola wage; null = brak wymiarow.
 // &waga= (opcjonalnie, kg) -> docinka liczona z waga rozliczeniowa; bez niej sama gabarytowa.
+// &zbiorcze= (opcjonalnie) -> "Ilosc w op. zbiorczym" z kartoteki; 1 = wlasny karton, bez docinki.
 router.get('/dobierz', (req, res) => {
   const wymiary = {
     dlugosc: req.query.dlugosc,
@@ -31,7 +32,7 @@ router.get('/dobierz', (req, res) => {
     waga_gabarytowa_karton: w?.waga ?? null,
     karton_kod: w?.karton_kod ?? null,
     zrodlo: w?.zrodlo ?? null,
-    docinka: kartony.ocenDocinke(wymiary, req.query.waga),
+    docinka: kartony.ocenDocinke(wymiary, req.query.waga, req.query.zbiorcze),
   });
 });
 

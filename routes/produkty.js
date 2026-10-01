@@ -307,6 +307,7 @@ router.get('/:artykulGtId/atrybuty', async (req, res) => {
       waga_gabarytowa_karton: a?.waga_gabarytowa_karton ?? null,
       karton_kod: a?.karton_kod ?? null,
       karton_zrodlo: a?.karton_zrodlo ?? null,
+      ilosc_zbiorcze: a?.ilosc_zbiorcze ?? null,
       docinka: a?.docinka ?? null,
     });
   } catch (err) {

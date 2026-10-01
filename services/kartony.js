@@ -50,9 +50,10 @@ function liczWageGabarytowaKarton(wymiary) {
 }
 
 // Czy karton trzeba dociac, zeby paczka spadla w nizszy prog DHL (patrz config/kartony,
-// ocenDocinkeZListy). `waga` = waga rzeczywista z GT (tekst albo liczba, kg).
-function ocenDocinke(wymiary, waga) {
-  return ocenDocinkeZListy(aktywneKartony(), wymiary, waga);
+// ocenDocinkeZListy). `waga` = waga rzeczywista z GT (tekst albo liczba, kg), `iloscZbiorcze` =
+// "Ilosc w opakowaniu zbiorczym" (pwd_Tekst04) - 1 znaczy wlasny karton, bez docinki.
+function ocenDocinke(wymiary, waga, iloscZbiorcze) {
+  return ocenDocinkeZListy(aktywneKartony(), wymiary, waga, { iloscZbiorcze });
 }
 
 function pobierz(id) {

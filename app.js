@@ -19,6 +19,7 @@ const audytRouter = require('./routes/audyt');
 const statusRouter = require('./routes/status');
 const uzytkownicyRouter = require('./routes/uzytkownicy');
 const kartonyRouter = require('./routes/kartony');
+const cennikRouter = require('./routes/cennik');
 const blokadyRouter = require('./routes/blokady');
 const blokady = require('./services/blokady');
 const auth = require('./services/auth');
@@ -81,6 +82,7 @@ app.use('/api/zwroty', auth.wymagajSesjiNaZapisie, zwrotyRouter);   // uczen: zw
 app.use('/api/dostawy', auth.wymagajSesjiNaZapisie, auth.blokujUcznia(), dostawyRouter);
 app.use('/api/zestawienia', zestawieniaRouter);  // czysty odczyt z GT - bez sesji
 app.use('/api/do-sprawdzenia', doSprawdzeniaRouter);  // czysty odczyt (GT + kopia WMS), nie robi ruchow
+app.use('/api/cennik', cennikRouter);  // czysty odczyt z GT - koszt zakupu (tc_CenaNetto0) + ceny per rynek
 app.use('/api/magazyny', magazynyRouter);
 app.use('/api/status', statusRouter); // publiczny - pasek stanu na ekranie logowania
 // GET-y to czysty odczyt z GT (skany, wyszukiwanie) - otwarte. PUT /:id/atrybuty zapisuje

@@ -19,6 +19,7 @@
          Podzakladki tez maja swoj adres (#ruchy/mm), wiec i one sa linkowalne. -->
     <nav id="zakladki">
       <a href="#produkty" class="tab-link" data-panel="produkty">Produkty</a>
+      <a href="#cennik" class="tab-link" data-panel="cennik">Cennik</a>
       <a href="#ruchy/uzupelnienia" class="tab-link" data-panel="ruchy">Ruchy</a>
       <a href="#zwroty" class="tab-link" data-panel="zwroty">Zwroty</a>
       <a href="#sciezki" class="tab-link" data-panel="sciezki">Ścieżki</a>
@@ -749,6 +750,28 @@
         </table>
       </div>
       <p id="kartony-brak" class="hint hidden">Brak kartonów.</p>
+    </section>
+
+    <section id="panel-cennik" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Kalkulator cen</h2>
+      </div>
+      <p class="hint">Wpisz lub zeskanuj SKU/EAN — koszt zakupu pobierze się z Subiekta, a ceny policzą się na wszystkich rynkach.</p>
+      <form id="form-cennik" class="formularz-inline">
+        <input type="text" id="cennik-sku" placeholder="SKU lub EAN" autocomplete="off">
+        <input type="number" id="cennik-waga" min="0" step="0.1" value="1" title="Waga rozliczeniowa (kg) — wpływa tylko na wysyłkę Amazon EU (DHL)" style="width:7rem">
+        <button type="submit" class="btn btn-primary">Pokaż ceny</button>
+      </form>
+      <p id="cennik-info" class="hint hidden"></p>
+      <div class="tabela-wrapper">
+        <table class="tabela">
+          <thead>
+            <tr><th>Rynek</th><th style="text-align:right">Cena sprzedaży</th><th style="text-align:right">Zysk netto</th><th style="text-align:right">Marża</th><th>Status</th></tr>
+          </thead>
+          <tbody id="cennik-tbody"></tbody>
+        </table>
+      </div>
+      <p id="cennik-brak" class="hint">Wpisz SKU, aby zobaczyć ceny.</p>
     </section>
 
     <!-- Modal: historia ruchow/zmian jednego SKU (ikona "H" w modalu produktu) -->

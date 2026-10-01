@@ -106,6 +106,7 @@ const panele = {
   log: { sekcja: 'panel-log', zaladowano: false, odswiez: odswiezLog },
   uzytkownicy: { sekcja: 'panel-uzytkownicy', zaladowano: false, odswiez: odswiezUzytkownicy },
   kartony: { sekcja: 'panel-kartony', zaladowano: false, odswiez: odswiezKartony },
+  cennik: { sekcja: 'panel-cennik', zaladowano: false, odswiez: odswiezCennik },
 };
 
 // Grupa "Ruchy" - jedna pozycja w nawigacji, cztery osobne panele pod spodem. Trzymamy je
@@ -2004,6 +2005,62 @@ el('form-nowy-user').addEventListener('submit', async (e) => {
     odswiezUzytkownicy();
   } catch (err) { pokazKomunikat(err.message, 'blad'); }
 });
+
+// === CENNIK (kalkulator cen: SKU -> koszt zakupu z GT -> ceny per rynek) ===
+function fmtCennik(n, d = 2) {
+  return Number(n || 0).toLocaleString('pl-PL', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
+// uzyjWagi=false (nowe SKU): waga liczona z GT (gab. karton DHL). true (zmiana pola): waga ręczna.
+async function pobierzCennik(uzyjWagi) {
+  const sku = el('cennik-sku').value.trim();
+  if (!sku) return;
+  let url = `/api/cennik/${encodeURIComponent(sku)}`;
+  if (uzyjWagi) { const w = el('cennik-waga').value; if (w !== '') url += `?waga=${encodeURIComponent(w)}`; }
+  try {
+    renderCennik(await api(url));
+  } catch (err) {
+    el('cennik-info').classList.add('hidden');
+    el('cennik-tbody').innerHTML = '';
+    const brak = el('cennik-brak');
+    brak.textContent = err.message || 'Błąd';
+    brak.classList.remove('hidden');
+  }
+}
+
+function renderCennik(d) {
+  const SYM = { PLN: 'zł', EUR: '€', RON: 'lei' };
+  el('cennik-waga').value = d.waga;   // waga rozliczeniowa z GT (gab. karton DHL), edytowalna
+  const wagaOpis = d.wagaZnana ? 'auto z GT (gab. karton DHL)' : 'brak wymiarów w GT — domyślna, popraw ręcznie';
+  el('cennik-info').innerHTML =
+    `<strong>${d.sku}</strong> — ${d.nazwa || ''} · koszt zakupu <strong>${fmtCennik(d.koszt)} zł</strong> · waga rozliczeniowa <strong>${fmtCennik(d.waga, 2)} kg</strong> <span class="opis">(${wagaOpis})</span>`;
+  el('cennik-info').classList.remove('hidden');
+  const tbody = el('cennik-tbody'); tbody.innerHTML = '';
+  for (const r of d.rynki) {
+    const tr = document.createElement('tr');
+    const ety = r.nazwa + (r.kraj && r.kraj !== 'PL' ? ' · ' + r.kraj : '');
+    if (r.blad) {
+      tr.innerHTML = `<td><strong>${ety}</strong></td><td colspan="4" class="opis">${r.blad}</td>`;
+    } else {
+      const kolor = r.status === 'warn' ? '#8a5a00' : r.status === 'bad' ? '#a11d1d' : '#127a3e';
+      const txt = r.status === 'warn' ? 'podbite do progu' : 'OK';
+      tr.innerHTML =
+        `<td><strong>${ety}</strong></td>` +
+        `<td style="text-align:right"><strong>${fmtCennik(r.cena)} ${SYM[r.waluta] || r.waluta}</strong></td>` +
+        `<td style="text-align:right">${fmtCennik(r.zysk)} zł</td>` +
+        `<td style="text-align:right">${fmtCennik(r.marza, 1)}%</td>` +
+        `<td style="color:${kolor};font-weight:600">${txt}</td>`;
+    }
+    tbody.appendChild(tr);
+  }
+  el('cennik-brak').classList.add('hidden');
+}
+
+function odswiezCennik() {
+  el('form-cennik').addEventListener('submit', (e) => { e.preventDefault(); pobierzCennik(false); }); // nowe SKU -> waga z GT
+  el('cennik-waga').addEventListener('change', () => { if (el('cennik-sku').value.trim()) pobierzCennik(true); }); // ręczna korekta
+  setTimeout(() => el('cennik-sku').focus(), 50);
+}
 
 // === KARTONY (zakladka tylko dla admina) ===
 

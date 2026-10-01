@@ -2057,7 +2057,7 @@ function renderCennik(d) {
       const sym = SYM[r.waluta] || r.waluta;
       // Allegro i Amazon DE: cena edytowalna (ręczna kotwica); reszta tylko do odczytu
       const cenaCell = CENNIK_EDYT.includes(r.nazwa)
-        ? `<input type="number" step="any" min="0" class="cennik-cena" data-rynek="${r.nazwa}" value="${(+r.cena).toFixed(2)}" style="width:5.5rem;text-align:right"> <span class="opis">${sym}</span>`
+        ? `<span class="cennik-cena-box"><input type="number" step="any" min="0" class="cennik-cena" data-rynek="${r.nazwa}" value="${(+r.cena).toFixed(2)}" aria-label="Cena ${r.nazwa}"><span class="cennik-cena-sym">${sym}</span></span>`
         : `<strong>${fmtCennik(r.cena)} ${sym}</strong>`;
       let kolor = r.status === 'warn' ? '#8a5a00' : r.status === 'bad' ? '#a11d1d' : '#127a3e';
       let txt = r.status === 'warn' ? 'podbite do progu' : 'OK';
@@ -2074,6 +2074,8 @@ function renderCennik(d) {
   }
   // wpisanie ceny na Allegro/Amazon DE -> ta cena jest kotwicą, reszta łapie jej zysk netto
   tbody.querySelectorAll('.cennik-cena').forEach((inp) => {
+    inp.addEventListener('focus', () => inp.select());                               // klik = od razu nadpisujesz
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } }); // Enter zatwierdza
     inp.addEventListener('change', () => {
       if (!(+inp.value > 0)) return;
       cennikAnchor = { nazwa: inp.dataset.rynek, cena: +inp.value };

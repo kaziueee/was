@@ -1154,3 +1154,25 @@ main {
 /* Selektor po ID wygrywa z .hidden (klasa), wiec bez tej linii pasek zaznaczenia nie chce
    sie schowac - ta sama pulapka, co przy .pulpit-kafle.hidden i .podzakladki.hidden. */
 #zaj-zaznaczenie.hidden { display: none; }
+
+/* --- Kalkulator cen: edytowalna cena Allegro/Amazon DE ---
+   Ma wygladac jak cena (bold, wyrownana do prawej jak reszta kolumny), a nie jak pole
+   formularza ze strzalkami. Strzalki number-inputa ukryte; ramka to tylko sygnal "klikalne". */
+.cennik-cena-box { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0.25rem; }
+.cennik-cena {
+  width: 4.5rem;
+  text-align: right;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: inherit;
+  padding: 0.22rem 0.4rem;
+  border: 1px solid #c7d0dd;
+  border-radius: 6px;
+  background: #fff;
+  -moz-appearance: textfield;
+}
+.cennik-cena::-webkit-outer-spin-button,
+.cennik-cena::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.cennik-cena:hover { border-color: #2563eb; }
+.cennik-cena:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15); }
+.cennik-cena-sym { font-weight: 700; }

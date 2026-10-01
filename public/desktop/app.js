@@ -2015,8 +2015,13 @@ function fmtCennik(n, d = 2) {
 async function pobierzCennik(uzyjWagi) {
   const sku = el('cennik-sku').value.trim();
   if (!sku) return;
-  let url = `/api/cennik/${encodeURIComponent(sku)}`;
-  if (uzyjWagi) { const w = el('cennik-waga').value; if (w !== '') url += `?waga=${encodeURIComponent(w)}`; }
+  const q = new URLSearchParams();
+  if (uzyjWagi) { const w = el('cennik-waga').value; if (w !== '') q.set('waga', w); }
+  const tryb = el('cennik-tryb').value;
+  if (tryb && tryb !== 'marza') q.set('tryb', tryb);
+  if (tryb === 'kotwica') { const b = el('cennik-bufor').value; if (b !== '') q.set('bufor', b); }
+  const qs = q.toString();
+  const url = `/api/cennik/${encodeURIComponent(sku)}${qs ? `?${qs}` : ''}`;
   try {
     renderCennik(await api(url));
   } catch (err) {
@@ -2032,13 +2037,16 @@ function renderCennik(d) {
   const SYM = { PLN: 'zł', EUR: '€', RON: 'lei' };
   el('cennik-waga').value = d.waga;   // waga rozliczeniowa z GT (gab. karton DHL), edytowalna
   const wagaOpis = d.wagaZnana ? 'auto z GT (gab. karton DHL)' : 'brak wymiarów w GT — domyślna, popraw ręcznie';
+  const trybOpis = d.tryb === 'kotwica'
+    ? ` · tryb <strong>Kotwica DE</strong> (FR/IT/ES/NL → zysk Amazon DE + ${fmtCennik(d.bufor, 0)} zł bufor)`
+    : '';
   el('cennik-info').innerHTML =
-    `<strong>${d.sku}</strong> — ${d.nazwa || ''} · koszt zakupu <strong>${fmtCennik(d.koszt)} zł</strong> · waga rozliczeniowa <strong>${fmtCennik(d.waga, 2)} kg</strong> <span class="opis">(${wagaOpis})</span>`;
+    `<strong>${d.sku}</strong> — ${d.nazwa || ''} · koszt zakupu <strong>${fmtCennik(d.koszt)} zł</strong> · waga rozliczeniowa <strong>${fmtCennik(d.waga, 2)} kg</strong> <span class="opis">(${wagaOpis})</span>${trybOpis}`;
   el('cennik-info').classList.remove('hidden');
   const tbody = el('cennik-tbody'); tbody.innerHTML = '';
   for (const r of d.rynki) {
     const tr = document.createElement('tr');
-    const ety = r.nazwa + (r.kraj && r.kraj !== 'PL' ? ' · ' + r.kraj : '');
+    const ety = r.nazwa + (r.kraj && r.kraj !== 'PL' ? ' · ' + r.kraj : '') + (r.kotwica ? ' ⚓' : '');
     if (r.blad) {
       tr.innerHTML = `<td><strong>${ety}</strong></td><td colspan="4" class="opis">${r.blad}</td>`;
     } else {
@@ -2059,6 +2067,11 @@ function renderCennik(d) {
 function odswiezCennik() {
   el('form-cennik').addEventListener('submit', (e) => { e.preventDefault(); pobierzCennik(false); }); // nowe SKU -> waga z GT
   el('cennik-waga').addEventListener('change', () => { if (el('cennik-sku').value.trim()) pobierzCennik(true); }); // ręczna korekta
+  el('cennik-tryb').addEventListener('change', () => {
+    el('cennik-bufor').hidden = el('cennik-tryb').value !== 'kotwica'; // bufor tylko przy kotwicy
+    if (el('cennik-sku').value.trim()) pobierzCennik(true); // przelicz, zachowując aktualną wagę
+  });
+  el('cennik-bufor').addEventListener('change', () => { if (el('cennik-sku').value.trim()) pobierzCennik(true); });
   setTimeout(() => el('cennik-sku').focus(), 50);
 }
 

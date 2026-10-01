@@ -14,8 +14,9 @@
 // --- parametry wspolne (preset; panel pracownika ich nie edytuje) ---
 const DOMYSLNE = {
   marza: 20,        // % od przychodu netto (gdy tryb 'marza')
-  tryb: 'marza',    // 'marza' | 'zysk'
+  tryb: 'marza',    // 'marza' | 'zysk' | 'kotwica' (FR/IT/ES/NL celuja w zysk Amazon DE + bufor)
   celZysk: 20,      // docelowy zysk netto w zl (gdy tryb 'zysk')
+  bufor: 5,         // bufor zwrotow (zl) doliczany do zysku-kotwicy DE na rynkach kotwiczacych (tryb 'kotwica')
   obsluga: 3,       // pakowanie/robocizna, zl na zamowienie
   minzysk: 5,       // prog min. zysku netto (zl) - podbija cene
   eur: 4.20,        // PLN za 1 EUR (ostrozny kurs)
@@ -30,10 +31,11 @@ const DOMYSLNE = {
 const RYNKI = [
   { nazwa: 'Allegro',     kraj: 'PL', waluta: 'PLN', vat: 23, prowizja: 13.3, typ: 'allegro' },
   { nazwa: 'Amazon DE',   kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl' },
-  { nazwa: 'Amazon FR',   kraj: 'FR', waluta: 'EUR', vat: 20, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl' },
-  { nazwa: 'Amazon IT',   kraj: 'IT', waluta: 'EUR', vat: 22, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl' },
-  { nazwa: 'Amazon ES',   kraj: 'ES', waluta: 'EUR', vat: 21, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl' },
-  { nazwa: 'Amazon NL',   kraj: 'NL', waluta: 'EUR', vat: 21, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl' },
+  // kotwica:true -> w trybie 'kotwica' celuja w zysk Amazon DE + bufor (zamiast wlasnej marzy) - drozsze zwroty
+  { nazwa: 'Amazon FR',   kraj: 'FR', waluta: 'EUR', vat: 20, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
+  { nazwa: 'Amazon IT',   kraj: 'IT', waluta: 'EUR', vat: 22, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
+  { nazwa: 'Amazon ES',   kraj: 'ES', waluta: 'EUR', vat: 21, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
+  { nazwa: 'Amazon NL',   kraj: 'NL', waluta: 'EUR', vat: 21, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
   // eMag RO usunięty z listy do czasu domknięcia (prowizja realna ~16,37%, wysyłka Paxy realnie ~2,10 EUR/paczka).
   // Dane i jak wznowić: pliki wiedzy emag-oplaty-realne + paxy-stawki (Projekty AI/ERP DASHBOARD).
   // Kaufland DE: ta sama umowa DHL do Niemiec co Amazon DE (koszt po wadze). Prowizja 13% dla zabawek
@@ -157,15 +159,34 @@ function policzRynek(kosztPLN, r, g) {
   return policzFlat(kosztPLN, r, g);
 }
 
+// Tryb 'kotwica': rynki bazowe (Allegro, Amazon DE, Kaufland DE) licza sie na marzy, a rynki z
+// flaga `kotwica` (Amazon FR/IT/ES/NL) celuja w TEN SAM zysk netto co Amazon DE + `bufor` (zl,
+// poduszka na drozsze zwroty) - zamiast wlasnej marzy. Dzieki temu wysoka wysylka na dalekich
+// rynkach nie winduje ceny: robimy zysk jak na DE + bufor, kosztem nizszej marzy %.
+function policzKotwica(kosztPLN, g) {
+  const koszt = +kosztPLN || 0;
+  const gMarza = { ...g, tryb: 'marza' };
+  const de = RYNKI.find((r) => r.nazwa === 'Amazon DE');
+  if (!de) return RYNKI.map((r) => policzRynek(koszt, r, gMarza)); // brak DE -> wszystko na marzy
+  const zyskDE = policzRynek(koszt, de, gMarza).zysk || 0;         // zl
+  const gKotwica = { ...g, tryb: 'zysk', celZysk: zyskDE + (+g.bufor || 0) };
+  return RYNKI.map((r) => {
+    const w = policzRynek(koszt, r, r.kotwica ? gKotwica : gMarza);
+    if (r.kotwica) { w.kotwica = true; w.detal = { ...w.detal, celZysk: gKotwica.celZysk, zyskDE }; }
+    return w;
+  });
+}
+
 // Wszystkie rynki dla danego kosztu zakupu (PLN netto). `nadpisz` - czesciowe nadpisanie DOMYSLNE
-// (np. { waga } z panelu). Zwraca tablice wynikow gotowa do wyswietlenia.
+// (np. { waga, tryb } z panelu). Zwraca tablice wynikow gotowa do wyswietlenia.
 function policzWszystkie(kosztPLN, nadpisz = {}) {
   const g = { ...DOMYSLNE, ...nadpisz };
+  if (g.tryb === 'kotwica') return policzKotwica(+kosztPLN || 0, g);
   return RYNKI.map((r) => policzRynek(+kosztPLN || 0, r, g));
 }
 
 module.exports = {
   DOMYSLNE, RYNKI, DHL_STAWKI, ALLEGRO_PROGI,
   do99, totalCelu, kursDla, doplataSmartAllegro, stawkaDHL,
-  policzRynek, policzWszystkie,
+  policzRynek, policzKotwica, policzWszystkie,
 };

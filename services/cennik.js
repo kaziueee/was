@@ -40,6 +40,11 @@ async function wycenaPoSku(sku, nadpisz = {}) {
   // waga reczna z panelu nadpisuje; inaczej waga rozliczeniowa z GT
   const waga = nadpisz.waga != null ? +nadpisz.waga : wagaGT;
 
+  // tryb/bufor z panelu nadpisuja preset (DOMYSLNE) - np. tryb 'kotwica' + bufor zwrotow
+  const over = { waga };
+  if (nadpisz.tryb) over.tryb = nadpisz.tryb;
+  if (nadpisz.bufor != null) over.bufor = +nadpisz.bufor;
+
   return {
     sku: row.tw_Symbol,
     nazwa: row.tw_Nazwa,
@@ -47,7 +52,9 @@ async function wycenaPoSku(sku, nadpisz = {}) {
     waga,
     wagaGT,
     wagaZnana,
-    rynki: rynki.policzWszystkie(koszt, { waga }),
+    tryb: over.tryb || rynki.DOMYSLNE.tryb,
+    bufor: over.bufor != null ? over.bufor : rynki.DOMYSLNE.bufor,
+    rynki: rynki.policzWszystkie(koszt, over),
   };
 }
 

@@ -1,7 +1,8 @@
 'use strict';
 
-// GET /api/cennik/:sku[?waga=&tryb=&bufor=] - koszt zakupu z GT + sugerowane ceny na wszystkich rynkach.
+// GET /api/cennik/:sku[?waga=&tryb=&bufor=&anchor=&anchorCena=&docinanieOn=] - koszt z GT + ceny rynkow.
 // tryb: 'marza' | 'zysk' | 'kotwica' (kotwica: FR/IT/ES/NL celuja w zysk Amazon DE + bufor zl).
+// docinanieOn=1 -> caly cennik DHL o 1 prog nizej (dla towarow docinalnych - pole "Docinanie").
 // Czysty odczyt z GT (jak /api/zestawienia) - bez sesji. Nie robi zadnych ruchow/zapisow.
 
 const express = require('express');
@@ -18,6 +19,7 @@ router.get('/:sku', async (req, res, next) => {
     if (req.query.bufor != null && req.query.bufor !== '') nadpisz.bufor = Number(req.query.bufor);
     if (req.query.anchor && req.query.anchorCena != null && req.query.anchorCena !== '')
       nadpisz.anchor = { nazwa: String(req.query.anchor), cena: Number(req.query.anchorCena) };
+    if (req.query.docinanieOn === '1' || req.query.docinanieOn === 'true') nadpisz.docinanieOn = true;
     const wy = await wycenaPoSku(sku, nadpisz);
     if (!wy) return res.status(404).json({ blad: 'Nie znaleziono towaru: ' + sku });
     res.json(wy);

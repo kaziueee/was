@@ -2023,6 +2023,7 @@ async function pobierzCennik(uzyjWagi) {
   const tryb = el('cennik-tryb').value;
   if (tryb && tryb !== 'marza') q.set('tryb', tryb);
   if (tryb === 'kotwica') { const b = el('cennik-bufor').value; if (b !== '') q.set('bufor', b); }
+  if (el('cennik-docinanie').checked) q.set('docinanieOn', '1'); // docinanie: cały cennik DHL −1 próg
   if (cennikAnchor) { q.set('anchor', cennikAnchor.nazwa); q.set('anchorCena', cennikAnchor.cena); } // ręczna cena
   const qs = q.toString();
   const url = `/api/cennik/${encodeURIComponent(sku)}${qs ? `?${qs}` : ''}`;
@@ -2040,12 +2041,15 @@ async function pobierzCennik(uzyjWagi) {
 function renderCennik(d) {
   const SYM = { PLN: 'zł', EUR: '€', RON: 'lei' };
   el('cennik-waga').value = d.waga;   // waga rozliczeniowa z GT (gab. karton DHL), edytowalna
-  const wagaOpis = d.wagaZnana ? 'auto z GT (gab. karton DHL)' : 'brak wymiarów w GT — domyślna, popraw ręcznie';
+  const wagaOpis = !d.wagaZnana ? 'brak wymiarów w GT — domyślna, popraw ręcznie'
+    : d.kartonWlasny ? 'karton własny — gab. zwykła z GT'
+    : 'auto z GT (gab. karton DHL)';
   const trybOpis = d.tryb === 'kotwica'
     ? ` · tryb <strong>Kotwica DE</strong> (FR/IT/ES/NL → zysk Amazon DE + ${fmtCennik(d.bufor, 0)} zł bufor)`
     : '';
+  const docinanieOpis = d.docinanieAktywne ? ' · <strong>docięcie</strong>: cały cennik DHL −1 próg' : '';
   el('cennik-info').innerHTML =
-    `<strong>${d.sku}</strong> — ${d.nazwa || ''} · koszt zakupu <strong>${fmtCennik(d.koszt)} zł</strong> · waga rozliczeniowa <strong>${fmtCennik(d.waga, 2)} kg</strong> <span class="opis">(${wagaOpis})</span>${trybOpis}`;
+    `<strong>${d.sku}</strong> — ${d.nazwa || ''} · koszt zakupu <strong>${fmtCennik(d.koszt)} zł</strong> · waga rozliczeniowa <strong>${fmtCennik(d.waga, 2)} kg</strong> <span class="opis">(${wagaOpis})</span>${trybOpis}${docinanieOpis}`;
   el('cennik-info').classList.remove('hidden');
   const tbody = el('cennik-tbody'); tbody.innerHTML = '';
   for (const r of d.rynki) {
@@ -2103,6 +2107,7 @@ function odswiezCennik() {
     if (el('cennik-sku').value.trim()) pobierzCennik(true);
   });
   el('cennik-bufor').addEventListener('change', () => { if (el('cennik-sku').value.trim()) pobierzCennik(true); });
+  el('cennik-docinanie').addEventListener('change', () => { if (el('cennik-sku').value.trim()) pobierzCennik(true); }); // docinanie
   el('cennik-baza').addEventListener('click', () => { cennikAnchor = null; if (el('cennik-sku').value.trim()) pobierzCennik(true); }); // wróć do bazy
   setTimeout(() => el('cennik-sku').focus(), 50);
 }

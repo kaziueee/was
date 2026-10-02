@@ -14,7 +14,7 @@ const awarie = require('./awarie');
 const kartony = require('./kartony');
 const { interwalMsZMinut } = require('./interwal');
 const {
-  KOLUMNY, TYP_OBIEKTU_TOWAR, rozbierzWymiary, liczWageGabarytowaGt,
+  KOLUMNY, TYP_OBIEKTU_TOWAR, rozbierzWymiary, liczWageGabarytowaGt, kolumnaDocinki,
 } = require('./gt-atrybuty');
 
 // Domyslnie 6 h - wymiary zmieniaja sie rzadko (zapis jest jednorazowy per produkt),
@@ -133,15 +133,27 @@ async function wykonajSpojnoscWagiGabarytowej() {
     }
   }
 
-  // Polecenie docinki - tylko gdy pole zalozone w Subiekcie (patrz KOLUMNY.docinka_karton).
-  // Ten sam silnik: zmiana listy kartonow, wymiarow albo wagi propaguje sie tu sama. Pusty
-  // tekst = "nie docinaj" - porownanie z trim() zapisanej wartosci, wiec '' i NULL sa rowne.
+  // "Docinanie kartonu" ('tak' / puste) - tylko gdy pole w TEJ bazie GT tak sie nazywa
+  // (kolumnaDocinki). Ten sam silnik: zmiana listy kartonow, wymiarow albo wagi propaguje sie
+  // tu sama. Pusty tekst = "nie docinaj" - porownanie z trim() zapisanej wartosci, wiec '' i NULL
+  // sa rowne.
   let docinka = null;
-  if (KOLUMNY.docinka_karton) {
+  const kolDocinki = await kolumnaDocinki();
+  if (kolDocinki) {
     docinka = await uzgodnijKolumne(
-      KOLUMNY.docinka_karton,
+      kolDocinki,
       (rozbite, w) => kartony.ocenDocinke(rozbite, w.waga, w.ilosc_zbiorcze)?.tekst ?? ''
     );
+    // uzgodnijKolumne widzi tylko towary Z wymiarami. Bez wymiarow nie ma podstaw do "tak", wiec
+    // pole ma byc puste - a w GT siedza tam jeszcze notatki z dawnej "Lokalizacji Zapas" (np.
+    // NERF3885-1SZT), ktore pod nowa nazwa pola udawalyby polecenie dla pakujacego.
+    const bezWymiarow = await query(
+      `UPDATE pw_Dane SET ${kolDocinki} = ''
+       WHERE pwd_TypObiektu = ${TYP_OBIEKTU_TOWAR}
+         AND (${KOLUMNY.wymiary} IS NULL OR LTRIM(RTRIM(${KOLUMNY.wymiary})) = '')
+         AND LTRIM(RTRIM(ISNULL(${kolDocinki}, ''))) <> ''`
+    );
+    docinka.poprawione += bezWymiarow.rowsAffected?.[0] ?? 0;
     if (docinka.poprawione) {
       audyt.zapisz({
         uzytkownik: 'system:waga-gabarytowa',

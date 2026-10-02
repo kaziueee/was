@@ -157,10 +157,12 @@ function liczWageKartonZListy(lista, wymiary) {
 // polecenie: dotnij karton do wymiaru produktu - paczka wazy wtedy tyle, co waga gabarytowa
 // samego towaru (pole "Waga gabarytowa DHL", pwd_Tekst09, ten sam wzor).
 //
-// Progi wagowe sa wspolne dla wszystkich rynkow DHL Parcel Connect (1/3/5/10/20/31,5 kg), ale
-// SKOK ceny na progu jest rozny (FR 5->10 kg = +24,13 zl, DE = +4,20 zl). Oznaczamy tylko, gdy
-// docinka oszczedza >= DOCINKA_PROG_ZL na NAJDROZSZYM rynku - przeskok 1->3 kg za 2 zl nie jest
-// wart nozyka i zasmiecalby pole.
+// GRANICA (decyzja usera 2026-10-02): docinamy tylko, gdy karton przerzuca paczke przez prog
+// 5 kg albo wyzszy, a docięty karton spada do nizszego progu. Ponizej 5 kg nigdy - progi 1/3/5 kg
+// roznia sie o 0,10-3,85 zl na paczce (do DE grosze), a na calym asortymencie to ~3 000 SKU, przy
+// ktorych pakujacy cialby za darmo. Od 5 kg w gore kazde przejscie oszczedza realnie na KAZDYM
+// rynku (10->5 kg: DE 4,20 zl, FR 24,13 zl). Progi sa wspolne dla rynkow DHL Parcel Connect
+// (1/3/5/10/20/31,5 kg), wiec granica w kg jest ta sama wszedzie - kwota w zl tylko informacyjnie.
 //
 // Docięty karton nigdy nie lezy na towarze na styk - scianka tektury i zgiecie dokladaja swoje.
 // Liczymy wiec z wymiarem produktu + DOCINKA_ZAPAS_CM z KAZDEJ strony (decyzja usera 2026-10-01:
@@ -176,12 +178,18 @@ function liczWageKartonZListy(lista, wymiary) {
 
 const { DHL_STAWKI } = require('./rynki');
 
-const DOCINKA_PROG_ZL = 5;    // minimalna oszczednosc netto PLN na paczce, zeby oznaczyc
+const DOCINKA_OD_KG = 5;      // docinamy tylko paczki z kartonem CIEZSZYM niz ten prog (patrz wyzej)
+const DOCINKA_TAK = 'tak';    // wartosc pola GT "Docinanie kartonu"; puste = nie docinaj
 const DOCINKA_ZAPAS_CM = 0.5; // luz z kazdej strony towaru po docieciu (wymiar + 2 x zapas)
 
 // Gorne granice progow wagowych (kg) - z umowy DHL, wspolne dla rynkow.
 const PROGI_DHL = [...new Set(Object.values(DHL_STAWKI).flatMap((t) => t.map(([kg]) => kg)))]
   .sort((a, b) => a - b);
+
+// Prog (gorna granica kg), w ktory wpada waga rozliczeniowa; Infinity = ponad 31,5 kg (niestandard).
+function progDla(kg) {
+  return PROGI_DHL.find((p) => kg <= p + 1e-9) ?? Infinity;
+}
 
 // Stawka netto PLN na rynku `kraj` dla wagi rozliczeniowej, albo null (powyzej 31,5 kg).
 function stawkaDla(kraj, kg) {
@@ -189,7 +197,7 @@ function stawkaDla(kraj, kg) {
   return hit ? hit[1] : null;
 }
 
-// Najwieksza oszczednosc (PLN netto) po wszystkich rynkach przy przejsciu z wagi `z` na `na`.
+// Najwieksza oszczednosc (PLN netto) po wszystkich rynkach - tylko do POKAZANIA, decyzje podejmuje prog kg przy przejsciu z wagi `z` na `na`.
 // Wyjscie spoza progow (>31,5 kg) do progu = Infinity: to paczka niestandardowa, zawsze warto.
 function oszczednosc(z, na) {
   let max = 0, kraj = null;
@@ -213,14 +221,14 @@ function maWlasnyKarton(iloscZbiorcze) {
 
 // Ocena docinki dla towaru. Zwraca null (brak wymiarow / brak pasujacego kartonu - wtedy waga
 // "z kartonu" i tak jest waga samego produktu) albo:
-//   { potrzebna: false, karton_kod, kg_przed }  - karton nie podnosi progu (albo o grosze)
+//   { potrzebna: false, karton_kod, kg_przed }  - karton nie przerzuca paczki przez prog >= 5 kg
 //   { potrzebna: false, wlasny_karton: true }   - towar jedzie we wlasnym kartonie
-//   { potrzebna: true, karton_kod, wymiary, kg_przed, kg_po, oszczednosc_zl, rynek, tekst }
-// `wymiary` w wyniku = wymiar DOCIETEGO kartonu (produkt + zapas z kazdej strony).
-// `tekst` = gotowe polecenie do pola GT ("DOTNIJ P0 do 62x30x8"); pusty, gdy docinka niepotrzebna.
-// opcje: { iloscZbiorcze (pwd_Tekst04), progZl, zapasCm }.
+//   { potrzebna: true, karton_kod, wymiary, kg_przed, kg_po, oszczednosc_zl, rynek, polecenie, tekst }
+// `wymiary` = wymiar DOCIETEGO kartonu (produkt + zapas z kazdej strony).
+// `tekst` = wartosc pola GT "Docinanie kartonu": 'tak' albo '' (decyzja usera - samo oznaczenie).
+// `polecenie` = pelny opis dla ekranu ("DOTNIJ P0 do 62x30x8").
+// opcje: { iloscZbiorcze (pwd_Tekst04), zapasCm }.
 function ocenDocinkeZListy(lista, wymiary, wagaRzecz = 0, opcje = {}) {
-  const progZl = opcje.progZl ?? DOCINKA_PROG_ZL;
   const zapas = opcje.zapasCm ?? DOCINKA_ZAPAS_CM;
   const dims = normalizujWymiary(wymiary);
   if (!dims) return null;
@@ -235,8 +243,9 @@ function ocenDocinkeZListy(lista, wymiary, wagaRzecz = 0, opcje = {}) {
   const kgPo = Math.max(wr, (cel[0] * cel[1] * cel[2]) / DZIELNIK_DHL, WAGA_GAB_MIN);
   const baza = { karton_kod: karton.kod, kg_przed: +kgPrzed.toFixed(2), potrzebna: false, tekst: '' };
 
+  const przed = progDla(kgPrzed);
+  if (kgPrzed <= DOCINKA_OD_KG + 1e-9 || progDla(kgPo) >= przed) return baza;
   const zysk = oszczednosc(kgPrzed, kgPo);
-  if (zysk.zl < progZl) return baza;
 
   const wymiaryTekst = cel.map(fmtCm).join('x');
   return {
@@ -246,7 +255,8 @@ function ocenDocinkeZListy(lista, wymiary, wagaRzecz = 0, opcje = {}) {
     kg_po: +kgPo.toFixed(2),
     oszczednosc_zl: Number.isFinite(zysk.zl) ? +zysk.zl.toFixed(2) : null,
     rynek: zysk.kraj,
-    tekst: `DOTNIJ ${karton.kod} do ${wymiaryTekst}`,
+    polecenie: `DOTNIJ ${karton.kod} do ${wymiaryTekst}`,
+    tekst: DOCINKA_TAK,
   };
 }
 
@@ -282,7 +292,8 @@ module.exports = {
   liczWageKartonZListy,
   sprawdzKarton,
   PROGI_DHL,
-  DOCINKA_PROG_ZL,
+  DOCINKA_OD_KG,
+  DOCINKA_TAK,
   DOCINKA_ZAPAS_CM,
   maWlasnyKarton,
   ocenDocinkeZListy,

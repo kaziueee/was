@@ -46,16 +46,41 @@ const KOLUMNY = {
   // (zalozone przez usera 2026-07-23, potwierdzone w pw_Pole). Ustawione na null = feature "uspiony"
   // (liczymy i pokazujemy, ale nie czytamy/piszemy w GT) - bylo tak do czasu zalozenia pola.
   waga_gabarytowa_karton: 'pwd_Tekst10',
-  // Polecenie docinki kartonu dla pakujacego ("DOTNIJ B5 do 9 cm", puste = nie trzeba) - gdy
-  // najmniejszy pasujacy karton wpycha paczke w wyzszy prog DHL, a docięty by nie wpychal.
-  // Liczone z wymiarow + wagi + listy kartonow (services/kartony.ocenDocinke). null = pole jeszcze
-  // nie zalozone w Subiekcie: liczymy i pokazujemy na Parametrach, ale nie piszemy do GT.
-  // Po zalozeniu pola wpisz tu jego kolumne (sprawdz w pw_Pole, ktora pwd_TekstNN dostalo).
-  docinka_karton: null,
+  // "Docinanie kartonu": 'tak' = pakujacy ma dociac karton do wymiaru produktu, puste = nie.
+  // Liczone z wymiarow + wagi + op. zbiorczego + listy kartonow (services/kartony.ocenDocinke).
+  // To dawne pole "Lokalizacja Zapas" przemianowane przez usera w OKITRADE 2026-10-02 - dlatego
+  // zapis idzie WYLACZNIE po potwierdzeniu nazwy w pw_Pole (kolumnaDocinki): w bazie, gdzie
+  // pwd_Tekst08 nadal jest "Lokalizacja Zapas" (testowa Z_KAJTEK), nie nadpiszemy ludzkich notatek.
+  docinka_karton: 'pwd_Tekst08',
   // "Ilosc w opakowaniu zbiorczym" - reczne, WMS tylko CZYTA: 1 = towar we wlasnym kartonie
   // wysylkowym, wiec docinka go nie dotyczy (potwierdzone w pw_Pole OKITRADE 2026-10-01).
   ilosc_zbiorcze: 'pwd_Tekst04',
 };
+
+// Nazwa pola w GT, ktora musi stac przy KOLUMNY.docinka_karton, zeby WMS do niej pisal.
+const NAZWA_POLA_DOCINKI = 'Docinanie kartonu';
+const DOCINKA_CACHE_MS = 10 * 60 * 1000;
+let docinkaCache = null; // { kolumna: string|null, do: timestamp }
+
+// Kolumna pola "Docinanie kartonu", gdy w TEJ bazie GT naprawde tak sie nazywa - inaczej null
+// (wtedy liczymy i pokazujemy, ale nie piszemy). Blad odczytu = null: nie zgadujemy przy zapisie.
+async function kolumnaDocinki() {
+  if (!KOLUMNY.docinka_karton) return null;
+  if (docinkaCache && docinkaCache.do > Date.now()) return docinkaCache.kolumna;
+  let kolumna = null;
+  try {
+    const r = await query(
+      `SELECT pwp_Nazwa FROM pw_Pole WHERE pwp_TypObiektu = ${TYP_OBIEKTU_TOWAR} AND pwp_Pole = @pole`,
+      { pole: KOLUMNY.docinka_karton });
+    const nazwa = (r.recordset?.[0]?.pwp_Nazwa || '').trim();
+    if (nazwa.toLowerCase() === NAZWA_POLA_DOCINKI.toLowerCase()) kolumna = KOLUMNY.docinka_karton;
+    else console.warn(`[docinka] ${KOLUMNY.docinka_karton} to w GT "${nazwa}", nie "${NAZWA_POLA_DOCINKI}" - nie pisze`);
+  } catch (err) {
+    console.warn('[docinka] odczyt pw_Pole:', err.message);
+  }
+  docinkaCache = { kolumna, do: Date.now() + DOCINKA_CACHE_MS };
+  return kolumna;
+}
 
 // Dzielnik wolumetryczny DHL: (dl * szer * wys w cm) / 4000 = kg.
 const DZIELNIK_DHL = 4000;
@@ -262,7 +287,8 @@ async function zapiszAtrybuty(artykulGtId, zmiany) {
   // Docinka zalezy od wymiarow, wagi (waga rozliczeniowa = max z obu) i "Ilosci w op. zbiorczym",
   // a zapis bywa czesciowy - brakujace dane doczytujemy z GT, zeby polecenie nie bylo liczone
   // z polowy danych.
-  if (KOLUMNY.docinka_karton && ('wymiary' in zmiany || 'waga' in zmiany)) {
+  const kolDocinki = ('wymiary' in zmiany || 'waga' in zmiany) ? await kolumnaDocinki() : null;
+  if (kolDocinki) {
     let obecne;
     try {
       obecne = (await query(
@@ -275,7 +301,7 @@ async function zapiszAtrybuty(artykulGtId, zmiany) {
     const wagaTekst = 'waga' in zmiany ? parametry.waga : (obecne.waga ?? '');
     const rozbite = rozbierzWymiary(wymiaryTekst);
     const docinka = rozbite ? kartony.ocenDocinke(rozbite, wagaTekst, obecne.ilosc_zbiorcze) : null;
-    pola.push({ kolumna: KOLUMNY.docinka_karton, parametr: '@docinka' });
+    pola.push({ kolumna: kolDocinki, parametr: '@docinka' });
     parametry.docinka = docinka?.tekst ?? '';
     zapisane.docinka = docinka?.tekst || null;
   }
@@ -405,6 +431,7 @@ module.exports = {
   liczba,
   formatuj,
   KOLUMNY,
+  kolumnaDocinki,
   TYP_OBIEKTU_TOWAR,
   WYMIAR_PODEJRZANY_CM,
 };

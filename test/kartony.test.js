@@ -122,9 +122,9 @@ test('realny seed: plaski 30x20x2 -> A-KleinPacket 1,64 kg (goly wymiar dalby 0,
   );
 });
 
-// --- ocenDocinkeZListy: docinka kartonu do wymiaru produktu + 0,5 cm z kazdej strony ---
+// --- ocenDocinkeZListy: docinka do wymiaru produktu + 0,5 cm, tylko od progu 5 kg w gore ---
 
-const { ocenDocinkeZListy, maWlasnyKarton, PROGI_DHL } = require('../config/kartony');
+const { ocenDocinkeZListy, maWlasnyKarton, PROGI_DHL, DOCINKA_TAK } = require('../config/kartony');
 
 test('progi DHL wyprowadzone z umowy, rosnaco', () => {
   assert.deepEqual(PROGI_DHL, [1, 3, 5, 10, 20, 31.5]);
@@ -140,7 +140,8 @@ test('karton podnosi prog: dotnij do wymiaru produktu + zapas (NERF7376 61x29x7)
   assert.equal(r.rynek, 'FR');
   assert.equal(r.oszczednosc_zl, 24.13);
   assert.equal(r.wymiary, '62x30x8');
-  assert.equal(r.tekst, 'DOTNIJ P0 do 62x30x8');
+  assert.equal(r.polecenie, 'DOTNIJ P0 do 62x30x8');
+  assert.equal(r.tekst, 'tak'); // wartosc pola GT "Docinanie kartonu"
 });
 
 test('zapas z kazdej strony wycina towar tuz pod progiem (SIM75818 50x26x15)', () => {
@@ -152,7 +153,7 @@ test('zapas z kazdej strony wycina towar tuz pod progiem (SIM75818 50x26x15)', (
 
 test('wymiary z przecinkiem w tekscie polecenia', () => {
   const r = ocenDocinkeZListy(KARTONY, { dlugosc: 35, szerokosc: 25, wysokosc: 20.5 }); // C2 11,70 -> 36x26x21,5
-  assert.equal(r.tekst, 'DOTNIJ C2 do 36x26x21,5');
+  assert.equal(r.polecenie, 'DOTNIJ C2 do 36x26x21,5');
 });
 
 test('ciezki towar: waga rzeczywista trzyma prog, docinka nic nie da', () => {
@@ -175,11 +176,23 @@ test('maWlasnyKarton: tylko jednoznaczne 1 (pole reczne)', () => {
   for (const v of [null, '', '0', '2', '12', 'tak']) assert.equal(maWlasnyKarton(v), false, String(v));
 });
 
-test('mala oszczednosc (ponizej progu zl) nie oznacza - 1->3 kg to ~2 zl', () => {
-  const LISTA_MALA = [{ kod: 'X', wysokosc: 10, szerokosc: 30, dlugosc: 30 }]; // 2,25 kg
+test('granica 5 kg: ponizej nigdy nie docinamy, nawet gdy prog spada (3 -> 1 kg)', () => {
+  const LISTA_MALA = [{ kod: 'X', wysokosc: 10, szerokosc: 30, dlugosc: 30 }]; // 2,25 kg (prog 3)
   const prod = { dlugosc: 28, szerokosc: 28, wysokosc: 3 };                     // 29x29x4 = 0,84 kg
-  assert.equal(ocenDocinkeZListy(LISTA_MALA, prod).potrzebna, false);
-  assert.equal(ocenDocinkeZListy(LISTA_MALA, prod, 0, { progZl: 1 }).potrzebna, true);
+  const r = ocenDocinkeZListy(LISTA_MALA, prod);
+  assert.equal(r.potrzebna, false);
+  assert.equal(r.tekst, '');
+});
+
+test('granica 5 kg: karton dokladnie 5 kg to jeszcze prog 5 - nie docinamy', () => {
+  const L = [{ kod: 'Y', wysokosc: 10, szerokosc: 40, dlugosc: 50 }];          // 5,00 kg
+  assert.equal(ocenDocinkeZListy(L, { dlugosc: 20, szerokosc: 20, wysokosc: 5 }).potrzebna, false);
+});
+
+test('od 5 kg w gore: docinamy tylko, gdy docięty spada do nizszego progu', () => {
+  const L = [{ kod: 'Z', wysokosc: 10, szerokosc: 40, dlugosc: 60 }];          // 6,00 kg (prog 10)
+  assert.equal(ocenDocinkeZListy(L, { dlugosc: 50, szerokosc: 35, wysokosc: 9 }).potrzebna, true);  // 51x36x10 = 4,59
+  assert.equal(ocenDocinkeZListy(L, { dlugosc: 55, szerokosc: 38, wysokosc: 9 }).potrzebna, false); // 56x39x10 = 5,46
 });
 
 test('wyjscie spoza progow (>31,5 kg) zawsze warte docinki', () => {
@@ -194,8 +207,6 @@ test('brak wymiarow albo brak pasujacego kartonu -> null', () => {
   assert.equal(ocenDocinkeZListy(KARTONY, { dlugosc: 500, szerokosc: 500, wysokosc: 500 }), null);
 });
 
-test('tekst miesci sie w polu GT (varchar 50) przy najdluzszym kodzie kartonu', () => {
-  const kod = KARTONY.reduce((a, k) => (k.kod.length > a.length ? k.kod : a), '');
-  const t = `DOTNIJ ${kod} do 999,5x999,5x999,5`;
-  assert.ok(t.length <= 50, t);
+test('wartosc pola GT to samo "tak"', () => {
+  assert.equal(DOCINKA_TAK, 'tak');
 });

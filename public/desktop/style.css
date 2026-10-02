@@ -1161,6 +1161,9 @@ main {
    sie schowac - ta sama pulapka, co przy .pulpit-kafle.hidden i .podzakladki.hidden. */
 #zaj-zaznaczenie.hidden { display: none; }
 
+.cennik-check { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.9rem; white-space: nowrap; cursor: pointer; }
+.cennik-check input { cursor: pointer; }
+
 /* Staly uklad kolumn kalkulatora - zmiana statusu (OK -> dopasowane/ręczna) NIE moze rozpychac
    tabeli (width:100%, auto-layout) i przesuwac kolumny z cena przy kliknieciu +/−. Szerokosci
    dobrane z zapasem; kolumna "Rynek" (1) bierze reszte. */

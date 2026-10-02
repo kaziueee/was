@@ -77,11 +77,15 @@ function doplataSmartAllegro(cena) {
   return 11;
 }
 
-function stawkaDHL(kraj, waga) {
+// obnizProg: docinanie kartonu (tylko FR) - bierzemy stawke o `obnizProg` progow nizej, bo doc
+// przyciety karton wpada w nizszy przedzial wagowy DHL. Clamp do najnizszego progu.
+function stawkaDHL(kraj, waga, obnizProg = 0) {
   const t = DHL_STAWKI[kraj];
   if (!t) return null;
-  for (const [maxW, cena] of t) if (waga <= maxW) return cena;
-  return null; // powyzej 31,5 kg - poza Parcel Connect
+  let idx = t.findIndex(([maxW]) => waga <= maxW);
+  if (idx === -1) return null; // powyzej 31,5 kg - poza Parcel Connect
+  idx = Math.max(0, idx - (+obnizProg || 0));
+  return t[idx][1];
 }
 
 // --- wycena jednego rynku -> { nazwa, kraj, waluta, cena, zysk, marza, status, detal } ---
@@ -133,7 +137,10 @@ function policzAllegro(kosztPLN, r, g) {
 function policzAmazonDHL(kosztPLN, r, g) {
   const kurs = kursDla('EUR', g);
   if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });
-  const stawka = stawkaDHL(r.kraj, +g.waga || 0);
+  // docinanie: globalny checkbox (g.docinanieOn) + produkt docinalny (g.docinanie) -> prog DHL o 1 nizej
+  // dla CALEGO cennika DHL (wszystkie rynki amazon-dhl).
+  const dociecie = !!(g.docinanieOn && g.docinanie);
+  const stawka = stawkaDHL(r.kraj, +g.waga || 0, dociecie ? 1 : 0);
   if (stawka == null) return wynik(r, { blad: 'waga > 31,5 kg', status: 'bad' });
   const kosztDHL = stawka * (1 + (+g.paliwowa || 0) / 100) / kurs;
   const S = +r.wysKlient || 0;
@@ -150,7 +157,7 @@ function policzAmazonDHL(kosztPLN, r, g) {
   const total = pb + S, pn = total / (1 + v);
   const zysk = total * denomZysk - koszty;
   return wynik(r, { cena: pb, zysk: zysk * kurs, marza: pn > 0 ? zysk / pn * 100 : 0,
-    status: floorBinds ? 'warn' : 'ok', detal: { kosztDHL, wysKlient: S, waga: +g.waga || 0 } });
+    status: floorBinds ? 'warn' : 'ok', detal: { kosztDHL, wysKlient: S, waga: +g.waga || 0, docinanie: dociecie } });
 }
 
 function policzRynek(kosztPLN, r, g) {
@@ -179,7 +186,7 @@ function wycenaPrzyCenie(kosztPLN, r, g, cena) {
   if (r.typ === 'amazon-dhl') {
     kurs = kursDla('EUR', g);
     if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });
-    const stawka = stawkaDHL(r.kraj, +g.waga || 0);
+    const stawka = stawkaDHL(r.kraj, +g.waga || 0, (g.docinanieOn && g.docinanie) ? 1 : 0);
     if (stawka == null) return wynik(r, { blad: 'waga > 31,5 kg', status: 'bad' });
     kosztWys = stawka * (1 + (+g.paliwowa || 0) / 100) / kurs;
     p = ((+r.prowizja || 0) / 100) * (1 + (+g.vatProwizji || 0) / 100);

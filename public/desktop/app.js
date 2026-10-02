@@ -2055,10 +2055,15 @@ function renderCennik(d) {
       tr.innerHTML = `<td><strong>${ety}</strong></td><td colspan="4" class="opis">${r.blad}</td>`;
     } else {
       const sym = SYM[r.waluta] || r.waluta;
-      // Allegro i Amazon DE: cena edytowalna (ręczna kotwica); reszta tylko do odczytu
+      // Allegro i Amazon DE: cena edytowalna (ręczna kotwica) - [−] cena [+]. Reszta: ta sama siatka,
+      // puste sloty po bokach, żeby wszystkie ceny stały w jednej linii (wyrównanie kolumny).
       const cenaCell = CENNIK_EDYT.includes(r.nazwa)
-        ? `<input type="number" step="any" min="0" class="cennik-cena" data-rynek="${r.nazwa}" value="${(+r.cena).toFixed(2)}" style="width:5.5rem;text-align:right"> <span class="opis">${sym}</span>`
-        : `<strong>${fmtCennik(r.cena)} ${sym}</strong>`;
+        ? `<span class="cennik-cena-box">` +
+          `<button type="button" class="cennik-step" data-step="-1" data-rynek="${r.nazwa}" aria-label="Taniej o 1">−</button>` +
+          `<span class="cennik-cena-val"><input type="number" step="any" min="0" class="cennik-cena" data-rynek="${r.nazwa}" value="${(+r.cena).toFixed(2)}" aria-label="Cena ${r.nazwa}"><span class="cennik-cena-sym">${sym}</span></span>` +
+          `<button type="button" class="cennik-step" data-step="1" data-rynek="${r.nazwa}" aria-label="Drożej o 1">+</button>` +
+          `</span>`
+        : `<span class="cennik-cena-box"><span class="cennik-cena-val"><strong>${fmtCennik(r.cena)}</strong><span class="cennik-cena-sym">${sym}</span></span></span>`;
       let kolor = r.status === 'warn' ? '#8a5a00' : r.status === 'bad' ? '#a11d1d' : '#127a3e';
       let txt = r.status === 'warn' ? 'podbite do progu' : 'OK';
       if (r.reczna) { kolor = '#2563eb'; txt = 'ręczna ✎'; }
@@ -2072,12 +2077,17 @@ function renderCennik(d) {
     }
     tbody.appendChild(tr);
   }
-  // wpisanie ceny na Allegro/Amazon DE -> ta cena jest kotwicą, reszta łapie jej zysk netto
+  // wpisanie/kliknięcie ceny na Allegro/Amazon DE -> ta cena jest kotwicą, reszta łapie jej zysk netto
+  const ustawReczna = (nazwa, cena) => { if (cena > 0) { cennikAnchor = { nazwa, cena: +cena.toFixed(2) }; pobierzCennik(true); } };
   tbody.querySelectorAll('.cennik-cena').forEach((inp) => {
-    inp.addEventListener('change', () => {
-      if (!(+inp.value > 0)) return;
-      cennikAnchor = { nazwa: inp.dataset.rynek, cena: +inp.value };
-      pobierzCennik(true);
+    inp.addEventListener('focus', () => inp.select());                               // klik = od razu nadpisujesz
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } }); // Enter zatwierdza
+    inp.addEventListener('change', () => ustawReczna(inp.dataset.rynek, +inp.value));
+  });
+  tbody.querySelectorAll('.cennik-step').forEach((btn) => {                          // − taniej / + drożej o 1
+    btn.addEventListener('click', () => {
+      const inp = btn.parentElement.querySelector('.cennik-cena');
+      ustawReczna(btn.dataset.rynek, Math.max(0, (+inp.value || 0) + Number(btn.dataset.step)));
     });
   });
   el('cennik-baza').hidden = !cennikAnchor;   // "Wróć do bazy" tylko przy aktywnej ręcznej cenie

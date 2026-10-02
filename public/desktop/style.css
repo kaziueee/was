@@ -1160,3 +1160,47 @@ main {
 /* Selektor po ID wygrywa z .hidden (klasa), wiec bez tej linii pasek zaznaczenia nie chce
    sie schowac - ta sama pulapka, co przy .pulpit-kafle.hidden i .podzakladki.hidden. */
 #zaj-zaznaczenie.hidden { display: none; }
+
+/* Staly uklad kolumn kalkulatora - zmiana statusu (OK -> dopasowane/ręczna) NIE moze rozpychac
+   tabeli (width:100%, auto-layout) i przesuwac kolumny z cena przy kliknieciu +/−. Szerokosci
+   dobrane z zapasem; kolumna "Rynek" (1) bierze reszte. */
+.tabela-cennik { table-layout: fixed; }
+.tabela-cennik th:nth-child(2), .tabela-cennik td:nth-child(2) { width: 12rem; }  /* Cena sprzedaży */
+.tabela-cennik th:nth-child(3), .tabela-cennik td:nth-child(3) { width: 7rem; }   /* Zysk netto */
+.tabela-cennik th:nth-child(4), .tabela-cennik td:nth-child(4) { width: 5rem; }   /* Marża */
+.tabela-cennik th:nth-child(5), .tabela-cennik td:nth-child(5) { width: 8.5rem; } /* Status */
+
+/* --- Kalkulator cen: edytowalna cena Allegro/Amazon DE ---
+   Siatka [− | cena | +] ze STALYMI slotami na przyciski po bokach - tak samo w wierszach
+   bez przyciskow (puste sloty), dzieki czemu blok ceny stoi w jednej linii we WSZYSTKICH
+   wierszach. − taniej o 1, + drozej o 1; samo pole mozna tez wpisac z reki (bez ramki). */
+.cennik-cena-box {
+  display: inline-grid;
+  grid-template-columns: 1.6rem auto 1.6rem;
+  align-items: center;
+  column-gap: 0.3rem;
+}
+.cennik-cena-box > .cennik-step:first-child { grid-column: 1; }
+.cennik-cena-box > .cennik-step:last-child { grid-column: 3; }
+.cennik-cena-val {
+  grid-column: 2; justify-self: end;
+  display: inline-flex; align-items: baseline; gap: 0.2rem; white-space: nowrap;
+}
+.cennik-step {
+  width: 1.6rem; height: 1.6rem; box-sizing: border-box; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid #d5dbe5; border-radius: 50%;
+  background: #fff; color: #5b6676; cursor: pointer;
+  font-size: 1rem; font-weight: 700; line-height: 1;
+}
+.cennik-step:hover { border-color: #2563eb; color: #2563eb; background: #f0f4fa; }
+.cennik-cena {
+  width: 4rem; text-align: right;
+  font-size: 0.9rem; font-weight: 700; color: inherit;
+  border: none; background: transparent; padding: 0.12rem 0.15rem;
+  border-radius: 5px; -moz-appearance: textfield;
+}
+.cennik-cena::-webkit-outer-spin-button,
+.cennik-cena::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.cennik-cena:hover, .cennik-cena:focus { outline: none; background: #eef2f8; } /* delikatny sygnal edycji */
+.cennik-cena-sym { display: inline-block; width: 1.25rem; text-align: left; font-weight: 700; }

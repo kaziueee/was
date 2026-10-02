@@ -1155,6 +1155,15 @@ main {
    sie schowac - ta sama pulapka, co przy .pulpit-kafle.hidden i .podzakladki.hidden. */
 #zaj-zaznaczenie.hidden { display: none; }
 
+/* Staly uklad kolumn kalkulatora - zmiana statusu (OK -> dopasowane/ręczna) NIE moze rozpychac
+   tabeli (width:100%, auto-layout) i przesuwac kolumny z cena przy kliknieciu +/−. Szerokosci
+   dobrane z zapasem; kolumna "Rynek" (1) bierze reszte. */
+.tabela-cennik { table-layout: fixed; }
+.tabela-cennik th:nth-child(2), .tabela-cennik td:nth-child(2) { width: 12rem; }  /* Cena sprzedaży */
+.tabela-cennik th:nth-child(3), .tabela-cennik td:nth-child(3) { width: 7rem; }   /* Zysk netto */
+.tabela-cennik th:nth-child(4), .tabela-cennik td:nth-child(4) { width: 5rem; }   /* Marża */
+.tabela-cennik th:nth-child(5), .tabela-cennik td:nth-child(5) { width: 8.5rem; } /* Status */
+
 /* --- Kalkulator cen: edytowalna cena Allegro/Amazon DE ---
    Siatka [− | cena | +] ze STALYMI slotami na przyciski po bokach - tak samo w wierszach
    bez przyciskow (puste sloty), dzieki czemu blok ceny stoi w jednej linii we WSZYSTKICH

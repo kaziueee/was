@@ -18,7 +18,8 @@ router.get('/', (req, res) => {
 
 // GET /api/kartony/dobierz?dlugosc=&szerokosc=&wysokosc= - "w co to zapakowac" + waga gabarytowa
 // z kartonu dla podanych wymiarow. Podglad na Parametrach; bez admin-guardu (uzywa magazynier).
-// zrodlo: 'karton' = zmiescil sie w kartonie; 'wymiar' = fallback na gola wage; null = brak wymiarow.
+// zrodlo: 'karton' = zmiescil sie w kartonie; 'wymiar' = fallback na gola wage; 'wlasny' = wlasny
+// karton (op. zbiorcze = 1), gola waga produktu; null = brak wymiarow.
 // &waga= (opcjonalnie, kg) -> docinka liczona z waga rozliczeniowa; bez niej sama gabarytowa.
 // &zbiorcze= (opcjonalnie) -> "Ilosc w op. zbiorczym" z kartoteki; 1 = wlasny karton, bez docinki.
 router.get('/dobierz', (req, res) => {
@@ -27,7 +28,7 @@ router.get('/dobierz', (req, res) => {
     szerokosc: req.query.szerokosc,
     wysokosc: req.query.wysokosc,
   };
-  const w = kartony.liczWageGabarytowaKarton(wymiary);
+  const w = kartony.liczWageGabarytowaKarton(wymiary, req.query.zbiorcze);
   res.json({
     waga_gabarytowa_karton: w?.waga ?? null,
     karton_kod: w?.karton_kod ?? null,

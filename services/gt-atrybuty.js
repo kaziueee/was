@@ -200,7 +200,7 @@ async function pobierzAtrybuty(twIds) {
       // Waga gabarytowa "z kartonu" liczona NA ZYWO z wymiarow + aktualnej listy kartonow
       // (deterministyczna, nie musi byc czytana z GT). karton_kod = w jaki karton, albo null
       // gdy fallback na goly wymiar / brak wymiarow.
-      const karton = rozbite ? kartony.liczWageGabarytowaKarton(rozbite) : null;
+      const karton = rozbite ? kartony.liczWageGabarytowaKarton(rozbite, w.ilosc_zbiorcze) : null;
       wynik.set(String(w.pwd_IdObiektu), {
         wymiary: w.wymiary || null,
         rozbite,
@@ -232,6 +232,20 @@ async function zapiszAtrybuty(artykulGtId, zmiany) {
   const parametry = { id };
   const zapisane = {};
 
+  // Wagi wyliczane zaleza nie tylko od tego, co przyszlo w `zmiany`: waga z kartonu - od "Ilosci
+  // w op. zbiorczym" (1 = wlasny karton), docinka - dodatkowo od wymiarow/wagi, gdy zapis jest
+  // czesciowy. Doczytujemy wiec obecny wiersz z GT raz, przed liczeniem.
+  let obecne = {};
+  if ('wymiary' in zmiany || 'waga' in zmiany) {
+    try {
+      obecne = (await query(
+        `SELECT ${KOLUMNY.wymiary} AS wymiary, ${KOLUMNY.waga} AS waga, ${KOLUMNY.ilosc_zbiorcze} AS ilosc_zbiorcze
+         FROM pw_Dane WHERE pwd_TypObiektu = ${TYP_OBIEKTU_TOWAR} AND pwd_IdObiektu = @id`, { id })).recordset?.[0] ?? {};
+    } catch (err) {
+      return { ok: false, blad: `Odczyt atrybutow (SQL): ${err.message}` };
+    }
+  }
+
   if ('wymiary' in zmiany) {
     let wymiary = null;
     if (zmiany.wymiary !== null) {
@@ -258,7 +272,7 @@ async function zapiszAtrybuty(artykulGtId, zmiany) {
     // Waga gabarytowa "z kartonu" (najmniejszy pasujacy karton, fallback goly wymiar). Zawsze
     // trafia do `zapisane` (API/podglad); do GT pisana tylko gdy kolumna skonfigurowana - dopoki
     // placeholder=null, pole w GT jeszcze nie istnieje, wiec nie dokladamy go do UPSERT-a.
-    const kartonWaga = wymiary ? kartony.liczWageGabarytowaKarton(wymiary) : null;
+    const kartonWaga = wymiary ? kartony.liczWageGabarytowaKarton(wymiary, obecne.ilosc_zbiorcze) : null;
     // `waga` (przecinek) -> do odpowiedzi/podgladu (locale PL). `wagaGt` (KROPKA) -> do pola GT,
     // bo BaseLinker czyta te wartosc jako liczbe i przecinkowy tekst mu sie rozjezdza.
     zapisane.waga_gabarytowa_karton = kartonWaga?.waga ?? null;
@@ -285,18 +299,9 @@ async function zapiszAtrybuty(artykulGtId, zmiany) {
   }
 
   // Docinka zalezy od wymiarow, wagi (waga rozliczeniowa = max z obu) i "Ilosci w op. zbiorczym",
-  // a zapis bywa czesciowy - brakujace dane doczytujemy z GT, zeby polecenie nie bylo liczone
-  // z polowy danych.
+  // a zapis bywa czesciowy - brakujaca czesc bierzemy z `obecne` (doczytane wyzej z GT).
   const kolDocinki = ('wymiary' in zmiany || 'waga' in zmiany) ? await kolumnaDocinki() : null;
   if (kolDocinki) {
-    let obecne;
-    try {
-      obecne = (await query(
-        `SELECT ${KOLUMNY.wymiary} AS wymiary, ${KOLUMNY.waga} AS waga, ${KOLUMNY.ilosc_zbiorcze} AS ilosc_zbiorcze
-         FROM pw_Dane WHERE pwd_TypObiektu = ${TYP_OBIEKTU_TOWAR} AND pwd_IdObiektu = @id`, { id })).recordset?.[0] ?? {};
-    } catch (err) {
-      return { ok: false, blad: `Odczyt atrybutow (SQL): ${err.message}` };
-    }
     const wymiaryTekst = 'wymiary' in zmiany ? parametry.wymiary : (obecne.wymiary ?? '');
     const wagaTekst = 'waga' in zmiany ? parametry.waga : (obecne.waga ?? '');
     const rozbite = rozbierzWymiary(wymiaryTekst);

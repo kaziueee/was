@@ -47,7 +47,7 @@
   // wiec nie da sie jej trzymac na sztywno tutaj. Debounced; best-effort (blad nie blokuje ekranu).
   let kartonTimer = null;
   // `docinka` (z backendu, config/kartony.ocenDocinkeZListy): gdy potrzebna, linia mowi od razu
-  // polecenie dla pakujacego ("✂ P0 do 62x30x8"); "wlasny karton" gdy op. zbiorcze = 1.
+  // polecenie dla pakujacego ("✂ P0 do 62x30x8"). zrodlo 'wlasny' = op. zbiorcze 1, waga samego produktu.
   // Doklejone do tej samej linii, bo ekran Parametry musi sie zmiescic bez scrolla na 360x536.
   function pokazWageGabKarton(waga, kod, zrodlo, docinka) {
     const val = el('par-waga-gab-karton');
@@ -55,8 +55,8 @@
     const dotnij = docinka?.potrzebna;
     val.classList.toggle('par-docinka', !!dotnij);
     val.textContent = !waga ? '—'
-      : docinka?.wlasny_karton ? 'własny karton'
       : dotnij ? `✂ ${docinka.karton_kod} do ${docinka.wymiary}`
+      : zrodlo === 'wlasny' ? `${waga} kg · własny karton`
       : zrodlo === 'karton' ? `${waga} kg · ${kod}` : `${waga} kg · z wymiarów`;
   }
   function odswiezWageGabKarton() {

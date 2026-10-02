@@ -120,7 +120,7 @@ async function wykonajSpojnoscWagiGabarytowej() {
       KOLUMNY.waga_gabarytowa_karton,
       // wagaGt (KROPKA) - musi pasowac do formatu zapisanego w GT (BaseLinker), inaczej job
       // widzialby wieczny rozjazd i pisal w kolko.
-      (rozbite) => kartony.liczWageGabarytowaKarton(rozbite)?.wagaGt ?? null
+      (rozbite, w) => kartony.liczWageGabarytowaKarton(rozbite, w.ilosc_zbiorcze)?.wagaGt ?? null
     );
     if (karton.poprawione) {
       audyt.zapisz({

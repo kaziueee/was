@@ -210,3 +210,13 @@ test('brak wymiarow albo brak pasujacego kartonu -> null', () => {
 test('wartosc pola GT to samo "tak"', () => {
   assert.equal(DOCINKA_TAK, 'tak');
 });
+
+test('waga z kartonu dla wlasnego kartonu (op. zbiorcze = 1) = gola waga gabarytowa produktu', () => {
+  // HWHJBD90 32x24,5x21: zwykle C2 = 11,70 kg; we wlasnym kartonie 32*24,5*21/4000 = 4,12 kg.
+  const prod = { dlugosc: 32, szerokosc: 24.5, wysokosc: 21 };
+  const zwykly = liczWageKartonZListy(KARTONY, prod, '2');
+  assert.equal(zwykly.zrodlo, 'karton');
+  const wlasny = liczWageKartonZListy(KARTONY, prod, '1');
+  assert.deepEqual(wlasny, { waga: '4,12', wagaGt: '4.12', karton_kod: null, zrodlo: 'wlasny' });
+  assert.equal(liczWageKartonZListy(KARTONY, prod).zrodlo, 'karton'); // brak pola = karton dodatkowy
+});

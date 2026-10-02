@@ -135,10 +135,15 @@ function dobierzKarton(wymiary) {
 //   wagaGt = "0.75" (KROPKA)    - do ZAPISU w polu GT czytanym przez BaseLinker
 // Gdy produkt nie miesci sie w zadnym kartonie (wiekszy od najwiekszego) - FALLBACK na gola
 // wage gabarytowa produktu (ten sam wzor obj/DZIELNIK_DHL, zrodlo "wymiar").
-function liczWageKartonZListy(lista, wymiary) {
+// Towar we WLASNYM kartonie wysylkowym (`iloscZbiorcze` = 1, patrz maWlasnyKarton) nie dostaje
+// kartonu dodatkowego - kurier liczy samo jego pudelko, wiec waga = gola waga gabarytowa produktu,
+// zrodlo "wlasny" (decyzja usera 2026-10-02; wczesniej HWHJBD90 deklarowal 11,70 kg kartonu C2,
+// ktorego nikt nie uzywa).
+function liczWageKartonZListy(lista, wymiary, iloscZbiorcze) {
   const dims = normalizujWymiary(wymiary);
   if (!dims) return null;
-  const k = dobierzKartonZListy(lista, dims);
+  const wlasny = maWlasnyKarton(iloscZbiorcze);
+  const k = wlasny ? null : dobierzKartonZListy(lista, dims);
   const kg = k
     ? wagaGabarytowa(k)
     : Math.max((dims.dlugosc * dims.szerokosc * dims.wysokosc) / DZIELNIK_DHL, WAGA_GAB_MIN);
@@ -146,7 +151,7 @@ function liczWageKartonZListy(lista, wymiary) {
     waga: formatWaga(kg),
     wagaGt: formatWagaGt(kg),
     karton_kod: k ? k.kod : null,
-    zrodlo: k ? 'karton' : 'wymiar',
+    zrodlo: wlasny ? 'wlasny' : k ? 'karton' : 'wymiar',
   };
 }
 

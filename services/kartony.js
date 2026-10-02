@@ -45,8 +45,9 @@ function dobierzKarton(wymiary) {
 
 // { waga, karton_kod, zrodlo } dla wymiarow produktu; fallback na gola wage gdy nic nie pasuje;
 // null gdy brak wymiarow. Patrz config/kartony.liczWageKartonZListy.
-function liczWageGabarytowaKarton(wymiary) {
-  return liczWageKartonZListy(aktywneKartony(), wymiary);
+// `iloscZbiorcze` = "Ilosc w op. zbiorczym" (pwd_Tekst04): 1 = wlasny karton -> gola waga produktu.
+function liczWageGabarytowaKarton(wymiary, iloscZbiorcze) {
+  return liczWageKartonZListy(aktywneKartony(), wymiary, iloscZbiorcze);
 }
 
 // Czy karton trzeba dociac, zeby paczka spadla w nizszy prog DHL (patrz config/kartony,

@@ -194,6 +194,8 @@ Listy wartości (typy, przeznaczenia, statusy) front bierze z `GET /api/lokaliza
 
 **Dostawa stoi poza tym wyścigiem** (`GRUPA_PRZYDZIALU`) — sięga po budżet po całej drobnicy, czyli schodzi pierwsza. Bez tego świeża paleta wypchnęłaby starszy zwrot, a to nadal decyzja usera z 2026-07-17. Rozpoznanie samego rodzaju (`PZ ← KFS` = zwrot, `MM z MAG/LS/BRK` = przywózka) było i jest poprawne — problem nigdy nie leżał w rozpoznaniu dokumentu, tylko w podziale niewystarczającego stanu.
 
+**Korekta MM+RW to nie przywózka (2026-10-06).** MM z MAG/LS/BRK na K4, któremu **tego samego dnia** odpowiada RW z K4 na ten sam towar i **tę samą ilość** (RW bez `dok_DoDokId`), to wyrównanie stanów w papierach — nie wchodzi do kubełka przywózki (`bezKorektyRw` w `gt-dokumenty.js`, oba zapytania: kandydaci i kubełki). Rozbicie nie odejmuje rozchodów od dokumentów (zejście bierze półka), więc RW zbijało stan do sztuki leżącej NA PÓŁCE, a ta lądowała w przywózce: na FPHFX93-JGF95 (MM 98/2026 BRK→K4 8 szt. + RW 13943, „wyrównanie stanów") wiersz „Rozłóż 1" wracał po każdym rozłożeniu (7 razy, każde podbijało I7-P2, rozjazdy ścinały z powrotem), a w `tw_Pole1` wisiało `+StP1`. **RW powiązane z PW to kompletacja zestawu** (składnik z Kajtka od razu do zestawu, 6 par od 19.07) — świadomie NIE odsiewane, na później (decyzja usera).
+
 > Moduł inwentaryzacji usunięty (2026-06-25) — tabele `inwentaryzacje`/`pozycje_inwentaryzacji`, route `/api/inwentaryzacja`, ekran Zebry i panel desktopu już nie istnieją. Do zrobienia od nowa. Most C# nadal ma endpointy RW/PW (nieużywane).
 
 ## Ekrany Zebry

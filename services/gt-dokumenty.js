@@ -345,6 +345,29 @@ function zWyjatkami(warunekDaty, alias, parametry) {
   return `(${warunekDaty} OR ${alias}.dok_NrPelny IN (${placeholders}))`;
 }
 
+// "Ta przywozka nie jest korekta stanu" - MM na K4, ktoremu TEGO SAMEGO DNIA odpowiada RW z K4
+// na ten sam towar i te sama ilosc, to wyrownanie stanow w papierach, nie przyjazd towaru.
+// FPHFX93-JGF95 (29.09): MM 98/2026 BRK -> K4 8 szt. "wyrownanie stanow z hdy64" + RW 13943
+// 8 szt. "wyrownanie stanow". Rozbicie nie odejmuje rozchodow od dokumentow (zejscie bierze
+// polka), wiec RW zbilo stan do 1 szt. lezacej NA POLCE, a ta sztuka trafila do kubelka
+// przywozki: wiersz "Rozloz 1" wracal po kazdym rozlozeniu, a +StP1 wisialo w tw_Pole1.
+//
+// Tylko RW BEZ dok_DoDokId. RW powiazane z PW to kompletacja zestawu (MAG -> K4 i od razu do
+// zestawu, 6 takich par od 19.07) - swiadomie zostawione na pozniej (decyzja usera 2026-10-06).
+// Ilosc co do sztuki: czesciowe RW to juz inna historia (np. czesc przyjechala uszkodzona).
+// `alias`/`aliasPoz` - dokument MM i jego pozycja w zapytaniu wolajacym. Jedno miejsce, bo
+// warunek musi byc IDENTYCZNY w zapytaniu o kandydatow i o kubelki (patrz zWyjatkami).
+function bezKorektyRw(alias, aliasPoz, parametry) {
+  parametry.korRwTyp = RW_TYP;
+  parametry.korMag = MAG_K4;
+  return `NOT EXISTS (
+        SELECT 1 FROM dok__Dokument rw
+        JOIN dok_Pozycja rp ON rp.ob_DokMagId = rw.dok_Id
+        WHERE rw.dok_Typ = @korRwTyp AND rw.dok_MagId = @korMag AND rw.dok_DoDokId IS NULL
+          AND rw.dok_DataWyst = ${alias}.dok_DataWyst AND rp.ob_TowId = ${aliasPoz}.ob_TowId
+        HAVING SUM(rp.ob_Ilosc) = ${aliasPoz}.ob_Ilosc)`;
+}
+
 // Zapytanie ODWROTNE do pobierzDostawyK4: tam pytamy "co przyszlo na TE towary", tu "ktore
 // towary maja w ogole zwrot na K4". Potrzebne do listy zwrotow, ktora nie zna z gory zbioru
 // SKU (karta produktu zna - stad tamten kierunek).
@@ -664,6 +687,7 @@ async function pobierzTowaryZPrzywozkamiK4() {
       AND dok.dok_MagId IN (${zewnPlaceholders})
       AND ISNULL(dok.dok_Uwagi, '') NOT LIKE 'WMS-RUCH:%'
       AND ${zWyjatkami('dok.dok_DataWyst >= @od', 'dok', parametry)}
+      AND ${bezKorektyRw('dok', 'o', parametry)}
   `, parametry);
 
   return recordset.map((r) => ({
@@ -730,6 +754,7 @@ async function pobierzDostawyK4(twIds) {
         AND dok.dok_MagId IN (${zewnPlaceholders})
         AND ISNULL(dok.dok_Uwagi, '') NOT LIKE 'WMS-RUCH:%'
         AND ${zWyjatkami('dok.dok_DataWyst >= @odDrobne', 'dok', parametry)}
+        AND ${bezKorektyRw('dok', 'o', parametry)}
         AND o.ob_TowId IN (${placeholders})
       GROUP BY o.ob_TowId, dok.dok_Id, dok.dok_NrPelny, mz.mag_Symbol, dok.dok_DataWyst
 

@@ -88,6 +88,21 @@ function wymagajAdmin(req, res, next) {
   next();
 }
 
+// Dostep tylko dla wymienionych rol - takze ODCZYT (inaczej niz wymagajSesjiNaZapisie).
+// Uzycie: wymagajRoli('admin', 'biuro'). Rola 'biuro' = ceny i sprzedaz (Cennik, Zadanie
+// sprzedazowe); poza tym dziala jak magazynier. Ukrycie zakladki na desktopie to tylko UX -
+// zamkiem jest ten middleware (CLAUDE.md zasada 5).
+function wymagajRoli(...role) {
+  return function (req, res, next) {
+    const s = sesjaZTokenu(tokenZadania(req));
+    if (!s) return res.status(401).json({ blad: 'Wymagane logowanie' });
+    if (!role.includes(s.rola)) return res.status(403).json({ blad: 'Brak uprawnień (wymagana rola: ' + role.join(' / ') + ')' });
+    req.uzytkownik = s;
+    if (req.body && typeof req.body === 'object') req.body.operator = s.imie;
+    next();
+  };
+}
+
 // Rola 'uczen' = Sciezki + zwroty. Zwrot to tez obchod z checklista (wozek zamiast alejki),
 // dlatego kafel Zwroty siedzi w menu Sciezek na Zebrze, a nie w menu glownym.
 //
@@ -137,5 +152,5 @@ function sprzatnijSesje() {
 
 module.exports = {
   hashPin, sprawdzPin, utworzSesje, usunSesje, sesjaZTokenu, tokenZadania,
-  opcjonalnaSesja, wymagajSesji, wymagajSesjiNaZapisie, wymagajAdmin, blokujUcznia, sprzatnijSesje,
+  opcjonalnaSesja, wymagajSesji, wymagajSesjiNaZapisie, wymagajAdmin, wymagajRoli, blokujUcznia, sprzatnijSesje,
 };

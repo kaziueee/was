@@ -283,6 +283,12 @@ WMS jako warstwa **danych opisowych** nad GT. To NIE są stany — reguła #1 ic
 
 Ekran: **Parametry** (`public/zebra/parametry.js`, widok `#widok-parametry`), waga gabarytowa tylko do odczytu. Ścieżka **„Brak parametrów"** (`tryb: 'parametry'` w mapie `SCIEZKI`) — nowy gatunek ścieżki: **uzupełnia dane zamiast liczyć**, więc bez raportu i bez „niezgodności". Po skanie potwierdzającym otwiera ekran Parametry, po zapisie wraca i przechodzi dalej. Adres pozycji: WMS ma pierwszeństwo, fallback na `tw_Pole1`/`tw_Pole8` z GT (bez tego prawie cała lista byłaby bezadresowa — WMS zna lokalizacje tylko części asortymentu).
 
+## Zadanie sprzedażowe + rola `biuro` (2026-10-06)
+
+Zakładka desktopu **„Sprzedaż"** (`#sprzedaz`): lista SKU, którym chcemy podbić sprzedaż (motywacyjne zadanie dla biura), i efekt: **przed startem (śr. szt./tydz. z 4 tyg.) · od startu · ostatnie 7 dni**. Liczone **na żywo z FS z magazynu K4** (`dok_Typ=2`, `dok_Status=1`, `dok_MagId=4` — decyzja usera; FS z MAG to ~0,2% sztuk; pozycje pod `ob_DokHanId`) przy każdym otwarciu — w WMS trzymamy tylko listę (`zadania_sprzedazowe`, klucz `tw_Id`), nie liczby. **Paragony (PA) i korekty (KFS) świadomie pominięte** (decyzja usera): ~99,7% FS powstaje z ZK, czyli to sprzedaż internetowa; PA to stanowiska 1/2. Czysta logika dat w `services/sprzedaz-model.js` (testy `test/sprzedaz-model.test.js`), zapytanie `services/gt-sprzedaz.js`, trasa `routes/sprzedaz.js`. GT padnięte → lista zostaje, liczby „—" (`gt_ok:false`).
+
+**Rola `biuro`** = magazynier + Cennik + Sprzedaż. `/api/cennik` i `/api/sprzedaz` mają `auth.wymagajRoli('admin', 'biuro')` — **także na odczyt** (koszt zakupu nie jest dla hali). Ukrycie zakładek na desktopie (`pokazZakladkeAdmina`) to tylko UX.
+
 ## Most C# — endpointy (localhost:5000)
 
 ```

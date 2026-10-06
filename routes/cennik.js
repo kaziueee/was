@@ -3,7 +3,7 @@
 // GET /api/cennik/:sku[?waga=&tryb=&bufor=&anchor=&anchorCena=&docinanieOn=] - koszt z GT + ceny rynkow.
 // tryb: 'marza' | 'zysk' | 'kotwica' (kotwica: FR/IT/ES/NL celuja w zysk Amazon DE + bufor zl).
 // docinanieOn=1 -> caly cennik DHL o 1 prog nizej (dla towarow docinalnych - pole "Docinanie").
-// Czysty odczyt z GT (jak /api/zestawienia) - bez sesji. Nie robi zadnych ruchow/zapisow.
+// Czysty odczyt z GT, ale tylko dla rol admin/biuro (app.js, auth.wymagajRoli). Nie robi zadnych ruchow/zapisow.
 
 const express = require('express');
 const router = express.Router();

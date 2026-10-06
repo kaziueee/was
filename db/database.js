@@ -303,6 +303,19 @@ if (!kolumnyKartonow.some((k) => k.name === 'kolejnosc')) {
   console.log('Migracja: dodano kolumne kolejnosc do kartony (backfill = id)');
 }
 
+// Zadanie sprzedazowe (zakladka desktopu, rola admin/biuro): lista SKU, ktorym chcemy
+// podbic sprzedaz. Tozsamosc = tw_Id; symbol/nazwa to kopia do pokazania w razie padu GT.
+// Sprzedaz NIE jest tu trzymana - liczy sie z FS w GT przy kazdym otwarciu.
+db.exec(`CREATE TABLE IF NOT EXISTS zadania_sprzedazowe (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  artykul_gt_id TEXT NOT NULL,
+  symbol TEXT,
+  nazwa TEXT,
+  od_dnia TEXT NOT NULL,
+  dodal TEXT,
+  dodano DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // Seed z config/kartony.KARTONY gdy tabela pusta. kolejnosc = pozycja na liscie (1..N) -
 // startowo mniej wiecej wg objetosci jak plik, a admin moze ja przeciagnac gdzie chce.
 if (db.prepare('SELECT COUNT(*) AS c FROM kartony').get().c === 0) {

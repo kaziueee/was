@@ -19,7 +19,8 @@
          Podzakladki tez maja swoj adres (#ruchy/mm), wiec i one sa linkowalne. -->
     <nav id="zakladki">
       <a href="#produkty" class="tab-link" data-panel="produkty">Produkty</a>
-      <a href="#cennik" class="tab-link" data-panel="cennik">Cennik</a>
+      <a href="#cennik" class="tab-link" data-panel="cennik" id="tab-cennik" style="display:none">Cennik</a>
+      <a href="#sprzedaz" class="tab-link" data-panel="sprzedaz" id="tab-sprzedaz" style="display:none">Sprzedaż</a>
       <a href="#ruchy/uzupelnienia" class="tab-link" data-panel="ruchy">Ruchy</a>
       <a href="#zwroty" class="tab-link" data-panel="zwroty">Zwroty</a>
       <a href="#sciezki" class="tab-link" data-panel="sciezki">Ścieżki</a>
@@ -711,6 +712,7 @@
         <input type="text" id="nowy-user-pin" inputmode="numeric" maxlength="8" placeholder="PIN (opcjonalny)">
         <select id="nowy-user-rola">
           <option value="magazynier">Magazynier</option>
+          <option value="biuro">Biuro (+ Cennik, Sprzedaż)</option>
           <option value="admin">Admin</option>
           <option value="uczen">Uczeń (tylko Ścieżki)</option>
         </select>
@@ -779,6 +781,35 @@
         </table>
       </div>
       <p id="cennik-brak" class="hint">Wpisz SKU, aby zobaczyć ceny.</p>
+    </section>
+
+    <!-- Panel Sprzedaz (admin/biuro): zadanie sprzedazowe - SKU, ktorym podbijamy sprzedaz,
+         i efekt liczony z faktur (FS) w GT przy kazdym otwarciu. -->
+    <section id="panel-sprzedaz" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Zadanie sprzedażowe</h2>
+        <button type="button" id="sprzedaz-odswiez" class="btn btn-small">↻ Odśwież</button>
+      </div>
+      <p class="hint">Dodaj SKU, którym chcemy zwiększyć sprzedaż. Liczymy sztuki z faktur (FS) z magazynu K4 w Subiekcie — bez paragonów i korekt.</p>
+      <form id="form-sprzedaz" class="formularz-inline">
+        <input type="text" id="sprzedaz-kod" placeholder="SKU lub EAN" autocomplete="off" required>
+        <input type="date" id="sprzedaz-od" title="Od kiedy liczymy (domyślnie dziś)">
+        <button type="submit" class="btn btn-primary">+ Dodaj</button>
+      </form>
+      <p id="sprzedaz-info" class="hint hidden"></p>
+      <div class="tabela-wrapper">
+        <table class="tabela">
+          <thead>
+            <tr><th>SKU</th><th>Nazwa</th><th>Od</th>
+              <th style="text-align:right" title="Średnio sztuk na tydzień w 4 tygodniach przed startem">Przed (szt./tydz.)</th>
+              <th style="text-align:right">Od startu</th>
+              <th style="text-align:right">Ostatnie 7 dni</th>
+              <th>Dodał</th><th></th></tr>
+          </thead>
+          <tbody id="sprzedaz-tbody"></tbody>
+        </table>
+      </div>
+      <p id="sprzedaz-brak" class="hint hidden">Lista jest pusta — dodaj pierwsze SKU.</p>
     </section>
 
     <!-- Modal: historia ruchow/zmian jednego SKU (ikona "H" w modalu produktu) -->

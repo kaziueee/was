@@ -107,6 +107,7 @@ const panele = {
   uzytkownicy: { sekcja: 'panel-uzytkownicy', zaladowano: false, odswiez: odswiezUzytkownicy },
   kartony: { sekcja: 'panel-kartony', zaladowano: false, odswiez: odswiezKartony },
   cennik: { sekcja: 'panel-cennik', zaladowano: false, odswiez: odswiezCennik },
+  sprzedaz: { sekcja: 'panel-sprzedaz', zaladowano: false, odswiez: odswiezSprzedaz },
 };
 
 // Grupa "Ruchy" - jedna pozycja w nawigacji, cztery osobne panele pod spodem. Trzymamy je
@@ -1916,6 +1917,13 @@ function pokazZakladkeAdmina() {
     const tab = el(id);
     if (tab) tab.style.display = admin ? '' : 'none';
   }
+  // Ceny i sprzedaz: admin + biuro. Zamkiem jest backend (auth.wymagajRoli) - tu tylko UX.
+  const rola = (window.WMS?.user() || {}).rola;
+  const biuro = !window.WMS || rola === 'admin' || rola === 'biuro';
+  for (const id of ['tab-cennik', 'tab-sprzedaz']) {
+    const tab = el(id);
+    if (tab) tab.style.display = biuro ? '' : 'none';
+  }
 }
 if (window.WMS) WMS.gotowe.then(pokazZakladkeAdmina);
 window.addEventListener('wms-zalogowano', pokazZakladkeAdmina);
@@ -1980,7 +1988,7 @@ function renderujUzytkownicy(lista) {
     if (u.maPin) akc.appendChild(przyciskUser('Bez PIN', 'btn-small', () => zapiszUser(u.id, { usunPin: true })));
     const selRola = document.createElement('select');
     selRola.className = 'btn-small';
-    for (const [val, txt] of [['magazynier', 'Magazynier'], ['admin', 'Admin'], ['uczen', 'Uczeń']]) {
+    for (const [val, txt] of [['magazynier', 'Magazynier'], ['biuro', 'Biuro'], ['admin', 'Admin'], ['uczen', 'Uczeń']]) {
       const o = document.createElement('option'); o.value = val; o.textContent = txt; if (u.rola === val) o.selected = true; selRola.appendChild(o);
     }
     selRola.addEventListener('change', () => zapiszUser(u.id, { rola: selRola.value }));
@@ -2005,6 +2013,62 @@ el('form-nowy-user').addEventListener('submit', async (e) => {
     odswiezUzytkownicy();
   } catch (err) { pokazKomunikat(err.message, 'blad'); }
 });
+
+// === SPRZEDAZ (zadanie sprzedazowe: SKU -> sztuki z FS w GT) ===
+
+function escSprz(t) {
+  return String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+async function odswiezSprzedaz() {
+  try { renderujSprzedaz(await api('/api/sprzedaz/zadania')); }
+  catch (err) { pokazKomunikat(err.message, 'blad'); }
+}
+
+function renderujSprzedaz(d) {
+  const info = el('sprzedaz-info');
+  info.textContent = d.gt_ok ? '' : 'Subiekt GT nie odpowiada — lista bez liczb sprzedaży.';
+  info.classList.toggle('hidden', d.gt_ok);
+  const tbody = el('sprzedaz-tbody'); tbody.innerHTML = '';
+  el('sprzedaz-brak').classList.toggle('hidden', d.zadania.length > 0);
+  const liczba = (v) => (v == null ? '—' : String(v).replace('.', ','));
+  for (const z of d.zadania) {
+    const tr = document.createElement('tr');
+    // wzrost = ostatnie 7 dni ponad srednia tygodniowa sprzed startu
+    const wzrost = d.gt_ok && z.ostatnie_7_dni > z.przed_tygodniowo;
+    tr.innerHTML = `<td><strong>${escSprz(z.symbol)}</strong></td><td>${escSprz(z.nazwa)}</td><td>${escSprz(z.od_dnia)}</td>
+      <td style="text-align:right">${liczba(z.przed_tygodniowo)}</td>
+      <td style="text-align:right"><strong>${liczba(z.od_startu)}</strong></td>
+      <td style="text-align:right${wzrost ? ';color:#1a7f37;font-weight:600' : ''}">${liczba(z.ostatnie_7_dni)}${wzrost ? ' ▲' : ''}</td>
+      <td>${escSprz(z.dodal || '')}</td><td></td>`;
+    const usun = document.createElement('button');
+    usun.type = 'button'; usun.className = 'btn btn-small btn-danger'; usun.textContent = 'Usuń';
+    usun.addEventListener('click', async () => {
+      if (!confirm(`Usunąć ${z.symbol} z listy?`)) return;
+      try { await api(`/api/sprzedaz/zadania/${z.id}`, { method: 'DELETE' }); odswiezSprzedaz(); }
+      catch (err) { pokazKomunikat(err.message, 'blad'); }
+    });
+    tr.lastElementChild.appendChild(usun);
+    tbody.appendChild(tr);
+  }
+}
+
+el('form-sprzedaz').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const kod = el('sprzedaz-kod').value.trim();
+  if (!kod) return;
+  const od = el('sprzedaz-od').value;
+  try {
+    const t = await api('/api/sprzedaz/zadania', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kod, od_dnia: od || undefined }),
+    });
+    el('sprzedaz-kod').value = '';
+    pokazKomunikat(`Dodano ${t.symbol}`, 'ok');
+    odswiezSprzedaz();
+  } catch (err) { pokazKomunikat(err.message, 'blad'); }
+});
+el('sprzedaz-odswiez').addEventListener('click', odswiezSprzedaz);
 
 // === CENNIK (kalkulator cen: SKU -> koszt zakupu z GT -> ceny per rynek) ===
 const CENNIK_EDYT = ['Allegro', 'Amazon DE'];   // rynki z edytowalną ceną (ręczna kotwica)

@@ -4,6 +4,9 @@ const auth = require('../services/auth');
 
 const router = express.Router();
 
+// 'biuro' = magazynier + Cennik i Zadanie sprzedazowe (auth.wymagajRoli w app.js)
+const ROLE = ['admin', 'magazynier', 'biuro', 'uczen'];
+
 // bez haszy PIN na zewnatrz
 function publiczny(u) {
   return { id: u.id, imie: u.imie, rola: u.rola, aktywny: u.aktywny, maPin: !!u.pin_hash };
@@ -60,7 +63,7 @@ router.get('/', auth.wymagajAdmin, (req, res) => {
 // POST /api/uzytkownicy { imie, pin?, rola? }
 router.post('/', auth.wymagajAdmin, (req, res) => {
   const imie = (req.body?.imie ?? '').trim();
-  const rola = ['admin', 'magazynier', 'uczen'].includes(req.body?.rola) ? req.body.rola : 'magazynier';
+  const rola = ROLE.includes(req.body?.rola) ? req.body.rola : 'magazynier';
   const pin = req.body?.pin ? String(req.body.pin).trim() : null;
   if (!imie) return res.status(400).json({ blad: 'Pole "imie" jest wymagane' });
   if (pin && !/^\d{4,8}$/.test(pin)) return res.status(400).json({ blad: 'PIN musi miec 4-8 cyfr' });
@@ -80,7 +83,7 @@ router.put('/:id', auth.wymagajAdmin, (req, res) => {
   if (!u) return res.status(404).json({ blad: 'Uzytkownik nie istnieje' });
 
   const imie = req.body?.imie !== undefined ? String(req.body.imie).trim() : u.imie;
-  const rola = req.body?.rola !== undefined ? (['admin', 'magazynier', 'uczen'].includes(req.body.rola) ? req.body.rola : 'magazynier') : u.rola;
+  const rola = req.body?.rola !== undefined ? (ROLE.includes(req.body.rola) ? req.body.rola : 'magazynier') : u.rola;
   const aktywny = req.body?.aktywny !== undefined ? (req.body.aktywny ? 1 : 0) : u.aktywny;
   if (!imie) return res.status(400).json({ blad: 'Pole "imie" nie moze byc puste' });
   const kolizja = db.prepare('SELECT 1 FROM uzytkownicy WHERE imie=? AND id<>?').get(imie, id);

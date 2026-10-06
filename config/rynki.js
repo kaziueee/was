@@ -30,7 +30,9 @@ const DOMYSLNE = {
 // Rynki (preset). typ: 'allegro' | 'amazon-dhl' | 'flat'.
 const RYNKI = [
   { nazwa: 'Allegro',     kraj: 'PL', waluta: 'PLN', vat: 23, prowizja: 13.3, typ: 'allegro' },
-  { nazwa: 'Amazon DE',   kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl' },
+  // darmowaOd: cena towaru, POWYZEJ ktorej klient nie placi za wysylke (przy rownej jeszcze placi).
+  // Amazon DE, grupa "DE Kurier": 39,99 + 4,99 wysylki, 40,00 bez wysylki (zweryfikowane SP-API 2026-10-06).
+  { nazwa: 'Amazon DE',   kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 15, wysKlient: 4.99, darmowaOd: 39.99, typ: 'amazon-dhl' },
   // kotwica:true -> w trybie 'kotwica' celuja w zysk Amazon DE + bufor (zamiast wlasnej marzy) - drozsze zwroty
   { nazwa: 'Amazon FR',   kraj: 'FR', waluta: 'EUR', vat: 20, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
   { nazwa: 'Amazon IT',   kraj: 'IT', waluta: 'EUR', vat: 22, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
@@ -70,6 +72,24 @@ function do99(x) {
 function totalCelu(koszty, D, denomZysk, kurs, g) {
   if (g.tryb === 'zysk') return (koszty + (+g.celZysk || 0) / kurs) / denomZysk;
   return koszty / D;
+}
+
+// Wysylka placona przez klienta przy danej cenie towaru - 0 powyzej progu `darmowaOd` (o ile rynek go ma).
+function wysylkaKlienta(r, cena) {
+  const S = +r.wysKlient || 0;
+  return r.darmowaOd != null && cena > r.darmowaOd ? 0 : S;
+}
+
+// Cena towaru (,99) dla docelowego `total` (to, co placi kupujacy). Bez progu: total - wysylka.
+// Z progiem darmowej wysylki: gdy cena z wysylka wyszlaby POWYZEJ progu, klient wysylki nie placi,
+// wiec caly total musi siedziec w cenie towaru - cena skacze o ~wysylke w gore. "Dziura" tuz nad progiem
+// (40,00..total) jest przez to omijana sama: albo cena <= progu + wysylka, albo cena = caly total.
+function cenaDlaTotal(total, r) {
+  const S = +r.wysKlient || 0;
+  let pb = do99(total - S);
+  if (r.darmowaOd != null && pb > r.darmowaOd) pb = do99(total);
+  if (pb < 0.99) pb = 0.99;
+  return { pb, S: wysylkaKlienta(r, pb) };
 }
 
 function doplataSmartAllegro(cena) {
@@ -143,7 +163,6 @@ function policzAmazonDHL(kosztPLN, r, g) {
   const stawka = stawkaDHL(r.kraj, +g.waga || 0, dociecie ? 1 : 0);
   if (stawka == null) return wynik(r, { blad: 'waga > 31,5 kg', status: 'bad' });
   const kosztDHL = stawka * (1 + (+g.paliwowa || 0) / 100) / kurs;
-  const S = +r.wysKlient || 0;
   const v = (+r.vat || 0) / 100, m = (+g.marza || 0) / 100;
   const p = ((+r.prowizja || 0) / 100) * (1 + (+g.vatProwizji || 0) / 100); // prowizja netto + VAT
   const koszty = kosztPLN / kurs + kosztDHL + (+g.obsluga || 0) / kurs;
@@ -152,8 +171,7 @@ function policzAmazonDHL(kosztPLN, r, g) {
   const totalCel = totalCelu(koszty, D, denomZysk, kurs, g);
   const totalFloor = (koszty + (+g.minzysk || 0) / kurs) / denomZysk;
   const floorBinds = totalFloor > totalCel + 1e-9;
-  let pb = do99(Math.max(totalCel, totalFloor) - S);
-  if (pb < 0.99) pb = 0.99;
+  const { pb, S } = cenaDlaTotal(Math.max(totalCel, totalFloor), r); // S = 0 powyzej progu darmowej wysylki
   const total = pb + S, pn = total / (1 + v);
   const zysk = total * denomZysk - koszty;
   return wynik(r, { cena: pb, zysk: zysk * kurs, marza: pn > 0 ? zysk / pn * 100 : 0,
@@ -180,8 +198,8 @@ function wycenaPrzyCenie(kosztPLN, r, g, cena) {
     return wynik(r, { cena: pb, zysk, marza: pn > 0 ? zysk / pn * 100 : 0, status: 'ok', reczna: true,
       detal: { dostawaSmart: dost, oplataPct: pb > 0 ? (pb * p + dost) / pb * 100 : 0 } });
   }
-  // flat + amazon-dhl: total = cena + wysylka klienta; prowizja+VAT od total
-  const S = +r.wysKlient || 0, v = (+r.vat || 0) / 100;
+  // flat + amazon-dhl: total = cena + wysylka klienta (0 powyzej progu darmowej wysylki); prowizja+VAT od total
+  const S = wysylkaKlienta(r, pb), v = (+r.vat || 0) / 100;
   let kurs, kosztWys, p;
   if (r.typ === 'amazon-dhl') {
     kurs = kursDla('EUR', g);
@@ -253,6 +271,6 @@ function policzWszystkie(kosztPLN, nadpisz = {}) {
 
 module.exports = {
   DOMYSLNE, RYNKI, DHL_STAWKI, ALLEGRO_PROGI,
-  do99, totalCelu, kursDla, doplataSmartAllegro, stawkaDHL,
+  do99, totalCelu, kursDla, doplataSmartAllegro, stawkaDHL, wysylkaKlienta, cenaDlaTotal,
   policzRynek, policzKotwica, wycenaPrzyCenie, policzZRecznaCena, policzWszystkie,
 };

@@ -21,7 +21,9 @@ const DOMYSLNE = {
   minzysk: 5,       // prog min. zysku netto (zl) - podbija cene
   eur: 4.20,        // PLN za 1 EUR (ostrozny kurs)
   ron: 0.90,        // PLN za 1 RON
-  paliwowa: 14,     // doplata paliwowa DHL %
+  // doplata paliwowa i drogowa DHL eCommerce % (paczki do 31,5 kg). Indeksowana CO MIESIAC - aktualna stawka:
+  // dhl.com/pl-pl/ecommerce/dla-biznesu/obsluga/oplata-paliwowa.html (10.2026: 28%, 09: 25,5%, 08: 23%).
+  paliwowa: 28,
   vatProwizji: 23,  // prowizja Amazon to netto -> dolicz VAT (reverse-charge PL)
   ads: 3,           // narzut Allegro Ads/promo %
   waga: 1,          // waga rozliczeniowa (kg) - do stawki DHL

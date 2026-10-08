@@ -283,6 +283,16 @@ WMS jako warstwa **danych opisowych** nad GT. To NIE są stany — reguła #1 ic
 
 Ekran: **Parametry** (`public/zebra/parametry.js`, widok `#widok-parametry`), waga gabarytowa tylko do odczytu. Ścieżka **„Brak parametrów"** (`tryb: 'parametry'` w mapie `SCIEZKI`) — nowy gatunek ścieżki: **uzupełnia dane zamiast liczyć**, więc bez raportu i bez „niezgodności". Po skanie potwierdzającym otwiera ekran Parametry, po zapisie wraca i przechodzi dalej. Adres pozycji: WMS ma pierwszeństwo, fallback na `tw_Pole1`/`tw_Pole8` z GT (bez tego prawie cała lista byłaby bezadresowa — WMS zna lokalizacje tylko części asortymentu).
 
+## Zdjęcia produktów (2026-10-08)
+
+Miniatura produktu na Zebrze — nagłówek kroku wyboru w **Ruchu**, karta w **Sprawdź**, karta przystanku w **Ścieżkach**; tap = oryginał na cały ekran. To **podgląd, nie dane**: nic od zdjęcia nie zależy, brak zdjęcia albo sieci = ramka znika (`onerror`) i ekran wygląda jak przed zdjęciami.
+
+- **Źródło = Sellasist, klucz = SKU** (decyzja usera). GT nie ma zdjęć (`tw_ZdjecieTw` = 0 wierszy na OKITRADE). Pomiar 2026-10-08: Sellasist ma zdjęcie dla **2585 z 2688** SKU ze stanem na K4/K4G, filtr `products?symbol=` jest dokładny, zero zduplikowanych symboli. Feed sklepu (`/feed/ceneorumunia`) dokładał 1 SKU — nie podpięty.
+- **Wejście po `tw_Id`, symbol świeżo z GT** (`GET /api/produkty/:tw_Id/zdjecie?rozmiar=mini|duze`, `pobierzSymbolPoId`, cache w pamięci 10 min). Kopia symbolu z WMS po przemianowaniu w Subiekcie pokazałaby zdjęcie innego towaru — gorsze niż brak, bo magazynier mu uwierzy (zob. „Tożsamość towaru").
+- **Bez skalowania po naszej stronie** (`sharp` = moduł natywny, produkcja ich nie ma). CDN Sellasist ma dwa rozmiary pod tym samym hashem: `/t/` miniatura i `/n/` oryginał (~900×1500, do ~1 MB); każdy inny segment oddaje 200 z obrazkiem zastępczym — nie zgadujemy. Miniatura na ekrany, oryginał tylko po tapnięciu.
+- **Cache na dysku `db/zdjecia/`** (poza repo): meta `{url, sprawdzono, pliki}` + bajty per rozmiar, ważność 3 dni (zdjęcie) / 1 dzień (brak zdjęcia). Sellasist nie odpowiada → oddajemy ostatnią kopię, nawet starą. Czysta logika w `services/zdjecia-model.js` (testy `test/zdjecia-model.test.js`).
+- Wymaga `SELLASIST_ACCOUNT` / `SELLASIST_API_KEY` w `.env`; bez nich endpoint zwraca 503, a ekrany po prostu nie pokazują zdjęć.
+
 ## Zadanie sprzedażowe + rola `biuro` (2026-10-06)
 
 Zakładka desktopu **„Sprzedaż"** (`#sprzedaz`): lista SKU, którym chcemy podbić sprzedaż (motywacyjne zadanie dla biura), i efekt: **przed startem (śr. szt./tydz. z 4 tyg.) · od startu · ostatnie 7 dni**. Liczone **na żywo z FS z magazynu K4** (`dok_Typ=2`, `dok_Status=1`, `dok_MagId=4` — decyzja usera; FS z MAG to ~0,2% sztuk; pozycje pod `ob_DokHanId`) przy każdym otwarciu — w WMS trzymamy tylko listę (`zadania_sprzedazowe`, klucz `tw_Id`), nie liczby. **Paragony (PA) i korekty (KFS) świadomie pominięte** (decyzja usera): ~99,7% FS powstaje z ZK, czyli to sprzedaż internetowa; PA to stanowiska 1/2. Czysta logika dat w `services/sprzedaz-model.js` (testy `test/sprzedaz-model.test.js`), zapytanie `services/gt-sprzedaz.js`, trasa `routes/sprzedaz.js`. GT padnięte → lista zostaje, liczby „—" (`gt_ok:false`).

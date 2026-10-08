@@ -661,7 +661,8 @@ function pokazRozkladZrodel(dane, artykul) {
   }
 
   // gorny pasek: SKU (duzy) + status zgodnosci, nazwa pod spodem
-  naglowekWyborHtml = `<div class="ekran-sku"><h1>${artykul.artykul_symbol}</h1>${statusZgodnosciBadge(artykul)}</div>`
+  naglowekWyborHtml = zdjecieHtml(artykul.artykul_gt_id)
+    + `<div class="ekran-sku"><h1>${artykul.artykul_symbol}</h1>${statusZgodnosciBadge(artykul)}</div>`
     + `<p class="ekran-nazwa">${artykul.artykul_nazwa}</p>`;
 
   przygotujKrokWybor();

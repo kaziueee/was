@@ -122,3 +122,32 @@ async function czyTenSamTowar(kod, artykulGtId) {
     return false;
   }
 }
+
+// --- zdjecie produktu (podglad, nie dane) ---
+// Miniatura z /api/produkty/:tw_Id/zdjecie (backend bierze SWIEZY symbol z GT i pyta Sellasist,
+// zob. services/zdjecia.js). Wejscie po tw_Id, nigdy po symbolu z listy - po przemianowaniu
+// w Subiekcie pokazaloby zdjecie innego towaru. Brak zdjecia / brak sieci = ramka znika
+// (onerror), ekran wyglada jak przed zdjeciami - nic nie moze od niego zalezec.
+// Tap otwiera oryginal na caly ekran; tap w podglad zamyka. stopPropagation, bo karta bywa
+// wewnatrz elementu z wlasnym klikiem.
+function zdjecieHtml(artykulGtId) {
+  const id = Number(artykulGtId);
+  if (!Number.isInteger(id) || id <= 0) return '';
+  return `<img class="zdj-mini" src="/api/produkty/${id}/zdjecie" alt="" loading="lazy"`
+    + ` onerror="this.remove()" onclick="event.stopPropagation(); pokazZdjecie(${id})">`;
+}
+
+function pokazZdjecie(artykulGtId) {
+  document.querySelector('.zdj-podglad')?.remove();
+  const nakladka = document.createElement('div');
+  nakladka.className = 'zdj-podglad';
+  nakladka.innerHTML = `<span class="zdj-podglad-hint">Wczytuję zdjęcie…</span>`
+    + `<img src="/api/produkty/${Number(artykulGtId)}/zdjecie?rozmiar=duze" alt="">`
+    + `<span class="zdj-podglad-zamknij">Dotknij, aby zamknąć</span>`;
+  const img = nakladka.querySelector('img');
+  const hint = nakladka.querySelector('.zdj-podglad-hint');
+  img.addEventListener('load', () => hint.remove());
+  img.addEventListener('error', () => { hint.textContent = 'Zdjęcie niedostępne'; img.remove(); });
+  nakladka.addEventListener('click', () => nakladka.remove());
+  document.body.appendChild(nakladka);
+}

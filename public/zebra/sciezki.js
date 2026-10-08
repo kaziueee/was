@@ -322,7 +322,8 @@
       : '';
     const znacznik = stan === 'skan' ? '✓ ' : (stan === 'bez-skanu' ? '⚠ ' : '');
     el('sciezki-karta').innerHTML =
-      `<span class="karta-lok">${p.lokalizacja_kod}</span>`
+      zdjecieHtml(p.artykul_gt_id)
+      + `<span class="karta-lok">${p.lokalizacja_kod}</span>`
       + `<strong>${znacznik}${p.symbol || p.artykul_gt_id}${stan === 'bez-skanu' ? ' — bez skanu' : ''}</strong>`
       + (stan === 'skan' ? '' : `<span>${p.nazwa || ''}</span>`)
       + wStrefach;

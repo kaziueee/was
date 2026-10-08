@@ -3491,6 +3491,37 @@ async function renderModalZk() {
   }
 }
 
+// Zdjecie produktu w naglowku modalu - ten sam endpoint co Zebra (/api/produkty/:tw_Id/zdjecie,
+// symbol swiezo z GT -> Sellasist, zob. services/zdjecia.js). Podglad, nie dane: dopoki obraz
+// sie nie wczyta, ramki nie ma, a brak zdjecia / sieci zostawia naglowek jak przed zdjeciami.
+function pokazZdjecieModalu(artykulGtId) {
+  const img = el('modal-prod-zdj');
+  img.classList.add('hidden');
+  img.onload = () => img.classList.remove('hidden');
+  img.onerror = () => img.classList.add('hidden');
+  img.onclick = () => pokazZdjecieDuze(artykulGtId);
+  img.src = `/api/produkty/${encodeURIComponent(artykulGtId)}/zdjecie`;
+}
+
+function pokazZdjecieDuze(artykulGtId) {
+  document.querySelector('.zdj-podglad')?.remove();
+  const nakladka = document.createElement('div');
+  nakladka.className = 'zdj-podglad';
+  nakladka.innerHTML = '<span class="zdj-podglad-hint">Wczytuję zdjęcie…</span>'
+    + `<img src="/api/produkty/${encodeURIComponent(artykulGtId)}/zdjecie?rozmiar=duze" alt="">`
+    + '<span class="zdj-podglad-zamknij">Kliknij albo Esc, aby zamknąć</span>';
+  const img = nakladka.querySelector('img');
+  const hint = nakladka.querySelector('.zdj-podglad-hint');
+  img.addEventListener('load', () => hint.remove());
+  img.addEventListener('error', () => { hint.textContent = 'Zdjęcie niedostępne'; img.remove(); });
+  const zamknij = () => { nakladka.remove(); document.removeEventListener('keydown', naEsc, true); };
+  // capture + stopPropagation: Esc ma zamknac tylko podglad, nie modal produktu pod nim
+  const naEsc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); zamknij(); } };
+  nakladka.addEventListener('click', zamknij);
+  document.addEventListener('keydown', naEsc, true);
+  document.body.appendChild(nakladka);
+}
+
 async function otworzModalProdukt(p) {
   // TWARDA BLOKADA: zajmij lock edycji produktu. 409 = edytuje kto inny -> nie otwieramy.
   try {
@@ -3508,6 +3539,7 @@ async function otworzModalProdukt(p) {
   el('modal-produkt').classList.remove('hidden');
   el('modal-prod-sku').textContent = p.symbol;
   el('modal-prod-nazwa').textContent = p.nazwa;
+  pokazZdjecieModalu(p.artykul_gt_id);
   zamknijAkcje();
   el('modal-komunikat').className = 'komunikat hidden';
   renderModalRozklad();

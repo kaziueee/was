@@ -4523,7 +4523,7 @@ function renderujCeny(d) {
   const pelna = d.obserwacja_pelna ? ` · pełna obserwacja katalogu ${formatDatetime(d.obserwacja_pelna.czas)}` : '';
   const blad = d.blad && (!d.przebieg || d.blad.czas > d.przebieg.czas) ? ` · <span class="ceny-blad">błąd: ${cenyEsc(d.blad.wartosc)}</span>` : '';
   el('ceny-stan').innerHTML = przebieg + pelna + blad;
-  for (const k of ['automat', 'decyzja', 'wszystkie']) el(`ceny-l-${k}`).textContent = d.liczniki[k];
+  for (const k of ['automat', 'szansa', 'podwyzka', 'decyzja', 'wszystkie']) el(`ceny-l-${k}`).textContent = d.liczniki[k] ?? '';
   el('ceny-hamulec').classList.toggle('hidden', d.wysylanie !== false);
   document.querySelectorAll('[data-ceny-filtr]').forEach((b) => b.classList.toggle('aktywny', b.dataset.cenyFiltr === cenyFiltr));
 

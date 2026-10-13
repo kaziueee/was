@@ -34,8 +34,7 @@ CREATE TABLE IF NOT EXISTS oferty (
   cena          REAL,                       -- cena towaru z ostatniej synchronizacji listy
   ilosc         INTEGER,
   kanal         TEXT,                       -- 'DEFAULT' = wysyłka sprzedawcy, 'AMAZON_EU' = FBA
-  auto          INTEGER NOT NULL DEFAULT 0, -- 1 = automat prowadzi cenę (domyślnie WYŁĄCZONY)
-  zapis         INTEGER NOT NULL DEFAULT 0, -- 1 = decyzje automatu IDĄ na platformę (bez tego: tryb Próba)
+  auto          INTEGER NOT NULL DEFAULT 0, -- 1 = automat zmienia cenę na platformie, 0 = ręczny (domyślnie)
   aktywna       INTEGER NOT NULL DEFAULT 1, -- 0 = zniknęła z raportu platformy
   widziana      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (platforma, rynek, sku)
@@ -79,7 +78,7 @@ CREATE TABLE IF NOT EXISTS decyzje (
   max         REAL,
   kod         TEXT,
   powod       TEXT,
-  wyslano     INTEGER NOT NULL DEFAULT 0,   -- 0 = tryb Próba / bez zmiany, 1 = wysłane na platformę
+  wyslano     INTEGER NOT NULL DEFAULT 0,   -- 1 = wysłane na platformę (0 = ręczny / bez zmiany / hamulec / błąd)
   blad        TEXT,
   auto        INTEGER,                      -- czy automat był włączony w chwili decyzji
   zysk        REAL,                         -- zł/szt. przy cenie_przed (kalkulator WMS)
@@ -110,7 +109,8 @@ CREATE TABLE IF NOT EXISTS stan (
 // migracje dla baz założonych przed dodaniem kolumn
 const kolOferty = db.prepare('PRAGMA table_info(oferty)').all().map((k) => k.name);
 if (!kolOferty.includes('dopasowanie')) db.exec('ALTER TABLE oferty ADD COLUMN dopasowanie TEXT');
-if (!kolOferty.includes('zapis')) db.exec('ALTER TABLE oferty ADD COLUMN zapis INTEGER NOT NULL DEFAULT 0');
+// `oferty.zapis` (osobny przełącznik wysyłania, tryb Próba) zlikwidowany 2026-10-13 — w starszych
+// bazach kolumna zostaje, nic jej nie czyta: automat = wysyła, ręczny = nie.
 const kolDecyzje = db.prepare('PRAGMA table_info(decyzje)').all().map((k) => k.name);
 for (const [k, typ] of [['auto', 'INTEGER'], ['zysk', 'REAL'], ['marza', 'REAL'], ['zysk_nowa', 'REAL'], ['marza_nowa', 'REAL']]) {
   if (!kolDecyzje.includes(k)) db.exec(`ALTER TABLE decyzje ADD COLUMN ${k} ${typ}`);

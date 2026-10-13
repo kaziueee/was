@@ -4524,6 +4524,7 @@ function renderujCeny(d) {
   const blad = d.blad && (!d.przebieg || d.blad.czas > d.przebieg.czas) ? ` · <span class="ceny-blad">błąd: ${cenyEsc(d.blad.wartosc)}</span>` : '';
   el('ceny-stan').innerHTML = przebieg + pelna + blad;
   for (const k of ['automat', 'decyzja', 'wszystkie']) el(`ceny-l-${k}`).textContent = d.liczniki[k];
+  el('ceny-hamulec').classList.toggle('hidden', d.wysylanie !== false);
   document.querySelectorAll('[data-ceny-filtr]').forEach((b) => b.classList.toggle('aktywny', b.dataset.cenyFiltr === cenyFiltr));
 
   el('ceny-thead').innerHTML = `<tr><th>Towar</th>${d.rynki.map((r) => `<th>Amazon ${r}</th>`).join('')}</tr>`;
@@ -4585,14 +4586,13 @@ function cenyKomorka(o, rynek) {
     // sprzed wysłania — Amazon pokazuje zmianę po kilku minutach, my zobaczymy ją w następnym przebiegu.
     pod = o.wyslano
       ? `<div class="ceny-dec wyslano" title="${cenyEsc(o.powod)}">✓ wysłano ${cenyLiczba(o.cena_nowa)} ${w} · ${cenyGodzina(o.dec_czas)}</div>`
-      : `<div class="ceny-dec ${gora ? 'gora' : 'dol'}" title="${cenyEsc(o.powod)}">${gora ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}`
+      : `<div class="ceny-dec ${gora ? 'gora' : 'dol'}" title="${cenyEsc(o.powod)}">${o.auto ? '' : 'podpowiedź: '}${gora ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}`
         + `${o.zysk_nowa != null ? ` · zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}</div>`;
     if (o.dec_blad) pod += `<div class="ceny-dec dol" title="${cenyEsc(o.dec_blad)}">✗ nie wysłano</div>`;
   } else if (o.kod) {
     pod = `<div class="ceny-dec" title="${cenyEsc(o.powod)}">${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</div>`;
   }
-  const wys = (o.zapis ? '<div class="ceny-wysyla" title="Decyzje tej oferty idą na Amazona">● wysyła ceny</div>' : '')
-    + (o.obs_czas ? `<div class="ceny-czas" title="Ceny w komórce to stan z ostatniej obserwacji">stan z ${cenyGodzina(o.obs_czas)}</div>` : '');
+  const wys = (o.obs_czas ? `<div class="ceny-czas" title="Ceny w komórce to stan z ostatniej obserwacji">stan z ${cenyGodzina(o.obs_czas)}</div>` : '');
   const bb = !o.bb_nasz && o.bb_cena != null ? `<div class="ceny-bb">BB ${cenyLiczba(o.bb_cena)} ${w}${o.bb_fba ? ' (FBA)' : ''} z wys.</div>` : '';
   const div = document.createElement('div');
   div.className = 'ceny-tresc';
@@ -4629,12 +4629,14 @@ function cenyPrzelacznik(stan, etykieta, onKlik) {
 }
 
 async function cenyUstawAutomat(ids, auto) {
+  // Automat = prawdziwe zmiany cen na Amazonie (trybu Próba już nie ma) — włączenie potwierdzamy.
+  if (auto && !confirm(`Włączyć automat dla ${ids.length} ${ids.length === 1 ? 'oferty' : 'ofert'}?\n\nAutomat będzie sam zmieniał ceny na Amazonie (co ok. 30 min).`)) return;
   try {
     const r = await api('/api/ceny/automat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids, auto, operator: operator() }),
     });
-    pokazKomunikat(`Automat ${auto ? 'włączony' : 'wyłączony'}: ${r.zmienione} ofert${r.pominiete.length ? `, pominięte ${r.pominiete.length}` : ''}. Tryb Próba — ceny nie idą na Amazona.`, 'ok');
+    pokazKomunikat(`Automat ${auto ? 'włączony' : 'wyłączony'}: ${r.zmienione} ofert${r.pominiete.length ? `, pominięte ${r.pominiete.length}` : ''}.${auto ? ' Pierwsza zmiana ceny przy najbliższym przebiegu (do 30 min).' : ''}`, 'ok');
     odswiezCeny();
   } catch (err) { pokazKomunikat(err.message, 'blad'); }
 }
@@ -4686,7 +4688,7 @@ async function odswiezCenyKarta() {
         <div class="ceny-karta-tyt"><h3>${cenyEsc(d.symbol)}</h3><div class="ceny-nazwa-pelna">${cenyEsc(d.nazwa)}</div><div class="ceny-fakty"><span>${cenyStanTekst(d.stan_gt)}</span>${fakty}</div></div>
         <label class="ceny-auto-wiersz duzy" id="ceny-karta-auto"></label>
       </div>
-      <p class="hint">Rynki od największego zysku na sztuce. Zielone tło = mamy Buy Box, szare = automat wyłączony. Tryb Próba — ceny nie idą na Amazona.</p>
+      <p class="hint">Rynki od największego zysku na sztuce. Zielone tło = mamy Buy Box, szare = ręczny (automat wyłączony). Włączony automat zmienia ceny na Amazonie.</p>
       <div class="ceny-rynki">${oferty.map(cenyKartaRynekHtml).join('')}</div>`;
     const lbl = el('ceny-karta-auto');
     if (zeStanem.length) {
@@ -4725,7 +4727,7 @@ function cenyKartaRynekHtml(o) {
         <td>${cenyEsc(x.powod)}${x.auto ? '' : ' <span class="hint">(automat wył.)</span>'}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">Brak decyzji.</p>';
   const zmiany = o.zmiany.length ? `<p class="hint">${o.zmiany.map((z) => `${formatDatetime(z.czas)} ${cenyEsc(z.kto || '?')}: ${cenyEsc(CENY_AKCJE[z.akcja] || z.akcja)}`).join(' · ')}</p>` : '';
   return `<section class="ceny-rynek${o.bb_nasz ? ' bb' : ''}${o.auto ? '' : ' off'}" data-ceny-rynek="${o.rynek}">
-    <div class="ceny-k-rynek"><h4>Amazon ${o.rynek}</h4>${o.zapis ? '<div class="ceny-wysyla">● wysyła ceny na Amazona</div>' : ''}<div class="ceny-sku">${cenyEsc(o.sku)} · stan ${o.ilosc}</div>
+    <div class="ceny-k-rynek"><h4>Amazon ${o.rynek}</h4><div class="ceny-sku">${cenyEsc(o.sku)} · stan ${o.ilosc}</div>
       <div class="ceny-m">${stanBb}</div>
       ${o.ilosc > 0 ? `<label class="ceny-auto-wiersz" data-ceny-auto="${o.id}"> automat</label>` : '<div class="hint">bez stanu — automat nie działa</div>'}
       <div class="ceny-linki">${linki}</div></div>
@@ -4750,7 +4752,7 @@ async function odswiezCenyLog() {
     tbody.innerHTML = d.wpisy.length ? d.wpisy.map((x) => {
       const w = cenyWaluta(x.rynek);
       const zmiana = x.typ === 'decyzja'
-        ? `${cenyLiczba(x.cena_przed)} → <strong>${cenyLiczba(x.cena_nowa)}</strong> ${w}${x.wyslano ? ' ✓' : ' <span class="hint">(próba)</span>'}`
+        ? `${cenyLiczba(x.cena_przed)} → <strong>${cenyLiczba(x.cena_nowa)}</strong> ${w}${x.wyslano ? ' ✓' : ' <span class="hint">(nie wysłano)</span>'}`
         : cenyEsc(CENY_AKCJE[x.kod] || x.kod);
       return `<tr><td>${formatDatetime(x.czas)}</td><td>${cenyEsc(x.rynek)}</td><td>${cenyEsc(x.symbol_gt || x.sku)}</td><td>${zmiana}</td>
         <td>${x.typ === 'decyzja' ? cenyEsc(x.powod) : ''}</td><td>${cenyEsc(x.kto || (x.typ === 'decyzja' ? 'system:ceny' : ''))}</td></tr>`;

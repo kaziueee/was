@@ -2,7 +2,7 @@
 
 // Ekran „Ceny" (repricer) — odczyt bazy repricera `db/pricing.db` + włączanie/wyłączanie automatu.
 // Liczy i obserwuje osobny proces (pricing/worker.js, zadanie WMS-Pricing); WMS tylko czyta jego
-// wyniki i zapisuje decyzję człowieka (auto = 0/1). Montowane z auth.wymagajRoli('admin') — na czas
+// wyniki i zapisuje decyzję człowieka: automat (auto = 1, ceny idą na Amazona) albo ręczny (0). Montowane z auth.wymagajRoli('admin') — na czas
 // testów tylko administrator (decyzja usera 2026-10-13); biuro dostanie dostęp po testach.
 //
 //   GET  /api/ceny/macierz?q=&filtr=automat|decyzja|wszystkie&limit=   wiersze SKU × rynek
@@ -37,7 +37,7 @@ const ZMIANY_KODY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', '
 
 // Ostatnia obserwacja i ostatnia decyzja każdej oferty — jedno zapytanie, korelowane po max(id).
 const SQL_OFERTY = `
-  SELECT o.id, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.zapis, o.dopasowanie,
+  SELECT o.id, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.dopasowanie,
          b.czas AS obs_czas, b.cena, b.wysylka, b.bb_nasz, b.bb_cena, b.bb_fba, b.najtansza_inna, b.ofert,
          d.kod, d.cena_nowa, d.powod, d.min, d.max, d.zysk, d.marza, d.zysk_nowa,
          d.czas AS dec_czas, d.wyslano, d.blad AS dec_blad, d.marza_nowa
@@ -86,6 +86,7 @@ router.get('/macierz', asyncH(async (req, res) => {
 
   res.json({
     rynki: RYNKI,
+    wysylanie: process.env.PRICING_ZAPIS === '1',    // globalny hamulec workera (ten sam .env)
     gt_ok: !!stanGt,
     przebieg: stan.get('przebieg'),
     obserwacja_pelna: stan.get('obserwacja_pelna'),

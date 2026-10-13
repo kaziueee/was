@@ -11,10 +11,11 @@
 //   3. pas [min, max] i zysk z kalkulatora WMS (pricing/pas.js)
 //   4. decyzja (pricing/model.js) → tabela `decyzje`
 //
-// Wysyłanie cen na Amazona — DWA klucze naraz, inaczej tryb Próba (decyzja tylko w bazie):
-//   - PRICING_ZAPIS=1 w .env (globalny hamulec: bez niego worker nie wyśle niczego),
-//   - oferty.zapis = 1 dla konkretnej oferty (node pricing/automat.js wysylanie wlacz <RYNEK> <SKU>).
-// Oferta musi też mieć włączony automat (auto = 1). Wysyłamy tylko decyzje ze zmianą ceny.
+// Dwa tryby oferty (decyzja usera 2026-10-13 — tryb Próba zlikwidowany):
+//   - automat (auto = 1): decyzje ze zmianą ceny idą od razu na Amazona,
+//   - ręczny  (auto = 0): nic nie wysyłamy; decyzja zapisuje się jako podpowiedź (pełny przegląd co 6 h).
+// PRICING_ZAPIS=1 w .env to nie tryb, tylko globalny hamulec: bez niego worker nie wyśle niczego
+// (awaryjne zatrzymanie wszystkich cen jedną zmianą; ekran pokazuje wtedy ostrzeżenie).
 //
 //   node pricing/worker.js --raz [--pelny]   — jeden przebieg i koniec
 //   node pricing/worker.js                   — w pętli
@@ -45,7 +46,7 @@ async function przebieg({ pelny = false } = {}) {
 
   const pelnyTeraz = pelny || minelo('obserwacja_pelna', PELNY_MS);
   const zapisWlaczony = process.env.PRICING_ZAPIS === '1';
-  const oferty = db.prepare(`SELECT id, rynek, sku, tw_id, auto, zapis FROM oferty
+  const oferty = db.prepare(`SELECT id, rynek, sku, tw_id, auto FROM oferty
      WHERE platforma = 'amazon' AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL
        AND (auto = 1 OR ?)`).all(pelnyTeraz ? 1 : 0);
   wynik.ofert = oferty.length;
@@ -80,7 +81,7 @@ async function przebieg({ pelny = false } = {}) {
     const teraz = pas && ob.cena ? pas.ocen(ob.cena) : null;
     const potem = pas && d.zmiana ? pas.ocen(d.cena) : teraz;
     let wyslano = 0, blad = null;
-    if (zapisWlaczony && o.auto && o.zapis && d.zmiana && pas) {
+    if (zapisWlaczony && o.auto && d.zmiana && pas) {
       try {
         const w = await ustawCene(o.rynek, o.sku, d.cena);
         if (w.ok) { wyslano = 1; wysylka.wyslane++; doPotwierdzenia.push(o); }
@@ -165,7 +166,7 @@ if (require.main === module) {
   } else {
     const ms = interwalMsZMinut(process.env.PRICING_INTERWAL_MIN, 30, 'PRICING_INTERWAL_MIN');
     console.log(`[pricing] worker startuje, przebieg co ${ms / 60000} min, `
-      + (process.env.PRICING_ZAPIS === '1' ? 'WYSYŁANIE CEN WŁĄCZONE dla ofert z zapis = 1' : 'tryb Próba (PRICING_ZAPIS ≠ 1, bez wysyłania cen)'));
+      + (process.env.PRICING_ZAPIS === '1' ? 'oferty z automatem zmieniają ceny na Amazonie' : 'HAMULEC: PRICING_ZAPIS ≠ 1, żadna cena nie idzie na Amazona'));
     let trwa = false;
     const tik = async () => {
       if (trwa) return;

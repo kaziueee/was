@@ -1209,7 +1209,7 @@ main {
 .cennik-cena-sym { display: inline-block; width: 1.25rem; text-align: left; font-weight: 700; }
 
 /* === Ceny (repricer) === */
-.ceny-proba { font-size: 0.8rem; padding: 0.2rem 0.6rem; border-radius: 4px; background: #fff3cd; color: #7a5b00; border: 1px solid #e9c46a; }
+.ceny-proba { font-size: 0.8rem; padding: 0.2rem 0.6rem; border-radius: 4px; background: #fde8e6; color: #b42318; border: 1px solid #b42318; font-weight: 600; }
 .ceny-blad { color: #b42318; }
 .ceny-pasek { display: flex; flex-wrap: wrap; gap: 0.6rem 1.2rem; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; }
 .ceny-widoki, .ceny-filtry { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
@@ -1313,7 +1313,6 @@ main {
 .ceny-k-hist summary { cursor: pointer; font-size: 0.85rem; color: #555; }
 .ceny-tab-hist td, .ceny-tab-hist th { font-size: 0.8rem; padding: 0.3rem 0.5rem; }
 @media (max-width: 1100px) { .ceny-rynek { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
-.ceny-wysyla { font-size: 0.74rem; font-weight: 700; color: #b42318; white-space: nowrap; }
 .ceny-czas { font-size: 0.7rem; color: #8a919a; white-space: nowrap; }
 .ceny-dec.wyslano, .ceny-wyslano { color: #1d3557; font-weight: 700; }
 .ceny-stan { font-size: 0.78rem; color: #444; margin-top: 0.15rem; white-space: nowrap; }

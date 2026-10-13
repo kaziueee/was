@@ -11,8 +11,10 @@
 //   3. pas [min, max] i zysk z kalkulatora WMS (pricing/pas.js)
 //   4. decyzja (pricing/model.js) → tabela `decyzje`
 //
-// WYŁĄCZNIE tryb Próba: decyzje są zapisywane, nic nie idzie na Amazona (wyslano = 0).
-// Zapis ceny dojdzie osobnym krokiem, za zgodą usera.
+// Wysyłanie cen na Amazona — DWA klucze naraz, inaczej tryb Próba (decyzja tylko w bazie):
+//   - PRICING_ZAPIS=1 w .env (globalny hamulec: bez niego worker nie wyśle niczego),
+//   - oferty.zapis = 1 dla konkretnej oferty (node pricing/automat.js wysylanie wlacz <RYNEK> <SKU>).
+// Oferta musi też mieć włączony automat (auto = 1). Wysyłamy tylko decyzje ze zmianą ceny.
 //
 //   node pricing/worker.js --raz [--pelny]   — jeden przebieg i koniec
 //   node pricing/worker.js                   — w pętli
@@ -22,6 +24,7 @@ const { obserwuj } = require('./obserwuj');
 const { pasyHurtem } = require('./pas');
 const { decyzja } = require('./model');
 const { synchronizuj } = require('./sync-oferty');
+const { ustawCene } = require('./amazon');
 const { interwalMsZMinut } = require('../services/interwal');
 
 const PELNY_MS = interwalMsZMinut(process.env.PRICING_PELNY_MIN, 360, 'PRICING_PELNY_MIN');
@@ -41,7 +44,8 @@ async function przebieg({ pelny = false } = {}) {
   }
 
   const pelnyTeraz = pelny || minelo('obserwacja_pelna', PELNY_MS);
-  const oferty = db.prepare(`SELECT id, rynek, sku, tw_id, auto FROM oferty
+  const zapisWlaczony = process.env.PRICING_ZAPIS === '1';
+  const oferty = db.prepare(`SELECT id, rynek, sku, tw_id, auto, zapis FROM oferty
      WHERE platforma = 'amazon' AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL
        AND (auto = 1 OR ?)`).all(pelnyTeraz ? 1 : 0);
   wynik.ofert = oferty.length;
@@ -51,24 +55,39 @@ async function przebieg({ pelny = false } = {}) {
   const [obs, pasy] = await Promise.all([obserwuj(oferty), pasyHurtem(oferty.map((o) => o.tw_id))]);
   if (obs.bledyPaczek) wynik.bledy_paczek = obs.bledyPaczek;
 
-  const zapisz = db.prepare(`INSERT INTO decyzje (oferta_id, cena_przed, cena_nowa, min, max, kod, powod, wyslano, auto, zysk, marza, zysk_nowa)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`);
+  const zapisz = db.prepare(`INSERT INTO decyzje (oferta_id, cena_przed, cena_nowa, min, max, kod, powod, wyslano, auto, zysk, marza, zysk_nowa, blad)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const kody = {};
+  const wysylka = { wyslane: 0, odrzucone: 0 };
+  // Decyzje liczymy w pamięci, a zapis do bazy robimy po wysłaniu — wywołania API nie mogą
+  // trzymać otwartej transakcji SQLite (WMS czyta tę bazę w tym samym czasie).
+  const wiersze = [];
+  for (const o of oferty) {
+    const ob = obs.get(o.id);
+    if (!ob) { kody.brak_odpowiedzi = (kody.brak_odpowiedzi || 0) + 1; continue; }
+    const pas = (pasy.get(o.tw_id) || {})[o.rynek] || null;
+    const d = decyzja(ob, pas || {});
+    const teraz = pas && ob.cena ? pas.ocen(ob.cena) : null;
+    const potem = pas && d.zmiana ? pas.ocen(d.cena) : teraz;
+    let wyslano = 0, blad = null;
+    if (zapisWlaczony && o.auto && o.zapis && d.zmiana && pas) {
+      try {
+        const w = await ustawCene(o.rynek, o.sku, d.cena);
+        if (w.ok) { wyslano = 1; wysylka.wyslane++; }
+        else { blad = w.blad || `Amazon: ${w.status}`; wysylka.odrzucone++; }
+      } catch (e) { blad = e.message; wysylka.odrzucone++; }
+      console.log(new Date().toISOString(), `[pricing] ${o.rynek} ${o.sku}: ${ob.cena} → ${d.cena} ${wyslano ? 'WYSŁANO' : 'NIE WYSŁANO: ' + blad}`);
+    }
+    wiersze.push([o.id, ob.cena, d.cena, pas?.min ?? null, pas?.max ?? null, d.kod, d.powod, wyslano, o.auto,
+      teraz?.zysk ?? null, teraz?.marza ?? null, potem?.zysk ?? null, blad]);
+    if (o.auto) kody[d.kod] = (kody[d.kod] || 0) + 1;
+  }
   db.exec('BEGIN');
   try {
-    for (const o of oferty) {
-      const ob = obs.get(o.id);
-      if (!ob) { kody.brak_odpowiedzi = (kody.brak_odpowiedzi || 0) + 1; continue; }
-      const pas = (pasy.get(o.tw_id) || {})[o.rynek] || null;
-      const d = decyzja(ob, pas || {});
-      const teraz = pas && ob.cena ? pas.ocen(ob.cena) : null;
-      const potem = pas && d.zmiana ? pas.ocen(d.cena) : teraz;
-      zapisz.run(o.id, ob.cena, d.cena, pas?.min ?? null, pas?.max ?? null, d.kod, d.powod, o.auto,
-        teraz?.zysk ?? null, teraz?.marza ?? null, potem?.zysk ?? null);
-      if (o.auto) kody[d.kod] = (kody[d.kod] || 0) + 1;
-    }
+    for (const w of wiersze) zapisz.run(...w);
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
+  if (wysylka.wyslane || wysylka.odrzucone) wynik.wysylka = wysylka;
   if (pelnyTeraz) stan.set('obserwacja_pelna', oferty.length);
   stan.set('przebieg', JSON.stringify(wynik));
   return { ...wynik, automat: kody };
@@ -93,7 +112,8 @@ if (require.main === module) {
     przebiegBezpieczny({ pelny: process.argv.includes('--pelny') }).then(() => process.exit(0));
   } else {
     const ms = interwalMsZMinut(process.env.PRICING_INTERWAL_MIN, 30, 'PRICING_INTERWAL_MIN');
-    console.log(`[pricing] worker startuje, przebieg co ${ms / 60000} min, tryb Próba (bez wysyłania cen)`);
+    console.log(`[pricing] worker startuje, przebieg co ${ms / 60000} min, `
+      + (process.env.PRICING_ZAPIS === '1' ? 'WYSYŁANIE CEN WŁĄCZONE dla ofert z zapis = 1' : 'tryb Próba (PRICING_ZAPIS ≠ 1, bez wysyłania cen)'));
     let trwa = false;
     const tik = async () => { if (trwa) return; trwa = true; await przebiegBezpieczny(); trwa = false; };
     tik();

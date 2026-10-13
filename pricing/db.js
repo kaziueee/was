@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS oferty (
   ilosc         INTEGER,
   kanal         TEXT,                       -- 'DEFAULT' = wysyłka sprzedawcy, 'AMAZON_EU' = FBA
   auto          INTEGER NOT NULL DEFAULT 0, -- 1 = automat prowadzi cenę (domyślnie WYŁĄCZONY)
+  zapis         INTEGER NOT NULL DEFAULT 0, -- 1 = decyzje automatu IDĄ na platformę (bez tego: tryb Próba)
   aktywna       INTEGER NOT NULL DEFAULT 1, -- 0 = zniknęła z raportu platformy
   widziana      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (platforma, rynek, sku)
@@ -108,6 +109,7 @@ CREATE TABLE IF NOT EXISTS stan (
 // migracje dla baz założonych przed dodaniem kolumn
 const kolOferty = db.prepare('PRAGMA table_info(oferty)').all().map((k) => k.name);
 if (!kolOferty.includes('dopasowanie')) db.exec('ALTER TABLE oferty ADD COLUMN dopasowanie TEXT');
+if (!kolOferty.includes('zapis')) db.exec('ALTER TABLE oferty ADD COLUMN zapis INTEGER NOT NULL DEFAULT 0');
 const kolDecyzje = db.prepare('PRAGMA table_info(decyzje)').all().map((k) => k.name);
 for (const [k, typ] of [['auto', 'INTEGER'], ['zysk', 'REAL'], ['marza', 'REAL'], ['zysk_nowa', 'REAL']]) {
   if (!kolDecyzje.includes(k)) db.exec(`ALTER TABLE decyzje ADD COLUMN ${k} ${typ}`);

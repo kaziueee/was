@@ -1313,3 +1313,4 @@ main {
 .ceny-k-hist summary { cursor: pointer; font-size: 0.85rem; color: #555; }
 .ceny-tab-hist td, .ceny-tab-hist th { font-size: 0.8rem; padding: 0.3rem 0.5rem; }
 @media (max-width: 1100px) { .ceny-rynek { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.ceny-wysyla { font-size: 0.74rem; font-weight: 700; color: #b42318; white-space: nowrap; }

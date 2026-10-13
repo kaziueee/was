@@ -21,7 +21,7 @@ const ZMIANY_KODY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', '
 
 // Ostatnia obserwacja i ostatnia decyzja każdej oferty — jedno zapytanie, korelowane po max(id).
 const SQL_OFERTY = `
-  SELECT o.id, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.dopasowanie,
+  SELECT o.id, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.zapis, o.dopasowanie,
          b.czas AS obs_czas, b.cena, b.wysylka, b.bb_nasz, b.bb_cena, b.bb_fba, b.najtansza_inna, b.ofert,
          d.kod, d.cena_nowa, d.powod, d.min, d.max, d.zysk, d.marza, d.zysk_nowa
     FROM oferty o
@@ -81,7 +81,7 @@ router.get('/towar/:tw_id', async (req, res) => {
   const twId = Number(req.params.tw_id);
   const oferty = db.prepare(SQL_OFERTY.replace('AND o.ilosc > 0', '') + ' AND o.tw_id = ? ORDER BY o.rynek, o.ilosc DESC').all(twId);
   if (!oferty.length) return res.status(404).json({ blad: 'Brak ofert Amazon dla tego towaru' });
-  const decyzje = db.prepare(`SELECT czas, cena_przed, cena_nowa, min, max, kod, powod, wyslano, auto, zysk, zysk_nowa
+  const decyzje = db.prepare(`SELECT czas, cena_przed, cena_nowa, min, max, kod, powod, wyslano, blad, auto, zysk, zysk_nowa
                                 FROM decyzje WHERE oferta_id = ? ORDER BY id DESC LIMIT 30`);
   const obserwacje = db.prepare(`SELECT czas, cena, wysylka, bb_nasz, bb_cena, bb_fba, najtansza_inna
                                    FROM obserwacje WHERE oferta_id = ? ORDER BY id DESC LIMIT 60`);

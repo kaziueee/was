@@ -4485,6 +4485,10 @@ const CENY_KOD_OPIS = {
   top_bez_konkurencji: 'jedyna oferta', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
   przegrana_nie_cena: 'tańsi, a bez BB', brak_danych: 'brak danych o BB', brak_ceny: 'brak naszej ceny', brak_pasa: 'brak min/max',
 };
+const CENY_AKCJE = {
+  automat_wl: 'włączył automat', automat_wyl: 'wyłączył automat',
+  wysylanie_wl: 'włączył WYSYŁANIE cen na Amazona', wysylanie_wyl: 'wyłączył wysyłanie cen',
+};
 let cenyFiltr = 'automat', cenyWidok = 'macierz', cenySzukajTimer = null, cenyDane = null, cenyKartaTw = null, cenyKartaRynek = null;
 
 const cenyWaluta = (rynek) => (rynek === 'PL' ? 'zł' : '€');
@@ -4556,6 +4560,7 @@ function cenyKomorka(o, rynek) {
   } else if (o.kod) {
     pod = `<div class="ceny-dec" title="${cenyEsc(o.powod)}">${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</div>`;
   }
+  const wys = o.zapis ? '<div class="ceny-wysyla" title="Decyzje tej oferty idą na Amazona">● wysyła ceny</div>' : '';
   const bb = !o.bb_nasz && o.bb_cena != null ? `<div class="ceny-bb">BB ${cenyLiczba(o.bb_cena)} ${w}${o.bb_fba ? ' (FBA)' : ''} z wys.</div>` : '';
   const div = document.createElement('div');
   div.className = 'ceny-tresc';
@@ -4564,7 +4569,7 @@ function cenyKomorka(o, rynek) {
     ? `<div class="ceny-m">${o.obs_czas == null ? 'jeszcze nie obserwowana' : 'brak naszej oferty w odpowiedzi'}</div><div class="ceny-m">stan ${o.ilosc}</div>`
     : `<div class="ceny-cena">${cenyLiczba(o.cena)} ${w}${o.wysylka ? ` <small>+${cenyLiczba(o.wysylka)}</small>` : ''}</div>`
     + (o.cena == null ? '' : `<div class="ceny-m">marża ${o.marza != null ? cenyLiczba(o.marza, 1) + '%' : '—'}</div>`)
-    + (o.cena == null ? '' : `<div class="ceny-m">zysk ${o.zysk != null ? cenyLiczba(o.zysk) + ' zł' : '—'}</div>${bb}${pod}`);
+    + (o.cena == null ? '' : `<div class="ceny-m">zysk ${o.zysk != null ? cenyLiczba(o.zysk) + ' zł' : '—'}</div>${bb}${pod}${wys}`);
   div.addEventListener('click', () => cenyOtworzKarte(o.tw_id, rynek));
   const wrap = document.createElement('div');
   wrap.className = 'ceny-kom-wrap';
@@ -4680,12 +4685,12 @@ function cenyKartaRynekHtml(o) {
   const linki = o.linki ? `<a href="${cenyEsc(o.linki.produkt)}" target="_blank" rel="noopener">produkt ↗</a> · <a href="${cenyEsc(o.linki.oferty)}" target="_blank" rel="noopener">wszystkie oferty ↗</a>` : '';
   const histDec = o.decyzje.length ? `<table class="tabela ceny-tab-hist"><thead><tr><th>Czas</th><th>Cena</th><th>Decyzja</th><th>Min / max</th><th>Zysk</th><th>Powód</th></tr></thead><tbody>
       ${o.decyzje.map((x) => `<tr><td>${formatDatetime(x.czas)}</td><td>${cenyLiczba(x.cena_przed)}</td>
-        <td>${x.cena_nowa !== x.cena_przed ? `<b>→ ${cenyLiczba(x.cena_nowa)}</b>` : '—'}${x.wyslano ? ' ✓' : ''}</td>
+        <td>${x.cena_nowa !== x.cena_przed ? `<b>→ ${cenyLiczba(x.cena_nowa)}</b>` : '—'}${x.wyslano ? ' ✓ wysłano' : ''}${x.blad ? ` <span class="ceny-blad" title="${cenyEsc(x.blad)}">✗ nie wysłano</span>` : ''}</td>
         <td>${cenyLiczba(x.min)} / ${cenyLiczba(x.max)}</td><td>${cenyLiczba(x.zysk)}${x.zysk_nowa != null && x.zysk_nowa !== x.zysk ? ` → ${cenyLiczba(x.zysk_nowa)}` : ''}</td>
         <td>${cenyEsc(x.powod)}${x.auto ? '' : ' <span class="hint">(automat wył.)</span>'}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">Brak decyzji.</p>';
-  const zmiany = o.zmiany.length ? `<p class="hint">${o.zmiany.map((z) => `${formatDatetime(z.czas)} ${cenyEsc(z.kto || '?')}: ${z.akcja === 'automat_wl' ? 'włączył automat' : 'wyłączył automat'}`).join(' · ')}</p>` : '';
+  const zmiany = o.zmiany.length ? `<p class="hint">${o.zmiany.map((z) => `${formatDatetime(z.czas)} ${cenyEsc(z.kto || '?')}: ${cenyEsc(CENY_AKCJE[z.akcja] || z.akcja)}`).join(' · ')}</p>` : '';
   return `<section class="ceny-rynek${o.bb_nasz ? ' bb' : ''}${o.auto ? '' : ' off'}" data-ceny-rynek="${o.rynek}">
-    <div class="ceny-k-rynek"><h4>Amazon ${o.rynek}</h4><div class="ceny-sku">${cenyEsc(o.sku)} · stan ${o.ilosc}</div>
+    <div class="ceny-k-rynek"><h4>Amazon ${o.rynek}</h4>${o.zapis ? '<div class="ceny-wysyla">● wysyła ceny na Amazona</div>' : ''}<div class="ceny-sku">${cenyEsc(o.sku)} · stan ${o.ilosc}</div>
       <div class="ceny-m">${stanBb}</div>
       ${o.ilosc > 0 ? `<label class="ceny-auto-wiersz" data-ceny-auto="${o.id}"> automat</label>` : '<div class="hint">bez stanu — automat nie działa</div>'}
       <div class="ceny-linki">${linki}</div></div>
@@ -4711,7 +4716,7 @@ async function odswiezCenyLog() {
       const w = cenyWaluta(x.rynek);
       const zmiana = x.typ === 'decyzja'
         ? `${cenyLiczba(x.cena_przed)} → <strong>${cenyLiczba(x.cena_nowa)}</strong> ${w}${x.wyslano ? ' ✓' : ' <span class="hint">(próba)</span>'}`
-        : (x.kod === 'automat_wl' ? 'automat włączony' : x.kod === 'automat_wyl' ? 'automat wyłączony' : cenyEsc(x.kod));
+        : cenyEsc(CENY_AKCJE[x.kod] || x.kod);
       return `<tr><td>${formatDatetime(x.czas)}</td><td>${cenyEsc(x.rynek)}</td><td>${cenyEsc(x.symbol_gt || x.sku)}</td><td>${zmiana}</td>
         <td>${x.typ === 'decyzja' ? cenyEsc(x.powod) : ''}</td><td>${cenyEsc(x.kto || (x.typ === 'decyzja' ? 'system:ceny' : ''))}</td></tr>`;
     }).join('') : '<tr><td colspan="6" class="hint">Brak wpisów.</td></tr>';

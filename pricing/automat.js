@@ -6,6 +6,8 @@
 //   node pricing/automat.js wlacz DE PLA71602 FR SIM75818 ...   — pary rynek + SKU
 //   node pricing/automat.js wylacz DE PLA71602 ...
 //   node pricing/automat.js lista                               — oferty z włączonym automatem
+//   node pricing/automat.js wysylanie wlacz|wylacz DE PLA71602   — czy decyzje tej oferty idą na Amazona
+//                                                                  (działa tylko z PRICING_ZAPIS=1 i auto = 1)
 //
 // Przy włączaniu ostrzega, gdy ostatnia obserwacja pokazuje cenę poniżej minimum albo Buy Box
 // pod naszą podłogą — wtedy automat podniesie cenę albo będzie stał, a nie gonił rynek.
@@ -14,8 +16,23 @@ const { db } = require('./db');
 const { pasyHurtem } = require('./pas');
 
 async function main([akcja, ...reszta]) {
+  if (akcja === 'wysylanie') {
+    const [tryb, ...p] = reszta;
+    if (!['wlacz', 'wylacz'].includes(tryb) || !p.length || p.length % 2) throw new Error('Użycie: node pricing/automat.js wysylanie wlacz|wylacz <RYNEK> <SKU> [...]');
+    for (let i = 0; i < p.length; i += 2) {
+      const o = db.prepare("SELECT id, auto FROM oferty WHERE platforma = 'amazon' AND rynek = ? AND sku = ?").get(p[i].toUpperCase(), p[i + 1]);
+      if (!o) throw new Error(`Nie ma oferty ${p[i]} ${p[i + 1]}`);
+      const v = tryb === 'wlacz' ? 1 : 0;
+      db.prepare('UPDATE oferty SET zapis = ? WHERE id = ?').run(v, o.id);
+      db.prepare('INSERT INTO zmiany (kto, oferta_id, akcja, opis) VALUES (?, ?, ?, ?)')
+        .run(process.env.USERNAME || process.env.USER || null, o.id, v ? 'wysylanie_wl' : 'wysylanie_wyl', `${p[i].toUpperCase()} ${p[i + 1]}`);
+      console.log(`${p[i].toUpperCase()} ${p[i + 1]}: wysyłanie ${v ? 'WŁĄCZONE' : 'wyłączone'}${v && !o.auto ? ' (uwaga: automat wyłączony — nic nie pójdzie, dopóki go nie włączysz)' : ''}`
+        + (v && process.env.PRICING_ZAPIS !== '1' ? ' (uwaga: PRICING_ZAPIS ≠ 1 w tym procesie)' : ''));
+    }
+    return;
+  }
   if (akcja === 'lista') {
-    console.table(db.prepare(`SELECT o.rynek, o.sku, o.symbol_gt, o.ilosc,
+    console.table(db.prepare(`SELECT o.rynek, o.sku, o.symbol_gt, o.ilosc, o.zapis AS wysylanie,
         (SELECT kod || ': ' || cena_przed || ' → ' || cena_nowa FROM decyzje WHERE oferta_id = o.id ORDER BY id DESC LIMIT 1) AS ostatnia_decyzja
       FROM oferty o WHERE o.auto = 1 ORDER BY o.rynek, o.sku`).all());
     return;

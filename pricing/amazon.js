@@ -121,6 +121,28 @@ async function aktywneOferty(kraj) {
   })).filter((o) => o.sku);
 }
 
+// Zmiana ceny towaru (bez wysyłki) jednej oferty przez Listings Items API (patch).
+// walidacja = true → mode=VALIDATION_PREVIEW: Amazon sprawdza zmianę, ale jej NIE stosuje.
+// Zwraca { ok, status, cena, issues, blad }. Nie rzuca na odmowę Amazona — to wynik, nie awaria.
+const { budujZmianeCeny } = require('./zapis-model');
+const SELLER_ID = process.env.SPAPI_SELLER_ID || 'A297N0KEJID15J';
+
+async function ustawCene(rynek, sku, cena, { walidacja = false } = {}) {
+  const mp = RYNKI_AMAZON[rynek]?.id;
+  if (!mp) return { ok: false, blad: `nieznany rynek ${rynek}` };
+  const sciezka = `/listings/2021-08-01/items/${SELLER_ID}/${encodeURIComponent(sku)}`;
+  const item = await api('GET', `${sciezka}?marketplaceIds=${mp}&includedData=summaries,attributes`);
+  const productType = item.summaries?.[0]?.productType;
+  if (!productType) return { ok: false, blad: 'brak productType w odpowiedzi Amazona' };
+  const z = budujZmianeCeny(item.attributes?.purchasable_offer, mp, cena);
+  if (z.blad) return { ok: false, blad: z.blad };
+  const tryb = walidacja ? '&mode=VALIDATION_PREVIEW' : '';
+  const j = await api('PATCH', `${sciezka}?marketplaceIds=${mp}&issueLocale=pl_PL${tryb}`, { productType, patches: z.patches });
+  const bledy = (j.issues || []).filter((i) => i.severity === 'ERROR');
+  return { ok: j.status === (walidacja ? 'VALID' : 'ACCEPTED') && !bledy.length, status: j.status, cena: z.cena,
+    issues: j.issues || [], blad: bledy.length ? bledy.map((i) => i.message).join('; ') : null };
+}
+
 // Linki do oferty na stronie Amazona. API nie zwraca adresu — składamy go z domeny rynku i ASIN-u
 // (format /dp/<ASIN> jest stały). `?aod=1` otwiera od razu listę wszystkich ofert (kto ma Buy Box).
 function linkiOferty(rynek, asin) {
@@ -130,4 +152,4 @@ function linkiOferty(rynek, asin) {
   return { produkt, oferty: `${produkt}?aod=1` };
 }
 
-module.exports = { RYNKI_AMAZON, dajToken, api, uczestnictwo, raport, aktywneOferty, tsv, linkiOferty };
+module.exports = { RYNKI_AMAZON, dajToken, api, uczestnictwo, raport, aktywneOferty, tsv, linkiOferty, ustawCene };

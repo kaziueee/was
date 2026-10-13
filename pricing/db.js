@@ -84,7 +84,8 @@ CREATE TABLE IF NOT EXISTS decyzje (
   auto        INTEGER,                      -- czy automat był włączony w chwili decyzji
   zysk        REAL,                         -- zł/szt. przy cenie_przed (kalkulator WMS)
   marza       REAL,                         -- % przy cenie_przed
-  zysk_nowa   REAL                          -- zł/szt. przy cenie_nowa
+  zysk_nowa   REAL,                         -- zł/szt. przy cenie_nowa
+  marza_nowa  REAL                          -- % przy cenie_nowa
 );
 CREATE INDEX IF NOT EXISTS idx_dec_oferta ON decyzje(oferta_id, czas);
 
@@ -111,7 +112,7 @@ const kolOferty = db.prepare('PRAGMA table_info(oferty)').all().map((k) => k.nam
 if (!kolOferty.includes('dopasowanie')) db.exec('ALTER TABLE oferty ADD COLUMN dopasowanie TEXT');
 if (!kolOferty.includes('zapis')) db.exec('ALTER TABLE oferty ADD COLUMN zapis INTEGER NOT NULL DEFAULT 0');
 const kolDecyzje = db.prepare('PRAGMA table_info(decyzje)').all().map((k) => k.name);
-for (const [k, typ] of [['auto', 'INTEGER'], ['zysk', 'REAL'], ['marza', 'REAL'], ['zysk_nowa', 'REAL']]) {
+for (const [k, typ] of [['auto', 'INTEGER'], ['zysk', 'REAL'], ['marza', 'REAL'], ['zysk_nowa', 'REAL'], ['marza_nowa', 'REAL']]) {
   if (!kolDecyzje.includes(k)) db.exec(`ALTER TABLE decyzje ADD COLUMN ${k} ${typ}`);
 }
 

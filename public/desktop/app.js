@@ -4554,13 +4554,24 @@ function cenyWiersz(t, rynki) {
   return tr;
 }
 
+// Wysłana decyzja nowsza niż obserwacja = Amazon przyjął cenę, ale jeszcze jej nie widzieliśmy.
+// Pokazujemy ją od razu jako obecną (z marżą i zyskiem przy nowej cenie), z dopiskiem
+// „czeka na potwierdzenie”; worker sprawdza ofertę ponownie kilka minut po wysłaniu.
+function cenyPoWyslaniu(o) {
+  if (!o.wyslano || !o.dec_czas || (o.obs_czas && o.obs_czas > o.dec_czas)) return o;
+  return { ...o, cena: o.cena_nowa, marza: o.marza_nowa, zysk: o.zysk_nowa, kod: 'wyslano', czeka: true };
+}
+
 function cenyKomorka(o, rynek) {
   const td = document.createElement('td');
   if (!o) { td.innerHTML = '<span class="hint">—</span>'; return td; }
+  o = cenyPoWyslaniu(o);
   td.className = `ceny-kom${o.bb_nasz ? ' bb' : ''}${o.auto ? '' : ' off'}`;
   const w = cenyWaluta(rynek);
   let pod = '';
-  if (CENY_ZMIANY.includes(o.kod)) {
+  if (o.czeka) {
+    pod = `<div class="ceny-dec wyslano">✓ wysłano ${cenyGodzina(o.dec_czas)} · czeka na potwierdzenie z Amazona</div>`;
+  } else if (CENY_ZMIANY.includes(o.kod)) {
     const gora = o.cena_nowa > o.cena;
     // Wysłana decyzja ≠ propozycja: cena już poszła na Amazona, a obserwacja w komórce jest
     // sprzed wysłania — Amazon pokazuje zmianę po kilku minutach, my zobaczymy ją w następnym przebiegu.
@@ -4687,12 +4698,14 @@ async function odswiezCenyKarta() {
 }
 
 function cenyKartaRynekHtml(o) {
+  o = cenyPoWyslaniu(o);
   const w = cenyWaluta(o.rynek);
   const obs = o.obs_czas != null && o.cena != null;
   const stanBb = !obs ? (o.obs_czas == null ? 'jeszcze nie obserwowana' : 'Amazon nie zwrócił naszej oferty')
     : o.bb_nasz ? 'mamy Buy Box' : o.bb_cena != null ? `Buy Box ma ${o.bb_fba ? 'oferta FBA' : 'inny sprzedawca'}` : 'brak Buy Boxa';
   const zmiana = CENY_ZMIANY.includes(o.kod);
-  const dec = !o.kod ? '<span class="hint">brak decyzji</span>'
+  const dec = o.czeka ? `<b class="ceny-wyslano">✓ wysłano ${cenyLiczba(o.cena_nowa)} ${w} o ${cenyGodzina(o.dec_czas)}</b><br><span class="hint">Amazon przyjął zmianę; potwierdzimy ją kilka minut po wysłaniu. ${cenyEsc(o.powod)}</span>`
+    : !o.kod ? '<span class="hint">brak decyzji</span>'
     : `${zmiana ? `<b class="${o.wyslano ? 'ceny-wyslano' : o.cena_nowa > o.cena ? 'ceny-gora' : 'ceny-dol'}">${o.wyslano ? '✓ wysłano' : o.cena_nowa > o.cena ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}</b>${o.zysk_nowa != null ? ` → zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}<br>` : `<b>${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</b><br>`}
        ${o.dec_blad ? `<span class="ceny-blad">✗ nie wysłano: ${cenyEsc(o.dec_blad)}</span><br>` : ''}
        <span class="hint">${cenyEsc(o.powod)} · decyzja ${cenyGodzina(o.dec_czas)}</span>`;
@@ -4708,7 +4721,7 @@ function cenyKartaRynekHtml(o) {
       <div class="ceny-m">${stanBb}</div>
       ${o.ilosc > 0 ? `<label class="ceny-auto-wiersz" data-ceny-auto="${o.id}"> automat</label>` : '<div class="hint">bez stanu — automat nie działa</div>'}
       <div class="ceny-linki">${linki}</div></div>
-    <div class="ceny-k-cena"><span class="ceny-et">Cena · stan z ${cenyGodzina(o.obs_czas)}</span>${obs ? `<b class="ceny-duza">${cenyLiczba(o.cena)} ${w}</b>
+    <div class="ceny-k-cena"><span class="ceny-et">${o.czeka ? `Cena · wysłana ${cenyGodzina(o.dec_czas)}` : `Cena · stan z ${cenyGodzina(o.obs_czas)}`}</span>${obs ? `<b class="ceny-duza">${cenyLiczba(o.cena)} ${w}</b>
       <span class="ceny-m">${o.wysylka ? `+ wysyłka ${cenyLiczba(o.wysylka)} ${w}` : 'wysyłka gratis'}</span>
       <span class="ceny-m">marża ${o.marza != null ? cenyLiczba(o.marza, 1) + '%' : '—'}</span><span class="ceny-m">zysk ${o.zysk != null ? cenyLiczba(o.zysk) + ' zł' : '—'}</span>` : '<span class="hint">—</span>'}</div>
     <div class="ceny-k-konk"><span class="ceny-et">Konkurencja (z wysyłką)</span>

@@ -55,10 +55,11 @@ async function przebieg({ pelny = false } = {}) {
   const [obs, pasy] = await Promise.all([obserwuj(oferty), pasyHurtem(oferty.map((o) => o.tw_id))]);
   if (obs.bledyPaczek) wynik.bledy_paczek = obs.bledyPaczek;
 
-  const zapisz = db.prepare(`INSERT INTO decyzje (oferta_id, cena_przed, cena_nowa, min, max, kod, powod, wyslano, auto, zysk, marza, zysk_nowa, blad)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const zapisz = db.prepare(`INSERT INTO decyzje (oferta_id, cena_przed, cena_nowa, min, max, kod, powod, wyslano, auto, zysk, marza, zysk_nowa, blad, marza_nowa)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const kody = {};
   const wysylka = { wyslane: 0, odrzucone: 0 };
+  const doPotwierdzenia = [];   // oferty z przyjętą zmianą — sprawdzimy je jeszcze raz po kilku minutach
   // Decyzje liczymy w pamięci, a zapis do bazy robimy po wysłaniu — wywołania API nie mogą
   // trzymać otwartej transakcji SQLite (WMS czyta tę bazę w tym samym czasie).
   const wiersze = [];
@@ -82,13 +83,13 @@ async function przebieg({ pelny = false } = {}) {
     if (zapisWlaczony && o.auto && o.zapis && d.zmiana && pas) {
       try {
         const w = await ustawCene(o.rynek, o.sku, d.cena);
-        if (w.ok) { wyslano = 1; wysylka.wyslane++; }
+        if (w.ok) { wyslano = 1; wysylka.wyslane++; doPotwierdzenia.push(o); }
         else { blad = w.blad || `Amazon: ${w.status}`; wysylka.odrzucone++; }
       } catch (e) { blad = e.message; wysylka.odrzucone++; }
       console.log(new Date().toISOString(), `[pricing] ${o.rynek} ${o.sku}: ${ob.cena} → ${d.cena} ${wyslano ? 'WYSŁANO' : 'NIE WYSŁANO: ' + blad}`);
     }
     wiersze.push([o.id, ob.cena, d.cena, pas?.min ?? null, pas?.max ?? null, d.kod, d.powod, wyslano, o.auto,
-      teraz?.zysk ?? null, teraz?.marza ?? null, potem?.zysk ?? null, blad]);
+      teraz?.zysk ?? null, teraz?.marza ?? null, potem?.zysk ?? null, blad, potem?.marza ?? null]);
     if (o.auto) kody[d.kod] = (kody[d.kod] || 0) + 1;
   }
   db.exec('BEGIN');
@@ -97,20 +98,43 @@ async function przebieg({ pelny = false } = {}) {
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
   if (wysylka.wyslane || wysylka.odrzucone) wynik.wysylka = wysylka;
+  if (doPotwierdzenia.length) wynik.doPotwierdzenia = doPotwierdzenia;
   if (pelnyTeraz) stan.set('obserwacja_pelna', oferty.length);
   stan.set('przebieg', JSON.stringify(wynik));
   return { ...wynik, automat: kody };
 }
 
+// Potwierdzenie po wysłaniu: Amazon pokazuje nową cenę po ~3 min, a pełny przebieg jest co 30.
+// Sprawdzamy więc wysłane oferty jeszcze raz po PRICING_POTWIERDZENIE_MIN (domyślnie 5) — sama
+// obserwacja, bez decyzji. Ekran WMS od razu ma wtedy faktyczny stan (cena i Buy Box po zmianie).
+const POTWIERDZENIE_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE_MIN, 5, 'PRICING_POTWIERDZENIE_MIN');
+
 async function przebiegBezpieczny(opcje) {
   const t0 = Date.now();
   try {
     const w = await przebieg(opcje);
+    const doPotwierdzenia = w.doPotwierdzenia || [];
+    delete w.doPotwierdzenia;
     console.log(new Date().toISOString(), `[pricing] przebieg ${((Date.now() - t0) / 1000).toFixed(0)} s`, JSON.stringify(w));
+    return doPotwierdzenia;
   } catch (e) {
     // Błąd jednego przebiegu (API, GT) nie zabija procesu — następny spróbuje znowu.
     stan.set('blad', e.message);
     console.error(new Date().toISOString(), '[pricing] błąd przebiegu:', e.message);
+    return [];
+  }
+}
+
+async function potwierdz(oferty) {
+  try {
+    const obs = await obserwuj(oferty);
+    for (const o of oferty) {
+      const ob = obs.get(o.id);
+      console.log(new Date().toISOString(), `[pricing] potwierdzenie ${o.rynek} ${o.sku}: na Amazonie ${ob ? ob.cena : '?'}`
+        + `, Buy Box ${ob ? (ob.bbNasz ? 'nasz' : ob.bbNasz === false ? 'INNY' : '?') : '?'}`);
+    }
+  } catch (e) {
+    console.error(new Date().toISOString(), '[pricing] błąd potwierdzenia:', e.message);
   }
 }
 
@@ -143,7 +167,15 @@ if (require.main === module) {
     console.log(`[pricing] worker startuje, przebieg co ${ms / 60000} min, `
       + (process.env.PRICING_ZAPIS === '1' ? 'WYSYŁANIE CEN WŁĄCZONE dla ofert z zapis = 1' : 'tryb Próba (PRICING_ZAPIS ≠ 1, bez wysyłania cen)'));
     let trwa = false;
-    const tik = async () => { if (trwa) return; trwa = true; await przebiegBezpieczny(); trwa = false; };
+    const tik = async () => {
+      if (trwa) return;
+      trwa = true;
+      const doPotwierdzenia = await przebiegBezpieczny();
+      trwa = false;
+      if (doPotwierdzenia.length) {
+        setTimeout(async () => { if (trwa) return; trwa = true; await potwierdz(doPotwierdzenia); trwa = false; }, POTWIERDZENIE_MS);
+      }
+    };
     tik();
     setInterval(tik, ms);
   }

@@ -21,6 +21,7 @@
       <a href="#produkty" class="tab-link" data-panel="produkty">Produkty</a>
       <a href="#cennik" class="tab-link" data-panel="cennik" id="tab-cennik" style="display:none">Cennik</a>
       <a href="#sprzedaz" class="tab-link" data-panel="sprzedaz" id="tab-sprzedaz" style="display:none">Sprzedaż</a>
+      <a href="#ceny" class="tab-link" data-panel="ceny" id="tab-ceny" style="display:none">Ceny</a>
       <a href="#ruchy/uzupelnienia" class="tab-link" data-panel="ruchy">Ruchy</a>
       <a href="#zwroty" class="tab-link" data-panel="zwroty">Zwroty</a>
       <a href="#sciezki" class="tab-link" data-panel="sciezki">Ścieżki</a>
@@ -781,6 +782,55 @@
         </table>
       </div>
       <p id="cennik-brak" class="hint">Wpisz SKU, aby zobaczyć ceny.</p>
+    </section>
+
+    <!-- Panel Ceny (admin/biuro): repricer Amazona. Dane liczy osobny proces (pricing/worker.js,
+         zadanie WMS-Pricing) do db/pricing.db; ten ekran tylko czyta i włącza/wyłącza automat. -->
+    <section id="panel-ceny" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Ceny na rynkach — Amazon</h2>
+        <div class="filtry">
+          <span class="ceny-proba" title="Repricer liczy decyzje, ale nie wysyła cen na Amazona">Tryb Próba — ceny nie są wysyłane</span>
+          <button type="button" id="ceny-odswiez" class="btn btn-small">↻ Odśwież</button>
+        </div>
+      </div>
+      <p id="ceny-stan" class="hint"></p>
+      <div class="ceny-pasek">
+        <div class="ceny-widoki">
+          <button type="button" class="ceny-chip aktywny" data-ceny-widok="macierz">Macierz</button>
+          <button type="button" class="ceny-chip" data-ceny-widok="log">Log decyzji</button>
+        </div>
+        <div class="ceny-filtry" id="ceny-filtry">
+          <button type="button" class="ceny-chip aktywny" data-ceny-filtr="automat">Z automatem <b id="ceny-l-automat"></b></button>
+          <button type="button" class="ceny-chip" data-ceny-filtr="decyzja">Automat zmieniłby cenę <b id="ceny-l-decyzja"></b></button>
+          <button type="button" class="ceny-chip" data-ceny-filtr="wszystkie">Wszystkie ze stanem <b id="ceny-l-wszystkie"></b></button>
+          <input type="search" id="ceny-szukaj" placeholder="Szukaj SKU, ASIN lub nazwy…" autocomplete="off">
+        </div>
+      </div>
+      <div id="ceny-widok-macierz">
+        <div class="tabela-wrapper ceny-wrap">
+          <table class="tabela ceny-tabela">
+            <thead id="ceny-thead"></thead>
+            <tbody id="ceny-tbody"></tbody>
+          </table>
+        </div>
+        <p id="ceny-brak" class="hint hidden"></p>
+        <p class="hint ceny-legenda">
+          <span class="ceny-probka bb"></span> mamy Buy Box &nbsp;
+          <span class="ceny-probka off"></span> automat wyłączony &nbsp;
+          W komórce: cena (bez wysyłki), marża i zysk na sztuce wg kalkulatora; pod spodem co zrobiłby automat.
+          Przełącznik w komórce = jeden rynek, przy SKU = wszystkie rynki tego towaru. Kliknij komórkę — historia oferty.
+        </p>
+        <div id="ceny-historia" class="ceny-historia hidden"></div>
+      </div>
+      <div id="ceny-widok-log" class="hidden">
+        <div class="tabela-wrapper">
+          <table class="tabela">
+            <thead><tr><th>Czas</th><th>Rynek</th><th>SKU</th><th>Zmiana</th><th>Powód</th><th>Kto</th></tr></thead>
+            <tbody id="ceny-log-tbody"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <!-- Panel Sprzedaz (admin/biuro): zadanie sprzedazowe - SKU, ktorym podbijamy sprzedaz,

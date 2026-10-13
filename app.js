@@ -21,6 +21,7 @@ const uzytkownicyRouter = require('./routes/uzytkownicy');
 const kartonyRouter = require('./routes/kartony');
 const cennikRouter = require('./routes/cennik');
 const sprzedazRouter = require('./routes/sprzedaz');
+const cenyRouter = require('./routes/ceny');
 const blokadyRouter = require('./routes/blokady');
 const blokady = require('./services/blokady');
 const auth = require('./services/auth');
@@ -86,6 +87,7 @@ app.use('/api/do-sprawdzenia', doSprawdzeniaRouter);  // czysty odczyt (GT + kop
 // Ceny i sprzedaz tylko dla admin/biuro - takze odczyt (koszt zakupu nie jest dla hali).
 app.use('/api/cennik', auth.wymagajRoli('admin', 'biuro'), cennikRouter);  // odczyt z GT - koszt zakupu (tc_CenaNetto0) + ceny per rynek
 app.use('/api/sprzedaz', auth.wymagajRoli('admin', 'biuro'), sprzedazRouter);  // zadanie sprzedazowe (FS z GT)
+app.use('/api/ceny', auth.wymagajRoli('admin', 'biuro'), cenyRouter);  // repricer: odczyt db/pricing.db (liczy osobny proces pricing/worker.js)
 app.use('/api/magazyny', magazynyRouter);
 app.use('/api/status', statusRouter); // publiczny - pasek stanu na ekranie logowania
 // GET-y to czysty odczyt z GT (skany, wyszukiwanie) - otwarte. PUT /:id/atrybuty zapisuje

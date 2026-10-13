@@ -27,18 +27,35 @@ function liczba(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-async function wycenaPoSku(sku, nadpisz = {}) {
-  const r = await query(
-    `SELECT TOP 1 t.tw_Symbol, t.tw_Nazwa, c.tc_CenaNetto0 AS koszt,
+const KOLUMNY = `t.tw_Id, t.tw_Symbol, t.tw_Nazwa, c.tc_CenaNetto0 AS koszt,
             pw.pwd_Tekst06 AS wagaRzecz, pw.pwd_Tekst10 AS gabKarton, pw.pwd_Tekst09 AS gabZwykla,
             pw.pwd_Tekst07 AS wymiary, pw.pwd_Tekst04 AS zbiorcze
        FROM tw__Towar t
        JOIN tw_Cena c ON c.tc_IdTowar = t.tw_Id
-       LEFT JOIN pw_Dane pw ON pw.pwd_TypObiektu = -14 AND pw.pwd_IdObiektu = t.tw_Id
-      WHERE t.tw_Symbol = @sku OR t.tw_PodstKodKresk = @sku`,
-    { sku });
+       LEFT JOIN pw_Dane pw ON pw.pwd_TypObiektu = -14 AND pw.pwd_IdObiektu = t.tw_Id`;
+
+async function wycenaPoSku(sku, nadpisz = {}) {
+  const r = await query(`SELECT TOP 1 ${KOLUMNY} WHERE t.tw_Symbol = @sku OR t.tw_PodstKodKresk = @sku`, { sku });
   const row = r.recordset[0];
   if (!row) return null;
+  return wycenaZWiersza(row, nadpisz);
+}
+
+// Wycena wielu towarów naraz po tw_Id — jedno zapytanie na paczkę zamiast jednego na towar
+// (repricer wycenia ~2000 ofert na przebieg; pojedyncze zapytania przez VPN zrywały pulę połączeń).
+// Ta sama matematyka co wycenaPoSku (wycenaZWiersza). Zwraca Map(tw_Id → wycena).
+async function wycenaHurtem(twIds, nadpisz = {}) {
+  const ids = [...new Set(twIds.map(Number).filter((x) => Number.isInteger(x) && x > 0))];
+  const wynik = new Map();
+  for (let i = 0; i < ids.length; i += 500) {
+    const paczka = ids.slice(i, i + 500);                       // liczby całkowite — bezpieczne w IN
+    const r = await query(`SELECT ${KOLUMNY} WHERE t.tw_Id IN (${paczka.join(',')})`);
+    for (const row of r.recordset) wynik.set(row.tw_Id, wycenaZWiersza(row, nadpisz));
+  }
+  return wynik;
+}
+
+function wycenaZWiersza(row, nadpisz = {}) {
 
   const koszt = Number(row.koszt) || 0;
   const rzecz = liczba(row.wagaRzecz);
@@ -89,4 +106,4 @@ async function wycenaPoSku(sku, nadpisz = {}) {
   };
 }
 
-module.exports = { wycenaPoSku };
+module.exports = { wycenaPoSku, wycenaHurtem };

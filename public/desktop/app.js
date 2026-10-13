@@ -108,6 +108,7 @@ const panele = {
   kartony: { sekcja: 'panel-kartony', zaladowano: false, odswiez: odswiezKartony },
   cennik: { sekcja: 'panel-cennik', zaladowano: false, odswiez: odswiezCennik },
   sprzedaz: { sekcja: 'panel-sprzedaz', zaladowano: false, odswiez: odswiezSprzedaz },
+  ceny: { sekcja: 'panel-ceny', zaladowano: false, odswiez: () => odswiezCeny() },
 };
 
 // Grupa "Ruchy" - jedna pozycja w nawigacji, cztery osobne panele pod spodem. Trzymamy je
@@ -1920,7 +1921,7 @@ function pokazZakladkeAdmina() {
   // Ceny i sprzedaz: admin + biuro. Zamkiem jest backend (auth.wymagajRoli) - tu tylko UX.
   const rola = (window.WMS?.user() || {}).rola;
   const biuro = !window.WMS || rola === 'admin' || rola === 'biuro';
-  for (const id of ['tab-cennik', 'tab-sprzedaz']) {
+  for (const id of ['tab-cennik', 'tab-sprzedaz', 'tab-ceny']) {
     const tab = el(id);
     if (tab) tab.style.display = biuro ? '' : 'none';
   }
@@ -4439,6 +4440,175 @@ el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
   setInterval(odswiez, 20000);
   window.addEventListener('wms-zalogowano', odswiez);
 })();
+
+// === CENY (repricer Amazona) ===
+// Dane liczy osobny proces (pricing/worker.js) do db/pricing.db; tu tylko odczyt + włącz/wyłącz
+// automat. Backend: routes/ceny.js (admin/biuro). Nigdy nie włączamy automatu na cały katalog —
+// tylko wskazane oferty (komórka) albo wszystkie rynki jednego towaru (przełącznik przy SKU).
+
+const CENY_ZMIANY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min'];
+const CENY_KOD_OPIS = {
+  podwyzka: 'podwyżka', podwyzka_limit: 'podwyżka (schodek)', obnizka: 'obniżka', obnizka_limit: 'obniżka (schodek)',
+  na_min: 'na minimum', na_min_limit: 'w stronę minimum', pod_min: 'powrót na minimum', top: 'mamy BB — bez zmiany',
+  top_bez_konkurencji: 'jedyna oferta', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
+  przegrana_nie_cena: 'tańsi, a bez BB', brak_danych: 'brak danych o BB', brak_ceny: 'brak naszej ceny', brak_pasa: 'brak min/max',
+};
+let cenyFiltr = 'automat', cenyWidok = 'macierz', cenySzukajTimer = null, cenyDane = null;
+
+const cenyWaluta = (rynek) => (rynek === 'PL' ? 'zł' : '€');
+const cenyLiczba = (v, d = 2) => (v == null ? '—' : Number(v).toLocaleString('pl-PL', { minimumFractionDigits: d, maximumFractionDigits: d }));
+const cenyEsc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+async function odswiezCeny() {
+  if (cenyWidok === 'log') return odswiezCenyLog();
+  const q = el('ceny-szukaj').value.trim();
+  const qs = new URLSearchParams({ filtr: cenyFiltr, ...(q ? { q } : {}) });
+  try { cenyDane = await api(`/api/ceny/macierz?${qs}`); renderujCeny(cenyDane); }
+  catch (err) { pokazKomunikat(err.message, 'blad'); }
+}
+
+function renderujCeny(d) {
+  const przebieg = d.przebieg ? `ostatni przebieg ${formatDatetime(d.przebieg.czas)}` : 'repricer jeszcze nie ruszył';
+  const pelna = d.obserwacja_pelna ? ` · pełna obserwacja katalogu ${formatDatetime(d.obserwacja_pelna.czas)}` : '';
+  const blad = d.blad && (!d.przebieg || d.blad.czas > d.przebieg.czas) ? ` · <span class="ceny-blad">błąd: ${cenyEsc(d.blad.wartosc)}</span>` : '';
+  el('ceny-stan').innerHTML = przebieg + pelna + blad;
+  for (const k of ['automat', 'decyzja', 'wszystkie']) el(`ceny-l-${k}`).textContent = d.liczniki[k];
+  document.querySelectorAll('[data-ceny-filtr]').forEach((b) => b.classList.toggle('aktywny', b.dataset.cenyFiltr === cenyFiltr));
+
+  el('ceny-thead').innerHTML = `<tr><th>Towar</th>${d.rynki.map((r) => `<th>Amazon ${r}</th>`).join('')}</tr>`;
+  const tbody = el('ceny-tbody');
+  tbody.innerHTML = '';
+  const brak = el('ceny-brak');
+  brak.classList.toggle('hidden', d.wiersze.length > 0);
+  brak.textContent = el('ceny-szukaj').value.trim() ? 'Nic nie pasuje do wyszukiwania.'
+    : cenyFiltr === 'automat' ? 'Automat nie jest jeszcze włączony dla żadnej oferty. Wyszukaj SKU albo wybierz „Wszystkie ze stanem” i włącz przełącznik w komórce.'
+      : 'Brak ofert.';
+  for (const t of d.wiersze) tbody.appendChild(cenyWiersz(t, d.rynki));
+  if (d.razem > d.wiersze.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="${d.rynki.length + 1}" class="hint">Pokazano ${d.wiersze.length} z ${d.razem} — zawęź wyszukiwaniem.</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function cenyWiersz(t, rynki) {
+  const tr = document.createElement('tr');
+  const oferty = Object.values(t.rynki);
+  const wl = oferty.filter((o) => o.auto).length;
+  const td0 = document.createElement('td');
+  td0.className = 'ceny-towar';
+  td0.innerHTML = `<div class="ceny-symbol">${cenyEsc(t.symbol)}</div><div class="ceny-nazwa" title="${cenyEsc(t.nazwa)}">${cenyEsc(t.nazwa)}</div>`;
+  const lbl = document.createElement('label');
+  lbl.className = 'ceny-auto-wiersz';
+  lbl.appendChild(cenyPrzelacznik(wl === oferty.length ? 'on' : wl ? 'czesc' : '', `Automat dla wszystkich rynków ${t.symbol}`,
+    () => cenyUstawAutomat(oferty.map((o) => o.id), wl !== oferty.length)));
+  lbl.append(` automat ${wl}/${oferty.length}`);
+  td0.appendChild(lbl);
+  tr.appendChild(td0);
+  for (const r of rynki) tr.appendChild(cenyKomorka(t.rynki[r], r));
+  return tr;
+}
+
+function cenyKomorka(o, rynek) {
+  const td = document.createElement('td');
+  if (!o) { td.innerHTML = '<span class="hint">—</span>'; return td; }
+  td.className = `ceny-kom${o.bb_nasz ? ' bb' : ''}${o.auto ? '' : ' off'}`;
+  const w = cenyWaluta(rynek);
+  let pod = '';
+  if (CENY_ZMIANY.includes(o.kod)) {
+    const gora = o.cena_nowa > o.cena;
+    pod = `<div class="ceny-dec ${gora ? 'gora' : 'dol'}" title="${cenyEsc(o.powod)}">${gora ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}`
+      + `${o.zysk_nowa != null ? ` · zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}</div>`;
+  } else if (o.kod) {
+    pod = `<div class="ceny-dec" title="${cenyEsc(o.powod)}">${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</div>`;
+  }
+  const bb = !o.bb_nasz && o.bb_cena != null ? `<div class="ceny-bb">BB ${cenyLiczba(o.bb_cena)} ${w}${o.bb_fba ? ' (FBA)' : ''} z wys.</div>` : '';
+  const div = document.createElement('div');
+  div.className = 'ceny-tresc';
+  div.title = `${o.sku}${o.inne_oferty ? ` (+${o.inne_oferty} inna oferta tego towaru)` : ''} · stan ${o.ilosc} · obserwacja ${formatDatetime(o.obs_czas)}`;
+  div.innerHTML = o.obs_czas == null || o.cena == null
+    ? `<div class="ceny-m">${o.obs_czas == null ? 'jeszcze nie obserwowana' : 'brak naszej oferty w odpowiedzi'}</div><div class="ceny-m">stan ${o.ilosc}</div>`
+    : `<div class="ceny-cena">${cenyLiczba(o.cena)} ${w}${o.wysylka ? ` <small>+${cenyLiczba(o.wysylka)}</small>` : ''}</div>`
+    + (o.cena == null ? '' : `<div class="ceny-m">marża ${o.marza != null ? cenyLiczba(o.marza, 1) + '%' : '—'}</div>`)
+    + (o.cena == null ? '' : `<div class="ceny-m">zysk ${o.zysk != null ? cenyLiczba(o.zysk) + ' zł' : '—'}</div>${bb}${pod}`);
+  div.addEventListener('click', () => cenyHistoria(o.id, `${rynek} ${o.sku}`));
+  const wrap = document.createElement('div');
+  wrap.className = 'ceny-kom-wrap';
+  wrap.appendChild(div);
+  wrap.appendChild(cenyPrzelacznik(o.auto ? 'on' : '', `Automat ${rynek} ${o.sku}`, () => cenyUstawAutomat([o.id], !o.auto)));
+  td.appendChild(wrap);
+  return td;
+}
+
+function cenyPrzelacznik(stan, etykieta, onKlik) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = `ceny-przel ${stan}`;
+  b.setAttribute('role', 'switch');
+  b.setAttribute('aria-checked', stan === 'on' ? 'true' : stan === 'czesc' ? 'mixed' : 'false');
+  b.setAttribute('aria-label', etykieta);
+  b.title = stan === 'on' ? 'Wyłącz automat' : 'Włącz automat';
+  b.innerHTML = '<span></span>';
+  b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); onKlik(); });
+  return b;
+}
+
+async function cenyUstawAutomat(ids, auto) {
+  try {
+    const r = await api('/api/ceny/automat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, auto, operator: operator() }),
+    });
+    pokazKomunikat(`Automat ${auto ? 'włączony' : 'wyłączony'}: ${r.zmienione} ofert${r.pominiete.length ? `, pominięte ${r.pominiete.length}` : ''}. Tryb Próba — ceny nie idą na Amazona.`, 'ok');
+    odswiezCeny();
+  } catch (err) { pokazKomunikat(err.message, 'blad'); }
+}
+
+async function cenyHistoria(id, etykieta) {
+  const box = el('ceny-historia');
+  try {
+    const d = await api(`/api/ceny/oferta/${id}`);
+    const w = cenyWaluta(d.oferta.rynek);
+    box.innerHTML = `<div class="panel-naglowek"><h3>Historia: ${cenyEsc(etykieta)}</h3><button type="button" class="btn btn-small" id="ceny-historia-zamknij">Zamknij</button></div>
+      <table class="tabela"><thead><tr><th>Czas</th><th>Cena</th><th>Decyzja</th><th>Min / max</th><th>Zysk teraz → po</th><th>Powód</th></tr></thead><tbody>
+      ${d.decyzje.map((x) => `<tr><td>${formatDatetime(x.czas)}</td><td>${cenyLiczba(x.cena_przed)} ${w}</td>
+        <td>${x.cena_nowa !== x.cena_przed ? `<strong>→ ${cenyLiczba(x.cena_nowa)} ${w}</strong>` : '—'}${x.wyslano ? ' ✓ wysłano' : ''}</td>
+        <td>${cenyLiczba(x.min)} / ${cenyLiczba(x.max)}</td><td>${cenyLiczba(x.zysk)} → ${cenyLiczba(x.zysk_nowa)} zł</td>
+        <td>${cenyEsc(x.powod)}${x.auto ? '' : ' <span class="hint">(automat wył.)</span>'}</td></tr>`).join('')}
+      </tbody></table>
+      ${d.zmiany.length ? `<p class="hint">Zmiany: ${d.zmiany.map((z) => `${formatDatetime(z.czas)} ${z.akcja === 'automat_wl' ? 'włączył' : 'wyłączył'} ${cenyEsc(z.kto || '?')}`).join(' · ')}</p>` : ''}`;
+    box.classList.remove('hidden');
+    el('ceny-historia-zamknij').addEventListener('click', () => box.classList.add('hidden'));
+    box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) { pokazKomunikat(err.message, 'blad'); }
+}
+
+async function odswiezCenyLog() {
+  try {
+    const d = await api('/api/ceny/log');
+    const tbody = el('ceny-log-tbody');
+    tbody.innerHTML = d.wpisy.length ? d.wpisy.map((x) => {
+      const w = cenyWaluta(x.rynek);
+      const zmiana = x.typ === 'decyzja'
+        ? `${cenyLiczba(x.cena_przed)} → <strong>${cenyLiczba(x.cena_nowa)}</strong> ${w}${x.wyslano ? ' ✓' : ' <span class="hint">(próba)</span>'}`
+        : (x.kod === 'automat_wl' ? 'automat włączony' : x.kod === 'automat_wyl' ? 'automat wyłączony' : cenyEsc(x.kod));
+      return `<tr><td>${formatDatetime(x.czas)}</td><td>${cenyEsc(x.rynek)}</td><td>${cenyEsc(x.symbol_gt || x.sku)}</td><td>${zmiana}</td>
+        <td>${x.typ === 'decyzja' ? cenyEsc(x.powod) : ''}</td><td>${cenyEsc(x.kto || (x.typ === 'decyzja' ? 'system:ceny' : ''))}</td></tr>`;
+    }).join('') : '<tr><td colspan="6" class="hint">Brak wpisów.</td></tr>';
+  } catch (err) { pokazKomunikat(err.message, 'blad'); }
+}
+
+document.querySelectorAll('[data-ceny-filtr]').forEach((b) => b.addEventListener('click', () => { cenyFiltr = b.dataset.cenyFiltr; odswiezCeny(); }));
+document.querySelectorAll('[data-ceny-widok]').forEach((b) => b.addEventListener('click', () => {
+  cenyWidok = b.dataset.cenyWidok;
+  document.querySelectorAll('[data-ceny-widok]').forEach((x) => x.classList.toggle('aktywny', x === b));
+  el('ceny-widok-macierz').classList.toggle('hidden', cenyWidok !== 'macierz');
+  el('ceny-widok-log').classList.toggle('hidden', cenyWidok !== 'log');
+  el('ceny-filtry').classList.toggle('hidden', cenyWidok !== 'macierz');
+  odswiezCeny();
+}));
+el('ceny-szukaj').addEventListener('input', () => { clearTimeout(cenySzukajTimer); cenySzukajTimer = setTimeout(odswiezCeny, 300); });
+el('ceny-odswiez').addEventListener('click', () => odswiezCeny());
 
 // --- init ---
 

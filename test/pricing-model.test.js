@@ -1,0 +1,98 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert');
+
+const { decyzja } = require('../pricing/model');
+
+const pas = { min: 20, max: 30 };
+const obs = (o) => ({ cena: 25, wysylka: 4.99, bbNasz: null, bbCena: null, bbFba: false, najtanszaInna: null, ...o });
+
+test('brak danych o konkurencji — nic nie zmieniamy', () => {
+  const d = decyzja(obs({}), pas);
+  assert.strictEqual(d.zmiana, false);
+  assert.strictEqual(d.kod, 'brak_danych');
+});
+
+test('mamy Buy Box i konkurent wyraźnie wyżej — podnosimy pod niego (porównanie z wysyłką)', () => {
+  // konkurent 32,99 landed; my 26 + 4,99 → cel towaru 32,98 − 4,99 = 27,99
+  const d = decyzja(obs({ cena: 26, bbNasz: true, najtanszaInna: 32.99 }), pas);
+  assert.strictEqual(d.zmiana, true);
+  assert.strictEqual(d.kod, 'podwyzka');
+  assert.strictEqual(d.cena, 27.99);
+});
+
+test('podwyżka nie przekracza max', () => {
+  const d = decyzja(obs({ cena: 28, bbNasz: true, najtanszaInna: 60 }), pas);
+  assert.strictEqual(d.cena, 30);
+});
+
+test('duża podwyżka idzie schodami — najwyżej 10% na przebieg', () => {
+  const d = decyzja(obs({ bbNasz: true, najtanszaInna: 60 }), pas);   // cel = max 30, z 25 to +20%
+  assert.strictEqual(d.cena, 27.5);
+  assert.strictEqual(d.kod, 'podwyzka_limit');
+});
+
+test('mamy Buy Box, konkurent tuż nad nami — bez drgań (próg podwyżki)', () => {
+  const d = decyzja(obs({ bbNasz: true, najtanszaInna: 30.2 }), pas);   // cel 25,20 → +0,20
+  assert.strictEqual(d.zmiana, false);
+  assert.strictEqual(d.kod, 'top');
+});
+
+test('wygrywającej oferty nad max nie obniżamy', () => {
+  const d = decyzja(obs({ cena: 35, bbNasz: true, najtanszaInna: 41 }), pas);
+  assert.strictEqual(d.zmiana, false);
+});
+
+test('przegrywamy w pasie — schodzimy na Buy Box minus grosz', () => {
+  const d = decyzja(obs({ bbNasz: false, bbCena: 28.99 }), pas);   // cel 28,98 − 4,99 = 23,99
+  assert.strictEqual(d.kod, 'obnizka');
+  assert.strictEqual(d.cena, 23.99);
+});
+
+test('Buy Box pod naszą podłogą — schodzimy na min, dalej stoimy', () => {
+  const d1 = decyzja(obs({ cena: 21, bbNasz: false, bbCena: 22 }), pas);  // cel 17,00 < min
+  assert.strictEqual(d1.kod, 'na_min');
+  assert.strictEqual(d1.cena, 20);
+  const d2 = decyzja(obs({ cena: 20, bbNasz: false, bbCena: 22 }), pas);
+  assert.strictEqual(d2.zmiana, false);
+  assert.strictEqual(d2.kod, 'pod_podloga');
+});
+
+test('remis z ofertą FBA — stoimy, nie zaczynamy wojny o grosz', () => {
+  const d = decyzja(obs({ bbNasz: false, bbCena: 29.99, bbFba: true }), pas);
+  assert.strictEqual(d.zmiana, false);
+  assert.strictEqual(d.kod, 'remis_fba');
+});
+
+test('remis z ofertą NIE-FBA — schodzimy o grosz', () => {
+  const d = decyzja(obs({ bbNasz: false, bbCena: 29.99, bbFba: false }), pas);
+  assert.strictEqual(d.cena, 24.99);
+});
+
+test('duży spadek idzie schodami — najwyżej 5% na przebieg', () => {
+  const d = decyzja(obs({ cena: 100, bbNasz: false, bbCena: 60 }), { min: 50, max: 150 });
+  assert.strictEqual(d.cena, 95);
+  assert.strictEqual(d.kod, 'obnizka_limit');
+});
+
+test('schodek nie schodzi pod min', () => {
+  const d = decyzja(obs({ cena: 20.5, bbNasz: false, bbCena: 10 }), pas);
+  assert.strictEqual(d.cena, 20);
+});
+
+test('cena pod minimum wraca na minimum', () => {
+  const d = decyzja(obs({ cena: 18, bbNasz: true, najtanszaInna: 30 }), pas);
+  assert.strictEqual(d.kod, 'pod_min');
+  assert.strictEqual(d.cena, 20);
+});
+
+test('przegrywamy, choć jesteśmy tańsi — cena nie jest powodem, nie ruszamy', () => {
+  const d = decyzja(obs({ cena: 22, bbNasz: false, bbCena: 28.99 }), pas);  // my 26,99 < 28,99
+  assert.strictEqual(d.zmiana, false);
+  assert.strictEqual(d.kod, 'przegrana_nie_cena');
+});
+
+test('bez pasa z kalkulatora nie decydujemy', () => {
+  assert.strictEqual(decyzja(obs({ bbNasz: false, bbCena: 20 }), { min: 0, max: 0 }).kod, 'brak_pasa');
+});

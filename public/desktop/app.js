@@ -4492,6 +4492,12 @@ const CENY_AKCJE = {
 let cenyFiltr = 'automat', cenyWidok = 'macierz', cenySzukajTimer = null, cenyDane = null, cenyKartaTw = null, cenyKartaRynek = null;
 
 const cenyWaluta = (rynek) => (rynek === 'PL' ? 'zł' : '€');
+// Cena docelowa, gdy pierwszy krok jest krótszy (schodek −5% / +10% na przebieg).
+function cenyCelHtml(o, w) {
+  if (o.cena_cel == null || Math.abs(o.cena_cel - o.cena_nowa) < 0.005) return '';
+  return `<div class="ceny-cel" title="Dokąd automat zmierza schodkami">cel ${cenyLiczba(o.cena_cel)} ${w}${o.zysk_cel != null ? ` · zysk ${cenyLiczba(o.zysk_cel)} zł` : ''}</div>`;
+}
+
 // Stan z GT pod nazwą towaru: Razem (K4+K4G+MAG+LS, bez BRK) i półka zbioru K4 z rezerwacją.
 function cenyStanTekst(s) {
   if (s === undefined) return '';                    // backend bez pola (przed restartem WMS)
@@ -4587,7 +4593,7 @@ function cenyKomorka(o, rynek) {
     pod = o.wyslano
       ? `<div class="ceny-dec wyslano" title="${cenyEsc(o.powod)}">✓ wysłano ${cenyLiczba(o.cena_nowa)} ${w} · ${cenyGodzina(o.dec_czas)}</div>`
       : `<div class="ceny-dec ${gora ? 'gora' : 'dol'}" title="${cenyEsc(o.powod)}">${o.auto ? '' : 'podpowiedź: '}${gora ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}`
-        + `${o.zysk_nowa != null ? ` · zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}</div>`;
+        + `${o.zysk_nowa != null ? ` · zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}</div>${cenyCelHtml(o, w)}`;
     if (o.dec_blad) pod += `<div class="ceny-dec dol" title="${cenyEsc(o.dec_blad)}">✗ nie wysłano</div>`;
   } else if (o.kod) {
     pod = `<div class="ceny-dec" title="${cenyEsc(o.powod)}">${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</div>`;
@@ -4716,13 +4722,13 @@ function cenyKartaRynekHtml(o) {
   const zmiana = CENY_ZMIANY.includes(o.kod);
   const dec = o.czeka ? `<b class="ceny-wyslano">✓ wysłano ${cenyLiczba(o.cena_nowa)} ${w} o ${cenyGodzina(o.dec_czas)}</b><br><span class="hint">Amazon przyjął zmianę; potwierdzimy ją kilka minut po wysłaniu. ${cenyEsc(o.powod)}</span>`
     : !o.kod ? '<span class="hint">brak decyzji</span>'
-    : `${zmiana ? `<b class="${o.wyslano ? 'ceny-wyslano' : o.cena_nowa > o.cena ? 'ceny-gora' : 'ceny-dol'}">${o.wyslano ? '✓ wysłano' : o.cena_nowa > o.cena ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}</b>${o.zysk_nowa != null ? ` → zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}<br>` : `<b>${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</b><br>`}
+    : `${zmiana ? `<b class="${o.wyslano ? 'ceny-wyslano' : o.cena_nowa > o.cena ? 'ceny-gora' : 'ceny-dol'}">${o.wyslano ? '✓ wysłano' : o.auto ? '' : 'podpowiedź: '}${o.wyslano ? '' : o.cena_nowa > o.cena ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}</b>${o.zysk_nowa != null ? ` → zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}<br>${cenyCelHtml(o, w)}` : `<b>${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</b><br>`}
        ${o.dec_blad ? `<span class="ceny-blad">✗ nie wysłano: ${cenyEsc(o.dec_blad)}</span><br>` : ''}
        <span class="hint">${cenyEsc(o.powod)} · decyzja ${cenyGodzina(o.dec_czas)}</span>`;
   const linki = o.linki ? `<a href="${cenyEsc(o.linki.produkt)}" target="_blank" rel="noopener">produkt ↗</a> · <a href="${cenyEsc(o.linki.oferty)}" target="_blank" rel="noopener">wszystkie oferty ↗</a>` : '';
   const histDec = o.decyzje.length ? `<table class="tabela ceny-tab-hist"><thead><tr><th>Czas</th><th>Cena</th><th>Decyzja</th><th>Min / max</th><th>Zysk</th><th>Powód</th></tr></thead><tbody>
       ${o.decyzje.map((x) => `<tr><td>${formatDatetime(x.czas)}</td><td>${cenyLiczba(x.cena_przed)}</td>
-        <td>${x.cena_nowa !== x.cena_przed ? `<b>→ ${cenyLiczba(x.cena_nowa)}</b>` : '—'}${x.wyslano ? ' ✓ wysłano' : ''}${x.blad ? ` <span class="ceny-blad" title="${cenyEsc(x.blad)}">✗ nie wysłano</span>` : ''}</td>
+        <td>${x.cena_nowa !== x.cena_przed ? `<b>→ ${cenyLiczba(x.cena_nowa)}</b>${x.cena_cel != null && Math.abs(x.cena_cel - x.cena_nowa) >= 0.005 ? ` <span class="hint">(cel ${cenyLiczba(x.cena_cel)})</span>` : ''}` : '—'}${x.wyslano ? ' ✓ wysłano' : ''}${x.blad ? ` <span class="ceny-blad" title="${cenyEsc(x.blad)}">✗ nie wysłano</span>` : ''}</td>
         <td>${cenyLiczba(x.min)} / ${cenyLiczba(x.max)}</td><td>${cenyLiczba(x.zysk)}${x.zysk_nowa != null && x.zysk_nowa !== x.zysk ? ` → ${cenyLiczba(x.zysk_nowa)}` : ''}</td>
         <td>${cenyEsc(x.powod)}${x.auto ? '' : ' <span class="hint">(automat wył.)</span>'}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">Brak decyzji.</p>';
   const zmiany = o.zmiany.length ? `<p class="hint">${o.zmiany.map((z) => `${formatDatetime(z.czas)} ${cenyEsc(z.kto || '?')}: ${cenyEsc(CENY_AKCJE[z.akcja] || z.akcja)}`).join(' · ')}</p>` : '';

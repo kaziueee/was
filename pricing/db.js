@@ -84,7 +84,9 @@ CREATE TABLE IF NOT EXISTS decyzje (
   zysk        REAL,                         -- zł/szt. przy cenie_przed (kalkulator WMS)
   marza       REAL,                         -- % przy cenie_przed
   zysk_nowa   REAL,                         -- zł/szt. przy cenie_nowa
-  marza_nowa  REAL                          -- % przy cenie_nowa
+  marza_nowa  REAL,                         -- % przy cenie_nowa
+  cena_cel    REAL,                         -- cena docelowa (bez limitu schodka)
+  zysk_cel    REAL                          -- zł/szt. przy cenie docelowej
 );
 CREATE INDEX IF NOT EXISTS idx_dec_oferta ON decyzje(oferta_id, czas);
 
@@ -112,7 +114,7 @@ if (!kolOferty.includes('dopasowanie')) db.exec('ALTER TABLE oferty ADD COLUMN d
 // `oferty.zapis` (osobny przełącznik wysyłania, tryb Próba) zlikwidowany 2026-10-13 — w starszych
 // bazach kolumna zostaje, nic jej nie czyta: automat = wysyła, ręczny = nie.
 const kolDecyzje = db.prepare('PRAGMA table_info(decyzje)').all().map((k) => k.name);
-for (const [k, typ] of [['auto', 'INTEGER'], ['zysk', 'REAL'], ['marza', 'REAL'], ['zysk_nowa', 'REAL'], ['marza_nowa', 'REAL']]) {
+for (const [k, typ] of [['auto', 'INTEGER'], ['zysk', 'REAL'], ['marza', 'REAL'], ['zysk_nowa', 'REAL'], ['marza_nowa', 'REAL'], ['cena_cel', 'REAL'], ['zysk_cel', 'REAL']]) {
   if (!kolDecyzje.includes(k)) db.exec(`ALTER TABLE decyzje ADD COLUMN ${k} ${typ}`);
 }
 

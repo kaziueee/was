@@ -56,8 +56,8 @@ async function przebieg({ pelny = false } = {}) {
   const [obs, pasy] = await Promise.all([obserwuj(oferty), pasyHurtem(oferty.map((o) => o.tw_id))]);
   if (obs.bledyPaczek) wynik.bledy_paczek = obs.bledyPaczek;
 
-  const zapisz = db.prepare(`INSERT INTO decyzje (oferta_id, cena_przed, cena_nowa, min, max, kod, powod, wyslano, auto, zysk, marza, zysk_nowa, blad, marza_nowa)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const zapisz = db.prepare(`INSERT INTO decyzje (oferta_id, cena_przed, cena_nowa, min, max, kod, powod, wyslano, auto, zysk, marza, zysk_nowa, blad, marza_nowa, cena_cel, zysk_cel)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const kody = {};
   const wysylka = { wyslane: 0, odrzucone: 0 };
   const doPotwierdzenia = [];   // oferty z przyjętą zmianą — sprawdzimy je jeszcze raz po kilku minutach
@@ -80,6 +80,7 @@ async function przebieg({ pelny = false } = {}) {
     });
     const teraz = pas && ob.cena ? pas.ocen(ob.cena) : null;
     const potem = pas && d.zmiana ? pas.ocen(d.cena) : teraz;
+    const celOc = pas && d.zmiana && d.cel !== d.cena ? pas.ocen(d.cel) : potem;
     let wyslano = 0, blad = null;
     if (zapisWlaczony && o.auto && d.zmiana && pas) {
       try {
@@ -90,7 +91,8 @@ async function przebieg({ pelny = false } = {}) {
       console.log(new Date().toISOString(), `[pricing] ${o.rynek} ${o.sku}: ${ob.cena} → ${d.cena} ${wyslano ? 'WYSŁANO' : 'NIE WYSŁANO: ' + blad}`);
     }
     wiersze.push([o.id, ob.cena, d.cena, pas?.min ?? null, pas?.max ?? null, d.kod, d.powod, wyslano, o.auto,
-      teraz?.zysk ?? null, teraz?.marza ?? null, potem?.zysk ?? null, blad, potem?.marza ?? null]);
+      teraz?.zysk ?? null, teraz?.marza ?? null, potem?.zysk ?? null, blad, potem?.marza ?? null,
+      d.cel ?? null, celOc?.zysk ?? null]);
     if (o.auto) kody[d.kod] = (kody[d.kod] || 0) + 1;
   }
   db.exec('BEGIN');

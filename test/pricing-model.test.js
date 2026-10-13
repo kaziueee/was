@@ -126,3 +126,20 @@ test('blokada podwyżek nie blokuje obniżki', () => {
   const d = decyzja(obs({ bbNasz: false, bbCena: 28.99 }), pas, {}, { blokadaPodwyzek: true });
   assert.strictEqual(d.kod, 'obnizka');
 });
+
+test('cena docelowa: schodek w dół ma cel w pełnej odległości', () => {
+  const d = decyzja(obs({ cena: 100, bbNasz: false, bbCena: 60 }), { min: 50, max: 150 });
+  assert.strictEqual(d.cena, 95);
+  assert.strictEqual(d.cel, 55.0);                    // 60 − 0,01 − 4,99
+});
+
+test('cena docelowa: schodek w górę ma cel pod konkurentem (nie wyżej niż max)', () => {
+  const d = decyzja(obs({ bbNasz: true, najtanszaInna: 60 }), pas);
+  assert.strictEqual(d.cena, 27.5);
+  assert.strictEqual(d.cel, 30);
+});
+
+test('bez zmiany cel = obecna cena', () => {
+  const d = decyzja(obs({ bbNasz: true, najtanszaInna: 30.2 }), pas);
+  assert.strictEqual(d.cel, 25);
+});

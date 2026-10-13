@@ -1316,3 +1316,4 @@ main {
 .ceny-czas { font-size: 0.7rem; color: #8a919a; white-space: nowrap; }
 .ceny-dec.wyslano, .ceny-wyslano { color: #1d3557; font-weight: 700; }
 .ceny-stan { font-size: 0.78rem; color: #444; margin-top: 0.15rem; white-space: nowrap; }
+.ceny-cel { font-size: 0.74rem; color: #1d3557; white-space: nowrap; }

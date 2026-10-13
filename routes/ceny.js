@@ -39,10 +39,11 @@ const ZMIANY_KODY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', '
 //   szansa   — nie mamy BB, a zwycięzca stoi nad naszą podłogą: zejście w pasie może dać BB
 //              (bez remisu z FBA, BB pod podłogą i przegranej „nie przez cenę")
 //   podwyzka — mamy BB, następny konkurent wyraźnie wyżej: automat podniósłby cenę
-// Kolejność: szansa od największego zysku PO zejściu, podwyżka od największego zysku do zyskania.
+// Kolejność (po cenie DOCELOWEJ, nie pierwszym schodku): szansa od największego zysku po zejściu,
+// podwyżka od największego zysku do zyskania na sztuce.
 const FILTRY = {
-  szansa: { kody: ['obnizka', 'obnizka_limit'], wartosc: (o) => o.zysk_nowa ?? -Infinity },
-  podwyzka: { kody: ['podwyzka', 'podwyzka_limit'], wartosc: (o) => (o.zysk_nowa ?? 0) - (o.zysk ?? 0) },
+  szansa: { kody: ['obnizka', 'obnizka_limit'], wartosc: (o) => o.zysk_cel ?? o.zysk_nowa ?? -Infinity },
+  podwyzka: { kody: ['podwyzka', 'podwyzka_limit'], wartosc: (o) => (o.zysk_cel ?? o.zysk_nowa ?? 0) - (o.zysk ?? 0) },
 };
 const pasujeFiltr = (t, f) => Object.values(t.rynki).some((o) => FILTRY[f].kody.includes(o.kod));
 const wartoscFiltra = (t, f) => Math.max(...Object.values(t.rynki).filter((o) => FILTRY[f].kody.includes(o.kod)).map(FILTRY[f].wartosc));
@@ -52,7 +53,7 @@ const SQL_OFERTY = `
   SELECT o.id, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.dopasowanie,
          b.czas AS obs_czas, b.cena, b.wysylka, b.bb_nasz, b.bb_cena, b.bb_fba, b.najtansza_inna, b.ofert,
          d.kod, d.cena_nowa, d.powod, d.min, d.max, d.zysk, d.marza, d.zysk_nowa,
-         d.czas AS dec_czas, d.wyslano, d.blad AS dec_blad, d.marza_nowa
+         d.czas AS dec_czas, d.wyslano, d.blad AS dec_blad, d.marza_nowa, d.cena_cel, d.zysk_cel
     FROM oferty o
     LEFT JOIN obserwacje b ON b.id = (SELECT MAX(id) FROM obserwacje WHERE oferta_id = o.id)
     LEFT JOIN decyzje d    ON d.id = (SELECT MAX(id) FROM decyzje WHERE oferta_id = o.id)
@@ -124,7 +125,7 @@ router.get('/towar/:tw_id', asyncH(async (req, res) => {
   const twId = Number(req.params.tw_id);
   const oferty = db.prepare(SQL_OFERTY.replace('AND o.ilosc > 0', '') + ' AND o.tw_id = ? ORDER BY o.rynek, o.ilosc DESC').all(twId);
   if (!oferty.length) return res.status(404).json({ blad: 'Brak ofert Amazon dla tego towaru' });
-  const decyzje = db.prepare(`SELECT czas, cena_przed, cena_nowa, min, max, kod, powod, wyslano, blad, auto, zysk, zysk_nowa
+  const decyzje = db.prepare(`SELECT czas, cena_przed, cena_nowa, cena_cel, zysk_cel, min, max, kod, powod, wyslano, blad, auto, zysk, zysk_nowa
                                 FROM decyzje WHERE oferta_id = ? ORDER BY id DESC LIMIT 30`);
   const obserwacje = db.prepare(`SELECT czas, cena, wysylka, bb_nasz, bb_cena, bb_fba, najtansza_inna
                                    FROM obserwacje WHERE oferta_id = ? ORDER BY id DESC LIMIT 60`);

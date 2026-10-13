@@ -46,13 +46,14 @@ const zaokr = (x) => Math.round(x * 100) / 100;
 // kontekst (z historii decyzji, liczy worker):
 //   ostatniaPodwyzka — { cena_przed, cena_nowa } ostatnia WYSŁANA podwyżka z okna blokady (albo null)
 //   blokadaPodwyzek  — true, gdy w oknie blokady było już cofnięcie
-// Zwraca { cena, zmiana, kod, powod } — `cena` to cena towaru do ustawienia.
+// Zwraca { cena, cel, zmiana, kod, powod } — `cena` to cena towaru do ustawienia w tym przebiegu,
+// `cel` to cena docelowa (bez limitu schodka); bez zmiany cel = cena.
 function decyzja(obs, pas, reguly = {}, kontekst = {}) {
   const r = { ...DOMYSLNE_REGULY, ...reguly };
   const cena = Number(obs.cena);
   const wys = Number(obs.wysylka) || 0;
   const { min, max } = pas || {};
-  const zostaw = (kod, powod) => ({ cena, zmiana: false, kod, powod });
+  const zostaw = (kod, powod) => ({ cena, cel: cena, zmiana: false, kod, powod });
 
   if (!(cena > 0)) return zostaw('brak_ceny', 'brak naszej ceny w odpowiedzi platformy');
   if (!(min > 0) || !(max >= min)) return zostaw('brak_pasa', 'brak poprawnego pasa min/max z kalkulatora');
@@ -62,6 +63,9 @@ function decyzja(obs, pas, reguly = {}, kontekst = {}) {
     // tylko dlatego, że stoi nad max (to byłoby oddawanie marży bez powodu).
     let nowa = zaokr(Math.max(min, cel));
     if (nowa > cena) nowa = zaokr(Math.min(nowa, Math.max(max, cena)));
+    // Cena DOCELOWA = dokąd automat zmierza (po min/max, przed schodkami). Pierwszy krok bywa
+    // krótszy (−5% / +10% na przebieg); ekran pokazuje oba.
+    const docelowa = nowa;
     let limit = false;
     const dolKroku = zaokr(cena * (1 - r.maxSpadekPct / 100));
     if (nowa < dolKroku) { nowa = Math.max(dolKroku, min); limit = true; }
@@ -72,7 +76,7 @@ function decyzja(obs, pas, reguly = {}, kontekst = {}) {
     // Cofnięcie podwyżki wraca do ceny, przy której BB był nasz — bez schodka w dół.
     if (kod === 'cofniecie') { nowa = zaokr(Math.max(min, cel)); limit = false; }
     if (Math.abs(nowa - cena) < 0.005) return zostaw(kod, powod);
-    return { cena: nowa, zmiana: true, kod: limit ? kod + '_limit' : kod,
+    return { cena: nowa, cel: docelowa, zmiana: true, kod: limit ? kod + '_limit' : kod,
       powod: limit ? `${powod}; zmiana ścięta do ${nowa < cena ? r.maxSpadekPct : r.maxWzrostPct}% na przebieg` : powod };
   };
 

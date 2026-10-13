@@ -69,24 +69,31 @@ function decyzja(obs, pas, reguly = {}, kontekst = {}) {
     let limit = false;
     const dolKroku = zaokr(cena * (1 - r.maxSpadekPct / 100));
     if (nowa < dolKroku) { nowa = Math.max(dolKroku, min); limit = true; }
-    // Schodki w górę dotyczą podwyżek „po zysk"; powrót spod minimum (pod_min) idzie od razu —
-    // minimum to podłoga marży, nie cel do negocjacji.
+    // Schodki w górę dotyczą WSZYSTKICH podwyżek — także powrotu spod minimum (pod_min). Pierwotnie
+    // pod_min skakał od razu na minimum; 2026-10-13 dało to 7 skoków po +16–22% naraz przy włączeniu
+    // automatu (decyzja usera: zostają, ale odtąd schodkami, z czujnikiem utraty Buy Boxa).
     const goraKroku = zaokr(cena * (1 + r.maxWzrostPct / 100));
-    if (nowa > goraKroku && kod !== 'pod_min') { nowa = goraKroku; limit = true; }
-    // Cofnięcie podwyżki wraca do ceny, przy której BB był nasz — bez schodka w dół.
-    if (kod === 'cofniecie') { nowa = zaokr(Math.max(min, cel)); limit = false; }
+    if (nowa > goraKroku) { nowa = goraKroku; limit = true; }
+    // Cofnięcie wraca do ceny, przy której BB był nasz — bez schodka w dół i BEZ podłogi min:
+    // przy wspinaniu spod minimum ta cena jest pod min, ale to cena, na której już staliśmy.
+    if (kod === 'cofniecie') { nowa = zaokr(cel); limit = false; }
     if (Math.abs(nowa - cena) < 0.005) return zostaw(kod, powod);
     return { cena: nowa, cel: docelowa, zmiana: true, kod: limit ? kod + '_limit' : kod,
       powod: limit ? `${powod}; zmiana ścięta do ${nowa < cena ? r.maxSpadekPct : r.maxWzrostPct}% na przebieg` : powod };
   };
 
-  // Cena poza pasem (np. ktoś zmienił ją ręcznie, albo zmienił się koszt) — najpierw wracamy do pasa.
-  if (cena < min - 0.005) return ustaw(min, 'pod_min', `cena ${cena} poniżej minimum ${min} — wracamy na minimum`);
-
-  // Reguła 6: straciliśmy BB zaraz po naszej podwyżce, a cena to wciąż ta podniesiona → cofamy.
+  // Reguła 6 przed powrotem do pasa: straciliśmy BB zaraz po naszej podwyżce → cofamy.
   const pod = kontekst.ostatniaPodwyzka;
   if (obs.bbNasz === false && pod && Math.abs(cena - pod.cena_nowa) < 0.005 && pod.cena_przed < cena) {
     return ustaw(pod.cena_przed, 'cofniecie', `po podwyżce do ${pod.cena_nowa} straciliśmy Buy Box — wracamy do ${pod.cena_przed}; podwyżki wstrzymane na ${r.blokadaPodwyzekH} h`);
+  }
+
+  // Cena poza pasem (np. ktoś zmienił ją ręcznie, albo zmienił się koszt) — wracamy do pasa schodkami.
+  if (cena < min - 0.005) {
+    if (kontekst.blokadaPodwyzek) {
+      return zostaw('pod_min_blokada', `cena ${cena} poniżej minimum ${min}, ale podwyżki wstrzymane po niedawnej utracie BB (${r.blokadaPodwyzekH} h)`);
+    }
+    return ustaw(min, 'pod_min', `cena ${cena} poniżej minimum ${min} — wracamy na minimum`);
   }
 
   if (obs.bbNasz === true) {

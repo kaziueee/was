@@ -81,10 +81,30 @@ test('schodek nie schodzi pod min', () => {
   assert.strictEqual(d.cena, 20);
 });
 
-test('cena pod minimum wraca na minimum', () => {
-  const d = decyzja(obs({ cena: 18, bbNasz: true, najtanszaInna: 30 }), pas);
+test('cena pod minimum wraca na minimum — blisko: jednym krokiem', () => {
+  const d = decyzja(obs({ cena: 19, bbNasz: true, najtanszaInna: 30 }), pas);
   assert.strictEqual(d.kod, 'pod_min');
   assert.strictEqual(d.cena, 20);
+});
+
+test('cena daleko pod minimum wspina się schodkami +10% (cel = minimum)', () => {
+  const d = decyzja(obs({ cena: 15, bbNasz: true, najtanszaInna: 30 }), pas);
+  assert.strictEqual(d.kod, 'pod_min_limit');
+  assert.strictEqual(d.cena, 16.5);
+  assert.strictEqual(d.cel, 20);
+});
+
+test('utrata BB w trakcie wspinania spod minimum — cofamy do ostatniej ceny z BB (pod min)', () => {
+  const kontekst = { ostatniaPodwyzka: { cena_przed: 15, cena_nowa: 16.5 } };
+  const d = decyzja(obs({ cena: 16.5, bbNasz: false, bbCena: 22 }), pas, {}, kontekst);
+  assert.strictEqual(d.kod, 'cofniecie');
+  assert.strictEqual(d.cena, 15);
+});
+
+test('po cofnięciu spod minimum dalsze wspinanie wstrzymane', () => {
+  const d = decyzja(obs({ cena: 15, bbNasz: true, najtanszaInna: 30 }), pas, {}, { blokadaPodwyzek: true });
+  assert.strictEqual(d.zmiana, false);
+  assert.strictEqual(d.kod, 'pod_min_blokada');
 });
 
 test('przegrywamy, choć jesteśmy tańsi — cena nie jest powodem, nie ruszamy', () => {
@@ -110,10 +130,10 @@ test('utrata BB, ale cena już inna niż po podwyżce — zwykła logika, bez co
   assert.notStrictEqual(d.kod, 'cofniecie');
 });
 
-test('cofnięcie nie schodzi pod min', () => {
+test('cofnięcie wraca dokładnie do ceny sprzed podwyżki (także pod min — tam już staliśmy)', () => {
   const kontekst = { ostatniaPodwyzka: { cena_przed: 18, cena_nowa: 22 } };
   const d = decyzja(obs({ cena: 22, bbNasz: false, bbCena: 30 }), pas, {}, kontekst);
-  assert.strictEqual(d.cena, 20);
+  assert.strictEqual(d.cena, 18);
 });
 
 test('po cofnięciu podwyżki wstrzymane — mamy BB, konkurent daleko, stoimy', () => {

@@ -4478,11 +4478,11 @@ el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
 // automat. Backend: routes/ceny.js (na czas testów tylko admin). Nigdy nie włączamy automatu na cały katalog —
 // tylko wskazane oferty (komórka) albo wszystkie rynki jednego towaru (przełącznik przy SKU).
 
-const CENY_ZMIANY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min', 'cofniecie'];
+const CENY_ZMIANY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min', 'pod_min_limit', 'cofniecie'];
 const CENY_KOD_OPIS = {
   podwyzka: 'podwyżka', podwyzka_limit: 'podwyżka (schodek)', obnizka: 'obniżka', obnizka_limit: 'obniżka (schodek)',
-  na_min: 'na minimum', na_min_limit: 'w stronę minimum', pod_min: 'powrót na minimum', top: 'mamy BB — bez zmiany',
-  top_bez_konkurencji: 'jedyna oferta', cofniecie: 'cofnięcie podwyżki (utrata BB)', top_blokada: 'mamy BB — podwyżki wstrzymane', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
+  na_min: 'na minimum', na_min_limit: 'w stronę minimum', pod_min: 'powrót na minimum', pod_min_limit: 'w stronę minimum (schodek +10%)', top: 'mamy BB — bez zmiany',
+  top_bez_konkurencji: 'jedyna oferta', cofniecie: 'cofnięcie podwyżki (utrata BB)', top_blokada: 'mamy BB — podwyżki wstrzymane', pod_min_blokada: 'pod minimum — podwyżki wstrzymane (utrata BB)', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
   przegrana_nie_cena: 'tańsi, a bez BB', brak_danych: 'brak danych o BB', brak_ceny: 'brak naszej ceny', brak_pasa: 'brak min/max',
 };
 const CENY_AKCJE = {
@@ -4561,7 +4561,7 @@ function cenyWiersz(t, rynki) {
   const lbl = document.createElement('label');
   lbl.className = 'ceny-auto-wiersz';
   lbl.appendChild(cenyPrzelacznik(wl === oferty.length ? 'on' : wl ? 'czesc' : '', `Automat dla wszystkich rynków ${t.symbol}`,
-    () => cenyUstawAutomat(oferty.map((o) => o.id), wl !== oferty.length)));
+    () => cenyUstawAutomat(oferty, wl !== oferty.length)));
   lbl.append(` automat ${wl}/${oferty.length}`);
   td0.appendChild(lbl);
   tr.appendChild(td0);
@@ -4614,7 +4614,7 @@ function cenyKomorka(o, rynek) {
   wrap.appendChild(div);
   const boki = document.createElement('div');
   boki.className = 'ceny-boki';
-  boki.appendChild(cenyPrzelacznik(o.auto ? 'on' : '', `Automat ${rynek} ${o.sku}`, () => cenyUstawAutomat([o.id], !o.auto)));
+  boki.appendChild(cenyPrzelacznik(o.auto ? 'on' : '', `Automat ${rynek} ${o.sku}`, () => cenyUstawAutomat([o], !o.auto)));
   if (o.linki) boki.insertAdjacentHTML('beforeend', `<a class="ceny-ext" href="${cenyEsc(o.linki.produkt)}" target="_blank" rel="noopener" title="Otwórz ofertę na Amazon ${rynek}">↗</a>`);
   wrap.appendChild(boki);
   td.appendChild(wrap);
@@ -4634,9 +4634,42 @@ function cenyPrzelacznik(stan, etykieta, onKlik) {
   return b;
 }
 
-async function cenyUstawAutomat(ids, auto) {
-  // Automat = prawdziwe zmiany cen na Amazonie (trybu Próba już nie ma) — włączenie potwierdzamy.
-  if (auto && !confirm(`Włączyć automat dla ${ids.length} ${ids.length === 1 ? 'oferty' : 'ofert'}?\n\nAutomat będzie sam zmieniał ceny na Amazonie (co ok. 30 min).`)) return;
+// Treść potwierdzenia: co automat zrobi z każdą ofertą w najbliższym przebiegu (z ostatniej
+// decyzji — dla ofert ręcznych to podpowiedź sprzed najwyżej kilku godzin). Oferty POD MINIMUM
+// osobno i na górze: automat będzie je podnosił schodkami +10% co przebieg aż do minimum
+// (2026-10-13 włączenie automatu na takich ofertach dało 7 nieoczekiwanych podwyżek naraz).
+function cenyOpisWlaczenia(oferty) {
+  const linia = (o) => {
+    const w = cenyWaluta(o.rynek);
+    const nazwa = `${o.rynek} ${o.sku}`;
+    if (o.cena == null) return `${nazwa}: brak obserwacji — decyzja przy najbliższym przebiegu`;
+    if (!CENY_ZMIANY.includes(o.kod)) return `${nazwa}: ${cenyLiczba(o.cena)} ${w} — bez zmiany (${CENY_KOD_OPIS[o.kod] || o.kod || 'brak decyzji'})`;
+    const cel = o.cena_cel != null && Math.abs(o.cena_cel - o.cena_nowa) >= 0.005 ? `, docelowo ${cenyLiczba(o.cena_cel)} ${w}` : '';
+    return `${nazwa}: ${cenyLiczba(o.cena)} → ${cenyLiczba(o.cena_nowa)} ${w}${cel}`;
+  };
+  const podMin = oferty.filter((o) => o.cena != null && o.min != null && o.cena < o.min - 0.005);
+  const reszta = oferty.filter((o) => !podMin.includes(o));
+  const MAX = 12;
+  const wiersze = [];
+  if (podMin.length) {
+    wiersze.push(`⚠ ${podMin.length} z ${oferty.length} poniżej minimum (marża 20%) — automat PODNIESIE je schodkami +10% co przebieg aż do minimum:`);
+    wiersze.push(...podMin.slice(0, MAX).map((o) => `   • ${linia(o)} (minimum ${cenyLiczba(o.min)} ${cenyWaluta(o.rynek)})`));
+  }
+  const reszt = reszta.slice(0, Math.max(0, MAX - podMin.length));
+  if (reszt.length) {
+    if (podMin.length) wiersze.push('', 'Pozostałe:');
+    wiersze.push(...reszt.map((o) => `   • ${linia(o)}`));
+  }
+  const ukryte = oferty.length - Math.min(podMin.length, MAX) - reszt.length;
+  if (ukryte > 0) wiersze.push(`   … i ${ukryte} więcej`);
+  return wiersze.join('\n');
+}
+
+async function cenyUstawAutomat(oferty, auto) {
+  const ids = oferty.map((o) => o.id);
+  // Automat = prawdziwe zmiany cen na Amazonie — włączenie potwierdzamy, z listą tego, co zrobi.
+  if (auto && !confirm(`Włączyć automat dla ${ids.length} ${ids.length === 1 ? 'oferty' : 'ofert'}?\n`
+    + `Automat będzie sam zmieniał ceny na Amazonie (co ok. 30 min). Najbliższy przebieg:\n\n${cenyOpisWlaczenia(oferty)}`)) return;
   try {
     const r = await api('/api/ceny/automat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4699,12 +4732,12 @@ async function odswiezCenyKarta() {
     const lbl = el('ceny-karta-auto');
     if (zeStanem.length) {
       lbl.appendChild(cenyPrzelacznik(wl === zeStanem.length ? 'on' : wl ? 'czesc' : '', `Automat dla wszystkich rynków ${d.symbol}`,
-        () => cenyUstawAutomat(zeStanem.map((o) => o.id), wl !== zeStanem.length)));
+        () => cenyUstawAutomat(zeStanem, wl !== zeStanem.length)));
       lbl.append(` automat ${wl}/${zeStanem.length} — wszystkie rynki ze stanem`);
     }
     box.querySelectorAll('[data-ceny-auto]').forEach((slot) => {
       const o = oferty.find((x) => String(x.id) === slot.dataset.cenyAuto);
-      slot.prepend(cenyPrzelacznik(o.auto ? 'on' : '', `Automat ${o.rynek} ${o.sku}`, () => cenyUstawAutomat([o.id], !o.auto)));
+      slot.prepend(cenyPrzelacznik(o.auto ? 'on' : '', `Automat ${o.rynek} ${o.sku}`, () => cenyUstawAutomat([o], !o.auto)));
     });
     el('ceny-karta-wroc').addEventListener('click', () => { cenyPokazWidok('macierz'); odswiezCeny(); });
     if (cenyKartaRynek) box.querySelector(`[data-ceny-rynek="${cenyKartaRynek}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });

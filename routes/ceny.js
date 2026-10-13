@@ -33,7 +33,7 @@ async function stanyGt(twIds) {
 }
 
 const RYNKI = ['DE', 'FR', 'IT', 'ES', 'NL', 'PL'];
-const ZMIANY_KODY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min', 'cofniecie'];
+const ZMIANY_KODY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min', 'pod_min_limit', 'cofniecie'];
 
 // Filtry „gdzie warto włączyć automat" — z ostatniej decyzji (liczonej też dla ofert ręcznych):
 //   szansa   — nie mamy BB, a zwycięzca stoi nad naszą podłogą: zejście w pasie może dać BB

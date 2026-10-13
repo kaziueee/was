@@ -4478,11 +4478,11 @@ el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
 // automat. Backend: routes/ceny.js (na czas testów tylko admin). Nigdy nie włączamy automatu na cały katalog —
 // tylko wskazane oferty (komórka) albo wszystkie rynki jednego towaru (przełącznik przy SKU).
 
-const CENY_ZMIANY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min'];
+const CENY_ZMIANY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min', 'cofniecie'];
 const CENY_KOD_OPIS = {
   podwyzka: 'podwyżka', podwyzka_limit: 'podwyżka (schodek)', obnizka: 'obniżka', obnizka_limit: 'obniżka (schodek)',
   na_min: 'na minimum', na_min_limit: 'w stronę minimum', pod_min: 'powrót na minimum', top: 'mamy BB — bez zmiany',
-  top_bez_konkurencji: 'jedyna oferta', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
+  top_bez_konkurencji: 'jedyna oferta', cofniecie: 'cofnięcie podwyżki (utrata BB)', top_blokada: 'mamy BB — podwyżki wstrzymane', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
   przegrana_nie_cena: 'tańsi, a bez BB', brak_danych: 'brak danych o BB', brak_ceny: 'brak naszej ceny', brak_pasa: 'brak min/max',
 };
 const CENY_AKCJE = {
@@ -4492,6 +4492,13 @@ const CENY_AKCJE = {
 let cenyFiltr = 'automat', cenyWidok = 'macierz', cenySzukajTimer = null, cenyDane = null, cenyKartaTw = null, cenyKartaRynek = null;
 
 const cenyWaluta = (rynek) => (rynek === 'PL' ? 'zł' : '€');
+// Godzina (dziś) albo data z godziną — czas z bazy jest w UTC, dataZBazy przelicza na lokalny.
+function cenyGodzina(s) {
+  const d = dataZBazy(s);
+  if (!d) return '—';
+  const g = d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? g : `${d.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })} ${g}`;
+}
 const cenyLiczba = (v, d = 2) => (v == null ? '—' : Number(v).toLocaleString('pl-PL', { minimumFractionDigits: d, maximumFractionDigits: d }));
 const cenyEsc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -4555,12 +4562,18 @@ function cenyKomorka(o, rynek) {
   let pod = '';
   if (CENY_ZMIANY.includes(o.kod)) {
     const gora = o.cena_nowa > o.cena;
-    pod = `<div class="ceny-dec ${gora ? 'gora' : 'dol'}" title="${cenyEsc(o.powod)}">${gora ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}`
-      + `${o.zysk_nowa != null ? ` · zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}</div>`;
+    // Wysłana decyzja ≠ propozycja: cena już poszła na Amazona, a obserwacja w komórce jest
+    // sprzed wysłania — Amazon pokazuje zmianę po kilku minutach, my zobaczymy ją w następnym przebiegu.
+    pod = o.wyslano
+      ? `<div class="ceny-dec wyslano" title="${cenyEsc(o.powod)}">✓ wysłano ${cenyLiczba(o.cena_nowa)} ${w} · ${cenyGodzina(o.dec_czas)}</div>`
+      : `<div class="ceny-dec ${gora ? 'gora' : 'dol'}" title="${cenyEsc(o.powod)}">${gora ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}`
+        + `${o.zysk_nowa != null ? ` · zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}</div>`;
+    if (o.dec_blad) pod += `<div class="ceny-dec dol" title="${cenyEsc(o.dec_blad)}">✗ nie wysłano</div>`;
   } else if (o.kod) {
     pod = `<div class="ceny-dec" title="${cenyEsc(o.powod)}">${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</div>`;
   }
-  const wys = o.zapis ? '<div class="ceny-wysyla" title="Decyzje tej oferty idą na Amazona">● wysyła ceny</div>' : '';
+  const wys = (o.zapis ? '<div class="ceny-wysyla" title="Decyzje tej oferty idą na Amazona">● wysyła ceny</div>' : '')
+    + (o.obs_czas ? `<div class="ceny-czas" title="Ceny w komórce to stan z ostatniej obserwacji">stan z ${cenyGodzina(o.obs_czas)}</div>` : '');
   const bb = !o.bb_nasz && o.bb_cena != null ? `<div class="ceny-bb">BB ${cenyLiczba(o.bb_cena)} ${w}${o.bb_fba ? ' (FBA)' : ''} z wys.</div>` : '';
   const div = document.createElement('div');
   div.className = 'ceny-tresc';
@@ -4680,8 +4693,9 @@ function cenyKartaRynekHtml(o) {
     : o.bb_nasz ? 'mamy Buy Box' : o.bb_cena != null ? `Buy Box ma ${o.bb_fba ? 'oferta FBA' : 'inny sprzedawca'}` : 'brak Buy Boxa';
   const zmiana = CENY_ZMIANY.includes(o.kod);
   const dec = !o.kod ? '<span class="hint">brak decyzji</span>'
-    : `${zmiana ? `<b class="${o.cena_nowa > o.cena ? 'ceny-gora' : 'ceny-dol'}">${o.cena_nowa > o.cena ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}</b>${o.zysk_nowa != null ? ` → zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}<br>` : `<b>${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</b><br>`}
-       <span class="hint">${cenyEsc(o.powod)}</span>`;
+    : `${zmiana ? `<b class="${o.wyslano ? 'ceny-wyslano' : o.cena_nowa > o.cena ? 'ceny-gora' : 'ceny-dol'}">${o.wyslano ? '✓ wysłano' : o.cena_nowa > o.cena ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}</b>${o.zysk_nowa != null ? ` → zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}<br>` : `<b>${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</b><br>`}
+       ${o.dec_blad ? `<span class="ceny-blad">✗ nie wysłano: ${cenyEsc(o.dec_blad)}</span><br>` : ''}
+       <span class="hint">${cenyEsc(o.powod)} · decyzja ${cenyGodzina(o.dec_czas)}</span>`;
   const linki = o.linki ? `<a href="${cenyEsc(o.linki.produkt)}" target="_blank" rel="noopener">produkt ↗</a> · <a href="${cenyEsc(o.linki.oferty)}" target="_blank" rel="noopener">wszystkie oferty ↗</a>` : '';
   const histDec = o.decyzje.length ? `<table class="tabela ceny-tab-hist"><thead><tr><th>Czas</th><th>Cena</th><th>Decyzja</th><th>Min / max</th><th>Zysk</th><th>Powód</th></tr></thead><tbody>
       ${o.decyzje.map((x) => `<tr><td>${formatDatetime(x.czas)}</td><td>${cenyLiczba(x.cena_przed)}</td>
@@ -4694,7 +4708,7 @@ function cenyKartaRynekHtml(o) {
       <div class="ceny-m">${stanBb}</div>
       ${o.ilosc > 0 ? `<label class="ceny-auto-wiersz" data-ceny-auto="${o.id}"> automat</label>` : '<div class="hint">bez stanu — automat nie działa</div>'}
       <div class="ceny-linki">${linki}</div></div>
-    <div class="ceny-k-cena"><span class="ceny-et">Cena</span>${obs ? `<b class="ceny-duza">${cenyLiczba(o.cena)} ${w}</b>
+    <div class="ceny-k-cena"><span class="ceny-et">Cena · stan z ${cenyGodzina(o.obs_czas)}</span>${obs ? `<b class="ceny-duza">${cenyLiczba(o.cena)} ${w}</b>
       <span class="ceny-m">${o.wysylka ? `+ wysyłka ${cenyLiczba(o.wysylka)} ${w}` : 'wysyłka gratis'}</span>
       <span class="ceny-m">marża ${o.marza != null ? cenyLiczba(o.marza, 1) + '%' : '—'}</span><span class="ceny-m">zysk ${o.zysk != null ? cenyLiczba(o.zysk) + ' zł' : '—'}</span>` : '<span class="hint">—</span>'}</div>
     <div class="ceny-k-konk"><span class="ceny-et">Konkurencja (z wysyłką)</span>

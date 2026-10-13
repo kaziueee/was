@@ -96,3 +96,33 @@ test('przegrywamy, choć jesteśmy tańsi — cena nie jest powodem, nie ruszamy
 test('bez pasa z kalkulatora nie decydujemy', () => {
   assert.strictEqual(decyzja(obs({ bbNasz: false, bbCena: 20 }), { min: 0, max: 0 }).kod, 'brak_pasa');
 });
+
+test('utrata BB po wysłanej podwyżce — cofamy od razu do ceny sprzed podwyżki (bez schodka)', () => {
+  const kontekst = { ostatniaPodwyzka: { cena_przed: 18.69, cena_nowa: 20.09 } };
+  const d = decyzja(obs({ cena: 20.09, bbNasz: false, bbCena: 25.08 }), { min: 13.99, max: 20.98 }, {}, kontekst);
+  assert.strictEqual(d.kod, 'cofniecie');
+  assert.strictEqual(d.cena, 18.69);                     // −7%, mimo limitu −5% na przebieg
+});
+
+test('utrata BB, ale cena już inna niż po podwyżce — zwykła logika, bez cofania', () => {
+  const kontekst = { ostatniaPodwyzka: { cena_przed: 18.69, cena_nowa: 20.09 } };
+  const d = decyzja(obs({ cena: 19.5, bbNasz: false, bbCena: 25.08 }), pas, {}, kontekst);
+  assert.notStrictEqual(d.kod, 'cofniecie');
+});
+
+test('cofnięcie nie schodzi pod min', () => {
+  const kontekst = { ostatniaPodwyzka: { cena_przed: 18, cena_nowa: 22 } };
+  const d = decyzja(obs({ cena: 22, bbNasz: false, bbCena: 30 }), pas, {}, kontekst);
+  assert.strictEqual(d.cena, 20);
+});
+
+test('po cofnięciu podwyżki wstrzymane — mamy BB, konkurent daleko, stoimy', () => {
+  const d = decyzja(obs({ cena: 26, bbNasz: true, najtanszaInna: 40 }), pas, {}, { blokadaPodwyzek: true });
+  assert.strictEqual(d.zmiana, false);
+  assert.strictEqual(d.kod, 'top_blokada');
+});
+
+test('blokada podwyżek nie blokuje obniżki', () => {
+  const d = decyzja(obs({ bbNasz: false, bbCena: 28.99 }), pas, {}, { blokadaPodwyzek: true });
+  assert.strictEqual(d.kod, 'obnizka');
+});

@@ -17,13 +17,14 @@ const { linkiOferty } = require('../pricing/amazon');
 const { wycenaHurtem } = require('../services/cennik');
 
 const RYNKI = ['DE', 'FR', 'IT', 'ES', 'NL', 'PL'];
-const ZMIANY_KODY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min'];
+const ZMIANY_KODY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min', 'cofniecie'];
 
 // Ostatnia obserwacja i ostatnia decyzja każdej oferty — jedno zapytanie, korelowane po max(id).
 const SQL_OFERTY = `
   SELECT o.id, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.zapis, o.dopasowanie,
          b.czas AS obs_czas, b.cena, b.wysylka, b.bb_nasz, b.bb_cena, b.bb_fba, b.najtansza_inna, b.ofert,
-         d.kod, d.cena_nowa, d.powod, d.min, d.max, d.zysk, d.marza, d.zysk_nowa
+         d.kod, d.cena_nowa, d.powod, d.min, d.max, d.zysk, d.marza, d.zysk_nowa,
+         d.czas AS dec_czas, d.wyslano, d.blad AS dec_blad
     FROM oferty o
     LEFT JOIN obserwacje b ON b.id = (SELECT MAX(id) FROM obserwacje WHERE oferta_id = o.id)
     LEFT JOIN decyzje d    ON d.id = (SELECT MAX(id) FROM decyzje WHERE oferta_id = o.id)

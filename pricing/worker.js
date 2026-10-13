@@ -22,7 +22,7 @@
 const { db, stan } = require('./db');
 const { obserwuj } = require('./obserwuj');
 const { pasyHurtem } = require('./pas');
-const { decyzja } = require('./model');
+const { decyzja, DOMYSLNE_REGULY } = require('./model');
 const { synchronizuj } = require('./sync-oferty');
 const { ustawCene } = require('./amazon');
 const { interwalMsZMinut } = require('../services/interwal');
@@ -62,11 +62,20 @@ async function przebieg({ pelny = false } = {}) {
   // Decyzje liczymy w pamięci, a zapis do bazy robimy po wysłaniu — wywołania API nie mogą
   // trzymać otwartej transakcji SQLite (WMS czyta tę bazę w tym samym czasie).
   const wiersze = [];
+  // Kontekst reguły „czułej na utratę BB" (pricing/model.js, reguła 6) — z historii decyzji tej oferty.
+  const okno = `-${DOMYSLNE_REGULY.blokadaPodwyzekH} hours`;
+  const ostPodwyzka = db.prepare(`SELECT cena_przed, cena_nowa FROM decyzje WHERE oferta_id = ? AND wyslano = 1
+      AND cena_nowa > cena_przed AND czas >= datetime('now', ?) ORDER BY id DESC LIMIT 1`);
+  const cofniecie = db.prepare(`SELECT 1 FROM decyzje WHERE oferta_id = ? AND kod LIKE 'cofniecie%'
+      AND czas >= datetime('now', ?) LIMIT 1`);
   for (const o of oferty) {
     const ob = obs.get(o.id);
     if (!ob) { kody.brak_odpowiedzi = (kody.brak_odpowiedzi || 0) + 1; continue; }
     const pas = (pasy.get(o.tw_id) || {})[o.rynek] || null;
-    const d = decyzja(ob, pas || {});
+    const d = decyzja(ob, pas || {}, {}, {
+      ostatniaPodwyzka: ostPodwyzka.get(o.id, okno) || null,
+      blokadaPodwyzek: !!cofniecie.get(o.id, okno),
+    });
     const teraz = pas && ob.cena ? pas.ocen(ob.cena) : null;
     const potem = pas && d.zmiana ? pas.ocen(d.cena) : teraz;
     let wyslano = 0, blad = null;

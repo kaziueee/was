@@ -17,12 +17,17 @@
 //     zaczyna wojnę cenową z ofertą, którą Amazon i tak faworyzuje.
 //  5. Jeden przebieg nie zbija ceny o więcej niż `maxSpadekPct` ani nie podnosi o więcej niż
 //     `maxWzrostPct` — duża zmiana idzie schodami
+//  6. Podwyżka jest czuła na utratę Buy Boxa (decyzja usera 2026-10-13): jeśli po WYSŁANEJ podwyżce
+//     straciliśmy BB, a nasza cena to wciąż ta podniesiona — wracamy od razu (bez schodka) do ceny
+//     sprzed podwyżki, przy której BB był nasz. Po cofnięciu podwyżki są wstrzymane na
+//     `blokadaPodwyzekH` godzin; obniżki i podłoga działają normalnie.
 //     (i widać go w logu decyzji), zamiast jednym skokiem po chwilowej anomalii konkurenta.
 
 const DOMYSLNE_REGULY = {
   krok: 0.01,          // o ile schodzimy pod konkurenta
   progPodwyzki: 0.5,   // podnosimy dopiero, gdy zysk na cenie ≥ tyle (w walucie rynku) — bez drgań
   maxSpadekPct: 5,     // największa obniżka w jednym przebiegu, % obecnej ceny
+  blokadaPodwyzekH: 24, // po cofnięciu podwyżki (utrata BB) tyle godzin bez kolejnych podwyżek
   maxWzrostPct: 10,    // największa podwyżka w jednym przebiegu — skok o 30–45% naraz (realne przypadki
                        // przy dalekim konkurencie) może odciąć sprzedaż albo Buy Box; podchodzimy schodami
 };
@@ -38,8 +43,11 @@ const zaokr = (x) => Math.round(x * 100) / 100;
 //   najtanszaInna,   // najtańsza landed oferta INNEGO sprzedawcy (null = brak)
 // }
 // pas: { min, max } — ceny towaru (bez wysyłki) z kalkulatora
+// kontekst (z historii decyzji, liczy worker):
+//   ostatniaPodwyzka — { cena_przed, cena_nowa } ostatnia WYSŁANA podwyżka z okna blokady (albo null)
+//   blokadaPodwyzek  — true, gdy w oknie blokady było już cofnięcie
 // Zwraca { cena, zmiana, kod, powod } — `cena` to cena towaru do ustawienia.
-function decyzja(obs, pas, reguly = {}) {
+function decyzja(obs, pas, reguly = {}, kontekst = {}) {
   const r = { ...DOMYSLNE_REGULY, ...reguly };
   const cena = Number(obs.cena);
   const wys = Number(obs.wysylka) || 0;
@@ -61,6 +69,8 @@ function decyzja(obs, pas, reguly = {}) {
     // minimum to podłoga marży, nie cel do negocjacji.
     const goraKroku = zaokr(cena * (1 + r.maxWzrostPct / 100));
     if (nowa > goraKroku && kod !== 'pod_min') { nowa = goraKroku; limit = true; }
+    // Cofnięcie podwyżki wraca do ceny, przy której BB był nasz — bez schodka w dół.
+    if (kod === 'cofniecie') { nowa = zaokr(Math.max(min, cel)); limit = false; }
     if (Math.abs(nowa - cena) < 0.005) return zostaw(kod, powod);
     return { cena: nowa, zmiana: true, kod: limit ? kod + '_limit' : kod,
       powod: limit ? `${powod}; zmiana ścięta do ${nowa < cena ? r.maxSpadekPct : r.maxWzrostPct}% na przebieg` : powod };
@@ -69,10 +79,19 @@ function decyzja(obs, pas, reguly = {}) {
   // Cena poza pasem (np. ktoś zmienił ją ręcznie, albo zmienił się koszt) — najpierw wracamy do pasa.
   if (cena < min - 0.005) return ustaw(min, 'pod_min', `cena ${cena} poniżej minimum ${min} — wracamy na minimum`);
 
+  // Reguła 6: straciliśmy BB zaraz po naszej podwyżce, a cena to wciąż ta podniesiona → cofamy.
+  const pod = kontekst.ostatniaPodwyzka;
+  if (obs.bbNasz === false && pod && Math.abs(cena - pod.cena_nowa) < 0.005 && pod.cena_przed < cena) {
+    return ustaw(pod.cena_przed, 'cofniecie', `po podwyżce do ${pod.cena_nowa} straciliśmy Buy Box — wracamy do ${pod.cena_przed}; podwyżki wstrzymane na ${r.blokadaPodwyzekH} h`);
+  }
+
   if (obs.bbNasz === true) {
     const nast = obs.najtanszaInna;
     if (!(nast > 0)) return zostaw('top_bez_konkurencji', 'mamy Buy Box, brak innych ofert do porównania');
     const cel = zaokr(Math.min(nast - r.krok - wys, max));
+    if (cel - cena >= r.progPodwyzki && kontekst.blokadaPodwyzek) {
+      return zostaw('top_blokada', `mamy Buy Box; podwyżki wstrzymane po niedawnej utracie BB (${r.blokadaPodwyzekH} h)`);
+    }
     if (cel - cena >= r.progPodwyzki) {
       return ustaw(cel, 'podwyzka', `mamy Buy Box, następny konkurent ${nast} (z wysyłką) — podnosimy pod niego`);
     }

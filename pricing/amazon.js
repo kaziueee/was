@@ -121,4 +121,13 @@ async function aktywneOferty(kraj) {
   })).filter((o) => o.sku);
 }
 
-module.exports = { RYNKI_AMAZON, dajToken, api, uczestnictwo, raport, aktywneOferty, tsv };
+// Linki do oferty na stronie Amazona. API nie zwraca adresu — składamy go z domeny rynku i ASIN-u
+// (format /dp/<ASIN> jest stały). `?aod=1` otwiera od razu listę wszystkich ofert (kto ma Buy Box).
+function linkiOferty(rynek, asin) {
+  const r = RYNKI_AMAZON[rynek];
+  if (!r || !asin) return null;
+  const produkt = `https://www.${r.domena.toLowerCase()}/dp/${encodeURIComponent(asin)}`;
+  return { produkt, oferty: `${produkt}?aod=1` };
+}
+
+module.exports = { RYNKI_AMAZON, dajToken, api, uczestnictwo, raport, aktywneOferty, tsv, linkiOferty };

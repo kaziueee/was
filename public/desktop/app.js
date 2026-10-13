@@ -4485,7 +4485,7 @@ const CENY_KOD_OPIS = {
   top_bez_konkurencji: 'jedyna oferta', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
   przegrana_nie_cena: 'tańsi, a bez BB', brak_danych: 'brak danych o BB', brak_ceny: 'brak naszej ceny', brak_pasa: 'brak min/max',
 };
-let cenyFiltr = 'automat', cenyWidok = 'macierz', cenySzukajTimer = null, cenyDane = null;
+let cenyFiltr = 'automat', cenyWidok = 'macierz', cenySzukajTimer = null, cenyDane = null, cenyKartaTw = null, cenyKartaRynek = null;
 
 const cenyWaluta = (rynek) => (rynek === 'PL' ? 'zł' : '€');
 const cenyLiczba = (v, d = 2) => (v == null ? '—' : Number(v).toLocaleString('pl-PL', { minimumFractionDigits: d, maximumFractionDigits: d }));
@@ -4493,6 +4493,7 @@ const cenyEsc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;'
 
 async function odswiezCeny() {
   if (cenyWidok === 'log') return odswiezCenyLog();
+  if (cenyWidok === 'karta') return odswiezCenyKarta();
   const q = el('ceny-szukaj').value.trim();
   const qs = new URLSearchParams({ filtr: cenyFiltr, ...(q ? { q } : {}) });
   try { cenyDane = await api(`/api/ceny/macierz?${qs}`); renderujCeny(cenyDane); }
@@ -4529,7 +4530,8 @@ function cenyWiersz(t, rynki) {
   const wl = oferty.filter((o) => o.auto).length;
   const td0 = document.createElement('td');
   td0.className = 'ceny-towar';
-  td0.innerHTML = `<div class="ceny-symbol">${cenyEsc(t.symbol)}</div><div class="ceny-nazwa" title="${cenyEsc(t.nazwa)}">${cenyEsc(t.nazwa)}</div>`;
+  td0.innerHTML = `<button type="button" class="ceny-symbol ceny-link-karta" title="Karta SKU">${cenyEsc(t.symbol)}</button><div class="ceny-nazwa" title="${cenyEsc(t.nazwa)}">${cenyEsc(t.nazwa)}</div>`;
+  td0.querySelector('.ceny-link-karta').addEventListener('click', () => cenyOtworzKarte(t.tw_id));
   const lbl = document.createElement('label');
   lbl.className = 'ceny-auto-wiersz';
   lbl.appendChild(cenyPrzelacznik(wl === oferty.length ? 'on' : wl ? 'czesc' : '', `Automat dla wszystkich rynków ${t.symbol}`,
@@ -4563,11 +4565,15 @@ function cenyKomorka(o, rynek) {
     : `<div class="ceny-cena">${cenyLiczba(o.cena)} ${w}${o.wysylka ? ` <small>+${cenyLiczba(o.wysylka)}</small>` : ''}</div>`
     + (o.cena == null ? '' : `<div class="ceny-m">marża ${o.marza != null ? cenyLiczba(o.marza, 1) + '%' : '—'}</div>`)
     + (o.cena == null ? '' : `<div class="ceny-m">zysk ${o.zysk != null ? cenyLiczba(o.zysk) + ' zł' : '—'}</div>${bb}${pod}`);
-  div.addEventListener('click', () => cenyHistoria(o.id, `${rynek} ${o.sku}`));
+  div.addEventListener('click', () => cenyOtworzKarte(o.tw_id, rynek));
   const wrap = document.createElement('div');
   wrap.className = 'ceny-kom-wrap';
   wrap.appendChild(div);
-  wrap.appendChild(cenyPrzelacznik(o.auto ? 'on' : '', `Automat ${rynek} ${o.sku}`, () => cenyUstawAutomat([o.id], !o.auto)));
+  const boki = document.createElement('div');
+  boki.className = 'ceny-boki';
+  boki.appendChild(cenyPrzelacznik(o.auto ? 'on' : '', `Automat ${rynek} ${o.sku}`, () => cenyUstawAutomat([o.id], !o.auto)));
+  if (o.linki) boki.insertAdjacentHTML('beforeend', `<a class="ceny-ext" href="${cenyEsc(o.linki.produkt)}" target="_blank" rel="noopener" title="Otwórz ofertę na Amazon ${rynek}">↗</a>`);
+  wrap.appendChild(boki);
   td.appendChild(wrap);
   return td;
 }
@@ -4596,23 +4602,105 @@ async function cenyUstawAutomat(ids, auto) {
   } catch (err) { pokazKomunikat(err.message, 'blad'); }
 }
 
-async function cenyHistoria(id, etykieta) {
-  const box = el('ceny-historia');
+function cenyPokazWidok(widok) {
+  cenyWidok = widok;
+  document.querySelectorAll('[data-ceny-widok]').forEach((x) => x.classList.toggle('aktywny', x.dataset.cenyWidok === widok));
+  for (const v of ['macierz', 'karta', 'log']) el(`ceny-widok-${v}`).classList.toggle('hidden', widok !== v);
+  el('ceny-filtry').classList.toggle('hidden', widok !== 'macierz');
+}
+
+function cenyOtworzKarte(twId, rynek = null) {
+  cenyKartaTw = twId;
+  cenyKartaRynek = rynek;
+  cenyPokazWidok('karta');
+  odswiezCenyKarta();
+}
+
+// Wykres 'my vs Buy Box' z obserwacji (ceny z wysyłką). Prosty SVG, bez biblioteki.
+function cenyWykres(obs) {
+  const pkt = obs.filter((o) => o.cena != null);
+  if (pkt.length < 2) return '<div class="hint">Za mało obserwacji na wykres.</div>';
+  const my = pkt.map((o) => o.cena + (o.wysylka || 0));
+  const bb = pkt.map((o) => o.bb_cena);
+  const wsz = [...my, ...bb.filter((v) => v != null)];
+  const lo = Math.min(...wsz), hi = Math.max(...wsz), W = 240, H = 44;
+  const x = (i) => (i / (pkt.length - 1)) * W;
+  const y = (v) => H - 4 - ((v - lo) / (hi - lo || 1)) * (H - 8);
+  const linia = (arr) => arr.map((v, i) => (v == null ? null : `${x(i).toFixed(1)},${y(v).toFixed(1)}`)).filter(Boolean).join(' ');
+  return `<svg class="ceny-wykres" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Nasza cena i Buy Box w czasie">
+    <polyline points="${linia(bb)}" class="bb"/><polyline points="${linia(my)}" class="my"/></svg>
+    <div class="hint">${formatDatetime(pkt[0].czas)} – ${formatDatetime(pkt[pkt.length - 1].czas)} · ciągła = my, przerywana = Buy Box (z wysyłką)</div>`;
+}
+
+async function odswiezCenyKarta() {
+  const box = el('ceny-karta');
+  if (!cenyKartaTw) return;
   try {
-    const d = await api(`/api/ceny/oferta/${id}`);
-    const w = cenyWaluta(d.oferta.rynek);
-    box.innerHTML = `<div class="panel-naglowek"><h3>Historia: ${cenyEsc(etykieta)}</h3><button type="button" class="btn btn-small" id="ceny-historia-zamknij">Zamknij</button></div>
-      <table class="tabela"><thead><tr><th>Czas</th><th>Cena</th><th>Decyzja</th><th>Min / max</th><th>Zysk teraz → po</th><th>Powód</th></tr></thead><tbody>
-      ${d.decyzje.map((x) => `<tr><td>${formatDatetime(x.czas)}</td><td>${cenyLiczba(x.cena_przed)} ${w}</td>
-        <td>${x.cena_nowa !== x.cena_przed ? `<strong>→ ${cenyLiczba(x.cena_nowa)} ${w}</strong>` : '—'}${x.wyslano ? ' ✓ wysłano' : ''}</td>
-        <td>${cenyLiczba(x.min)} / ${cenyLiczba(x.max)}</td><td>${cenyLiczba(x.zysk)} → ${cenyLiczba(x.zysk_nowa)} zł</td>
-        <td>${cenyEsc(x.powod)}${x.auto ? '' : ' <span class="hint">(automat wył.)</span>'}</td></tr>`).join('')}
-      </tbody></table>
-      ${d.zmiany.length ? `<p class="hint">Zmiany: ${d.zmiany.map((z) => `${formatDatetime(z.czas)} ${z.akcja === 'automat_wl' ? 'włączył' : 'wyłączył'} ${cenyEsc(z.kto || '?')}`).join(' · ')}</p>` : ''}`;
-    box.classList.remove('hidden');
-    el('ceny-historia-zamknij').addEventListener('click', () => box.classList.add('hidden'));
-    box.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  } catch (err) { pokazKomunikat(err.message, 'blad'); }
+    const d = await api(`/api/ceny/towar/${cenyKartaTw}`);
+    const zyskO = (o) => (o.zysk == null ? -Infinity : o.zysk);
+    const oferty = [...d.oferty].sort((a, b) => zyskO(b) - zyskO(a));
+    const zeStanem = oferty.filter((o) => o.ilosc > 0);
+    const wl = zeStanem.filter((o) => o.auto).length;
+    const fakty = d.gt_ok
+      ? `<span>Koszt zakupu (GT) <b>${cenyLiczba(d.gt.koszt)} zł</b></span><span>Waga rozliczeniowa <b>${cenyLiczba(d.gt.waga, 2)} kg</b>${d.gt.wagaZnana ? '' : ' (domyślna — brak wymiarów)'}</span><span>Docinanie <b>${d.gt.docinalny ? 'tak' : 'nie'}</b></span>`
+      : '<span class="ceny-blad">Subiekt nie odpowiada — bez kosztu i wagi</span>';
+    box.innerHTML = `<div class="ceny-karta-gora">
+        <div><button type="button" class="btn btn-small" id="ceny-karta-wroc">← Macierz</button></div>
+        <div class="ceny-karta-tyt"><h3>${cenyEsc(d.symbol)}</h3><div class="ceny-nazwa-pelna">${cenyEsc(d.nazwa)}</div><div class="ceny-fakty">${fakty}</div></div>
+        <label class="ceny-auto-wiersz duzy" id="ceny-karta-auto"></label>
+      </div>
+      <p class="hint">Rynki od największego zysku na sztuce. Zielone tło = mamy Buy Box, szare = automat wyłączony. Tryb Próba — ceny nie idą na Amazona.</p>
+      <div class="ceny-rynki">${oferty.map(cenyKartaRynekHtml).join('')}</div>`;
+    const lbl = el('ceny-karta-auto');
+    if (zeStanem.length) {
+      lbl.appendChild(cenyPrzelacznik(wl === zeStanem.length ? 'on' : wl ? 'czesc' : '', `Automat dla wszystkich rynków ${d.symbol}`,
+        () => cenyUstawAutomat(zeStanem.map((o) => o.id), wl !== zeStanem.length)));
+      lbl.append(` automat ${wl}/${zeStanem.length} — wszystkie rynki ze stanem`);
+    }
+    box.querySelectorAll('[data-ceny-auto]').forEach((slot) => {
+      const o = oferty.find((x) => String(x.id) === slot.dataset.cenyAuto);
+      slot.prepend(cenyPrzelacznik(o.auto ? 'on' : '', `Automat ${o.rynek} ${o.sku}`, () => cenyUstawAutomat([o.id], !o.auto)));
+    });
+    el('ceny-karta-wroc').addEventListener('click', () => { cenyPokazWidok('macierz'); odswiezCeny(); });
+    if (cenyKartaRynek) box.querySelector(`[data-ceny-rynek="${cenyKartaRynek}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (err) {
+    box.innerHTML = `<p class="hint">${cenyEsc(err.message)}</p>`;
+  }
+}
+
+function cenyKartaRynekHtml(o) {
+  const w = cenyWaluta(o.rynek);
+  const obs = o.obs_czas != null && o.cena != null;
+  const stanBb = !obs ? (o.obs_czas == null ? 'jeszcze nie obserwowana' : 'Amazon nie zwrócił naszej oferty')
+    : o.bb_nasz ? 'mamy Buy Box' : o.bb_cena != null ? `Buy Box ma ${o.bb_fba ? 'oferta FBA' : 'inny sprzedawca'}` : 'brak Buy Boxa';
+  const zmiana = CENY_ZMIANY.includes(o.kod);
+  const dec = !o.kod ? '<span class="hint">brak decyzji</span>'
+    : `${zmiana ? `<b class="${o.cena_nowa > o.cena ? 'ceny-gora' : 'ceny-dol'}">${o.cena_nowa > o.cena ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}</b>${o.zysk_nowa != null ? ` → zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}<br>` : `<b>${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</b><br>`}
+       <span class="hint">${cenyEsc(o.powod)}</span>`;
+  const linki = o.linki ? `<a href="${cenyEsc(o.linki.produkt)}" target="_blank" rel="noopener">produkt ↗</a> · <a href="${cenyEsc(o.linki.oferty)}" target="_blank" rel="noopener">wszystkie oferty ↗</a>` : '';
+  const histDec = o.decyzje.length ? `<table class="tabela ceny-tab-hist"><thead><tr><th>Czas</th><th>Cena</th><th>Decyzja</th><th>Min / max</th><th>Zysk</th><th>Powód</th></tr></thead><tbody>
+      ${o.decyzje.map((x) => `<tr><td>${formatDatetime(x.czas)}</td><td>${cenyLiczba(x.cena_przed)}</td>
+        <td>${x.cena_nowa !== x.cena_przed ? `<b>→ ${cenyLiczba(x.cena_nowa)}</b>` : '—'}${x.wyslano ? ' ✓' : ''}</td>
+        <td>${cenyLiczba(x.min)} / ${cenyLiczba(x.max)}</td><td>${cenyLiczba(x.zysk)}${x.zysk_nowa != null && x.zysk_nowa !== x.zysk ? ` → ${cenyLiczba(x.zysk_nowa)}` : ''}</td>
+        <td>${cenyEsc(x.powod)}${x.auto ? '' : ' <span class="hint">(automat wył.)</span>'}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">Brak decyzji.</p>';
+  const zmiany = o.zmiany.length ? `<p class="hint">${o.zmiany.map((z) => `${formatDatetime(z.czas)} ${cenyEsc(z.kto || '?')}: ${z.akcja === 'automat_wl' ? 'włączył automat' : 'wyłączył automat'}`).join(' · ')}</p>` : '';
+  return `<section class="ceny-rynek${o.bb_nasz ? ' bb' : ''}${o.auto ? '' : ' off'}" data-ceny-rynek="${o.rynek}">
+    <div class="ceny-k-rynek"><h4>Amazon ${o.rynek}</h4><div class="ceny-sku">${cenyEsc(o.sku)} · stan ${o.ilosc}</div>
+      <div class="ceny-m">${stanBb}</div>
+      ${o.ilosc > 0 ? `<label class="ceny-auto-wiersz" data-ceny-auto="${o.id}"> automat</label>` : '<div class="hint">bez stanu — automat nie działa</div>'}
+      <div class="ceny-linki">${linki}</div></div>
+    <div class="ceny-k-cena"><span class="ceny-et">Cena</span>${obs ? `<b class="ceny-duza">${cenyLiczba(o.cena)} ${w}</b>
+      <span class="ceny-m">${o.wysylka ? `+ wysyłka ${cenyLiczba(o.wysylka)} ${w}` : 'wysyłka gratis'}</span>
+      <span class="ceny-m">marża ${o.marza != null ? cenyLiczba(o.marza, 1) + '%' : '—'}</span><span class="ceny-m">zysk ${o.zysk != null ? cenyLiczba(o.zysk) + ' zł' : '—'}</span>` : '<span class="hint">—</span>'}</div>
+    <div class="ceny-k-konk"><span class="ceny-et">Konkurencja (z wysyłką)</span>
+      <span>Buy Box: <b>${o.bb_cena != null ? `${cenyLiczba(o.bb_cena)} ${w}` : '—'}</b>${o.bb_cena != null ? (o.bb_nasz ? ' (my)' : o.bb_fba ? ' (FBA)' : '') : ''}</span>
+      <span class="ceny-m">najtańsza inna: ${o.najtansza_inna != null ? `${cenyLiczba(o.najtansza_inna)} ${w}` : '—'}</span>
+      <span class="ceny-m">ofert: ${o.ofert ?? '—'}</span>
+      <span class="ceny-m">pas: ${o.min != null ? `${cenyLiczba(o.min)} – ${cenyLiczba(o.max)} ${w}` : 'brak (kalkulator nie zna rynku)'}</span></div>
+    <div class="ceny-k-auto"><span class="ceny-et">Co zrobiłby automat</span>${dec}</div>
+    <div class="ceny-k-wykres">${cenyWykres(o.obserwacje)}</div>
+    <details class="ceny-k-hist"><summary>Historia decyzji (${o.decyzje.length})</summary>${zmiany}${histDec}</details>
+  </section>`;
 }
 
 async function odswiezCenyLog() {
@@ -4631,15 +4719,15 @@ async function odswiezCenyLog() {
 }
 
 document.querySelectorAll('[data-ceny-filtr]').forEach((b) => b.addEventListener('click', () => { cenyFiltr = b.dataset.cenyFiltr; odswiezCeny(); }));
-document.querySelectorAll('[data-ceny-widok]').forEach((b) => b.addEventListener('click', () => {
-  cenyWidok = b.dataset.cenyWidok;
-  document.querySelectorAll('[data-ceny-widok]').forEach((x) => x.classList.toggle('aktywny', x === b));
-  el('ceny-widok-macierz').classList.toggle('hidden', cenyWidok !== 'macierz');
-  el('ceny-widok-log').classList.toggle('hidden', cenyWidok !== 'log');
-  el('ceny-filtry').classList.toggle('hidden', cenyWidok !== 'macierz');
-  odswiezCeny();
-}));
+document.querySelectorAll('[data-ceny-widok]').forEach((b) => b.addEventListener('click', () => { cenyPokazWidok(b.dataset.cenyWidok); odswiezCeny(); }));
 el('ceny-szukaj').addEventListener('input', () => { clearTimeout(cenySzukajTimer); cenySzukajTimer = setTimeout(odswiezCeny, 300); });
+// Enter w wyszukiwarce: jeden pasujący towar → od razu karta SKU.
+el('ceny-szukaj').addEventListener('keydown', async (e) => {
+  if (e.key !== 'Enter') return;
+  clearTimeout(cenySzukajTimer);
+  await odswiezCeny();
+  if (cenyDane && cenyDane.wiersze.length === 1) cenyOtworzKarte(cenyDane.wiersze[0].tw_id);
+});
 el('ceny-odswiez').addEventListener('click', () => odswiezCeny());
 
 // --- init ---

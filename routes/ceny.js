@@ -6,13 +6,15 @@
 // testów tylko administrator (decyzja usera 2026-10-13); biuro dostanie dostęp po testach.
 //
 //   GET  /api/ceny/macierz?q=&filtr=automat|decyzja|wszystkie&limit=   wiersze SKU × rynek
-//   GET  /api/ceny/oferta/:id                                          historia decyzji i obserwacji
+//   GET  /api/ceny/towar/:tw_id                                        karta SKU: wszystkie rynki towaru + historia
 //   GET  /api/ceny/log?limit=                                          zmiany cen (auto) + działania ludzi
 //   POST /api/ceny/automat  { ids: [oferta_id...], auto: true|false }  — tylko podane oferty, nigdy hurtem
 
 const express = require('express');
 const router = express.Router();
 const { db, stan } = require('../pricing/db');
+const { linkiOferty } = require('../pricing/amazon');
+const { wycenaHurtem } = require('../services/cennik');
 
 const RYNKI = ['DE', 'FR', 'IT', 'ES', 'NL', 'PL'];
 const ZMIANY_KODY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min'];
@@ -40,7 +42,9 @@ router.get('/macierz', (req, res) => {
     // Ten sam towar bywa wystawiony dwa razy na jednym rynku (SKU z dopiskiem -1) — w komórce
     // pokazujemy ofertę z większym stanem, resztę liczymy, żeby ekran nie ukrywał duplikatu.
     const byla = t.rynki[o.rynek];
-    if (!byla || (o.ilosc || 0) > (byla.ilosc || 0)) t.rynki[o.rynek] = { ...o, inne_oferty: (byla ? byla.inne_oferty + 1 : 0) };
+    if (!byla || (o.ilosc || 0) > (byla.ilosc || 0)) {
+      t.rynki[o.rynek] = { ...o, linki: linkiOferty(o.rynek, o.asin), inne_oferty: (byla ? byla.inne_oferty + 1 : 0) };
+    }
     else byla.inne_oferty++;
   }
 
@@ -71,15 +75,40 @@ router.get('/macierz', (req, res) => {
   });
 });
 
-router.get('/oferta/:id', (req, res) => {
-  const id = Number(req.params.id);
-  const oferta = db.prepare('SELECT * FROM oferty WHERE id = ?').get(id);
-  if (!oferta) return res.status(404).json({ blad: 'Nie ma takiej oferty' });
+// Karta SKU — wszystkie oferty towaru (każdy rynek, także bez stanu i z dopiskiem -1), ostatnia
+// obserwacja i decyzja, historia do wykresu. Koszt i waga na żywo z GT; GT padnięte = karta bez nich.
+router.get('/towar/:tw_id', async (req, res) => {
+  const twId = Number(req.params.tw_id);
+  const oferty = db.prepare(SQL_OFERTY.replace('AND o.ilosc > 0', '') + ' AND o.tw_id = ? ORDER BY o.rynek, o.ilosc DESC').all(twId);
+  if (!oferty.length) return res.status(404).json({ blad: 'Brak ofert Amazon dla tego towaru' });
+  const decyzje = db.prepare(`SELECT czas, cena_przed, cena_nowa, min, max, kod, powod, wyslano, auto, zysk, zysk_nowa
+                                FROM decyzje WHERE oferta_id = ? ORDER BY id DESC LIMIT 30`);
+  const obserwacje = db.prepare(`SELECT czas, cena, wysylka, bb_nasz, bb_cena, bb_fba, najtansza_inna
+                                   FROM obserwacje WHERE oferta_id = ? ORDER BY id DESC LIMIT 60`);
+  const zmiany = db.prepare('SELECT czas, kto, akcja FROM zmiany WHERE oferta_id = ? ORDER BY id DESC LIMIT 20');
+
+  let gt = null;
+  try {
+    const w = (await wycenaHurtem([twId])).get(twId);
+    if (w) gt = { koszt: w.koszt, waga: w.waga, wagaZnana: w.wagaZnana, docinalny: w.docinalny };
+  } catch (e) {
+    console.error('[ceny] GT:', e.message);
+  }
+
   res.json({
-    oferta,
-    decyzje: db.prepare('SELECT * FROM decyzje WHERE oferta_id = ? ORDER BY id DESC LIMIT 100').all(id),
-    obserwacje: db.prepare('SELECT * FROM obserwacje WHERE oferta_id = ? ORDER BY id DESC LIMIT 100').all(id),
-    zmiany: db.prepare('SELECT * FROM zmiany WHERE oferta_id = ? ORDER BY id DESC LIMIT 50').all(id),
+    tw_id: twId,
+    symbol: oferty[0].symbol_gt,
+    nazwa: oferty[0].nazwa,
+    gt_ok: !!gt,
+    gt,
+    przebieg: stan.get('przebieg'),
+    oferty: oferty.map((o) => ({
+      ...o,
+      linki: linkiOferty(o.rynek, o.asin),
+      decyzje: decyzje.all(o.id),
+      obserwacje: obserwacje.all(o.id).reverse(),
+      zmiany: zmiany.all(o.id),
+    })),
   });
 });
 

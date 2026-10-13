@@ -12,6 +12,8 @@ settings.local.json
 
 # backupy bazy (np. wms-przed-resetem-*.db) - dane, nie do repo
 db/*.db
+# pliki robocze SQLite w trybie WAL (np. db/pricing.db-wal / -shm repricera)
+db/*.db-*
 
 # Dane robocze i backupy wsadow do GT (scripts/) - dane, nie kod.
 # wymiary.json odtwarza sie z eksportu BaseLinkera, backupy sa jednorazowe,

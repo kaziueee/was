@@ -1245,8 +1245,6 @@ main {
 .ceny-probka { display: inline-block; width: 16px; height: 10px; border-radius: 2px; vertical-align: middle; border: 1px solid #ccc; }
 .ceny-probka.bb { background: #e3f3e8; border-color: #1f7a3d; }
 .ceny-probka.off { background: #eceef1; }
-.ceny-historia { margin-top: 1rem; }
-.ceny-historia h3 { margin: 0; font-size: 1rem; color: #1d3557; }
 @media (prefers-reduced-motion: reduce) { .ceny-przel span { transition: none; } }
 /* --- Zdjecie produktu w naglowku modalu (app.js: pokazZdjecieModalu / pokazZdjecieDuze) --- */
 .modal-zdj {
@@ -1282,3 +1280,36 @@ main {
   border-radius: 6px;
 }
 .zdj-podglad-hint, .zdj-podglad-zamknij { color: #fff; font-size: 0.9rem; }
+
+/* Ceny: link do Amazona i karta SKU */
+.ceny-boki { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; }
+.ceny-ext { font-size: 0.85rem; text-decoration: none; color: #1d3557; line-height: 1; }
+.ceny-ext:hover { color: #2a9d8f; }
+.ceny-link-karta { font: inherit; background: none; border: none; padding: 0; cursor: pointer; color: #1d3557; text-decoration: underline dotted; }
+.ceny-karta-gora { display: flex; flex-wrap: wrap; gap: 0.8rem 1.5rem; align-items: flex-start; justify-content: space-between; margin-bottom: 0.4rem; }
+.ceny-karta-tyt { flex: 1; min-width: 0; }
+.ceny-karta-tyt h3 { margin: 0; font-family: ui-monospace, Menlo, Consolas, monospace; color: #1d3557; }
+.ceny-nazwa-pelna { color: #555; font-size: 0.9rem; }
+.ceny-fakty { display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; font-size: 0.85rem; color: #555; margin-top: 0.3rem; }
+.ceny-auto-wiersz.duzy { font-size: 0.85rem; margin-top: 0.4rem; }
+.ceny-rynki { display: grid; gap: 0.6rem; }
+.ceny-rynek { background: #fff; border: 1px solid #dde1e6; border-radius: 8px; padding: 0.7rem 0.9rem; display: grid;
+  grid-template-columns: minmax(9rem, 1fr) minmax(8rem, 0.9fr) minmax(11rem, 1.1fr) minmax(13rem, 1.4fr) minmax(12rem, 1.2fr); gap: 0.5rem 1rem; align-items: start; }
+.ceny-rynek.bb { background: #e3f3e8; }
+.ceny-rynek.off { background: #eceef1; }
+.ceny-rynek.off.bb { box-shadow: inset 4px 0 0 #1f7a3d; }
+.ceny-rynek h4 { margin: 0; color: #1d3557; }
+.ceny-k-rynek, .ceny-k-cena, .ceny-k-konk, .ceny-k-auto, .ceny-k-wykres { display: grid; gap: 0.15rem; align-content: start; min-width: 0; font-size: 0.88rem; }
+.ceny-sku { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.78rem; color: #666; }
+.ceny-et { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #888; }
+.ceny-duza { font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+.ceny-gora { color: #1f7a3d; } .ceny-dol { color: #b42318; }
+.ceny-linki { font-size: 0.8rem; margin-top: 0.2rem; }
+.ceny-wykres { width: 100%; height: 44px; }
+.ceny-wykres polyline { fill: none; stroke-width: 1.6; }
+.ceny-wykres .my { stroke: #1d3557; }
+.ceny-wykres .bb { stroke: #e9a23b; stroke-dasharray: 3 3; }
+.ceny-k-hist { grid-column: 1 / -1; border-top: 1px solid #e5e7eb; padding-top: 0.4rem; }
+.ceny-k-hist summary { cursor: pointer; font-size: 0.85rem; color: #555; }
+.ceny-tab-hist td, .ceny-tab-hist th { font-size: 0.8rem; padding: 0.3rem 0.5rem; }
+@media (max-width: 1100px) { .ceny-rynek { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }

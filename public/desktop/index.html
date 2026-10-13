@@ -798,6 +798,7 @@
       <div class="ceny-pasek">
         <div class="ceny-widoki">
           <button type="button" class="ceny-chip aktywny" data-ceny-widok="macierz">Macierz</button>
+          <button type="button" class="ceny-chip" data-ceny-widok="karta">Karta SKU</button>
           <button type="button" class="ceny-chip" data-ceny-widok="log">Log decyzji</button>
         </div>
         <div class="ceny-filtry" id="ceny-filtry">
@@ -819,9 +820,12 @@
           <span class="ceny-probka bb"></span> mamy Buy Box &nbsp;
           <span class="ceny-probka off"></span> automat wyłączony &nbsp;
           W komórce: cena (bez wysyłki), marża i zysk na sztuce wg kalkulatora; pod spodem co zrobiłby automat.
-          Przełącznik w komórce = jeden rynek, przy SKU = wszystkie rynki tego towaru. Kliknij komórkę — historia oferty.
+          Przełącznik w komórce = jeden rynek, przy SKU = wszystkie rynki tego towaru. ↗ = oferta na Amazonie.
+          Kliknij komórkę albo SKU — karta SKU.
         </p>
-        <div id="ceny-historia" class="ceny-historia hidden"></div>
+      </div>
+      <div id="ceny-widok-karta" class="hidden">
+        <div id="ceny-karta"><p class="hint">Wybierz towar w macierzy (kliknij SKU albo komórkę) albo wyszukaj go i naciśnij Enter.</p></div>
       </div>
       <div id="ceny-widok-log" class="hidden">
         <div class="tabela-wrapper">

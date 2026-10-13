@@ -2,7 +2,8 @@
 
 // Ekran „Ceny" (repricer) — odczyt bazy repricera `db/pricing.db` + włączanie/wyłączanie automatu.
 // Liczy i obserwuje osobny proces (pricing/worker.js, zadanie WMS-Pricing); WMS tylko czyta jego
-// wyniki i zapisuje decyzję człowieka (auto = 0/1). Montowane z auth.wymagajRoli('admin', 'biuro').
+// wyniki i zapisuje decyzję człowieka (auto = 0/1). Montowane z auth.wymagajRoli('admin') — na czas
+// testów tylko administrator (decyzja usera 2026-10-13); biuro dostanie dostęp po testach.
 //
 //   GET  /api/ceny/macierz?q=&filtr=automat|decyzja|wszystkie&limit=   wiersze SKU × rynek
 //   GET  /api/ceny/oferta/:id                                          historia decyzji i obserwacji

@@ -1914,14 +1914,14 @@ el('zwroty-zazn-wszystkie').addEventListener('change', (e) => {
 
 function pokazZakladkeAdmina() {
   const admin = !!(window.WMS && WMS.jestAdmin());
-  for (const id of ['tab-uzytkownicy', 'tab-kartony']) {
+  for (const id of ['tab-uzytkownicy', 'tab-kartony', 'tab-ceny']) {
     const tab = el(id);
     if (tab) tab.style.display = admin ? '' : 'none';
   }
   // Ceny i sprzedaz: admin + biuro. Zamkiem jest backend (auth.wymagajRoli) - tu tylko UX.
   const rola = (window.WMS?.user() || {}).rola;
   const biuro = !window.WMS || rola === 'admin' || rola === 'biuro';
-  for (const id of ['tab-cennik', 'tab-sprzedaz', 'tab-ceny']) {
+  for (const id of ['tab-cennik', 'tab-sprzedaz']) {
     const tab = el(id);
     if (tab) tab.style.display = biuro ? '' : 'none';
   }
@@ -4475,7 +4475,7 @@ el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
 
 // === CENY (repricer Amazona) ===
 // Dane liczy osobny proces (pricing/worker.js) do db/pricing.db; tu tylko odczyt + włącz/wyłącz
-// automat. Backend: routes/ceny.js (admin/biuro). Nigdy nie włączamy automatu na cały katalog —
+// automat. Backend: routes/ceny.js (na czas testów tylko admin). Nigdy nie włączamy automatu na cały katalog —
 // tylko wskazane oferty (komórka) albo wszystkie rynki jednego towaru (przełącznik przy SKU).
 
 const CENY_ZMIANY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min'];

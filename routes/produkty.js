@@ -1,6 +1,8 @@
 const express = require('express');
 const db = require('../db/database');
-const { pobierzProdukt, szukajProdukty, listujProdukty, pobierzProduktyZUniwersum, LIMIT_WYSZUKIWANIA, SORT_KLUCZE } = require('../services/gt-produkty');
+const zdjecia = require('../services/zdjecia');
+const { rozmiarZParametru } = require('../services/zdjecia-model');
+const { pobierzProdukt, pobierzSymbolPoId, szukajProdukty, listujProdukty, pobierzProduktyZUniwersum, LIMIT_WYSZUKIWANIA, SORT_KLUCZE } = require('../services/gt-produkty');
 const { pobierzStatusLokalizacjiGt, pobierzPrzegladLokalizacji, ZGODNOSC } = require('../services/gt-fields');
 const { pobierzZkRezerwujaceK4, pobierzDostawyK4, rozbijStanK4, RODZAJE_STREF } = require('../services/gt-dokumenty');
 const gtZestawy = require('../services/gt-zestawy');
@@ -283,6 +285,55 @@ router.get('/:artykulGtId/zestawy', async (req, res, next) => {
     res.json(await gtZestawy.rozbicieDlaProduktu(artykulGtId));
   } catch (err) {
     res.status(503).json({ blad: 'GT niedostępny — nie można odczytać składu zestawów' });
+  }
+});
+
+// Symbol z GT na krotko w pamieci: lista na ekranie prosi o kilka zdjec naraz, a kazde to
+// osobne zapytanie <img>. 10 min to dluzej niz trwa jeden ekran i krocej niz zdazy sie
+// pomylic po przemianowaniu.
+const SYMBOL_TTL_MS = 10 * 60 * 1000;
+const symbolePoId = new Map();
+
+async function aktualnySymbol(artykulGtId) {
+  const wpis = symbolePoId.get(artykulGtId);
+  if (wpis && Date.now() - wpis.czas < SYMBOL_TTL_MS) return wpis.symbol;
+  const symbol = await pobierzSymbolPoId(artykulGtId);
+  if (symbolePoId.size > 5000) symbolePoId.clear();
+  symbolePoId.set(artykulGtId, { symbol, czas: Date.now() });
+  return symbol;
+}
+
+// GET /api/produkty/:artykulGtId/zdjecie?rozmiar=mini|duze - zdjecie produktu (obraz, nie JSON).
+// Wejscie po tw_Id, nie po symbolu: symbol bierzemy SWIEZO z GT i dopiero nim pytamy Sellasist
+// (klucz zdjec = SKU). Kopia symbolu w WMS po przemianowaniu w Subiekcie pokazalaby zdjecie
+// innego towaru - gorsze niz brak zdjecia, bo magazynier mu uwierzy.
+// 404 = towar nie ma zdjecia; 503 = GT/Sellasist nie odpowiada i nie ma kopii. Front w obu
+// przypadkach po prostu chowa ramke - zdjecie to podglad, nie dane.
+router.get('/:artykulGtId/zdjecie', async (req, res) => {
+  const artykulGtId = Number(req.params.artykulGtId);
+  if (!Number.isInteger(artykulGtId) || artykulGtId <= 0) {
+    return res.status(400).json({ blad: 'Nieprawidłowy identyfikator towaru' });
+  }
+  const rozmiar = rozmiarZParametru(req.query.rozmiar);
+
+  let symbol;
+  try {
+    symbol = await aktualnySymbol(artykulGtId);
+  } catch {
+    return res.status(503).json({ blad: 'GT niedostępny — nie wiadomo, jaki to towar' });
+  }
+  if (!symbol) return res.status(404).json({ blad: 'Nie ma takiego towaru w GT' });
+
+  try {
+    const zdj = await zdjecia.pobierzZdjecie(symbol, rozmiar);
+    if (!zdj) return res.status(404).json({ blad: 'Towar nie ma zdjęcia' });
+    // private: zdjecie idzie przez sesje magazynu, nie do cache posrednich. Godzina wystarczy,
+    // zeby przewijanie listy nie pytalo serwera w kolko.
+    res.set('Cache-Control', 'private, max-age=3600');
+    res.type(zdj.typ).send(zdj.bufor);
+  } catch (err) {
+    if (!(err instanceof zdjecia.ZdjeciaNiedostepne)) console.error('zdjecie', symbol, err);
+    res.status(503).json({ blad: 'Zdjęcie chwilowo niedostępne' });
   }
 });
 

@@ -304,7 +304,7 @@
 
     if (!zGt(dane)) komunikat('GT nie odpowiada — widać tylko to, co wie WMS.', 'info');
 
-    ustaw('spr-karta', `<strong>${esc(dane.artykul_symbol)} ${statusZgodnosciBadge(dane)}</strong>`
+    ustaw('spr-karta', zdjecieHtml(dane.artykul_gt_id) + `<strong>${esc(dane.artykul_symbol)} ${statusZgodnosciBadge(dane)}</strong>`
       + `<span>${esc(dane.artykul_nazwa)}</span>`);
 
     // "Laczny stan" = Razem (bez BRK i K4R) - odpowiedz na "ile mam do sprzedania"; stan na

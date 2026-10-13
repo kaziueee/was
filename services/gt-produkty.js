@@ -55,6 +55,14 @@ async function znajdzTowarPoKodzie(identyfikator) {
   };
 }
 
+// Aktualny symbol towaru wg GT (master kartoteki) - null, gdy tw_Id nie istnieje. Dla
+// wywolan, ktore znaja tw_Id, a potrzebuja SKU do systemu zewnetrznego (zdjecia z Sellasist):
+// kopia symbolu w WMS potrafi byc nieaktualna po przemianowaniu w Subiekcie.
+async function pobierzSymbolPoId(twId) {
+  const wynik = await query('SELECT tw_Symbol FROM tw__Towar WHERE tw_Id = @id', { id: Number(twId) });
+  return wynik.recordset[0]?.tw_Symbol ?? null;
+}
+
 // Jak wyzej, ale ze stanami GT - dla wywolan, ktore potrzebuja obu naraz.
 async function pobierzProdukt(identyfikator) {
   const towar = await znajdzTowarPoKodzie(identyfikator);
@@ -898,6 +906,7 @@ async function rozkladZgodnosci() {
 module.exports = {
   pobierzProdukt,
   znajdzTowarPoKodzie,
+  pobierzSymbolPoId,
   pobierzPodstawoweInfo,
   szukajProdukty,
   szukajPoLokalizacjiGt,

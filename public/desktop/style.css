@@ -1248,3 +1248,37 @@ main {
 .ceny-historia { margin-top: 1rem; }
 .ceny-historia h3 { margin: 0; font-size: 1rem; color: #1d3557; }
 @media (prefers-reduced-motion: reduce) { .ceny-przel span { transition: none; } }
+/* --- Zdjecie produktu w naglowku modalu (app.js: pokazZdjecieModalu / pokazZdjecieDuze) --- */
+.modal-zdj {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  flex-shrink: 0;
+  margin: 0 0.75rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  cursor: zoom-in;
+}
+.modal-naglowek-tekst { flex: 1 1 auto; min-width: 0; }
+.zdj-podglad {
+  position: fixed;
+  inset: 0;
+  z-index: 1500; /* nad modalami (1000/1100), pod ekranami blokujacymi (2000) */
+  background: rgba(0, 0, 0, 0.88);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  cursor: zoom-out;
+}
+.zdj-podglad img {
+  max-width: min(100%, 900px);
+  max-height: calc(100% - 3rem);
+  object-fit: contain;
+  background: #fff;
+  border-radius: 6px;
+}
+.zdj-podglad-hint, .zdj-podglad-zamknij { color: #fff; font-size: 0.9rem; }

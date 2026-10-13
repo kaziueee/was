@@ -107,7 +107,26 @@ async function przebiegBezpieczny(opcje) {
 
 module.exports = { przebieg };
 
+// Log do pliku pisze SAM worker (logs/pricing.log), a zadanie harmonogramu uruchamia node.exe
+// bezpośrednio. Wcześniej log szedł przez `cmd /c ... >> plik` — Stop-ScheduledTask zabijał wtedy
+// tylko cmd, osierocony node działał dalej na starym kodzie i trzymał plik logu, przez co nowy
+// start odbijał się błędem (2026-10-13).
+function logujDoPliku() {
+  const fs = require('fs');
+  const path = require('path');
+  const plik = path.join(__dirname, '..', 'logs', 'pricing.log');
+  fs.mkdirSync(path.dirname(plik), { recursive: true });
+  for (const metoda of ['log', 'error', 'warn']) {
+    const oryg = console[metoda].bind(console);
+    console[metoda] = (...a) => {
+      oryg(...a);
+      try { fs.appendFileSync(plik, a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') + '\n'); } catch { /* log nie może zabić workera */ }
+    };
+  }
+}
+
 if (require.main === module) {
+  if (process.argv.includes('--log')) logujDoPliku();
   if (process.argv.includes('--raz')) {
     przebiegBezpieczny({ pelny: process.argv.includes('--pelny') }).then(() => process.exit(0));
   } else {

@@ -4478,11 +4478,11 @@ el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
 // automat. Backend: routes/ceny.js (na czas testów tylko admin). Nigdy nie włączamy automatu na cały katalog —
 // tylko wskazane oferty (komórka) albo wszystkie rynki jednego towaru (przełącznik przy SKU).
 
-const CENY_ZMIANY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min', 'pod_min_limit', 'cofniecie'];
+const CENY_ZMIANY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min', 'cofniecie'];
 const CENY_KOD_OPIS = {
   podwyzka: 'podwyżka', podwyzka_limit: 'podwyżka (schodek)', obnizka: 'obniżka', obnizka_limit: 'obniżka (schodek)',
-  na_min: 'na minimum', na_min_limit: 'w stronę minimum', pod_min: 'powrót na minimum', pod_min_limit: 'w stronę minimum (schodek +10%)', top: 'mamy BB — bez zmiany',
-  top_bez_konkurencji: 'jedyna oferta', cofniecie: 'cofnięcie podwyżki (utrata BB)', top_blokada: 'mamy BB — podwyżki wstrzymane', pod_min_blokada: 'pod minimum — podwyżki wstrzymane (utrata BB)', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
+  na_min: 'na minimum', na_min_limit: 'w stronę minimum', pod_min: 'od razu na minimum', top: 'mamy BB — bez zmiany',
+  top_bez_konkurencji: 'jedyna oferta', cofniecie: 'cofnięcie podwyżki (utrata BB)', top_blokada: 'mamy BB — podwyżki wstrzymane', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
   przegrana_nie_cena: 'tańsi, a bez BB', brak_danych: 'brak danych o BB', brak_ceny: 'brak naszej ceny', brak_pasa: 'brak min/max',
 };
 const CENY_AKCJE = {
@@ -4636,8 +4636,8 @@ function cenyPrzelacznik(stan, etykieta, onKlik) {
 
 // Treść potwierdzenia: co automat zrobi z każdą ofertą w najbliższym przebiegu (z ostatniej
 // decyzji — dla ofert ręcznych to podpowiedź sprzed najwyżej kilku godzin). Oferty POD MINIMUM
-// osobno i na górze: automat będzie je podnosił schodkami +10% co przebieg aż do minimum
-// (2026-10-13 włączenie automatu na takich ofertach dało 7 nieoczekiwanych podwyżek naraz).
+// osobno i na górze: automat podniesie je od razu do minimum (2026-10-13 włączenie automatu na
+// takich ofertach dało 7 podwyżek naraz, o których ekran nie uprzedzał).
 function cenyOpisWlaczenia(oferty) {
   const linia = (o) => {
     const w = cenyWaluta(o.rynek);
@@ -4652,8 +4652,8 @@ function cenyOpisWlaczenia(oferty) {
   const MAX = 12;
   const wiersze = [];
   if (podMin.length) {
-    wiersze.push(`⚠ ${podMin.length} z ${oferty.length} poniżej minimum (marża 20%) — automat PODNIESIE je schodkami +10% co przebieg aż do minimum:`);
-    wiersze.push(...podMin.slice(0, MAX).map((o) => `   • ${linia(o)} (minimum ${cenyLiczba(o.min)} ${cenyWaluta(o.rynek)})`));
+    wiersze.push(`⚠ ${podMin.length} z ${oferty.length} poniżej minimum (marża 20%) — automat PODNIESIE je OD RAZU do minimum (utrata Buy Boxa tego nie cofnie):`);
+    wiersze.push(...podMin.slice(0, MAX).map((o) => `   • ${o.rynek} ${o.sku}: ${cenyLiczba(o.cena)} → ${cenyLiczba(o.min)} ${cenyWaluta(o.rynek)} (minimum)`));
   }
   const reszt = reszta.slice(0, Math.max(0, MAX - podMin.length));
   if (reszt.length) {

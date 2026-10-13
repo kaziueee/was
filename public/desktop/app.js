@@ -4492,6 +4492,13 @@ const CENY_AKCJE = {
 let cenyFiltr = 'automat', cenyWidok = 'macierz', cenySzukajTimer = null, cenyDane = null, cenyKartaTw = null, cenyKartaRynek = null;
 
 const cenyWaluta = (rynek) => (rynek === 'PL' ? 'zł' : '€');
+// Stan z GT pod nazwą towaru: Razem (K4+K4G+MAG+LS, bez BRK) i półka zbioru K4 z rezerwacją.
+function cenyStanTekst(s) {
+  if (s === undefined) return '';                    // backend bez pola (przed restartem WMS)
+  if (!s) return 'stan: — <span class="hint">(GT nie odpowiada)</span>';
+  return `stan: <b>${s.razem}</b> razem · K4 <b>${s.k4}</b>${s.k4_rez ? ` (rez. ${s.k4_rez})` : ''}`;
+}
+
 // Godzina (dziś) albo data z godziną — czas z bazy jest w UTC, dataZBazy przelicza na lokalny.
 function cenyGodzina(s) {
   const d = dataZBazy(s);
@@ -4543,6 +4550,7 @@ function cenyWiersz(t, rynki) {
   td0.className = 'ceny-towar';
   td0.innerHTML = `<button type="button" class="ceny-symbol ceny-link-karta" title="Karta SKU">${cenyEsc(t.symbol)}</button><div class="ceny-nazwa" title="${cenyEsc(t.nazwa)}">${cenyEsc(t.nazwa)}</div>`;
   td0.querySelector('.ceny-link-karta').addEventListener('click', () => cenyOtworzKarte(t.tw_id));
+  td0.insertAdjacentHTML('beforeend', `<div class="ceny-stan">${cenyStanTekst(t.stan_gt)}</div>`);
   const lbl = document.createElement('label');
   lbl.className = 'ceny-auto-wiersz';
   lbl.appendChild(cenyPrzelacznik(wl === oferty.length ? 'on' : wl ? 'czesc' : '', `Automat dla wszystkich rynków ${t.symbol}`,
@@ -4675,7 +4683,7 @@ async function odswiezCenyKarta() {
       : '<span class="ceny-blad">Subiekt nie odpowiada — bez kosztu i wagi</span>';
     box.innerHTML = `<div class="ceny-karta-gora">
         <div><button type="button" class="btn btn-small" id="ceny-karta-wroc">← Macierz</button></div>
-        <div class="ceny-karta-tyt"><h3>${cenyEsc(d.symbol)}</h3><div class="ceny-nazwa-pelna">${cenyEsc(d.nazwa)}</div><div class="ceny-fakty">${fakty}</div></div>
+        <div class="ceny-karta-tyt"><h3>${cenyEsc(d.symbol)}</h3><div class="ceny-nazwa-pelna">${cenyEsc(d.nazwa)}</div><div class="ceny-fakty"><span>${cenyStanTekst(d.stan_gt)}</span>${fakty}</div></div>
         <label class="ceny-auto-wiersz duzy" id="ceny-karta-auto"></label>
       </div>
       <p class="hint">Rynki od największego zysku na sztuce. Zielone tło = mamy Buy Box, szare = automat wyłączony. Tryb Próba — ceny nie idą na Amazona.</p>

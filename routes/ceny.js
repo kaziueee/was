@@ -15,6 +15,22 @@ const router = express.Router();
 const { db, stan } = require('../pricing/db');
 const { linkiOferty } = require('../pricing/amazon');
 const { wycenaHurtem } = require('../services/cennik');
+const { pobierzStanyGt, sumaRazem } = require('../services/gt-produkty');
+
+// Stan z GT (master stanów) dla pokazanych towarów: Razem (bez BRK) i K4. GT padnięte = null,
+// ekran pokazuje wtedy „—", a nie zero (zero to pewna informacja, której nie mamy).
+async function stanyGt(twIds) {
+  try {
+    const m = await pobierzStanyGt(twIds);
+    return (id) => {
+      const s = m.get(String(id));
+      return s ? { razem: sumaRazem(s), k4: s.K4?.ilosc ?? 0, k4_rez: s.K4?.rezerwacja ?? 0 } : null;
+    };
+  } catch (e) {
+    console.error('[ceny] GT stany:', e.message);
+    return null;
+  }
+}
 
 const RYNKI = ['DE', 'FR', 'IT', 'ES', 'NL', 'PL'];
 const ZMIANY_KODY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min', 'cofniecie'];
@@ -30,7 +46,10 @@ const SQL_OFERTY = `
     LEFT JOIN decyzje d    ON d.id = (SELECT MAX(id) FROM decyzje WHERE oferta_id = o.id)
    WHERE o.platforma = 'amazon' AND o.aktywna = 1 AND o.tw_id IS NOT NULL AND o.ilosc > 0`;
 
-router.get('/macierz', (req, res) => {
+// Express 4 nie łapie odrzuconych obietnic — wyjątek w handlerze async wywróciłby cały WMS.
+const asyncH = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
+router.get('/macierz', asyncH(async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   const filtr = ['automat', 'decyzja', 'wszystkie'].includes(req.query.filtr) ? req.query.filtr : 'automat';
   const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);
@@ -61,8 +80,13 @@ router.get('/macierz', (req, res) => {
   const wszystkie = [...towary.values()];
   const wiersze = wszystkie.filter(pasuje).sort((a, b) => String(a.symbol).localeCompare(String(b.symbol)));
 
+  const pokazane = wiersze.slice(0, limit);
+  const stanGt = await stanyGt(pokazane.map((t) => t.tw_id));
+  for (const t of pokazane) t.stan_gt = stanGt ? stanGt(t.tw_id) : null;
+
   res.json({
     rynki: RYNKI,
+    gt_ok: !!stanGt,
     przebieg: stan.get('przebieg'),
     obserwacja_pelna: stan.get('obserwacja_pelna'),
     blad: stan.get('blad'),
@@ -72,13 +96,13 @@ router.get('/macierz', (req, res) => {
       wszystkie: wszystkie.length,
     },
     razem: wiersze.length,
-    wiersze: wiersze.slice(0, limit),
+    wiersze: pokazane,
   });
-});
+}));
 
 // Karta SKU — wszystkie oferty towaru (każdy rynek, także bez stanu i z dopiskiem -1), ostatnia
 // obserwacja i decyzja, historia do wykresu. Koszt i waga na żywo z GT; GT padnięte = karta bez nich.
-router.get('/towar/:tw_id', async (req, res) => {
+router.get('/towar/:tw_id', asyncH(async (req, res) => {
   const twId = Number(req.params.tw_id);
   const oferty = db.prepare(SQL_OFERTY.replace('AND o.ilosc > 0', '') + ' AND o.tw_id = ? ORDER BY o.rynek, o.ilosc DESC').all(twId);
   if (!oferty.length) return res.status(404).json({ blad: 'Brak ofert Amazon dla tego towaru' });
@@ -96,8 +120,10 @@ router.get('/towar/:tw_id', async (req, res) => {
     console.error('[ceny] GT:', e.message);
   }
 
+  const stanGt = await stanyGt([twId]);
   res.json({
     tw_id: twId,
+    stan_gt: stanGt ? stanGt(twId) : null,
     symbol: oferty[0].symbol_gt,
     nazwa: oferty[0].nazwa,
     gt_ok: !!gt,
@@ -111,7 +137,7 @@ router.get('/towar/:tw_id', async (req, res) => {
       zmiany: zmiany.all(o.id),
     })),
   });
-});
+}));
 
 router.get('/log', (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);

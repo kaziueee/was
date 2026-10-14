@@ -20,7 +20,7 @@ const DOMYSLNE = {
   obsluga: 3,       // pakowanie/robocizna, zl na zamowienie
   minzysk: 5,       // prog min. zysku netto (zl) - podbija cene
   eur: 4.20,        // PLN za 1 EUR (ostrozny kurs)
-  ron: 0.90,        // PLN za 1 RON
+  ron: 0.79,        // PLN za 1 RON (ostrozny: NBP 14.10.2026 = 0,8179; ~4% ponizej, jak EUR 4,20 przy 4,37)
   paliwowa: 14,     // doplata paliwowa DHL %
   vatProwizji: 23,  // prowizja Amazon to netto -> dolicz VAT (reverse-charge PL)
   ads: 3,           // narzut Allegro Ads/promo %
@@ -28,6 +28,8 @@ const DOMYSLNE = {
 };
 
 // Rynki (preset). typ: 'allegro' | 'amazon-dhl' | 'flat'.
+// 'flat': staly NASZ koszt wysylki na paczke — `wysylka` (w walucie rynku) albo `wysylkaEur` (w EUR,
+// przeliczany kursem g.eur/kurs rynku: kurier fakturuje w EUR, a sprzedajemy np. w RON).
 const RYNKI = [
   { nazwa: 'Allegro',     kraj: 'PL', waluta: 'PLN', vat: 23, prowizja: 13.3, typ: 'allegro' },
   { nazwa: 'Amazon DE',   kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl' },
@@ -36,8 +38,15 @@ const RYNKI = [
   { nazwa: 'Amazon IT',   kraj: 'IT', waluta: 'EUR', vat: 22, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
   { nazwa: 'Amazon ES',   kraj: 'ES', waluta: 'EUR', vat: 21, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
   { nazwa: 'Amazon NL',   kraj: 'NL', waluta: 'EUR', vat: 21, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
-  // eMag RO usunięty z listy do czasu domknięcia (prowizja realna ~16,37%, wysyłka Paxy realnie ~2,10 EUR/paczka).
-  // Dane i jak wznowić: pliki wiedzy emag-oplaty-realne + paxy-stawki (Projekty AI/ERP DASHBOARD).
+  // eMAG RO (przywrócony 2026-10-14 pod repricer). Liczby z realnych rozliczeń, nie z cennika:
+  //  - prowizja 16,37% = efektywna z wypłat eMAG RO (SUM prowizje / SUM wartość zamówień, ~60 wypłat,
+  //    GMV 1,19 mln RON; Projekty AI/ERP DASHBOARD/emag-oplaty-realne.md),
+  //  - wysyłka Paxy 2,24 EUR/paczka all-in ze zwrotami (faktura 03/2026: 414 paczek, ~85% „Genius" po
+  //    1,64 EUR, FanCourier 3,99–4,99, zwroty 2,00; paxy-stawki.md) — 1 faktura, do potwierdzenia kolejnymi,
+  //  - VAT RO 21% (od 01.08.2025, ustawa 141/2025; wcześniej 19%),
+  //  - klient nie płaci nam za wysyłkę (wysKlient 0) — do potwierdzenia.
+  // Ceny w API eMAG są NETTO (bez VAT); kalkulator liczy brutto, przelicza adapter.
+  { nazwa: 'eMAG RO',     kraj: 'RO', waluta: 'RON', vat: 21, prowizja: 16.37, wysylkaEur: 2.24, wysKlient: 0, typ: 'flat' },
   // Kaufland DE: ta sama umowa DHL do Niemiec co Amazon DE (koszt po wadze). Prowizja 13% dla zabawek
   // (kauflandglobalmarketplace.com/en/conditions) - od ceny BRUTTO wraz z wysylka, netto + VAT -> model amazon-dhl.
   { nazwa: 'Kaufland DE', kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 13, wysKlient: 4.99, typ: 'amazon-dhl' },
@@ -89,6 +98,12 @@ function stawkaDHL(kraj, waga, obnizProg = 0) {
 }
 
 // --- wycena jednego rynku -> { nazwa, kraj, waluta, cena, zysk, marza, status, detal } ---
+// NASZ koszt wysylki dla rynku 'flat' w walucie rynku (wysylkaEur przeliczana przez EUR).
+function kosztWysylkiFlat(r, g, kurs) {
+  if (r.wysylkaEur != null) return (+r.wysylkaEur || 0) * (+g.eur || 0) / kurs;
+  return +r.wysylka || 0;
+}
+
 function wynik(r, pola) {
   return { nazwa: r.nazwa, kraj: r.kraj, waluta: r.waluta, ...pola };
 }
@@ -97,7 +112,7 @@ function policzFlat(kosztPLN, r, g) {
   const kurs = kursDla(r.waluta, g);
   if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });
   const v = (+r.vat || 0) / 100, p = (+r.prowizja || 0) / 100, m = (+g.marza || 0) / 100;
-  const kosztWys = +r.wysylka || 0, S = +r.wysKlient || 0;
+  const kosztWys = kosztWysylkiFlat(r, g, kurs), S = +r.wysKlient || 0;
   const koszty = kosztPLN / kurs + kosztWys + (+g.obsluga || 0) / kurs;
   const D = (1 - m) / (1 + v) - p, denomZysk = 1 / (1 + v) - p;
   if (D <= 0 || denomZysk <= 0) return wynik(r, { blad: 'reguły niespójne', status: 'bad' });
@@ -193,7 +208,7 @@ function wycenaPrzyCenie(kosztPLN, r, g, cena) {
   } else {
     kurs = kursDla(r.waluta, g);
     if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });
-    kosztWys = +r.wysylka || 0;
+    kosztWys = kosztWysylkiFlat(r, g, kurs);
     p = (+r.prowizja || 0) / 100;
   }
   const koszty = kosztPLN / kurs + kosztWys + (+g.obsluga || 0) / kurs;
@@ -253,6 +268,6 @@ function policzWszystkie(kosztPLN, nadpisz = {}) {
 
 module.exports = {
   DOMYSLNE, RYNKI, DHL_STAWKI, ALLEGRO_PROGI,
-  do99, totalCelu, kursDla, doplataSmartAllegro, stawkaDHL,
+  do99, totalCelu, kursDla, doplataSmartAllegro, stawkaDHL, kosztWysylkiFlat,
   policzRynek, policzKotwica, wycenaPrzyCenie, policzZRecznaCena, policzWszystkie,
 };

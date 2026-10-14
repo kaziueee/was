@@ -17,7 +17,7 @@ const NAZWA_RYNKU = { DE: 'Amazon DE', FR: 'Amazon FR', IT: 'Amazon IT', ES: 'Am
 // (rynki.wycenaPrzyCenie) — repricer zapisuje je przy każdej decyzji, ekran tylko czyta.
 function pasyZWyceny(w) {
   if (!w) return {};
-  const g = { ...rynki.DOMYSLNE, waga: w.waga, docinanie: w.docinalny, docinanieOn: false };
+  const g = { ...rynki.DOMYSLNE, waga: w.waga, docinanie: w.docinalny, docinanieOn: false, genius: w.genius };
   const out = {};
   for (const [kraj, nazwa] of Object.entries(NAZWA_RYNKU)) {
     const r = w.rynki.find((x) => x.nazwa === nazwa);

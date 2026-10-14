@@ -83,8 +83,15 @@ function wycenaZWiersza(row, nadpisz = {}) {
   // waga reczna z panelu nadpisuje; inaczej waga rozliczeniowa z GT
   const waga = nadpisz.waga != null ? +nadpisz.waga : wagaGT;
 
+  // Genius na eMAG: rozstrzyga oferta z API eMAG (nadpisz.genius — przekazuje repricer), a gdy jej
+  // nie ma, wymiary z GT: towar za duzy do automatu nie dostanie dostawy do automatu, wiec i Genius.
+  // null = nie wiemy (brak wymiarow) -> kalkulator liczy jak Genius (wiekszosc paczek).
+  const automat = rynki.miesciSieWAutomacie(rozbierzWymiary(row.wymiary));
+  const genius = typeof nadpisz.genius === 'boolean' ? nadpisz.genius : automat;
+  const geniusZrodlo = typeof nadpisz.genius === 'boolean' ? 'api' : automat == null ? null : 'wymiary';
+
   // nadpisania preset (DOMYSLNE) z panelu
-  const over = { waga, docinanie: docinalny, docinanieOn };
+  const over = { waga, docinanie: docinalny, docinanieOn, genius };
   if (nadpisz.tryb) over.tryb = nadpisz.tryb;
   if (nadpisz.bufor != null) over.bufor = +nadpisz.bufor;
   if (nadpisz.anchor && nadpisz.anchor.nazwa) over.anchor = nadpisz.anchor; // reczna cena na Allegro/Amazon DE
@@ -100,6 +107,8 @@ function wycenaZWiersza(row, nadpisz = {}) {
     docinalny,           // czy towar jest docinalny (ocena jak w WMS)
     docinanieOn,         // stan checkboxa
     docinanieAktywne,    // czy faktycznie obnizono prog DHL
+    genius,              // eMAG: true/false/null (null = nie wiemy -> liczone jak Genius)
+    geniusZrodlo,        // 'api' | 'wymiary' | null
     tryb: over.tryb || rynki.DOMYSLNE.tryb,
     bufor: over.bufor != null ? over.bufor : rynki.DOMYSLNE.bufor,
     rynki: rynki.policzWszystkie(koszt, over),

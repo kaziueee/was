@@ -44,17 +44,22 @@ const RYNKI = [
   //    I–IV 2026: 15,95% (1508 zam.; 2025: 14,56%). BEZ Genius — ten idzie osobno, `oplataZam`.
   //    Wcześniejsze 16,37% (efektywna z wypłat) mieszało oba i rozkładało stałą opłatę Genius
   //    procentowo, przez co tani towar wychodził za tanio, a drogi za drogo,
-  //  - Genius = osobna faktura E-MKTP, STAŁA kwota netto za zamówienie wg wartości brutto zamówienia
-  //    (siatka eMAG od 01.01.2026, GENIUS_RO). Liczona na KAŻDE zamówienie — ostrożnie: realnie
-  //    Genius to ~75% zamówień (2026: 5,0–5,2 RON/zam. przy ~6,7 RON pełnej stawki), a od 15.10.2026
-  //    dostawa do automatu jest obowiązkowa, czyli udział raczej urośnie,
-  //  - wysyłka Paxy 2,24 EUR/paczka all-in ze zwrotami (faktura 03/2026: 414 paczek, ~85% „Genius" po
-  //    1,64 EUR, FanCourier 3,99–4,99, zwroty 2,00; paxy-stawki.md) — 1 faktura, do potwierdzenia kolejnymi,
-  //  - VAT RO 21% (od 01.08.2025, ustawa 141/2025; wcześniej 19%),
-  //  - klient nie płaci nam za wysyłkę (wysKlient 0): przy automacie opłatę za dostawę ustala i pobiera
-  //    eMAG, my fakturujemy tylko towar (newsletter eMAG 29.09.2026).
+  //  - VAT RO 21% (od 01.08.2025, ustawa 141/2025; wcześniej 19%).
+  // Dwa profile, bo towar z Genius i bez Genius to inna wysyłka i inne opłaty (wybór: g.genius,
+  // patrz profilRynku; nieznane = Genius, bo to ~85% paczek):
+  //  - genius: towar mieszczący się w automacie. Prowizja Genius = osobna faktura E-MKTP, STAŁA kwota
+  //    netto za zamówienie wg wartości brutto (siatka od 01.01.2026, GENIUS_RO), liczona na każde
+  //    zamówienie (na towarze Genius ~85% zamówień to klienci Genius). Wysyłka Paxy „A – Genius"
+  //    1,64 € + zwroty 0,14 € (2,00 € × 29 zwrotów / 414 paczek). Klient nie płaci nam za dostawę —
+  //    przy automacie opłatę ustala i pobiera eMAG, my fakturujemy tylko towar (newsletter 29.09.2026).
+  //  - bezGenius: towar za duży do automatu → kurier do domu (FanCourier przez Paxy: 3,99 €, za
+  //    pobraniem 4,99 €, średnio 4,74 € w fakturze 03/2026) + zwroty 0,14 €; bez opłaty Genius.
+  //    Za dostawę płaci klient — ILE, jeszcze nie wiemy (wysKlient 0 = ostrożnie, do uzupełnienia).
+  // Stawki Paxy z jednej faktury (03/2026, paxy-stawki.md) — do potwierdzenia kolejnymi; aneks od 19.10.2026.
   // Ceny w API eMAG są NETTO (bez VAT); kalkulator liczy brutto, przelicza adapter.
-  { nazwa: 'eMAG RO',     kraj: 'RO', waluta: 'RON', vat: 21, prowizja: 16, oplataZam: 'GENIUS_RO', wysylkaEur: 2.24, wysKlient: 0, typ: 'flat' },
+  { nazwa: 'eMAG RO',     kraj: 'RO', waluta: 'RON', vat: 21, prowizja: 16, typ: 'flat',
+    genius:    { oplataZam: 'GENIUS_RO', wysylkaEur: 1.78, wysKlient: 0 },
+    bezGenius: { wysylkaEur: 4.88, wysKlient: 0 } },
   // Kaufland DE: ta sama umowa DHL do Niemiec co Amazon DE (koszt po wadze). Prowizja 13% dla zabawek
   // (kauflandglobalmarketplace.com/en/conditions) - od ceny BRUTTO wraz z wysylka, netto + VAT -> model amazon-dhl.
   { nazwa: 'Kaufland DE', kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 13, wysKlient: 4.99, typ: 'amazon-dhl' },
@@ -79,6 +84,31 @@ const ALLEGRO_PROGI = [[45, 0], [65, 2.1], [100, 3.2], [150, 5.5], [200, 7.6], [
 const OPLATY_ZAM = {
   GENIUS_RO: [[40, 3], [50, 4], [75, 5], [Infinity, 8]],
 };
+
+// Automat paczkowy eMAG (easybox): najwieksza skrytka 470 × 440 × 390 mm (eMAG Marketplace infocenter,
+// „The easybox delivery conditions"). Towar wiekszy nie dostanie dostawy do automatu, wiec i Genius.
+// Wagi NIE sprawdzamy: „Waga produktu" w GT ma historycznie mieszane jednostki (g/kg), a towar
+// mieszczacy sie w 47×44×39 cm i tak prawie nigdy nie przekracza limitu skrytki.
+const SKRYTKA_AUTOMATU_CM = [47, 44, 39];
+
+// Czy towar o wymiarach {dlugosc, szerokosc, wysokosc} (cm, z GT) miesci sie w najwiekszej skrytce,
+// w dowolnym ulozeniu. null = brak wymiarow (nie wiemy).
+function miesciSieWAutomacie(wym) {
+  if (!wym) return null;
+  const t = [wym.dlugosc, wym.szerokosc, wym.wysokosc].map(Number);
+  if (t.some((x) => !(x > 0))) return null;
+  t.sort((a, b) => b - a);
+  const s = [...SKRYTKA_AUTOMATU_CM].sort((a, b) => b - a);
+  return t.every((x, i) => x <= s[i]);
+}
+
+// Rynek z profilem wysylki dla danego towaru: g.genius === false -> `bezGenius`, inaczej `genius`
+// (nieznane = Genius, bo to wiekszosc paczek). Rynek bez profili zwracany bez zmian.
+function profilRynku(r, g) {
+  if (!r.genius) return r;
+  const { genius, bezGenius, ...baza } = r;
+  return { ...baza, ...(g && g.genius === false ? bezGenius : genius), profil: g && g.genius === false ? 'bezGenius' : 'genius' };
+}
 
 // --- helpery (czyste) ---
 const kursDla = (waluta, g) => (waluta === 'EUR' ? +g.eur || 0 : waluta === 'RON' ? +g.ron || 0 : 1);
@@ -133,7 +163,8 @@ function wynik(r, pola) {
   return { nazwa: r.nazwa, kraj: r.kraj, waluta: r.waluta, ...pola };
 }
 
-function policzFlat(kosztPLN, r, g) {
+function policzFlat(kosztPLN, rynek, g) {
+  const r = profilRynku(rynek, g);
   const kurs = kursDla(r.waluta, g);
   if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });
   const v = (+r.vat || 0) / 100, p = (+r.prowizja || 0) / 100, m = (+g.marza || 0) / 100;
@@ -158,7 +189,7 @@ function policzFlat(kosztPLN, r, g) {
   const total = pb + S, pn = total / (1 + v);
   const zysk = total * denomZysk - (kosztyBez + opl);
   return wynik(r, { cena: pb, zysk: zysk * kurs, marza: pn > 0 ? zysk / pn * 100 : 0,
-    status: floorBinds ? 'warn' : 'ok', detal: { kosztWys, wysKlient: S, oplataZam: opl } });
+    status: floorBinds ? 'warn' : 'ok', detal: { kosztWys, wysKlient: S, oplataZam: opl, profil: r.profil } });
 }
 
 function policzAllegro(kosztPLN, r, g) {
@@ -218,7 +249,8 @@ function policzRynek(kosztPLN, r, g) {
 // Zysk/marza dla rynku przy RECZNIE podanej cenie brutto (`cena`, w walucie rynku) - odwrotnosc
 // wyceny (cena -> zysk, zamiast koszt -> cena). Reuzywa tej samej matematyki kosztow/denomZysk co
 // policz* (duplikat "ogona", pokryty testem zgodnosci). zysk zwracany w zl (jak w policz*).
-function wycenaPrzyCenie(kosztPLN, r, g, cena) {
+function wycenaPrzyCenie(kosztPLN, rynek, g, cena) {
+  const r = profilRynku(rynek, g);
   const pb = +cena || 0;
   if (pb <= 0) return wynik(r, { blad: 'podaj cenę', status: 'bad' });
   if (r.typ === 'allegro') {
@@ -251,7 +283,7 @@ function wycenaPrzyCenie(kosztPLN, r, g, cena) {
   const total = pb + S, pn = total / (1 + v);
   const zysk = total * denomZysk - koszty;
   return wynik(r, { cena: pb, zysk: zysk * kurs, marza: pn > 0 ? zysk / pn * 100 : 0, status: 'ok', reczna: true,
-    detal: r.typ === 'flat' ? { kosztWys, wysKlient: S, oplataZam: opl } : { kosztWys, wysKlient: S } });
+    detal: r.typ === 'flat' ? { kosztWys, wysKlient: S, oplataZam: opl, profil: r.profil } : { kosztWys, wysKlient: S } });
 }
 
 // Tryb 'kotwica': rynki bazowe (Allegro, Amazon DE, Kaufland DE) licza sie na marzy, a rynki z
@@ -302,7 +334,8 @@ function policzWszystkie(kosztPLN, nadpisz = {}) {
 }
 
 module.exports = {
-  DOMYSLNE, RYNKI, DHL_STAWKI, ALLEGRO_PROGI, OPLATY_ZAM,
+  DOMYSLNE, RYNKI, DHL_STAWKI, ALLEGRO_PROGI, OPLATY_ZAM, SKRYTKA_AUTOMATU_CM,
   do99, totalCelu, kursDla, doplataSmartAllegro, stawkaDHL, kosztWysylkiFlat, oplataZamowienia,
+  miesciSieWAutomacie, profilRynku,
   policzRynek, policzKotwica, wycenaPrzyCenie, policzZRecznaCena, policzWszystkie,
 };

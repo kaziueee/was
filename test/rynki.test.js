@@ -14,12 +14,45 @@ test('eMAG RO jest w kalkulatorze z realnymi stawkami (VAT 21%, prowizja 16% + G
   assert.strictEqual(r.waluta, 'RON');
   assert.strictEqual(r.vat, 21);
   assert.strictEqual(r.prowizja, 16);
-  assert.strictEqual(r.oplataZam, 'GENIUS_RO');
   assert.strictEqual(r.typ, 'flat');
+  assert.strictEqual(r.genius.oplataZam, 'GENIUS_RO');
+  assert.strictEqual(r.bezGenius.oplataZam, undefined, 'bez Genius nie ma opłaty Genius');
+});
+
+test('profil eMAG: Genius gdy wiemy, że tak, albo gdy nie wiemy; bez Genius tylko gdy wiemy, że nie', () => {
+  const r = rynek('eMAG RO');
+  assert.strictEqual(rynki.profilRynku(r, { genius: true }).profil, 'genius');
+  assert.strictEqual(rynki.profilRynku(r, { genius: null }).profil, 'genius');
+  assert.strictEqual(rynki.profilRynku(r, {}).profil, 'genius');
+  const bez = rynki.profilRynku(r, { genius: false });
+  assert.strictEqual(bez.profil, 'bezGenius');
+  assert.strictEqual(bez.oplataZam, undefined);
+  assert.ok(bez.wysylkaEur > rynki.profilRynku(r, {}).wysylkaEur, 'kurier do domu droższy niż automat');
+  // rynek bez profili — bez zmian
+  assert.strictEqual(rynki.profilRynku(rynek('Amazon DE'), { genius: false }), rynek('Amazon DE'));
+});
+
+test('automat paczkowy: towar mieści się w największej skrytce 47×44×39 cm w dowolnym ułożeniu', () => {
+  assert.strictEqual(rynki.miesciSieWAutomacie({ dlugosc: 39, szerokosc: 47, wysokosc: 44 }), true);
+  assert.strictEqual(rynki.miesciSieWAutomacie({ dlugosc: 60, szerokosc: 10, wysokosc: 10 }), false);
+  assert.strictEqual(rynki.miesciSieWAutomacie({ dlugosc: 45, szerokosc: 45, wysokosc: 45 }), false);
+  assert.strictEqual(rynki.miesciSieWAutomacie(null), null);
+  assert.strictEqual(rynki.miesciSieWAutomacie({ dlugosc: 0, szerokosc: 10, wysokosc: 10 }), null);
+});
+
+test('towar bez Genius: bez opłaty Genius, ale droższa wysyłka kurierem', () => {
+  const r = rynek('eMAG RO');
+  const zG = rynki.wycenaPrzyCenie(20, r, { ...g, genius: true }, 81.99);
+  const zB = rynki.wycenaPrzyCenie(20, r, { ...g, genius: false }, 81.99);
+  assert.strictEqual(zG.detal.oplataZam, 8);
+  assert.strictEqual(zB.detal.oplataZam, 0);
+  const roznicaRon = (zB.zysk - zG.zysk) / g.ron;
+  const wysylkaRon = (r.bezGenius.wysylkaEur - r.genius.wysylkaEur) * g.eur / g.ron;
+  assert.ok(Math.abs(roznicaRon - (8 - wysylkaRon)) < 1e-9, roznicaRon);
 });
 
 test('Genius eMAG RO: stała opłata za zamówienie wg progu ceny brutto (siatka od 01.01.2026)', () => {
-  const r = rynek('eMAG RO');
+  const r = rynki.profilRynku(rynek('eMAG RO'), g);
   assert.strictEqual(rynki.oplataZamowienia(r, 39.99), 3);
   assert.strictEqual(rynki.oplataZamowienia(r, 40), 4);
   assert.strictEqual(rynki.oplataZamowienia(r, 49.99), 4);
@@ -31,7 +64,7 @@ test('Genius eMAG RO: stała opłata za zamówienie wg progu ceny brutto (siatka
 });
 
 test('Genius obniża zysk o pełną opłatę z progu, w jakim wylądowała cena', () => {
-  const r = rynek('eMAG RO');
+  const r = rynki.profilRynku(rynek('eMAG RO'), g);
   const bez = { ...r, oplataZam: undefined };
   for (const cena of [39.99, 69.99, 139.99]) {
     const a = rynki.wycenaPrzyCenie(60, r, g, cena), b = rynki.wycenaPrzyCenie(60, bez, g, cena);
@@ -46,15 +79,15 @@ test('Genius: cena z kalkulatora nie wisi tuż pod progiem z opłatą policzoną
   const r = rynek('eMAG RO');
   for (let koszt = 5; koszt <= 40; koszt += 0.5) {
     const w = rynki.policzRynek(koszt, r, g);
-    assert.strictEqual(w.detal.oplataZam, rynki.oplataZamowienia(r, w.cena), `koszt ${koszt}`);
+    assert.strictEqual(w.detal.oplataZam, rynki.oplataZamowienia(rynki.profilRynku(r, g), w.cena), `koszt ${koszt}`);
     assert.ok(w.zysk >= g.minzysk - 0.6, `koszt ${koszt}: zysk ${w.zysk}`);  // ,99 do najbliższej: −0,5 RON
   }
 });
 
 test('wysyłka w EUR przeliczana na walutę rynku przez kurs EUR i kurs rynku', () => {
-  const r = rynek('eMAG RO');
+  const r = rynki.profilRynku(rynek('eMAG RO'), g);
   const kurs = rynki.kursDla('RON', g);
-  assert.ok(Math.abs(rynki.kosztWysylkiFlat(r, g, kurs) - 2.24 * g.eur / g.ron) < 1e-9);
+  assert.ok(Math.abs(rynki.kosztWysylkiFlat(r, g, kurs) - r.wysylkaEur * g.eur / g.ron) < 1e-9);
   // rynek z `wysylka` w swojej walucie — bez przeliczania
   assert.strictEqual(rynki.kosztWysylkiFlat({ wysylka: 12 }, g, kurs), 12);
 });
@@ -70,14 +103,17 @@ test('eMAG RO: cena z kalkulatora daje marżę ~20% (zaokrąglenie do ,99 tylko 
 // Zgodność dwóch dróg liczenia: koszt → cena (policzRynek) i cena → zysk (wycenaPrzyCenie) muszą
 // dawać ten sam zysk przy tej samej cenie. Repricer liczy zysk drugą drogą, Cennik pierwszą —
 // rozjazd oznaczałby, że ekran Ceny i zakładka Cennik mówią co innego o tym samym towarze.
-test('zgodność policzRynek ↔ wycenaPrzyCenie na każdym rynku', () => {
+test('zgodność policzRynek ↔ wycenaPrzyCenie na każdym rynku (i w obu profilach eMAG)', () => {
   for (const r of rynki.RYNKI) {
-    for (const koszt of [15, 60, 240]) {
-      const a = rynki.policzRynek(koszt, r, g);
-      if (a.blad) continue;
-      const b = rynki.wycenaPrzyCenie(koszt, r, g, a.cena);
-      assert.ok(Math.abs(a.zysk - b.zysk) < 0.01, `${r.nazwa} koszt ${koszt}: ${a.zysk} vs ${b.zysk}`);
-      assert.ok(Math.abs(a.marza - b.marza) < 0.01, `${r.nazwa} koszt ${koszt}: marża ${a.marza} vs ${b.marza}`);
+    for (const genius of [true, false, null]) {
+      const gg = { ...g, genius };
+      for (const koszt of [15, 60, 240]) {
+        const a = rynki.policzRynek(koszt, r, gg);
+        if (a.blad) continue;
+        const b = rynki.wycenaPrzyCenie(koszt, r, gg, a.cena);
+        assert.ok(Math.abs(a.zysk - b.zysk) < 0.01, `${r.nazwa} genius=${genius} koszt ${koszt}: ${a.zysk} vs ${b.zysk}`);
+        assert.ok(Math.abs(a.marza - b.marza) < 0.01, `${r.nazwa} genius=${genius} koszt ${koszt}: marża ${a.marza} vs ${b.marza}`);
+      }
     }
   }
 });

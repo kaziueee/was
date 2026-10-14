@@ -29,7 +29,8 @@ const DOMYSLNE = {
 
 // Rynki (preset). typ: 'allegro' | 'amazon-dhl' | 'flat'.
 // 'flat': staly NASZ koszt wysylki na paczke — `wysylka` (w walucie rynku) albo `wysylkaEur` (w EUR,
-// przeliczany kursem g.eur/kurs rynku: kurier fakturuje w EUR, a sprzedajemy np. w RON).
+// przeliczany kursem g.eur/kurs rynku: kurier fakturuje w EUR, a sprzedajemy np. w RON); opcjonalnie
+// `oplataZam` = klucz OPLATY_ZAM — stala oplata za zamowienie wg progu ceny (np. Genius na eMAG).
 const RYNKI = [
   { nazwa: 'Allegro',     kraj: 'PL', waluta: 'PLN', vat: 23, prowizja: 13.3, typ: 'allegro' },
   { nazwa: 'Amazon DE',   kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl' },
@@ -39,14 +40,21 @@ const RYNKI = [
   { nazwa: 'Amazon ES',   kraj: 'ES', waluta: 'EUR', vat: 21, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
   { nazwa: 'Amazon NL',   kraj: 'NL', waluta: 'EUR', vat: 21, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
   // eMAG RO (przywrócony 2026-10-14 pod repricer). Liczby z realnych rozliczeń, nie z cennika:
-  //  - prowizja 16,37% = efektywna z wypłat eMAG RO (SUM prowizje / SUM wartość zamówień, ~60 wypłat,
-  //    GMV 1,19 mln RON; Projekty AI/ERP DASHBOARD/emag-oplaty-realne.md),
+  //  - prowizja 16% od ceny brutto = faktury prowizyjne C-MKTP z wyciągu konta Kajtek RO,
+  //    I–IV 2026: 15,95% (1508 zam.; 2025: 14,56%). BEZ Genius — ten idzie osobno, `oplataZam`.
+  //    Wcześniejsze 16,37% (efektywna z wypłat) mieszało oba i rozkładało stałą opłatę Genius
+  //    procentowo, przez co tani towar wychodził za tanio, a drogi za drogo,
+  //  - Genius = osobna faktura E-MKTP, STAŁA kwota netto za zamówienie wg wartości brutto zamówienia
+  //    (siatka eMAG od 01.01.2026, GENIUS_RO). Liczona na KAŻDE zamówienie — ostrożnie: realnie
+  //    Genius to ~75% zamówień (2026: 5,0–5,2 RON/zam. przy ~6,7 RON pełnej stawki), a od 15.10.2026
+  //    dostawa do automatu jest obowiązkowa, czyli udział raczej urośnie,
   //  - wysyłka Paxy 2,24 EUR/paczka all-in ze zwrotami (faktura 03/2026: 414 paczek, ~85% „Genius" po
   //    1,64 EUR, FanCourier 3,99–4,99, zwroty 2,00; paxy-stawki.md) — 1 faktura, do potwierdzenia kolejnymi,
   //  - VAT RO 21% (od 01.08.2025, ustawa 141/2025; wcześniej 19%),
-  //  - klient nie płaci nam za wysyłkę (wysKlient 0) — do potwierdzenia.
+  //  - klient nie płaci nam za wysyłkę (wysKlient 0): przy automacie opłatę za dostawę ustala i pobiera
+  //    eMAG, my fakturujemy tylko towar (newsletter eMAG 29.09.2026).
   // Ceny w API eMAG są NETTO (bez VAT); kalkulator liczy brutto, przelicza adapter.
-  { nazwa: 'eMAG RO',     kraj: 'RO', waluta: 'RON', vat: 21, prowizja: 16.37, wysylkaEur: 2.24, wysKlient: 0, typ: 'flat' },
+  { nazwa: 'eMAG RO',     kraj: 'RO', waluta: 'RON', vat: 21, prowizja: 16, oplataZam: 'GENIUS_RO', wysylkaEur: 2.24, wysKlient: 0, typ: 'flat' },
   // Kaufland DE: ta sama umowa DHL do Niemiec co Amazon DE (koszt po wadze). Prowizja 13% dla zabawek
   // (kauflandglobalmarketplace.com/en/conditions) - od ceny BRUTTO wraz z wysylka, netto + VAT -> model amazon-dhl.
   { nazwa: 'Kaufland DE', kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 13, wysKlient: 4.99, typ: 'amazon-dhl' },
@@ -63,6 +71,14 @@ const DHL_STAWKI = {
 
 // Allegro: dopłata Smart NETTO (po rabacie) wg progu wartosci zamowienia. 0 ponizej 45 zl (nie-Smart).
 const ALLEGRO_PROGI = [[45, 0], [65, 2.1], [100, 3.2], [150, 5.5], [200, 7.6], [500, 7.5], [Infinity, 11]];
+
+// Stale oplaty za zamowienie (w walucie rynku, netto) wg progu wartosci zamowienia BRUTTO: [ponizej, oplata].
+// GENIUS_RO: prowizja Genius eMAG RO od 01.01.2026 (marketplace.emag.ro/infocenter, „How the Genius
+// contribution is applied"): zamowienie klienta Genius z dostawa do automatu, z min. 1 produktem Genius.
+// Fakturowana osobno (E-MKTP, co pol miesiaca). Faktura dla PL platnika VAT = odwrotne obciazenie, koszt = netto.
+const OPLATY_ZAM = {
+  GENIUS_RO: [[40, 3], [50, 4], [75, 5], [Infinity, 8]],
+};
 
 // --- helpery (czyste) ---
 const kursDla = (waluta, g) => (waluta === 'EUR' ? +g.eur || 0 : waluta === 'RON' ? +g.ron || 0 : 1);
@@ -104,6 +120,15 @@ function kosztWysylkiFlat(r, g, kurs) {
   return +r.wysylka || 0;
 }
 
+// Stala oplata za zamowienie rynku 'flat' (r.oplataZam = klucz OPLATY_ZAM) przy cenie brutto `cena`.
+// Zamowienie = 1 sztuka (jak wszedzie w kalkulatorze), wiec prog liczymy od ceny towaru.
+function oplataZamowienia(r, cena) {
+  const progi = r.oplataZam && OPLATY_ZAM[r.oplataZam];
+  if (!progi) return 0;
+  for (const [gr, o] of progi) if (cena < gr) return o;
+  return 0;
+}
+
 function wynik(r, pola) {
   return { nazwa: r.nazwa, kraj: r.kraj, waluta: r.waluta, ...pola };
 }
@@ -113,18 +138,27 @@ function policzFlat(kosztPLN, r, g) {
   if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });
   const v = (+r.vat || 0) / 100, p = (+r.prowizja || 0) / 100, m = (+g.marza || 0) / 100;
   const kosztWys = kosztWysylkiFlat(r, g, kurs), S = +r.wysKlient || 0;
-  const koszty = kosztPLN / kurs + kosztWys + (+g.obsluga || 0) / kurs;
+  const kosztyBez = kosztPLN / kurs + kosztWys + (+g.obsluga || 0) / kurs;
   const D = (1 - m) / (1 + v) - p, denomZysk = 1 / (1 + v) - p;
   if (D <= 0 || denomZysk <= 0) return wynik(r, { blad: 'reguły niespójne', status: 'bad' });
-  const totalCel = totalCelu(koszty, D, denomZysk, kurs, g);
-  const totalFloor = (koszty + (+g.minzysk || 0) / kurs) / denomZysk;
+  // Oplata za zamowienie zalezy od ceny, a cena od oplaty — dochodzimy iteracja (jak dopłata Smart
+  // na Allegro). Wyzsza oplata = wyzsza cena, wiec prog sie nie przeskakuje w kolko.
+  let opl = 0, totalCel = 0, totalFloor = 0;
+  for (let it = 0; it < 6; it++) {
+    totalCel = totalCelu(kosztyBez + opl, D, denomZysk, kurs, g);
+    totalFloor = (kosztyBez + opl + (+g.minzysk || 0) / kurs) / denomZysk;
+    const no = oplataZamowienia(r, Math.max(totalCel, totalFloor) - S);
+    if (Math.abs(no - opl) < 1e-9) break;
+    opl = no;
+  }
   const floorBinds = totalFloor > totalCel + 1e-9;
   let pb = do99(Math.max(totalCel, totalFloor) - S);
   if (pb < 0.99) pb = 0.99;
+  opl = oplataZamowienia(r, pb);                 // ,99 moglo przesunac cene przez prog
   const total = pb + S, pn = total / (1 + v);
-  const zysk = total * denomZysk - koszty;
+  const zysk = total * denomZysk - (kosztyBez + opl);
   return wynik(r, { cena: pb, zysk: zysk * kurs, marza: pn > 0 ? zysk / pn * 100 : 0,
-    status: floorBinds ? 'warn' : 'ok', detal: { kosztWys, wysKlient: S } });
+    status: floorBinds ? 'warn' : 'ok', detal: { kosztWys, wysKlient: S, oplataZam: opl } });
 }
 
 function policzAllegro(kosztPLN, r, g) {
@@ -197,7 +231,7 @@ function wycenaPrzyCenie(kosztPLN, r, g, cena) {
   }
   // flat + amazon-dhl: total = cena + wysylka klienta; prowizja+VAT od total
   const S = +r.wysKlient || 0, v = (+r.vat || 0) / 100;
-  let kurs, kosztWys, p;
+  let kurs, kosztWys, p, opl = 0;
   if (r.typ === 'amazon-dhl') {
     kurs = kursDla('EUR', g);
     if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });
@@ -210,13 +244,14 @@ function wycenaPrzyCenie(kosztPLN, r, g, cena) {
     if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });
     kosztWys = kosztWysylkiFlat(r, g, kurs);
     p = (+r.prowizja || 0) / 100;
+    opl = oplataZamowienia(r, pb);
   }
-  const koszty = kosztPLN / kurs + kosztWys + (+g.obsluga || 0) / kurs;
+  const koszty = kosztPLN / kurs + kosztWys + (+g.obsluga || 0) / kurs + opl;
   const denomZysk = 1 / (1 + v) - p;
   const total = pb + S, pn = total / (1 + v);
   const zysk = total * denomZysk - koszty;
   return wynik(r, { cena: pb, zysk: zysk * kurs, marza: pn > 0 ? zysk / pn * 100 : 0, status: 'ok', reczna: true,
-    detal: { kosztWys, wysKlient: S } });
+    detal: r.typ === 'flat' ? { kosztWys, wysKlient: S, oplataZam: opl } : { kosztWys, wysKlient: S } });
 }
 
 // Tryb 'kotwica': rynki bazowe (Allegro, Amazon DE, Kaufland DE) licza sie na marzy, a rynki z
@@ -267,7 +302,7 @@ function policzWszystkie(kosztPLN, nadpisz = {}) {
 }
 
 module.exports = {
-  DOMYSLNE, RYNKI, DHL_STAWKI, ALLEGRO_PROGI,
-  do99, totalCelu, kursDla, doplataSmartAllegro, stawkaDHL, kosztWysylkiFlat,
+  DOMYSLNE, RYNKI, DHL_STAWKI, ALLEGRO_PROGI, OPLATY_ZAM,
+  do99, totalCelu, kursDla, doplataSmartAllegro, stawkaDHL, kosztWysylkiFlat, oplataZamowienia,
   policzRynek, policzKotwica, wycenaPrzyCenie, policzZRecznaCena, policzWszystkie,
 };

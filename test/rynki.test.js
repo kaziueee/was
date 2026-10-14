@@ -8,13 +8,47 @@ const rynki = require('../config/rynki');
 const g = { ...rynki.DOMYSLNE, waga: 1 };
 const rynek = (n) => rynki.RYNKI.find((r) => r.nazwa === n);
 
-test('eMAG RO jest w kalkulatorze z realnymi stawkami (VAT 21%, prowizja 16,37%, Paxy w EUR)', () => {
+test('eMAG RO jest w kalkulatorze z realnymi stawkami (VAT 21%, prowizja 16% + Genius osobno, Paxy w EUR)', () => {
   const r = rynek('eMAG RO');
   assert.ok(r, 'brak eMAG RO w RYNKI');
   assert.strictEqual(r.waluta, 'RON');
   assert.strictEqual(r.vat, 21);
-  assert.strictEqual(r.prowizja, 16.37);
+  assert.strictEqual(r.prowizja, 16);
+  assert.strictEqual(r.oplataZam, 'GENIUS_RO');
   assert.strictEqual(r.typ, 'flat');
+});
+
+test('Genius eMAG RO: stała opłata za zamówienie wg progu ceny brutto (siatka od 01.01.2026)', () => {
+  const r = rynek('eMAG RO');
+  assert.strictEqual(rynki.oplataZamowienia(r, 39.99), 3);
+  assert.strictEqual(rynki.oplataZamowienia(r, 40), 4);
+  assert.strictEqual(rynki.oplataZamowienia(r, 49.99), 4);
+  assert.strictEqual(rynki.oplataZamowienia(r, 74.99), 5);
+  assert.strictEqual(rynki.oplataZamowienia(r, 75), 8);
+  assert.strictEqual(rynki.oplataZamowienia(r, 500), 8);
+  // rynek bez opłaty za zamówienie
+  assert.strictEqual(rynki.oplataZamowienia({}, 100), 0);
+});
+
+test('Genius obniża zysk o pełną opłatę z progu, w jakim wylądowała cena', () => {
+  const r = rynek('eMAG RO');
+  const bez = { ...r, oplataZam: undefined };
+  for (const cena of [39.99, 69.99, 139.99]) {
+    const a = rynki.wycenaPrzyCenie(60, r, g, cena), b = rynki.wycenaPrzyCenie(60, bez, g, cena);
+    const roznicaRon = (b.zysk - a.zysk) / g.ron;
+    assert.ok(Math.abs(roznicaRon - rynki.oplataZamowienia(r, cena)) < 1e-9, `${cena}: ${roznicaRon}`);
+    assert.strictEqual(a.detal.oplataZam, rynki.oplataZamowienia(r, cena));
+  }
+});
+
+test('Genius: cena z kalkulatora nie wisi tuż pod progiem z opłatą policzoną z niższego progu', () => {
+  // Cena celuje w marżę z opłatą z progu, w którym faktycznie wylądowała (iteracja jak dopłata Smart).
+  const r = rynek('eMAG RO');
+  for (let koszt = 5; koszt <= 40; koszt += 0.5) {
+    const w = rynki.policzRynek(koszt, r, g);
+    assert.strictEqual(w.detal.oplataZam, rynki.oplataZamowienia(r, w.cena), `koszt ${koszt}`);
+    assert.ok(w.zysk >= g.minzysk - 0.6, `koszt ${koszt}: zysk ${w.zysk}`);  // ,99 do najbliższej: −0,5 RON
+  }
 });
 
 test('wysyłka w EUR przeliczana na walutę rynku przez kurs EUR i kurs rynku', () => {

@@ -4490,6 +4490,9 @@ const CENY_AKCJE = {
   powiazanie: 'powiązał z innym towarem GT', powiazanie_potw: 'potwierdził powiązanie z GT', powiazanie_usun: 'usunął powiązanie z GT',
   wysylanie_wl: 'włączył WYSYŁANIE cen na Amazona', wysylanie_wyl: 'wyłączył wysyłanie cen',
 };
+// Wybrany kanał (marketplace) pamiętamy w przeglądarce — wygoda jednego stanowiska, nie stan systemu.
+let cenyKanalWybor = (() => { try { return localStorage.getItem('wms-ceny-kanal') || ''; } catch { return ''; } })();
+let cenyNrZapytania = 0;
 let cenyFiltr = 'automat', cenyWidok = 'macierz', cenySzukajTimer = null, cenyDane = null, cenyKartaTw = null, cenyKartaRynek = null;
 
 // Waluta kanału przychodzi z backendu (pricing/kolumny.js); kod rynku tylko dla starych odpowiedzi/logu.
@@ -4523,9 +4526,14 @@ async function odswiezCeny() {
   if (cenyWidok === 'karta') return odswiezCenyKarta();
   if (cenyWidok === 'powiazania') return odswiezCenyPowiazania();
   const q = el('ceny-szukaj').value.trim();
-  const qs = new URLSearchParams({ filtr: cenyFiltr, ...(q ? { q } : {}) });
-  try { cenyDane = await api(`/api/ceny/macierz?${qs}`); renderujCeny(cenyDane); }
-  catch (err) { pokazKomunikat(err.message, 'blad'); }
+  const qs = new URLSearchParams({ filtr: cenyFiltr, ...(q ? { q } : {}), ...(cenyKanalWybor ? { kanal: cenyKanalWybor } : {}) });
+  // Szybkie klikanie chipów: spóźniona odpowiedź starszego zapytania nie nadpisuje nowszego widoku.
+  const nr = ++cenyNrZapytania;
+  try {
+    const d = await api(`/api/ceny/macierz?${qs}`);
+    if (nr !== cenyNrZapytania) return;
+    cenyDane = d; renderujCeny(d);
+  } catch (err) { if (nr === cenyNrZapytania) pokazKomunikat(err.message, 'blad'); }
 }
 
 function renderujCeny(d) {
@@ -4539,6 +4547,7 @@ function renderujCeny(d) {
   for (const k of ['automat', 'szansa', 'podwyzka', 'decyzja', 'wszystkie']) el(`ceny-l-${k}`).textContent = d.liczniki[k] ?? '';
   el('ceny-hamulec').classList.toggle('hidden', d.wysylanie !== false);
   document.querySelectorAll('[data-ceny-filtr]').forEach((b) => b.classList.toggle('aktywny', b.dataset.cenyFiltr === cenyFiltr));
+  cenyRenderujKanaly(d);
 
   const kolumny = d.kolumny || d.rynki.map((r) => ({ klucz: r, nazwa: `Amazon ${r}` }));
   el('ceny-thead').innerHTML = `<tr><th>Towar</th>${kolumny.map((k) => `<th>${cenyEsc(k.nazwa)}${k.tylko_odczyt ? ' <span class="hint" title="Repricer tylko obserwuje — cen nie zmienia">· odczyt</span>' : ''}</th>`).join('')}</tr>`;
@@ -4547,6 +4556,7 @@ function renderujCeny(d) {
   const brak = el('ceny-brak');
   brak.classList.toggle('hidden', d.wiersze.length > 0);
   brak.textContent = el('ceny-szukaj').value.trim() ? 'Nic nie pasuje do wyszukiwania.'
+    : cenyFiltr === 'automat' && kolumny.every((k) => k.tylko_odczyt) ? 'Na tym kanale repricer tylko obserwuje — automatu nie da się włączyć. Wybierz „Wszystkie ze stanem”, „Szansa na Buy Box” albo „Do zmiany ceny”.'
     : cenyFiltr === 'automat' ? 'Automat nie jest jeszcze włączony dla żadnej oferty. Wyszukaj SKU albo wybierz „Wszystkie ze stanem” i włącz przełącznik w komórce.'
       : 'Brak ofert.';
   for (const t of d.wiersze) tbody.appendChild(cenyWiersz(t, d.rynki));
@@ -4557,6 +4567,21 @@ function renderujCeny(d) {
     tr.innerHTML = `<td colspan="${d.rynki.length + 1}" class="hint">Pokazano ${d.wiersze.length} z ${d.razem} — zawęź wyszukiwaniem.</td>`;
     tbody.appendChild(tr);
   }
+}
+
+// Chipy kanałów: Wszystkie · Amazon — wszystkie · DE FR IT ES NL PL · eMAG RO. Liczba = ile towarów
+// w kanale przechodzi bieżący filtr. Backend bez pola (przed restartem WMS) = brak paska.
+function cenyRenderujKanaly(d) {
+  const box = el('ceny-kanaly');
+  if (!d.kanaly) { box.innerHTML = ''; return; }
+  if ((d.kanal || '') !== cenyKanalWybor) cenyKanalWybor = d.kanal || '';   // nieznany kanał → wszystkie
+  box.innerHTML = d.kanaly.map((k) => `<button type="button" class="ceny-chip ceny-kanal${k.rynek ? ' rynek' : ''}${k.klucz === cenyKanalWybor ? ' aktywny' : ''}${k.n ? '' : ' zero'}"
+    data-ceny-kanal="${cenyEsc(k.klucz)}">${cenyEsc(k.nazwa)} <b>${k.n}</b></button>`).join('');
+  box.querySelectorAll('[data-ceny-kanal]').forEach((b) => b.addEventListener('click', () => {
+    cenyKanalWybor = b.dataset.cenyKanal;
+    try { localStorage.setItem('wms-ceny-kanal', cenyKanalWybor); } catch { /* bez pamięci — trudno */ }
+    odswiezCeny();
+  }));
 }
 
 function cenyWiersz(t, rynki) {
@@ -4610,13 +4635,14 @@ function cenyKomorka(o, rynek) {
   } else if (o.kod) {
     pod = `<div class="ceny-dec" title="${cenyEsc(o.powod)}">${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</div>`;
   }
-  const wys = (o.obs_czas ? `<div class="ceny-czas" title="Ceny w komórce to stan z ostatniej obserwacji">stan z ${cenyGodzina(o.obs_czas)}</div>` : '');
+  // obs_widziana = ostatni przebieg, który widział ten sam stan (eMAG nie dopisuje wiersza bez zmian).
+  const wys = (o.obs_czas ? `<div class="ceny-czas" title="Ceny w komórce to stan z ostatniej obserwacji">stan z ${cenyGodzina(o.obs_widziana || o.obs_czas)}</div>` : '');
   const bb = !o.bb_nasz && o.bb_cena != null ? `<div class="ceny-bb">BB ${cenyLiczba(o.bb_cena)} ${w}${o.bb_fba ? ' (FBA)' : ''}${o.platforma === 'emag' ? '' : ' z wys.'}</div>` : '';
   // eMAG: Genius zmienia koszt (opłata za zamówienie, tańsza wysyłka) — pokazujemy, który profil liczy kalkulator.
   const gen = o.genius == null ? '' : `<div class="ceny-m" title="${o.genius ? 'Genius aktywny: opłata Genius 3–8 RON, dostawa do automatu' : 'Bez Genius: kurier do domu, klient płaci 25 RON za dostawę'}">${o.genius ? 'Genius' : 'bez Genius'}</div>`;
   const div = document.createElement('div');
   div.className = 'ceny-tresc';
-  div.title = `${o.sku}${o.inne_oferty ? ` (+${o.inne_oferty} inna oferta tego towaru)` : ''} · stan ${o.ilosc} · obserwacja ${formatDatetime(o.obs_czas)}`;
+  div.title = `${o.sku}${o.inne_oferty ? ` (+${o.inne_oferty} inna oferta tego towaru)` : ''} · stan ${o.ilosc} · obserwacja ${formatDatetime(o.obs_widziana || o.obs_czas)}`;
   div.innerHTML = o.obs_czas == null || o.cena == null
     ? `<div class="ceny-m">${o.obs_czas == null ? 'jeszcze nie obserwowana' : 'brak naszej oferty w odpowiedzi'}</div><div class="ceny-m">stan ${o.ilosc}</div>`
     : `<div class="ceny-cena">${cenyLiczba(o.cena)} ${w}${o.wysylka ? ` <small>+${cenyLiczba(o.wysylka)}</small>` : ''}</div>`
@@ -4740,6 +4766,7 @@ function cenyPokazWidok(widok) {
   document.querySelectorAll('[data-ceny-widok]').forEach((x) => x.classList.toggle('aktywny', x.dataset.cenyWidok === widok));
   for (const v of ['macierz', 'karta', 'log', 'powiazania']) el(`ceny-widok-${v}`).classList.toggle('hidden', widok !== v);
   el('ceny-filtry').classList.toggle('hidden', widok !== 'macierz');
+  el('ceny-kanaly').classList.toggle('hidden', widok !== 'macierz');
 }
 
 function cenyOtworzKarte(twId, rynek = null) {

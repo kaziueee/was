@@ -7,7 +7,8 @@
 // wyniki i zapisuje decyzję człowieka: automat (auto = 1, ceny idą na Amazona) albo ręczny (0). Montowane z auth.wymagajRoli('admin') — na czas
 // testów tylko administrator (decyzja usera 2026-10-13); biuro dostanie dostęp po testach.
 //
-//   GET  /api/ceny/macierz?q=&filtr=automat|szansa|podwyzka|decyzja|wszystkie&limit=   wiersze SKU × rynek
+//   GET  /api/ceny/macierz?q=&filtr=automat|szansa|podwyzka|decyzja|wszystkie&kanal=&limit=   wiersze SKU × rynek
+//        kanal = platforma (amazon, emag) albo klucz kolumny (DE, FR, …, EMAG_RO); puste = wszystkie
 //   GET  /api/ceny/towar/:tw_id                                        karta SKU: wszystkie rynki towaru + historia
 //   GET  /api/ceny/log?limit=                                          zmiany cen (auto) + działania ludzi
 //   POST /api/ceny/automat  { ids: [oferta_id...], auto: true|false }  — tylko podane oferty, nigdy hurtem
@@ -67,13 +68,35 @@ const wartoscFiltra = (t, f) => Math.max(...Object.values(t.rynki).filter((o) =>
 // Ostatnia obserwacja i ostatnia decyzja każdej oferty — jedno zapytanie, korelowane po max(id).
 const SQL_OFERTY = `
   SELECT o.id, o.platforma, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.dopasowanie, o.genius,
-         b.czas AS obs_czas, b.cena, b.wysylka, b.bb_nasz, b.bb_cena, b.bb_fba, b.najtansza_inna, b.ofert, b.bb_nasza_inna,
+         b.czas AS obs_czas, COALESCE(b.widziana, b.czas) AS obs_widziana, b.cena, b.wysylka, b.bb_nasz, b.bb_cena, b.bb_fba, b.najtansza_inna, b.ofert, b.bb_nasza_inna,
          d.kod, d.cena_nowa, d.powod, d.min, d.max, d.zysk, d.marza, d.zysk_nowa,
          d.czas AS dec_czas, d.wyslano, d.blad AS dec_blad, d.marza_nowa, d.cena_cel, d.zysk_cel
     FROM oferty o
     LEFT JOIN obserwacje b ON b.id = (SELECT MAX(id) FROM obserwacje WHERE oferta_id = o.id)
     LEFT JOIN decyzje d    ON d.id = (SELECT MAX(id) FROM decyzje WHERE oferta_id = o.id)
    WHERE o.aktywna = 1 AND o.tw_id IS NOT NULL AND o.ilosc > 0`;
+
+// Filtr kanału (marketplace): platforma = wszystkie jej kolumny, klucz = jedna kolumna. Wybór zawęża
+// i wiersze (towar musi mieć ofertę w kanale), i komórki — więc filtry „Szansa”, „Do podwyżki” i ich
+// liczniki liczą się tylko z wybranego kanału. Platforma z jedną kolumną (eMAG RO) = jeden chip.
+const kolumnyKanalu = (kanal) => KOLUMNY.filter((k) => k.platforma === kanal || k.klucz === kanal);
+const zawez = (towary, kolumny) => {
+  const kl = new Set(kolumny.map((k) => k.klucz));
+  return towary.map((t) => ({ ...t, rynki: Object.fromEntries(Object.entries(t.rynki).filter(([k]) => kl.has(k))) }))
+    .filter((t) => Object.keys(t.rynki).length);
+};
+// Chipy kanałów; n = ile towarów w kanale przechodzi BIEŻĄCY filtr (i wyszukiwanie).
+function chipyKanalow(towary, pasuje) {
+  const ile = (kol) => zawez(towary, kol).filter(pasuje).length;
+  const chipy = [{ klucz: '', nazwa: 'Wszystkie kanały', n: towary.filter(pasuje).length }];
+  for (const p of [...new Set(KOLUMNY.map((k) => k.platforma))]) {
+    const kol = KOLUMNY.filter((k) => k.platforma === p);
+    if (kol.length === 1) { chipy.push({ klucz: p, nazwa: kol[0].nazwa, n: ile(kol) }); continue; }
+    chipy.push({ klucz: p, nazwa: `${kol[0].nazwa.split(' ')[0]} — wszystkie`, n: ile(kol) });
+    for (const k of kol) chipy.push({ klucz: k.klucz, nazwa: k.rynek, n: ile([k]), rynek: true });
+  }
+  return chipy;
+}
 
 // Express 4 nie łapie odrzuconych obietnic — wyjątek w handlerze async wywróciłby cały WMS.
 const asyncH = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -82,6 +105,10 @@ router.get('/macierz', asyncH(async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   const filtr = ['automat', 'szansa', 'podwyzka', 'decyzja', 'wszystkie'].includes(req.query.filtr) ? req.query.filtr : 'automat';
   const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);
+  // Nieznany kanał = wszystkie (nie pusta macierz) — stary link albo kanał wycofany z kolumn.
+  const kolKanalu = kolumnyKanalu(String(req.query.kanal || ''));
+  const kanal = kolKanalu.length ? String(req.query.kanal) : '';
+  const kolumnyW = kanal ? kolKanalu : KOLUMNY;
 
   const oferty = db.prepare(SQL_OFERTY).all();
   const towary = new Map();
@@ -108,7 +135,8 @@ router.get('/macierz', asyncH(async (req, res) => {
     if (FILTRY[filtr]) return pasujeFiltr(t, filtr);
     return true;
   };
-  const wszystkie = [...towary.values()];
+  const kazdy = [...towary.values()];
+  const wszystkie = kanal ? zawez(kazdy, kolumnyW) : kazdy;
   const wiersze = wszystkie.filter(pasuje).sort(FILTRY[filtr] && !q
     ? (a, b) => wartoscFiltra(b, filtr) - wartoscFiltra(a, filtr)
     : (a, b) => String(a.symbol).localeCompare(String(b.symbol)));
@@ -118,8 +146,10 @@ router.get('/macierz', asyncH(async (req, res) => {
   for (const t of pokazane) t.stan_gt = stanGt ? stanGt(t.tw_id) : null;
 
   res.json({
-    rynki: KOLUMNY.map((k) => k.klucz),
-    kolumny: KOLUMNY.map(({ klucz, nazwa, waluta, tylkoOdczyt }) => ({ klucz, nazwa, waluta, tylko_odczyt: !!tylkoOdczyt })),
+    rynki: kolumnyW.map((k) => k.klucz),
+    kolumny: kolumnyW.map(({ klucz, nazwa, waluta, tylkoOdczyt }) => ({ klucz, nazwa, waluta, tylko_odczyt: !!tylkoOdczyt })),
+    kanal,
+    kanaly: chipyKanalow(kazdy, pasuje),
     emag: { sync: stan.get('sync_emag'), blad: stan.get('blad_emag') },
     wysylanie: process.env.PRICING_ZAPIS === '1',    // globalny hamulec workera (ten sam .env)
     gt_ok: !!stanGt,
@@ -178,6 +208,10 @@ router.get('/towar/:tw_id', asyncH(async (req, res) => {
 
 router.get('/log', (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);
+  // Nieznany kanał = wszystkie (nie pusta macierz) — stary link albo kanał wycofany z kolumn.
+  const kolKanalu = kolumnyKanalu(String(req.query.kanal || ''));
+  const kanal = kolKanalu.length ? String(req.query.kanal) : '';
+  const kolumnyW = kanal ? kolKanalu : KOLUMNY;
   const decyzje = db.prepare(`
     SELECT 'decyzja' AS typ, d.czas, o.rynek, o.sku, o.symbol_gt, d.cena_przed, d.cena_nowa, d.kod, d.powod,
            d.wyslano, d.zysk, d.zysk_nowa, NULL AS kto

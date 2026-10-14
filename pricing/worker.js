@@ -32,7 +32,8 @@ const { synchronizuj } = require('./sync-oferty');
 const { synchronizujEmag } = require('./sync-emag');
 const { obserwujEmag } = require('./obserwuj-emag');
 const emag = require('./emag');
-const { kluczKolumny } = require('./kolumny');
+const { kluczKolumny, kolumna } = require('./kolumny');
+const { takaSamaDecyzja } = require('./bez-zmian');
 const { ustawCene } = require('./amazon');
 const { pewneDopasowanie } = require('./powiazania');
 const { interwalMsZMinut } = require('../services/interwal');
@@ -72,9 +73,11 @@ async function przebieg({ pelny = false } = {}) {
 
   const pelnyTeraz = pelny || minelo('obserwacja_pelna', PELNY_MS);
   const zapisWlaczony = process.env.PRICING_ZAPIS === '1';
+  // Amazon: oferty z automatem co przebieg, cały katalog w pełnej obserwacji (limity API).
+  // eMAG: zawsze cały katalog — obserwacja czyta listę pobraną wyżej, nie woła API po raz drugi.
   const oferty = db.prepare(`SELECT id, platforma, rynek, sku, tw_id, auto, genius, dopasowanie FROM oferty
-     WHERE ((platforma = 'amazon' AND ?) OR (platforma = 'emag' AND ?)) AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL
-       AND (auto = 1 OR ?)`).all(PLATFORMY.has('amazon') ? 1 : 0, emagSurowe ? 1 : 0, pelnyTeraz ? 1 : 0);
+     WHERE ((platforma = 'amazon' AND ? AND (auto = 1 OR ?)) OR (platforma = 'emag' AND ?))
+       AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all(PLATFORMY.has('amazon') ? 1 : 0, pelnyTeraz ? 1 : 0, emagSurowe ? 1 : 0);
   wynik.ofert = oferty.length;
   wynik.pelny = pelnyTeraz;
   if (!oferty.length) return wynik;
@@ -88,6 +91,7 @@ async function przebieg({ pelny = false } = {}) {
     pasyHurtem(oferty.map((o) => o.tw_id), geniusPoTw),
   ]);
   if (obsA.bledyPaczek) wynik.bledy_paczek = obsA.bledyPaczek;
+  if (emagOf.length) wynik.emag_obs = { ofert: obsE.size, zmian: obsE.nowe || 0 };
   const obs = { get: (id) => obsA.get(id) || obsE.get(id) };
 
   const zapisz = db.prepare(`INSERT INTO decyzje (oferta_id, cena_przed, cena_nowa, min, max, kod, powod, wyslano, auto, zysk, marza, zysk_nowa, blad, marza_nowa, cena_cel, zysk_cel)
@@ -104,6 +108,8 @@ async function przebieg({ pelny = false } = {}) {
       AND cena_nowa > cena_przed AND czas >= datetime('now', ?) ORDER BY id DESC LIMIT 1`);
   const cofniecie = db.prepare(`SELECT 1 FROM decyzje WHERE oferta_id = ? AND kod LIKE 'cofniecie%'
       AND czas >= datetime('now', ?) LIMIT 1`);
+  // Kanał tylko do odczytu (eMAG) liczy decyzję co przebieg, ale zapisuje ją tylko, gdy się zmieniła.
+  const ostDecyzja = db.prepare('SELECT * FROM decyzje WHERE oferta_id = ? ORDER BY id DESC LIMIT 1');
   for (const o of oferty) {
     const ob = obs.get(o.id);
     if (!ob) { kody.brak_odpowiedzi = (kody.brak_odpowiedzi || 0) + 1; continue; }
@@ -127,9 +133,13 @@ async function przebieg({ pelny = false } = {}) {
       } catch (e) { blad = e.message; wysylka.odrzucone++; }
       console.log(new Date().toISOString(), `[pricing] ${o.rynek} ${o.sku}: ${ob.cena} → ${d.cena} ${wyslano ? 'WYSŁANO' : 'NIE WYSŁANO: ' + blad}`);
     }
-    wiersze.push([o.id, ob.cena, d.cena, pas?.min ?? null, pas?.max ?? null, d.kod, d.powod, wyslano, o.auto,
+    const wiersz = [o.id, ob.cena, d.cena, pas?.min ?? null, pas?.max ?? null, d.kod, d.powod, wyslano, o.auto,
       teraz?.zysk ?? null, teraz?.marza ?? null, potem?.zysk ?? null, blad, potem?.marza ?? null,
-      d.cel ?? null, celOc?.zysk ?? null]);
+      d.cel ?? null, celOc?.zysk ?? null];
+    const tylkoOdczyt = !!kolumna(o.platforma, o.rynek)?.tylkoOdczyt;
+    if (!(tylkoOdczyt && takaSamaDecyzja(ostDecyzja.get(o.id), { kod: d.kod, cena_przed: ob.cena, cena_nowa: d.cena,
+      cena_cel: d.cel ?? null, min: pas?.min ?? null, max: pas?.max ?? null, zysk: teraz?.zysk ?? null,
+      zysk_nowa: potem?.zysk ?? null, zysk_cel: celOc?.zysk ?? null }))) wiersze.push(wiersz);
     if (o.auto) kody[d.kod] = (kody[d.kod] || 0) + 1;
   }
   db.exec('BEGIN');

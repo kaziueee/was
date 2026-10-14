@@ -23,8 +23,11 @@ function pasyZWyceny(w) {
   const g = { ...rynki.DOMYSLNE, waga: w.waga, docinanie: w.docinalny, docinanieOn: true };
   const out = {};
   for (const [kraj, nazwa] of Object.entries(NAZWA_RYNKU)) {
-    const r = w.rynki.find((x) => x.nazwa === nazwa);
+    // Minimum liczone TUTAJ z `g` (z docinaniem), nie brane z w.rynki — tamta wycena (services/cennik)
+    // idzie z checkboxem docinania wyłączonym. Wcześniej docinanie działało tylko w `ocen`, a minimum
+    // zostało bez niego: 2026-10-14 automat podniósł przez to FR NERF7376 33,99 → 47,99 €.
     const def = rynki.RYNKI.find((x) => x.nazwa === nazwa);
+    const r = def ? rynki.policzRynek(+w.koszt || 0, def, g) : null;
     if (r && def && r.cena > 0 && !r.blad) {
       out[kraj] = {
         min: r.cena, max: +(r.cena * MNOZNIK_MAX).toFixed(2), koszt: w.koszt, waga: w.waga,

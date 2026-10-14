@@ -61,7 +61,7 @@ async function synchronizuj(rynki = Object.keys(amazon.RYNKI_AMAZON)) {
   return podsumowanie;
 }
 
-module.exports = { synchronizuj };
+module.exports = { synchronizuj, mapaKartoteki, przypisz };
 
 if (require.main === module) {
   const rynki = process.argv.slice(2).map((x) => x.toUpperCase()).filter((x) => amazon.RYNKI_AMAZON[x]);

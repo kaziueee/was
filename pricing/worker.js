@@ -4,7 +4,11 @@
 // nie może zatrzymać magazynu. Na SRV chodzi jako zadanie harmonogramu `WMS-Pricing`.
 //
 // Co przebieg (PRICING_INTERWAL_MIN, domyślnie 30 min):
-//   1. raz na dobę — synchronizacja listy ofert z Amazona (pricing/sync-oferty.js)
+//   1. raz na dobę — synchronizacja listy ofert z Amazona (pricing/sync-oferty.js); eMAG RO co
+//      przebieg (pricing/sync-emag.js) — ta sama lista służy do obserwacji, więc to jedno pobranie
+//      (~32 zapytania). eMAG jest TYLKO DO ODCZYTU: decyzje liczymy, ceny nie wychodzą.
+//      Bez EMAG_RO_USER w .env część eMAG jest pomijana; jej błąd (np. IP spoza listy w panelu
+//      eMAG) nie zatrzymuje przebiegu Amazona.
 //   2. obserwacja ofert: z włączonym automatem ZAWSZE, pozostałe ze stanem raz na
 //      PRICING_PELNY_MIN (domyślnie 360 min) — żeby przed włączeniem automatu było widać,
 //      co by zrobił, bez odpytywania całego katalogu co pół godziny
@@ -25,10 +29,17 @@ const { obserwuj } = require('./obserwuj');
 const { pasyHurtem } = require('./pas');
 const { decyzja, DOMYSLNE_REGULY } = require('./model');
 const { synchronizuj } = require('./sync-oferty');
+const { synchronizujEmag } = require('./sync-emag');
+const { obserwujEmag } = require('./obserwuj-emag');
+const emag = require('./emag');
+const { kluczKolumny } = require('./kolumny');
 const { ustawCene } = require('./amazon');
 const { interwalMsZMinut } = require('../services/interwal');
 
 const PELNY_MS = interwalMsZMinut(process.env.PRICING_PELNY_MIN, 360, 'PRICING_PELNY_MIN');
+// Które platformy obsługuje ten proces (domyślnie wszystkie). Do testów na drugiej maszynie:
+// PRICING_PLATFORMY=emag nie dotyka API Amazona, więc nie zjada limitów workera na SRV.
+const PLATFORMY = new Set(String(process.env.PRICING_PLATFORMY || 'amazon,emag').split(',').map((x) => x.trim().toLowerCase()));
 const SYNC_MS = 24 * 60 * 60 * 1000;
 
 const minelo = (klucz, ms) => {
@@ -38,23 +49,45 @@ const minelo = (klucz, ms) => {
 
 async function przebieg({ pelny = false } = {}) {
   const wynik = {};
-  if (minelo('sync_oferty', SYNC_MS)) {
+  if (PLATFORMY.has('amazon') && minelo('sync_oferty', SYNC_MS)) {
     const s = await synchronizuj();
     stan.set('sync_oferty', JSON.stringify(s.map((x) => [x.rynek, x.ofert])));
     wynik.sync = s.reduce((a, x) => a + x.ofert, 0);
   }
 
+  // eMAG: lista ofert = synchronizacja + materiał do obserwacji. Błąd tylko odnotowujemy.
+  let emagSurowe = null;
+  if (PLATFORMY.has('emag') && emag.skonfigurowany()) {
+    try {
+      emagSurowe = await emag.wszystkieOferty();
+      const s = await synchronizujEmag(emagSurowe);
+      stan.set('sync_emag', JSON.stringify(s));
+      wynik.emag = s.aktywne;
+    } catch (e) {
+      stan.set('blad_emag', e.message);
+      console.error(new Date().toISOString(), '[pricing] eMAG:', e.message);
+    }
+  }
+
   const pelnyTeraz = pelny || minelo('obserwacja_pelna', PELNY_MS);
   const zapisWlaczony = process.env.PRICING_ZAPIS === '1';
-  const oferty = db.prepare(`SELECT id, rynek, sku, tw_id, auto FROM oferty
-     WHERE platforma = 'amazon' AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL
-       AND (auto = 1 OR ?)`).all(pelnyTeraz ? 1 : 0);
+  const oferty = db.prepare(`SELECT id, platforma, rynek, sku, tw_id, auto, genius FROM oferty
+     WHERE ((platforma = 'amazon' AND ?) OR (platforma = 'emag' AND ?)) AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL
+       AND (auto = 1 OR ?)`).all(PLATFORMY.has('amazon') ? 1 : 0, emagSurowe ? 1 : 0, pelnyTeraz ? 1 : 0);
   wynik.ofert = oferty.length;
   wynik.pelny = pelnyTeraz;
   if (!oferty.length) return wynik;
 
-  const [obs, pasy] = await Promise.all([obserwuj(oferty), pasyHurtem(oferty.map((o) => o.tw_id))]);
-  if (obs.bledyPaczek) wynik.bledy_paczek = obs.bledyPaczek;
+  const amazon = oferty.filter((o) => o.platforma === 'amazon');
+  const emagOf = oferty.filter((o) => o.platforma === 'emag');
+  const geniusPoTw = new Map(emagOf.filter((o) => o.genius != null).map((o) => [o.tw_id, !!o.genius]));
+  const [obsA, obsE, pasy] = await Promise.all([
+    amazon.length ? obserwuj(amazon) : new Map(),
+    emagOf.length ? obserwujEmag(emagOf, emagSurowe) : new Map(),
+    pasyHurtem(oferty.map((o) => o.tw_id), geniusPoTw),
+  ]);
+  if (obsA.bledyPaczek) wynik.bledy_paczek = obsA.bledyPaczek;
+  const obs = { get: (id) => obsA.get(id) || obsE.get(id) };
 
   const zapisz = db.prepare(`INSERT INTO decyzje (oferta_id, cena_przed, cena_nowa, min, max, kod, powod, wyslano, auto, zysk, marza, zysk_nowa, blad, marza_nowa, cena_cel, zysk_cel)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -73,7 +106,7 @@ async function przebieg({ pelny = false } = {}) {
   for (const o of oferty) {
     const ob = obs.get(o.id);
     if (!ob) { kody.brak_odpowiedzi = (kody.brak_odpowiedzi || 0) + 1; continue; }
-    const pas = (pasy.get(o.tw_id) || {})[o.rynek] || null;
+    const pas = (pasy.get(o.tw_id) || {})[kluczKolumny(o.platforma, o.rynek)] || null;
     const d = decyzja(ob, pas || {}, {}, {
       ostatniaPodwyzka: ostPodwyzka.get(o.id, okno) || null,
       blokadaPodwyzek: !!cofniecie.get(o.id, okno),
@@ -82,7 +115,8 @@ async function przebieg({ pelny = false } = {}) {
     const potem = pas && d.zmiana ? pas.ocen(d.cena) : teraz;
     const celOc = pas && d.zmiana && d.cel !== d.cena ? pas.ocen(d.cel) : potem;
     let wyslano = 0, blad = null;
-    if (zapisWlaczony && o.auto && d.zmiana && pas) {
+    // Wysyłamy WYŁĄCZNIE na Amazona — eMAG na razie tylko obserwujemy (auto i tak jest tam blokowane w routes/ceny.js).
+    if (zapisWlaczony && o.auto && d.zmiana && pas && o.platforma === 'amazon') {
       try {
         const w = await ustawCene(o.rynek, o.sku, d.cena);
         if (w.ok) { wyslano = 1; wysylka.wyslane++; doPotwierdzenia.push(o); }

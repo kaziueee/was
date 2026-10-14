@@ -788,7 +788,7 @@
          zadanie WMS-Pricing) do db/pricing.db; ten ekran tylko czyta i włącza/wyłącza automat. -->
     <section id="panel-ceny" class="panel hidden">
       <div class="panel-naglowek">
-        <h2>Ceny na rynkach — Amazon</h2>
+        <h2>Ceny na rynkach — Amazon, eMAG</h2>
         <div class="filtry">
           <span class="ceny-proba hidden" id="ceny-hamulec" title="PRICING_ZAPIS w .env na serwerze ≠ 1">Wysyłanie cen WSTRZYMANE — automat nic nie zmienia na Amazonie</span>
           <button type="button" id="ceny-odswiez" class="btn btn-small">↻ Odśwież</button>
@@ -807,7 +807,7 @@
           <button type="button" class="ceny-chip" data-ceny-filtr="podwyzka" title="Mamy Buy Box, a następny konkurent jest wyraźnie wyżej — automat podniesie cenę i zysk">Do podwyżki <b id="ceny-l-podwyzka"></b></button>
           <button type="button" class="ceny-chip" data-ceny-filtr="decyzja">Do zmiany ceny <b id="ceny-l-decyzja"></b></button>
           <button type="button" class="ceny-chip" data-ceny-filtr="wszystkie">Wszystkie ze stanem <b id="ceny-l-wszystkie"></b></button>
-          <input type="search" id="ceny-szukaj" placeholder="Szukaj SKU, ASIN lub nazwy…" autocomplete="off">
+          <input type="search" id="ceny-szukaj" placeholder="Szukaj SKU, ASIN, PNK lub nazwy…" autocomplete="off">
         </div>
       </div>
       <div id="ceny-widok-macierz">
@@ -822,7 +822,7 @@
           <span class="ceny-probka bb"></span> mamy Buy Box &nbsp;
           <span class="ceny-probka off"></span> ręczny (automat wyłączony) &nbsp;
           W komórce: cena (bez wysyłki), marża i zysk na sztuce wg kalkulatora; pod spodem co robi automat (przy ręcznym: podpowiedź).
-          Przełącznik w komórce = jeden rynek, przy SKU = wszystkie rynki tego towaru. ↗ = oferta na Amazonie.
+          Przełącznik w komórce = jeden rynek, przy SKU = wszystkie rynki tego towaru. ↗ = oferta na platformie (Amazon, eMAG). eMAG RO repricer na razie tylko obserwuje — bez przełącznika automatu.
           Kliknij komórkę albo SKU — karta SKU.
         </p>
       </div>

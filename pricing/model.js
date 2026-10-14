@@ -44,6 +44,7 @@ const zaokr = (x) => Math.round(x * 100) / 100;
 //   bbFba,           // czy zwycięzca BB to FBA
 //   najtanszaInna,   // najtańsza landed oferta INNEGO sprzedawcy (null = brak)
 //   bbInnaNasza,     // Buy Box ma nasza INNA oferta tego samego ASIN-u
+//   konkurencjaNieznana, // mamy Buy Box, są inne oferty, ale platforma nie podaje ich cen (eMAG)
 // }
 // pas: { min, max } — ceny towaru (bez wysyłki) z kalkulatora
 // kontekst (z historii decyzji, liczy worker):
@@ -102,7 +103,12 @@ function decyzja(obs, pas, reguly = {}, kontekst = {}) {
 
   if (obs.bbNasz === true) {
     const nast = obs.najtanszaInna;
-    if (!(nast > 0)) return zostaw('top_bez_konkurencji', 'mamy Buy Box, brak innych ofert do porównania');
+    if (!(nast > 0)) {
+      // eMAG przy naszym Buy Boxie podaje jako „najlepszą ofertę" nas samych — ceny następnego
+      // konkurenta nie znamy, więc nie podnosimy w ciemno (inaczej „jedyna oferta" kłamałaby na ekranie).
+      if (obs.konkurencjaNieznana) return zostaw('top_konk_nieznana', 'mamy Buy Box; platforma nie podaje cen pozostałych ofert — nie podnosimy w ciemno');
+      return zostaw('top_bez_konkurencji', 'mamy Buy Box, brak innych ofert do porównania');
+    }
     const cel = zaokr(Math.min(nast - r.krok - wys, max));
     if (cel - cena >= r.progPodwyzki && kontekst.blokadaPodwyzek) {
       return zostaw('top_blokada', `mamy Buy Box; podwyżki wstrzymane po niedawnej utracie BB (${r.blokadaPodwyzekH} h)`);

@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS oferty (
   platforma     TEXT NOT NULL,              -- 'amazon' | 'emag' | 'empik' | ...
   rynek         TEXT NOT NULL,              -- 'DE', 'FR', 'PL', ...
   sku           TEXT NOT NULL,              -- SKU oferty na platformie
-  asin          TEXT,
+  asin          TEXT,                       -- identyfikator produktu na platformie: ASIN (Amazon) / PNK (eMAG)
   tw_id         INTEGER,                    -- tw__Towar.tw_Id (NULL = nie dopasowano)
   symbol_gt     TEXT,                       -- kopia do wyświetlania, kluczem jest tw_id
   dopasowanie   TEXT,                       -- 'wprost' | 'obciete' (SKU z dopiskiem -1/-DE) | 'reczne' | NULL = brak
@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS oferty (
   ilosc         INTEGER,
   kanal         TEXT,                       -- 'DEFAULT' = wysyłka sprzedawcy, 'AMAZON_EU' = FBA
   auto          INTEGER NOT NULL DEFAULT 0, -- 1 = automat zmienia cenę na platformie, 0 = ręczny (domyślnie)
+  genius        INTEGER,                    -- eMAG: 1 = Genius aktywny (genius_computed > 0), 0 = nie; NULL = nie dotyczy
   aktywna       INTEGER NOT NULL DEFAULT 1, -- 0 = zniknęła z raportu platformy
   widziana      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (platforma, rynek, sku)
@@ -112,6 +113,7 @@ CREATE TABLE IF NOT EXISTS stan (
 // migracje dla baz założonych przed dodaniem kolumn
 const kolOferty = db.prepare('PRAGMA table_info(oferty)').all().map((k) => k.name);
 if (!kolOferty.includes('dopasowanie')) db.exec('ALTER TABLE oferty ADD COLUMN dopasowanie TEXT');
+if (!kolOferty.includes('genius')) db.exec('ALTER TABLE oferty ADD COLUMN genius INTEGER');
 // `oferty.zapis` (osobny przełącznik wysyłania, tryb Próba) zlikwidowany 2026-10-13 — w starszych
 // bazach kolumna zostaje, nic jej nie czyta: automat = wysyła, ręczny = nie.
 const kolObs = db.prepare('PRAGMA table_info(obserwacje)').all().map((k) => k.name);

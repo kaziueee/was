@@ -4487,6 +4487,7 @@ const CENY_KOD_OPIS = {
 };
 const CENY_AKCJE = {
   automat_wl: 'włączył automat', automat_wyl: 'wyłączył automat',
+  powiazanie: 'powiązał z innym towarem GT', powiazanie_potw: 'potwierdził powiązanie z GT', powiazanie_usun: 'usunął powiązanie z GT',
   wysylanie_wl: 'włączył WYSYŁANIE cen na Amazona', wysylanie_wyl: 'wyłączył wysyłanie cen',
 };
 let cenyFiltr = 'automat', cenyWidok = 'macierz', cenySzukajTimer = null, cenyDane = null, cenyKartaTw = null, cenyKartaRynek = null;
@@ -4520,6 +4521,7 @@ const cenyEsc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;'
 async function odswiezCeny() {
   if (cenyWidok === 'log') return odswiezCenyLog();
   if (cenyWidok === 'karta') return odswiezCenyKarta();
+  if (cenyWidok === 'powiazania') return odswiezCenyPowiazania();
   const q = el('ceny-szukaj').value.trim();
   const qs = new URLSearchParams({ filtr: cenyFiltr, ...(q ? { q } : {}) });
   try { cenyDane = await api(`/api/ceny/macierz?${qs}`); renderujCeny(cenyDane); }
@@ -4548,6 +4550,8 @@ function renderujCeny(d) {
     : cenyFiltr === 'automat' ? 'Automat nie jest jeszcze włączony dla żadnej oferty. Wyszukaj SKU albo wybierz „Wszystkie ze stanem” i włącz przełącznik w komórce.'
       : 'Brak ofert.';
   for (const t of d.wiersze) tbody.appendChild(cenyWiersz(t, d.rynki));
+  // licznik zakładki „Do powiązania" — widoczny od razu, nie dopiero po wejściu w nią
+  api('/api/ceny/powiazania').then((p) => { el('ceny-l-powiazania').textContent = p.bez.length + p.do_potwierdzenia.length || ''; }).catch(() => {});
   if (d.razem > d.wiersze.length) {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td colspan="${d.rynki.length + 1}" class="hint">Pokazano ${d.wiersze.length} z ${d.razem} — zawęź wyszukiwaniem.</td>`;
@@ -4624,11 +4628,24 @@ function cenyKomorka(o, rynek) {
   wrap.appendChild(div);
   const boki = document.createElement('div');
   boki.className = 'ceny-boki';
-  if (!o.tylko_odczyt) boki.appendChild(cenyPrzelacznik(o.auto ? 'on' : '', `Automat ${cenyKanal(o)} ${o.sku}`, () => cenyUstawAutomat([o], !o.auto)));
+  if (!o.tylko_odczyt) boki.appendChild(cenyPrzelacznikOferty(o, cenyKanal(o)));
   if (o.linki) boki.insertAdjacentHTML('beforeend', `<a class="ceny-ext" href="${cenyEsc(o.linki.produkt)}" target="_blank" rel="noopener" title="Otwórz ofertę na ${cenyEsc(cenyKanal(o))}">↗</a>`);
   wrap.appendChild(boki);
   td.appendChild(wrap);
   return td;
+}
+
+// Dopasowanie pewne = SKU równe symbolowi GT albo potwierdzone ręcznie. Przy innym automatu nie
+// włączymy (backend odmawia: routes/ceny.js) — przełącznik prowadzi wtedy do zakładki „Do powiązania".
+const CENY_PEWNE = ['wprost', 'reczne'];
+function cenyPrzelacznikOferty(o, rynek) {
+  if (!o.auto && !CENY_PEWNE.includes(o.dopasowanie)) {
+    const b = cenyPrzelacznik('', `Automat ${rynek} ${o.sku}`, () => { cenyPokazWidok('powiazania'); odswiezCeny(); });
+    b.classList.add('niepewne');
+    b.title = `Dopasowanie do towaru GT niepotwierdzone (${o.sku} → ${o.symbol_gt || '?'}) — potwierdź w zakładce „Do powiązania”`;
+    return b;
+  }
+  return cenyPrzelacznik(o.auto ? 'on' : '', `Automat ${rynek} ${o.sku}`, () => cenyUstawAutomat([o], !o.auto));
 }
 
 function cenyPrzelacznik(stan, etykieta, onKlik) {
@@ -4712,7 +4729,8 @@ async function cenyUstawAutomat(oferty, auto) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids, auto, operator: operator() }),
     });
-    pokazKomunikat(`Automat ${auto ? 'włączony' : 'wyłączony'}: ${r.zmienione} ofert${r.pominiete.length ? `, pominięte ${r.pominiete.length}` : ''}.${auto ? ' Pierwsza zmiana ceny przy najbliższym przebiegu (do 30 min).' : ''}`, 'ok');
+    const pomin = r.pominiete.length ? ` Pominięte ${r.pominiete.length}: ${r.pominiete.slice(0, 3).map((p) => `${p.sku || p.id} — ${p.powod}`).join('; ')}${r.pominiete.length > 3 ? '…' : ''}` : '';
+    pokazKomunikat(`Automat ${auto ? 'włączony' : 'wyłączony'}: ${r.zmienione} ofert.${auto && r.zmienione ? ' Pierwsza zmiana ceny przy najbliższym przebiegu (do 30 min).' : ''}${pomin}`, r.pominiete.length ? 'blad' : 'ok');
     odswiezCeny();
   } catch (err) { pokazKomunikat(err.message, 'blad'); }
 }
@@ -4720,7 +4738,7 @@ async function cenyUstawAutomat(oferty, auto) {
 function cenyPokazWidok(widok) {
   cenyWidok = widok;
   document.querySelectorAll('[data-ceny-widok]').forEach((x) => x.classList.toggle('aktywny', x.dataset.cenyWidok === widok));
-  for (const v of ['macierz', 'karta', 'log']) el(`ceny-widok-${v}`).classList.toggle('hidden', widok !== v);
+  for (const v of ['macierz', 'karta', 'log', 'powiazania']) el(`ceny-widok-${v}`).classList.toggle('hidden', widok !== v);
   el('ceny-filtry').classList.toggle('hidden', widok !== 'macierz');
 }
 
@@ -4774,7 +4792,7 @@ async function odswiezCenyKarta() {
     }
     box.querySelectorAll('[data-ceny-auto]').forEach((slot) => {
       const o = oferty.find((x) => String(x.id) === slot.dataset.cenyAuto);
-      slot.prepend(cenyPrzelacznik(o.auto ? 'on' : '', `Automat ${o.rynek} ${o.sku}`, () => cenyUstawAutomat([o], !o.auto)));
+      slot.prepend(cenyPrzelacznikOferty(o, o.rynek));
     });
     el('ceny-karta-wroc').addEventListener('click', () => { cenyPokazWidok('macierz'); odswiezCeny(); });
     if (cenyKartaRynek) box.querySelector(`[data-ceny-rynek="${cenyKartaRynek}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -4821,6 +4839,44 @@ function cenyKartaRynekHtml(o) {
     <div class="ceny-k-wykres">${cenyWykres(o.obserwacje)}</div>
     <details class="ceny-k-hist"><summary>Historia decyzji (${o.decyzje.length})</summary>${zmiany}${histDec}</details>
   </section>`;
+}
+
+async function odswiezCenyPowiazania() {
+  try {
+    const d = await api('/api/ceny/powiazania');
+    el('ceny-l-powiazania').textContent = d.bez.length + d.do_potwierdzenia.length || '';
+    el('cp-l-bez').textContent = d.bez.length;
+    el('cp-l-potw').textContent = d.do_potwierdzenia.length;
+    el('cp-l-reczne').textContent = d.reczne.length;
+    const link = (w) => (w.linki ? ` <a class="ceny-ext" href="${cenyEsc(w.linki.produkt)}" target="_blank" rel="noopener" title="Oferta na Amazonie">↗</a>` : '');
+    const pole = (sku) => `<form class="cp-form" data-sku="${cenyEsc(sku)}"><input type="text" placeholder="symbol GT lub EAN" aria-label="Towar GT dla ${cenyEsc(sku)}" required><button class="btn btn-small btn-primary">Powiąż</button></form>`;
+    el('cp-bez').innerHTML = d.bez.length ? d.bez.map((w) => `<tr><td class="ceny-sku">${cenyEsc(w.sku)}${link(w)}</td><td>${cenyEsc(w.rynki)}</td>
+      <td class="cp-nazwa" title="${cenyEsc(w.nazwa)}">${cenyEsc(w.nazwa)}</td><td>${w.ilosc ?? '—'}</td><td>${pole(w.sku)}</td></tr>`).join('')
+      : '<tr><td colspan="5" class="hint">Wszystkie oferty mają towar GT.</td></tr>';
+    el('cp-potw').innerHTML = d.do_potwierdzenia.length ? d.do_potwierdzenia.map((w) => `<tr><td class="ceny-sku">${cenyEsc(w.sku)}${link(w)}</td><td>${cenyEsc(w.rynki)}</td>
+      <td class="cp-nazwa" title="${cenyEsc(w.nazwa)}">${cenyEsc(w.nazwa)}</td><td>${w.ilosc ?? '—'}</td><td><b>${cenyEsc(w.symbol_gt)}</b></td>
+      <td><button type="button" class="btn btn-small" data-cp-potw="${cenyEsc(w.sku)}">✓ Potwierdź</button> ${pole(w.sku).replace('Powiąż', 'Inny towar')}</td></tr>`).join('')
+      : '<tr><td colspan="6" class="hint">Nic do potwierdzenia.</td></tr>';
+    el('cp-reczne').innerHTML = d.reczne.length ? d.reczne.map((w) => `<tr><td class="ceny-sku">${cenyEsc(w.sku)}</td><td>${cenyEsc(w.rynki || '')}</td>
+      <td><b>${cenyEsc(w.symbol_gt)}</b></td><td>${cenyEsc(w.kto || '?')} · ${formatDatetime(w.czas)}</td>
+      <td><button type="button" class="btn btn-small btn-danger" data-cp-usun="${cenyEsc(w.sku)}">Usuń</button></td></tr>`).join('')
+      : '<tr><td colspan="5" class="hint">Brak ręcznych powiązań.</td></tr>';
+    const wyslij = async (url, body, opis) => {
+      try { await api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, operator: operator() }) }); pokazKomunikat(opis, 'ok'); odswiezCenyPowiazania(); }
+      catch (err) { pokazKomunikat(err.message, 'blad'); }
+    };
+    document.querySelectorAll('#ceny-widok-powiazania .cp-form').forEach((f) => f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const kod = f.querySelector('input').value.trim();
+      wyslij('/api/ceny/powiaz', { sku: f.dataset.sku, kod }, `${f.dataset.sku} → ${kod}: powiązane. Zmiana towaru wyłącza automat na tej ofercie.`);
+    }));
+    document.querySelectorAll('[data-cp-potw]').forEach((b) => b.addEventListener('click', () =>
+      wyslij('/api/ceny/powiaz/potwierdz', { sku: b.dataset.cpPotw }, `${b.dataset.cpPotw}: dopasowanie potwierdzone — automat można włączyć.`)));
+    document.querySelectorAll('[data-cp-usun]').forEach((b) => b.addEventListener('click', () => {
+      if (!confirm(`Usunąć ręczne powiązanie ${b.dataset.cpUsun}? Oferta wróci do dopasowania automatycznego, automat zostanie wyłączony.`)) return;
+      wyslij('/api/ceny/powiaz/usun', { sku: b.dataset.cpUsun }, `${b.dataset.cpUsun}: powiązanie usunięte.`);
+    }));
+  } catch (err) { pokazKomunikat(err.message, 'blad'); }
 }
 
 async function odswiezCenyLog() {

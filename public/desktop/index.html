@@ -800,6 +800,7 @@
           <button type="button" class="ceny-chip aktywny" data-ceny-widok="macierz">Macierz</button>
           <button type="button" class="ceny-chip" data-ceny-widok="karta">Karta SKU</button>
           <button type="button" class="ceny-chip" data-ceny-widok="log">Log decyzji</button>
+          <button type="button" class="ceny-chip" data-ceny-widok="powiazania">Do powiązania <b id="ceny-l-powiazania"></b></button>
         </div>
         <div class="ceny-filtry" id="ceny-filtry">
           <button type="button" class="ceny-chip aktywny" data-ceny-filtr="automat">Z automatem <b id="ceny-l-automat"></b></button>
@@ -828,6 +829,16 @@
       </div>
       <div id="ceny-widok-karta" class="hidden">
         <div id="ceny-karta"><p class="hint">Wybierz towar w macierzy (kliknij SKU albo komórkę) albo wyszukaj go i naciśnij Enter.</p></div>
+      </div>
+      <div id="ceny-widok-powiazania" class="hidden">
+        <p class="hint">Automat cen działa tylko na ofertach powiązanych z towarem GT na pewno: SKU równe symbolowi albo powiązanie potwierdzone tutaj.
+          Dopasowanie „po obcięciu dopisku” (-1, -2, -DE) bywa złe — np. NERE9533-1/-2 to NERE9533FFP, nie NERE9533 — a wtedy minimum i zysk liczyłyby się od kosztu innego towaru.</p>
+        <h3 class="ceny-h3">Bez towaru GT <b id="cp-l-bez"></b></h3>
+        <div class="tabela-wrapper"><table class="tabela"><thead><tr><th>SKU oferty</th><th>Rynki</th><th>Nazwa na Amazonie</th><th>Stan</th><th>Powiąż z towarem GT</th></tr></thead><tbody id="cp-bez"></tbody></table></div>
+        <h3 class="ceny-h3">Dopasowane po obcięciu dopisku — do potwierdzenia <b id="cp-l-potw"></b></h3>
+        <div class="tabela-wrapper"><table class="tabela"><thead><tr><th>SKU oferty</th><th>Rynki</th><th>Nazwa na Amazonie</th><th>Stan</th><th>Dopasowany towar</th><th>Akcja</th></tr></thead><tbody id="cp-potw"></tbody></table></div>
+        <h3 class="ceny-h3">Powiązane ręcznie <b id="cp-l-reczne"></b></h3>
+        <div class="tabela-wrapper"><table class="tabela"><thead><tr><th>SKU oferty</th><th>Rynki</th><th>Towar GT</th><th>Kto / kiedy</th><th></th></tr></thead><tbody id="cp-reczne"></tbody></table></div>
       </div>
       <div id="ceny-widok-log" class="hidden">
         <div class="tabela-wrapper">

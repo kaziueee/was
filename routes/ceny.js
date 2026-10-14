@@ -11,6 +11,10 @@
 //   GET  /api/ceny/towar/:tw_id                                        karta SKU: wszystkie rynki towaru + historia
 //   GET  /api/ceny/log?limit=                                          zmiany cen (auto) + działania ludzi
 //   POST /api/ceny/automat  { ids: [oferta_id...], auto: true|false }  — tylko podane oferty, nigdy hurtem
+//   GET  /api/ceny/powiazania                                          oferty do powiązania (bez GT / po obcięciu) + ręczne
+//   POST /api/ceny/powiaz        { sku, kod }                          powiąż SKU z towarem GT (symbol/EAN)
+//   POST /api/ceny/powiaz/potwierdz { sku }                            potwierdź obecne dopasowanie jako ręczne
+//   POST /api/ceny/powiaz/usun   { sku }                               usuń ręczne powiązanie
 
 const express = require('express');
 const router = express.Router();
@@ -20,6 +24,7 @@ const emag = require('../pricing/emag');
 const { KOLUMNY, kluczKolumny, kolumna } = require('../pricing/kolumny');
 const { wycenaHurtem } = require('../services/cennik');
 const { pobierzStanyGt, sumaRazem } = require('../services/gt-produkty');
+const { pewneDopasowanie, znajdzTowar, powiaz, usunPowiazanie } = require('../pricing/powiazania');
 
 // Stan z GT (master stanów) dla pokazanych towarów: Razem (bez BRK) i K4. GT padnięte = null,
 // ekran pokazuje wtedy „—", a nie zero (zero to pewna informacja, której nie mamy).
@@ -194,7 +199,7 @@ router.post('/automat', (req, res) => {
   if (ids.length > 200) return res.status(400).json({ blad: 'Najwyżej 200 ofert naraz — automatu nie włączamy na cały katalog' });
 
   const kto = req.body.operator || null;              // wstrzyknięty z sesji (services/auth)
-  const of = db.prepare('SELECT id, platforma, rynek, sku, auto, tw_id FROM oferty WHERE id = ?');
+  const of = db.prepare('SELECT id, platforma, rynek, sku, auto, tw_id, dopasowanie FROM oferty WHERE id = ?');
   const ustaw = db.prepare('UPDATE oferty SET auto = ? WHERE id = ?');
   const log = db.prepare('INSERT INTO zmiany (kto, oferta_id, akcja, opis) VALUES (?, ?, ?, ?)');
   let zmienione = 0;
@@ -204,8 +209,13 @@ router.post('/automat', (req, res) => {
     for (const id of ids) {
       const o = of.get(id);
       if (!o) { pominiete.push({ id, powod: 'nie ma oferty' }); continue; }
-      if (auto && !o.tw_id) { pominiete.push({ id, powod: 'oferta bez towaru GT' }); continue; }
-      if (auto && kolumna(o.platforma, o.rynek)?.tylkoOdczyt) { pominiete.push({ id, powod: `${o.platforma} ${o.rynek}: na razie tylko odczyt — automat niedostępny` }); continue; }
+      if (auto && !o.tw_id) { pominiete.push({ id, sku: o.sku, powod: 'oferta bez towaru GT' }); continue; }
+      if (auto && kolumna(o.platforma, o.rynek)?.tylkoOdczyt) { pominiete.push({ id, sku: o.sku, powod: `${o.platforma} ${o.rynek}: na razie tylko odczyt — automat niedostępny` }); continue; }
+      // Automat tylko przy pewnym dopasowaniu do GT (wprost / ręczne) — zasada 5: wymuszone tu, nie na ekranie.
+      if (auto && !pewneDopasowanie(o.dopasowanie)) {
+        pominiete.push({ id, sku: o.sku, powod: 'dopasowanie do GT niepotwierdzone — potwierdź w zakładce „Do powiązania”' });
+        continue;
+      }
       if (o.auto === auto) continue;
       ustaw.run(auto, id);
       log.run(kto, id, auto ? 'automat_wl' : 'automat_wyl', `${o.rynek} ${o.sku}`);
@@ -214,6 +224,45 @@ router.post('/automat', (req, res) => {
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
   res.json({ ok: true, zmienione, pominiete });
+});
+
+// --- Do powiązania ---------------------------------------------------------------------------
+router.get('/powiazania', (req, res) => {
+  const bez = db.prepare(`SELECT sku, group_concat(rynek, ' ') AS rynki, max(nazwa) AS nazwa, max(ilosc) AS ilosc,
+      max(asin) AS asin, min(rynek) AS rynek
+    FROM oferty WHERE platforma = 'amazon' AND aktywna = 1 AND tw_id IS NULL GROUP BY sku ORDER BY max(ilosc) DESC, sku`).all();
+  const doPotw = db.prepare(`SELECT sku, group_concat(rynek, ' ') AS rynki, max(nazwa) AS nazwa, max(ilosc) AS ilosc,
+      max(asin) AS asin, min(rynek) AS rynek, symbol_gt, tw_id
+    FROM oferty WHERE platforma = 'amazon' AND aktywna = 1 AND tw_id IS NOT NULL AND (dopasowanie IS NULL OR dopasowanie NOT IN ('wprost', 'reczne'))
+    GROUP BY sku ORDER BY sku`).all();
+  const reczne = db.prepare(`SELECT p.sku, p.symbol_gt, p.kto, p.czas, (SELECT group_concat(rynek, ' ') FROM oferty o WHERE o.platforma = p.platforma AND o.sku = p.sku) AS rynki
+    FROM powiazania p WHERE p.platforma = 'amazon' ORDER BY p.czas DESC`).all();
+  const z = (w) => ({ ...w, linki: linkiOferty(w.rynek, w.asin) });
+  res.json({ bez: bez.map(z), do_potwierdzenia: doPotw.map(z), reczne });
+});
+
+router.post('/powiaz', asyncH(async (req, res) => {
+  const sku = String(req.body?.sku || '').trim();
+  if (!sku) return res.status(400).json({ blad: 'Podaj SKU oferty' });
+  let towar;
+  try { towar = await znajdzTowar(req.body?.kod); } catch (e) { return res.status(400).json({ blad: e.message }); }
+  const n = powiaz('amazon', sku, towar, req.body.operator);
+  res.json({ ok: true, sku, symbol: towar.tw_Symbol, nazwa: towar.tw_Nazwa, oferty: n });
+}));
+
+// Potwierdzenie obecnego (automatycznego) dopasowania — staje się ręcznym, więc automat jest dozwolony.
+router.post('/powiaz/potwierdz', (req, res) => {
+  const sku = String(req.body?.sku || '').trim();
+  const o = db.prepare("SELECT tw_id, symbol_gt FROM oferty WHERE platforma = 'amazon' AND sku = ? AND tw_id IS NOT NULL LIMIT 1").get(sku);
+  if (!o) return res.status(404).json({ blad: 'Oferta nie ma dopasowanego towaru — powiąż ją z symbolem GT' });
+  const n = powiaz('amazon', sku, { tw_Id: o.tw_id, tw_Symbol: o.symbol_gt }, req.body.operator);
+  res.json({ ok: true, sku, symbol: o.symbol_gt, oferty: n });
+});
+
+router.post('/powiaz/usun', (req, res) => {
+  const sku = String(req.body?.sku || '').trim();
+  if (!sku) return res.status(400).json({ blad: 'Podaj SKU oferty' });
+  res.json({ ok: true, oferty: usunPowiazanie('amazon', sku, req.body.operator) });
 });
 
 module.exports = router;

@@ -1326,3 +1326,10 @@ main {
 .mca-tabela td, .mca-tabela th { font-size: 0.85rem; padding: 0.35rem 0.5rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .mca-tabela tr.mca-podmin td { background: #fff4f2; }
 .mca-akcje { justify-content: flex-end; }
+
+/* Ceny: Do powiązania */
+.ceny-h3 { margin: 1.2rem 0 0.4rem; font-size: 1rem; color: #1d3557; }
+.cp-nazwa { max-width: 26rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.82rem; }
+.cp-form { display: inline-flex; gap: 0.3rem; }
+.cp-form input { font: inherit; font-size: 0.82rem; width: 9.5rem; padding: 0.2rem 0.4rem; border: 1px solid #ccc; border-radius: 5px; }
+.ceny-przel.niepewne { border-style: dashed; opacity: 0.6; }

@@ -20,6 +20,12 @@ function budujZmianeCeny(purchasableOffer, marketplaceId, cena) {
   }
   const c = Math.round(Number(cena) * 100) / 100;
   if (!(c > 0)) return { blad: `niepoprawna cena: ${cena}` };
+  // Zakres min/max zapisany na ofercie w Amazonie (zostaje po regule Automate Pricing albo ustawiony
+  // w Seller Central). Cena spoza niego potrafi dezaktywować ofertę — nie wysyłamy, zgłaszamy.
+  const lim = (pole) => Number(detal[pole]?.[0]?.schedule?.[0]?.value_with_tax);
+  const aMin = lim('minimum_seller_allowed_price'), aMax = lim('maximum_seller_allowed_price');
+  if (aMin > 0 && c < aMin - 0.005) return { blad: `cena ${c} poniżej minimum ustawionego w Amazonie (${aMin}) — zmień zakres w Seller Central` };
+  if (aMax > 0 && c > aMax + 0.005) return { blad: `cena ${c} powyżej maksimum ustawionego w Amazonie (${aMax}) — zmień zakres w Seller Central` };
 
   const nowe = wpisy.map((p) => (p === detal
     ? { ...p, our_price: [{ schedule: [{ value_with_tax: c }] }] }

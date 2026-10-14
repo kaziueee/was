@@ -23,13 +23,19 @@ const MNOZNIK_MAX = 1.5;
 // opcje.genius — Genius oferty eMAG z API (true/false); brak = z wymiarów GT.
 function pasyZWyceny(w, { genius } = {}) {
   if (!w) return {};
-  const g = { ...rynki.DOMYSLNE, waga: w.waga, docinanie: w.docinalny, docinanieOn: false,
+  // Docinanie kartonu ZAWSZE uwzględnione (decyzja usera 2026-10-14): towar oznaczony „Docinanie
+  // kartonu: tak” jedzie w przyciętym kartonie, czyli w niższym progu DHL. Bez tego minimum było
+  // wyższe niż w teście Automate Pricing z 06.10 (np. NERF7376 FR 47,99 zamiast 33,99 €).
+  const g = { ...rynki.DOMYSLNE, waga: w.waga, docinanie: w.docinalny, docinanieOn: true,
     genius: typeof genius === 'boolean' ? genius : w.genius };
   const out = {};
   for (const k of KOLUMNY) {
+    // Minimum liczone TUTAJ z `g` (z docinaniem), nie brane z w.rynki — tamta wycena (services/cennik)
+    // idzie z checkboxem docinania wyłączonym. Wcześniej docinanie działało tylko w `ocen`, a minimum
+    // zostało bez niego: 2026-10-14 automat podniósł przez to FR NERF7376 33,99 → 47,99 €.
     const def = k.kalkulator && rynki.RYNKI.find((x) => x.nazwa === k.kalkulator);
     if (!def) continue;
-    const r = rynki.policzRynek(w.koszt, def, g);
+    const r = rynki.policzRynek(+w.koszt || 0, def, g);
     if (r && r.cena > 0 && !r.blad) {
       out[k.klucz] = {
         min: r.cena, max: +(r.cena * MNOZNIK_MAX).toFixed(2), koszt: w.koszt, waga: w.waga,

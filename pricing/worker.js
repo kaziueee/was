@@ -22,7 +22,7 @@
 
 const { db, stan } = require('./db');
 const { obserwuj } = require('./obserwuj');
-const { pasyHurtem } = require('./pas');
+const { pasDlaOferty, wycenyHurtem } = require('./pas');
 const { decyzja, DOMYSLNE_REGULY } = require('./model');
 const { synchronizuj } = require('./sync-oferty');
 const { ustawCene } = require('./amazon');
@@ -54,7 +54,7 @@ async function przebieg({ pelny = false } = {}) {
   wynik.pelny = pelnyTeraz;
   if (!oferty.length) return wynik;
 
-  const [obs, pasy] = await Promise.all([obserwuj(oferty), pasyHurtem(oferty.map((o) => o.tw_id))]);
+  const [obs, wyceny] = await Promise.all([obserwuj(oferty), wycenyHurtem(oferty.map((o) => o.tw_id))]);
   if (obs.bledyPaczek) wynik.bledy_paczek = obs.bledyPaczek;
 
   const zapisz = db.prepare(`INSERT INTO decyzje (oferta_id, cena_przed, cena_nowa, min, max, kod, powod, wyslano, auto, zysk, marza, zysk_nowa, blad, marza_nowa, cena_cel, zysk_cel)
@@ -74,7 +74,7 @@ async function przebieg({ pelny = false } = {}) {
   for (const o of oferty) {
     const ob = obs.get(o.id);
     if (!ob) { kody.brak_odpowiedzi = (kody.brak_odpowiedzi || 0) + 1; continue; }
-    const pas = (pasy.get(o.tw_id) || {})[o.rynek] || null;
+    const pas = pasDlaOferty(wyceny.get(o.tw_id), o.rynek, ob.wysylka);   // wysyłka z obserwacji, nie z założenia
     const d = decyzja(ob, pas || {}, {}, {
       ostatniaPodwyzka: ostPodwyzka.get(o.id, okno) || null,
       blokadaPodwyzek: !!cofniecie.get(o.id, okno),

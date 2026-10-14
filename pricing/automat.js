@@ -13,7 +13,7 @@
 // pod naszą podłogą — wtedy automat podniesie cenę albo będzie stał, a nie gonił rynek.
 
 const { db } = require('./db');
-const { pasyHurtem } = require('./pas');
+const { pasDlaOferty, wycenyHurtem } = require('./pas');
 
 async function main([akcja, ...reszta]) {
   if (akcja === 'lista') {
@@ -43,7 +43,7 @@ async function main([akcja, ...reszta]) {
     return;
   }
 
-  const pasy = await pasyHurtem(oferty.map(({ o }) => o.tw_id).filter(Boolean));
+  const wyceny = await wycenyHurtem(oferty.map(({ o }) => o.tw_id).filter(Boolean));
   for (const { r, s, o } of oferty) {
     const uwagi = [];
     if (!o.tw_id) uwagi.push('brak towaru GT — automat nie zadziała (node pricing/powiaz.js)');
@@ -52,7 +52,7 @@ async function main([akcja, ...reszta]) {
       continue;
     }
     if (!(o.ilosc > 0)) uwagi.push('brak stanu — worker pomija oferty bez stanu');
-    const pas = (pasy.get(o.tw_id) || {})[r];
+    const pas = pasDlaOferty(wyceny.get(o.tw_id), r, o.obs_wys);
     if (!pas) uwagi.push('brak pasa z kalkulatora (np. Amazon PL) — automat nie zdecyduje');
     else {
       const cena = o.obs_cena ?? o.cena;

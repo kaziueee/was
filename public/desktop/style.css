@@ -1317,3 +1317,12 @@ main {
 .ceny-dec.wyslano, .ceny-wyslano { color: #1d3557; font-weight: 700; }
 .ceny-stan { font-size: 0.78rem; color: #444; margin-top: 0.15rem; white-space: nowrap; }
 .ceny-cel { font-size: 0.74rem; color: #1d3557; white-space: nowrap; }
+
+/* Ceny: potwierdzenie włączenia automatu */
+.mca-box { max-width: 820px; }
+.mca-tytul { margin: 0 0 0.3rem; color: #1d3557; }
+.mca-ostrzezenie { background: #fde8e6; color: #b42318; border: 1px solid #b42318; border-radius: 6px; padding: 0.5rem 0.7rem; font-weight: 600; font-size: 0.88rem; margin: 0.5rem 0; }
+.mca-wrap { max-height: 50vh; overflow: auto; }
+.mca-tabela td, .mca-tabela th { font-size: 0.85rem; padding: 0.35rem 0.5rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mca-tabela tr.mca-podmin td { background: #fff4f2; }
+.mca-akcje { justify-content: flex-end; }

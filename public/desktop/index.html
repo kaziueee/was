@@ -870,6 +870,26 @@
 
     <!-- Modal: historia ruchow/zmian jednego SKU (ikona "H" w modalu produktu) -->
     <!-- Modal: MM / Lok dla pojedynczego produktu (z tabeli Produkty) -->
+    <!-- Potwierdzenie włączenia automatu cen (zamiast systemowego confirm(): czytelna tabela i brak
+         pułapki „nie pozwalaj pytać ponownie", po której przeglądarka po cichu odpowiada „Anuluj"). -->
+    <div id="modal-ceny-auto" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="mca-tytul">
+      <div class="modal-box mca-box">
+        <h3 id="mca-tytul" class="mca-tytul"></h3>
+        <p class="hint">Automat będzie sam zmieniał ceny na Amazonie (co ok. 30 min). Tak wygląda najbliższy przebieg — dla ofert ręcznych to podpowiedź z ostatniego przeglądu.</p>
+        <div id="mca-ostrzezenie" class="mca-ostrzezenie hidden"></div>
+        <div class="tabela-wrapper mca-wrap">
+          <table class="tabela mca-tabela">
+            <thead><tr><th>Oferta</th><th>Teraz</th><th>Najbliższy przebieg</th><th>Cel</th><th>Zysk/szt.</th></tr></thead>
+            <tbody id="mca-tbody"></tbody>
+          </table>
+        </div>
+        <div class="modal-akcje mca-akcje">
+          <button type="button" id="mca-anuluj" class="btn">Anuluj</button>
+          <button type="button" id="mca-wlacz" class="btn btn-primary">Włącz automat</button>
+        </div>
+      </div>
+    </div>
+
     <div id="modal-produkt" class="modal-overlay hidden">
       <div class="modal-box">
         <div class="modal-naglowek">

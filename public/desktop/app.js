@@ -4634,42 +4634,69 @@ function cenyPrzelacznik(stan, etykieta, onKlik) {
   return b;
 }
 
-// Treść potwierdzenia: co automat zrobi z każdą ofertą w najbliższym przebiegu (z ostatniej
-// decyzji — dla ofert ręcznych to podpowiedź sprzed najwyżej kilku godzin). Oferty POD MINIMUM
-// osobno i na górze: automat podniesie je od razu do minimum (2026-10-13 włączenie automatu na
-// takich ofertach dało 7 podwyżek naraz, o których ekran nie uprzedzał).
-function cenyOpisWlaczenia(oferty) {
-  const linia = (o) => {
+// Potwierdzenie włączenia automatu — własne okno zamiast confirm(): tabela „co automat zrobi
+// w najbliższym przebiegu" (z ostatniej decyzji; dla ofert ręcznych to podpowiedź sprzed najwyżej
+// kilku godzin). Oferty POD MINIMUM na górze i z ostrzeżeniem: automat podniesie je od razu do
+// minimum (2026-10-13 włączenie automatu na takich ofertach dało 7 podwyżek naraz, o których ekran
+// nie uprzedzał). Zwraca Promise<boolean>; Esc / klik w tło / Anuluj = false.
+function cenyPotwierdzWlaczenie(oferty) {
+  const podMin = (o) => o.cena != null && o.min != null && o.cena < o.min - 0.005;
+  const posort = [...oferty.filter(podMin), ...oferty.filter((o) => !podMin(o))];
+  const nPod = oferty.filter(podMin).length;
+  el('mca-tytul').textContent = `Włączyć automat dla ${oferty.length} ${oferty.length === 1 ? 'oferty' : 'ofert'}?`;
+  const ostrz = el('mca-ostrzezenie');
+  ostrz.classList.toggle('hidden', !nPod);
+  ostrz.textContent = nPod ? `⚠ ${nPod} z ${oferty.length} poniżej minimum (marża 20%) — automat podniesie je OD RAZU do minimum. Utrata Buy Boxa tego nie cofnie.` : '';
+  el('mca-tbody').innerHTML = posort.map((o) => {
     const w = cenyWaluta(o.rynek);
-    const nazwa = `${o.rynek} ${o.sku}`;
-    if (o.cena == null) return `${nazwa}: brak obserwacji — decyzja przy najbliższym przebiegu`;
-    if (!CENY_ZMIANY.includes(o.kod)) return `${nazwa}: ${cenyLiczba(o.cena)} ${w} — bez zmiany (${CENY_KOD_OPIS[o.kod] || o.kod || 'brak decyzji'})`;
-    const cel = o.cena_cel != null && Math.abs(o.cena_cel - o.cena_nowa) >= 0.005 ? `, docelowo ${cenyLiczba(o.cena_cel)} ${w}` : '';
-    return `${nazwa}: ${cenyLiczba(o.cena)} → ${cenyLiczba(o.cena_nowa)} ${w}${cel}`;
-  };
-  const podMin = oferty.filter((o) => o.cena != null && o.min != null && o.cena < o.min - 0.005);
-  const reszta = oferty.filter((o) => !podMin.includes(o));
-  const MAX = 12;
-  const wiersze = [];
-  if (podMin.length) {
-    wiersze.push(`⚠ ${podMin.length} z ${oferty.length} poniżej minimum (marża 20%) — automat PODNIESIE je OD RAZU do minimum (utrata Buy Boxa tego nie cofnie):`);
-    wiersze.push(...podMin.slice(0, MAX).map((o) => `   • ${o.rynek} ${o.sku}: ${cenyLiczba(o.cena)} → ${cenyLiczba(o.min)} ${cenyWaluta(o.rynek)} (minimum)`));
-  }
-  const reszt = reszta.slice(0, Math.max(0, MAX - podMin.length));
-  if (reszt.length) {
-    if (podMin.length) wiersze.push('', 'Pozostałe:');
-    wiersze.push(...reszt.map((o) => `   • ${linia(o)}`));
-  }
-  const ukryte = oferty.length - Math.min(podMin.length, MAX) - reszt.length;
-  if (ukryte > 0) wiersze.push(`   … i ${ukryte} więcej`);
-  return wiersze.join('\n');
+    const zm = CENY_ZMIANY.includes(o.kod);
+    let krok, cel = '—', zysk = o.zysk != null ? `${cenyLiczba(o.zysk)} zł` : '—', klasa = '';
+    if (o.cena == null) krok = '<span class="hint">brak obserwacji — decyzja w przebiegu</span>';
+    else if (podMin(o)) {
+      klasa = 'mca-podmin';
+      krok = `<b class="ceny-gora">▲ ${cenyLiczba(o.min)} ${w}</b> <span class="hint">minimum</span>`;
+      cel = `${cenyLiczba(o.min)} ${w}`;
+      if (o.zysk != null && o.zysk_cel != null && o.kod === 'pod_min') zysk = `${cenyLiczba(o.zysk)} → <b>${cenyLiczba(o.zysk_cel)}</b> zł`;
+    } else if (zm) {
+      const gora = o.cena_nowa > o.cena;
+      krok = `<b class="${gora ? 'ceny-gora' : 'ceny-dol'}">${gora ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}</b>`;
+      cel = o.cena_cel != null ? `${cenyLiczba(o.cena_cel)} ${w}` : `${cenyLiczba(o.cena_nowa)} ${w}`;
+      const zc = o.zysk_cel ?? o.zysk_nowa;
+      if (o.zysk != null && zc != null) zysk = `${cenyLiczba(o.zysk)} → <b>${cenyLiczba(zc)}</b> zł`;
+    } else {
+      krok = `<span class="hint">bez zmiany — ${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod || 'brak decyzji')}</span>`;
+    }
+    return `<tr class="${klasa}"><td><b>${o.rynek}</b> <span class="ceny-sku">${cenyEsc(o.sku)}</span></td>
+      <td>${o.cena != null ? `${cenyLiczba(o.cena)} ${w}` : '—'}</td><td>${krok}</td><td>${cel}</td><td>${zysk}</td></tr>`;
+  }).join('');
+
+  const modal = el('modal-ceny-auto');
+  modal.classList.remove('hidden');
+  el('mca-anuluj').focus();
+  return new Promise((resolve) => {
+    const koniec = (wynik) => {
+      modal.classList.add('hidden');
+      el('mca-wlacz').removeEventListener('click', tak);
+      el('mca-anuluj').removeEventListener('click', nie);
+      modal.removeEventListener('click', tlo);
+      document.removeEventListener('keydown', esc, true);
+      resolve(wynik);
+    };
+    const tak = () => koniec(true);
+    const nie = () => koniec(false);
+    const tlo = (e) => { if (e.target === modal) koniec(false); };
+    const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); koniec(false); } };
+    el('mca-wlacz').addEventListener('click', tak);
+    el('mca-anuluj').addEventListener('click', nie);
+    modal.addEventListener('click', tlo);
+    document.addEventListener('keydown', esc, true);
+  });
 }
 
 async function cenyUstawAutomat(oferty, auto) {
   const ids = oferty.map((o) => o.id);
-  // Automat = prawdziwe zmiany cen na Amazonie — włączenie potwierdzamy, z listą tego, co zrobi.
-  if (auto && !confirm(`Włączyć automat dla ${ids.length} ${ids.length === 1 ? 'oferty' : 'ofert'}?\n`
-    + `Automat będzie sam zmieniał ceny na Amazonie (co ok. 30 min). Najbliższy przebieg:\n\n${cenyOpisWlaczenia(oferty)}`)) return;
+  // Automat = prawdziwe zmiany cen na Amazonie — włączenie potwierdzamy, z tabelą tego, co zrobi.
+  if (auto && !(await cenyPotwierdzWlaczenie(oferty))) return;
   try {
     const r = await api('/api/ceny/automat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

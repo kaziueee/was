@@ -17,7 +17,10 @@ const NAZWA_RYNKU = { DE: 'Amazon DE', FR: 'Amazon FR', IT: 'Amazon IT', ES: 'Am
 // (rynki.wycenaPrzyCenie) — repricer zapisuje je przy każdej decyzji, ekran tylko czyta.
 function pasyZWyceny(w) {
   if (!w) return {};
-  const g = { ...rynki.DOMYSLNE, waga: w.waga, docinanie: w.docinalny, docinanieOn: false };
+  // Docinanie kartonu ZAWSZE uwzględnione (decyzja usera 2026-10-14): towar oznaczony „Docinanie
+  // kartonu: tak” jedzie w przyciętym kartonie, czyli w niższym progu DHL. Bez tego minimum było
+  // wyższe niż w teście Automate Pricing z 06.10 (np. NERF7376 FR 47,99 zamiast 33,99 €).
+  const g = { ...rynki.DOMYSLNE, waga: w.waga, docinanie: w.docinalny, docinanieOn: true };
   const out = {};
   for (const [kraj, nazwa] of Object.entries(NAZWA_RYNKU)) {
     const r = w.rynki.find((x) => x.nazwa === nazwa);

@@ -40,15 +40,19 @@ test('automat paczkowy: towar mieści się w największej skrytce 47×44×39 cm 
   assert.strictEqual(rynki.miesciSieWAutomacie({ dlugosc: 0, szerokosc: 10, wysokosc: 10 }), null);
 });
 
-test('towar bez Genius: bez opłaty Genius, ale droższa wysyłka kurierem', () => {
+test('towar bez Genius: bez opłaty Genius, droższy kurier, ale klient płaci 25 RON za dostawę', () => {
   const r = rynek('eMAG RO');
   const zG = rynki.wycenaPrzyCenie(20, r, { ...g, genius: true }, 81.99);
   const zB = rynki.wycenaPrzyCenie(20, r, { ...g, genius: false }, 81.99);
   assert.strictEqual(zG.detal.oplataZam, 8);
   assert.strictEqual(zB.detal.oplataZam, 0);
+  assert.strictEqual(zG.detal.wysKlient, 0);
+  assert.strictEqual(zB.detal.wysKlient, 25);
+  // dopłata klienta liczy się po VAT i prowizji (jak cena towaru)
   const roznicaRon = (zB.zysk - zG.zysk) / g.ron;
   const wysylkaRon = (r.bezGenius.wysylkaEur - r.genius.wysylkaEur) * g.eur / g.ron;
-  assert.ok(Math.abs(roznicaRon - (8 - wysylkaRon)) < 1e-9, roznicaRon);
+  const zDoplaty = 25 * (1 / 1.21 - r.prowizja / 100);
+  assert.ok(Math.abs(roznicaRon - (zDoplaty + 8 - wysylkaRon)) < 1e-9, roznicaRon);
 });
 
 test('Genius eMAG RO: stała opłata za zamówienie wg progu ceny brutto (siatka od 01.01.2026)', () => {

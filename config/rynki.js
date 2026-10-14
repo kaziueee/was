@@ -54,12 +54,14 @@ const RYNKI = [
   //    przy automacie opłatę ustala i pobiera eMAG, my fakturujemy tylko towar (newsletter 29.09.2026).
   //  - bezGenius: towar za duży do automatu → kurier do domu (FanCourier przez Paxy: 3,99 €, za
   //    pobraniem 4,99 €, średnio 4,74 € w fakturze 03/2026) + zwroty 0,14 €; bez opłaty Genius.
-  //    Za dostawę płaci klient — ILE, jeszcze nie wiemy (wysKlient 0 = ostrożnie, do uzupełnienia).
+  //    Za kuriera do domu klient płaci nam 25 RON brutto (cennik dostawy Okitrade, potwierdził user
+  //    14.10.2026). Prowizję i VAT liczymy od całości (cena + dostawa) — ostrożnie, póki nie wiemy,
+  //    czy eMAG bierze prowizję od opłaty za dostawę.
   // Stawki Paxy z jednej faktury (03/2026, paxy-stawki.md) — do potwierdzenia kolejnymi; aneks od 19.10.2026.
   // Ceny w API eMAG są NETTO (bez VAT); kalkulator liczy brutto, przelicza adapter.
   { nazwa: 'eMAG RO',     kraj: 'RO', waluta: 'RON', vat: 21, prowizja: 16, typ: 'flat',
     genius:    { oplataZam: 'GENIUS_RO', wysylkaEur: 1.78, wysKlient: 0 },
-    bezGenius: { wysylkaEur: 4.88, wysKlient: 0 } },
+    bezGenius: { wysylkaEur: 4.88, wysKlient: 25 } },
   // Kaufland DE: ta sama umowa DHL do Niemiec co Amazon DE (koszt po wadze). Prowizja 13% dla zabawek
   // (kauflandglobalmarketplace.com/en/conditions) - od ceny BRUTTO wraz z wysylka, netto + VAT -> model amazon-dhl.
   { nazwa: 'Kaufland DE', kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 13, wysKlient: 4.99, typ: 'amazon-dhl' },

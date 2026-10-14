@@ -39,3 +39,11 @@ test('cena zaokrąglona do grosza', () => {
   const z = budujZmianeCeny([{ marketplace_id: DE, audience: 'ALL', our_price: cena(10) }], DE, 18.6900000001);
   assert.strictEqual(z.cena, 18.69);
 });
+
+test('cena poza zakresem min/max zapisanym w Amazonie — nie wysyłamy', () => {
+  const po = [{ marketplace_id: DE, audience: 'ALL', our_price: cena(20),
+    minimum_seller_allowed_price: cena(18), maximum_seller_allowed_price: cena(25) }];
+  assert.match(budujZmianeCeny(po, DE, 26).blad, /powyżej maksimum/);
+  assert.match(budujZmianeCeny(po, DE, 17).blad, /poniżej minimum/);
+  assert.strictEqual(budujZmianeCeny(po, DE, 24).blad, undefined);
+});

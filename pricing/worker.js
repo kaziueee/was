@@ -26,6 +26,7 @@ const { pasyHurtem } = require('./pas');
 const { decyzja, DOMYSLNE_REGULY } = require('./model');
 const { synchronizuj } = require('./sync-oferty');
 const { ustawCene } = require('./amazon');
+const { pewneDopasowanie } = require('./powiazania');
 const { interwalMsZMinut } = require('../services/interwal');
 
 const PELNY_MS = interwalMsZMinut(process.env.PRICING_PELNY_MIN, 360, 'PRICING_PELNY_MIN');
@@ -46,7 +47,7 @@ async function przebieg({ pelny = false } = {}) {
 
   const pelnyTeraz = pelny || minelo('obserwacja_pelna', PELNY_MS);
   const zapisWlaczony = process.env.PRICING_ZAPIS === '1';
-  const oferty = db.prepare(`SELECT id, rynek, sku, tw_id, auto FROM oferty
+  const oferty = db.prepare(`SELECT id, rynek, sku, tw_id, auto, dopasowanie FROM oferty
      WHERE platforma = 'amazon' AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL
        AND (auto = 1 OR ?)`).all(pelnyTeraz ? 1 : 0);
   wynik.ofert = oferty.length;
@@ -82,7 +83,9 @@ async function przebieg({ pelny = false } = {}) {
     const potem = pas && d.zmiana ? pas.ocen(d.cena) : teraz;
     const celOc = pas && d.zmiana && d.cel !== d.cena ? pas.ocen(d.cel) : potem;
     let wyslano = 0, blad = null;
-    if (zapisWlaczony && o.auto && d.zmiana && pas) {
+    // Druga linia obrony obok POST /automat: bez pewnego dopasowania do GT nie wysyłamy, nawet gdy
+    // auto = 1 (np. włączone przed wprowadzeniem zasady albo przez bezpośredni zapis w bazie).
+    if (zapisWlaczony && o.auto && d.zmiana && pas && pewneDopasowanie(o.dopasowanie)) {
       try {
         const w = await ustawCene(o.rynek, o.sku, d.cena);
         if (w.ok) { wyslano = 1; wysylka.wyslane++; doPotwierdzenia.push(o); }

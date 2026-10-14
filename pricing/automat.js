@@ -47,6 +47,10 @@ async function main([akcja, ...reszta]) {
   for (const { r, s, o } of oferty) {
     const uwagi = [];
     if (!o.tw_id) uwagi.push('brak towaru GT — automat nie zadziała (node pricing/powiaz.js)');
+    if (o.tw_id && !require('./powiazania').pewneDopasowanie(o.dopasowanie)) {
+      console.log(`${r} ${s}: POMINIĘTA — dopasowanie do GT niepotwierdzone (${o.dopasowanie}); potwierdź: node pricing/powiaz.js ${s} ${o.symbol_gt}`);
+      continue;
+    }
     if (!(o.ilosc > 0)) uwagi.push('brak stanu — worker pomija oferty bez stanu');
     const pas = (pasy.get(o.tw_id) || {})[r];
     if (!pas) uwagi.push('brak pasa z kalkulatora (np. Amazon PL) — automat nie zdecyduje');

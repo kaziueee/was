@@ -43,6 +43,7 @@ const zaokr = (x) => Math.round(x * 100) / 100;
 //   bbCena,          // cena landed zwycięzcy Buy Boxa (null = brak BB / brak danych)
 //   bbFba,           // czy zwycięzca BB to FBA
 //   najtanszaInna,   // najtańsza landed oferta INNEGO sprzedawcy (null = brak)
+//   bbInnaNasza,     // Buy Box ma nasza INNA oferta tego samego ASIN-u
 // }
 // pas: { min, max } — ceny towaru (bez wysyłki) z kalkulatora
 // kontekst (z historii decyzji, liczy worker):
@@ -82,6 +83,10 @@ function decyzja(obs, pas, reguly = {}, kontekst = {}) {
     return { cena: nowa, cel: docelowa, zmiana: true, kod: limit ? kod + '_limit' : kod,
       powod: limit ? `${powod}; zmiana ścięta do ${nowa < cena ? r.maxSpadekPct : r.maxWzrostPct}% na przebieg` : powod };
   };
+
+  // Buy Box ma nasza INNA oferta tego samego produktu (np. SKU z dopiskiem -1) — nie konkurujemy
+  // sami ze sobą: ani obniżka (zabrałaby BB własnej ofercie), ani podwyżka „pod konkurenta".
+  if (obs.bbInnaNasza) return zostaw('bb_nasza_inna', 'Buy Box ma nasza inna oferta tego produktu — nie konkurujemy sami ze sobą');
 
   // Reguła 6: straciliśmy BB zaraz po naszej podwyżce → cofamy. Dotyczy tylko podwyżek „po zysk",
   // czyli zaczętych z ceny w pasie (≥ min). Podniesienie spod minimum na minimum się nie cofa —

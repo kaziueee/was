@@ -151,3 +151,9 @@ test('bez zmiany cel = obecna cena', () => {
   const d = decyzja(obs({ bbNasz: true, najtanszaInna: 30.2 }), pas);
   assert.strictEqual(d.cel, 25);
 });
+
+test('Buy Box ma nasza inna oferta tego produktu — stoimy, nie konkurujemy sami ze sobą', () => {
+  const d = decyzja(obs({ cena: 24.99, bbNasz: false, bbInnaNasza: true, bbCena: 24.99, najtanszaInna: 39.95 }), pas);
+  assert.strictEqual(d.zmiana, false);
+  assert.strictEqual(d.kod, 'bb_nasza_inna');
+});

@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS obserwacje (
   bb_cena        REAL,                      -- landed (z wysyłką)
   bb_fba         INTEGER,
   najtansza_inna REAL,                      -- landed
-  ofert          INTEGER
+  ofert          INTEGER,
+  bb_nasza_inna  INTEGER                    -- 1 = Buy Box ma NASZA inna oferta tego samego ASIN-u
 );
 CREATE INDEX IF NOT EXISTS idx_obs_oferta ON obserwacje(oferta_id, czas);
 
@@ -113,6 +114,8 @@ const kolOferty = db.prepare('PRAGMA table_info(oferty)').all().map((k) => k.nam
 if (!kolOferty.includes('dopasowanie')) db.exec('ALTER TABLE oferty ADD COLUMN dopasowanie TEXT');
 // `oferty.zapis` (osobny przełącznik wysyłania, tryb Próba) zlikwidowany 2026-10-13 — w starszych
 // bazach kolumna zostaje, nic jej nie czyta: automat = wysyła, ręczny = nie.
+const kolObs = db.prepare('PRAGMA table_info(obserwacje)').all().map((k) => k.name);
+if (!kolObs.includes('bb_nasza_inna')) db.exec('ALTER TABLE obserwacje ADD COLUMN bb_nasza_inna INTEGER');
 const kolDecyzje = db.prepare('PRAGMA table_info(decyzje)').all().map((k) => k.name);
 for (const [k, typ] of [['auto', 'INTEGER'], ['zysk', 'REAL'], ['marza', 'REAL'], ['zysk_nowa', 'REAL'], ['marza_nowa', 'REAL'], ['cena_cel', 'REAL'], ['zysk_cel', 'REAL']]) {
   if (!kolDecyzje.includes(k)) db.exec(`ALTER TABLE decyzje ADD COLUMN ${k} ${typ}`);

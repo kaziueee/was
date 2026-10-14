@@ -14,16 +14,24 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const landed = (o) => (o ? +(o.ListingPrice.Amount + (o.Shipping?.Amount || 0)).toFixed(2) : null);
 
 // Odpowiedź getListingOffers → obserwacja w kształcie, który przyjmuje pricing/model.js
+//
+// „Nasza oferta" = WYŁĄCZNIE ta z MyOffer = true, czyli oferta pytanego SKU. Na jednym ASIN-ie
+// bywa kilka NASZYCH ofert (np. NERE0011 i NERE0011-1, 21 takich ASIN-ów w DE 2026-10-14) — każda
+// ma nasz SellerId, ale MyOffer tylko pytana. Wcześniej braliśmy pierwszą z naszym SellerId:
+// worker czytał cenę i Buy Box oferty -1 jako NERE0011 i przez noc „podnosił" ją w kółko.
+// Buy Box naszej INNEJ oferty to osobny stan (bbInnaNasza) — z samym sobą nie konkurujemy.
 function zOdpowiedzi(payload) {
   const oferty = payload?.Offers || [];
-  const moja = oferty.find((o) => o.MyOffer || o.SellerId === SELLER_ID);
+  const nasza = (o) => o.MyOffer || o.SellerId === SELLER_ID;
+  const moja = oferty.find((o) => o.MyOffer);
   const bb = oferty.find((o) => o.IsBuyBoxWinner);
-  const inne = oferty.filter((o) => !(o.MyOffer || o.SellerId === SELLER_ID)).map(landed).filter((x) => x != null);
+  const inne = oferty.filter((o) => !nasza(o)).map(landed).filter((x) => x != null);
   const bbCena = payload?.Summary?.BuyBoxPrices?.find((b) => String(b.condition).toLowerCase() === 'new');
   return {
     cena: moja ? moja.ListingPrice.Amount : null,
     wysylka: moja ? (moja.Shipping?.Amount || 0) : null,
-    bbNasz: bb ? !!(bb.MyOffer || bb.SellerId === SELLER_ID) : (bbCena ? false : null),
+    bbNasz: bb ? !!bb.MyOffer : (bbCena ? false : null),
+    bbInnaNasza: !!(bb && !bb.MyOffer && bb.SellerId === SELLER_ID),
     bbCena: bb ? landed(bb) : (bbCena ? +(bbCena.LandedPrice?.Amount ?? bbCena.ListingPrice.Amount).toFixed(2) : null),
     bbFba: bb ? !!bb.IsFulfilledByAmazon : null,
     najtanszaInna: inne.length ? Math.min(...inne) : null,
@@ -33,8 +41,8 @@ function zOdpowiedzi(payload) {
 
 // oferty: [{ id, rynek, sku }]
 async function obserwuj(oferty, { naPostep } = {}) {
-  const zapisz = db.prepare(`INSERT INTO obserwacje (oferta_id, cena, wysylka, bb_nasz, bb_cena, bb_fba, najtansza_inna, ofert)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+  const zapisz = db.prepare(`INSERT INTO obserwacje (oferta_id, cena, wysylka, bb_nasz, bb_cena, bb_fba, najtansza_inna, ofert, bb_nasza_inna)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const wynik = new Map();
   let bledy = 0;
   for (let i = 0; i < oferty.length; i += 20) {
@@ -60,7 +68,7 @@ async function obserwuj(oferty, { naPostep } = {}) {
       if (!obs) return;
       wynik.set(o.id, obs);
       const b = (v) => (v == null ? null : v ? 1 : 0);
-      zapisz.run(o.id, obs.cena, obs.wysylka, b(obs.bbNasz), obs.bbCena, b(obs.bbFba), obs.najtanszaInna, obs.ofert);
+      zapisz.run(o.id, obs.cena, obs.wysylka, b(obs.bbNasz), obs.bbCena, b(obs.bbFba), obs.najtanszaInna, obs.ofert, b(obs.bbInnaNasza));
     });
     if (naPostep) naPostep(Math.min(i + 20, oferty.length), oferty.length);
     await sleep(2500);

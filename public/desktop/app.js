@@ -4482,7 +4482,7 @@ const CENY_ZMIANY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', '
 const CENY_KOD_OPIS = {
   podwyzka: 'podwyżka', podwyzka_limit: 'podwyżka (schodek)', obnizka: 'obniżka', obnizka_limit: 'obniżka (schodek)',
   na_min: 'na minimum', na_min_limit: 'w stronę minimum', pod_min: 'od razu na minimum', top: 'mamy BB — bez zmiany',
-  top_bez_konkurencji: 'jedyna oferta', cofniecie: 'cofnięcie podwyżki (utrata BB)', top_blokada: 'mamy BB — podwyżki wstrzymane', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
+  top_bez_konkurencji: 'jedyna oferta', cofniecie: 'cofnięcie podwyżki (utrata BB)', top_blokada: 'mamy BB — podwyżki wstrzymane', bb_nasza_inna: 'BB ma nasza inna oferta — stoi', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
   przegrana_nie_cena: 'tańsi, a bez BB', brak_danych: 'brak danych o BB', brak_ceny: 'brak naszej ceny', brak_pasa: 'brak min/max',
 };
 const CENY_AKCJE = {
@@ -4778,7 +4778,7 @@ function cenyKartaRynekHtml(o) {
   const w = cenyWaluta(o.rynek);
   const obs = o.obs_czas != null && o.cena != null;
   const stanBb = !obs ? (o.obs_czas == null ? 'jeszcze nie obserwowana' : 'Amazon nie zwrócił naszej oferty')
-    : o.bb_nasz ? 'mamy Buy Box' : o.bb_cena != null ? `Buy Box ma ${o.bb_fba ? 'oferta FBA' : 'inny sprzedawca'}` : 'brak Buy Boxa';
+    : o.bb_nasz ? 'mamy Buy Box' : o.bb_nasza_inna ? 'Buy Box ma nasza INNA oferta tego produktu' : o.bb_cena != null ? `Buy Box ma ${o.bb_fba ? 'oferta FBA' : 'inny sprzedawca'}` : 'brak Buy Boxa';
   const zmiana = CENY_ZMIANY.includes(o.kod);
   const dec = o.czeka ? `<b class="ceny-wyslano">✓ wysłano ${cenyLiczba(o.cena_nowa)} ${w} o ${cenyGodzina(o.dec_czas)}</b><br><span class="hint">Amazon przyjął zmianę; potwierdzimy ją kilka minut po wysłaniu. ${cenyEsc(o.powod)}</span>`
     : !o.kod ? '<span class="hint">brak decyzji</span>'

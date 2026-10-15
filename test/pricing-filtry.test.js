@@ -52,3 +52,11 @@ test('filtry: kolejność — poniżej minimum od najniższego zysku, bez rankin
   assert.strictEqual(ch.sytuacje.find((x) => x.klucz === 'bb').n, 1);
   assert.strictEqual(ch.sytuacje.find((x) => x.klucz === 'ponizej').n, 0);   // przy zakresie „z automatem”
 });
+
+test('sortowanie po stanie: malejąco, bez stanu na końcu, remis zachowuje poprzednią kolejność', () => {
+  const stan = { A: 5, B: null, C: 40, D: 5 };
+  const w = ['A', 'B', 'C', 'D'].map((s) => ({ symbol: s })).sort(f.poStanie((t) => stan[t.symbol]));
+  assert.deepStrictEqual(w.map((t) => t.symbol), ['C', 'A', 'D', 'B']);
+  assert.strictEqual(f.sortuj('stan'), 'stan');
+  assert.strictEqual(f.sortuj('cokolwiek'), '');
+});

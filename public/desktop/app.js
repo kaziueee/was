@@ -4492,6 +4492,7 @@ const CENY_AKCJE = {
 };
 // Wybrany kanał (marketplace) pamiętamy w przeglądarce — wygoda jednego stanowiska, nie stan systemu.
 let cenyKanalWybor = (() => { try { return localStorage.getItem('wms-ceny-kanal') || ''; } catch { return ''; } })();
+let cenySort = (() => { try { return localStorage.getItem('wms-ceny-sort') || ''; } catch { return ''; } })();
 let cenyNrZapytania = 0;
 let cenyZakres = 'automat', cenySytuacja = 'wszystkie', cenyWidok = 'macierz', cenySzukajTimer = null, cenyDane = null, cenyKartaTw = null, cenyKartaRynek = null;
 
@@ -4540,7 +4541,7 @@ async function odswiezCeny() {
   if (cenyWidok === 'karta') return odswiezCenyKarta();
   if (cenyWidok === 'powiazania') return odswiezCenyPowiazania();
   const q = el('ceny-szukaj').value.trim();
-  const qs = new URLSearchParams({ zakres: cenyZakres, sytuacja: cenySytuacja, ...(q ? { q } : {}), ...(cenyKanalWybor ? { kanal: cenyKanalWybor } : {}) });
+  const qs = new URLSearchParams({ zakres: cenyZakres, sytuacja: cenySytuacja, ...(q ? { q } : {}), ...(cenyKanalWybor ? { kanal: cenyKanalWybor } : {}), ...(cenySort ? { sort: cenySort } : {}) });
   // Szybkie klikanie chipów: spóźniona odpowiedź starszego zapytania nie nadpisuje nowszego widoku.
   const nr = ++cenyNrZapytania;
   try {
@@ -4559,6 +4560,7 @@ function renderujCeny(d) {
     : em.sync ? ` · eMAG ${cenyGodzina(em.sync.czas)}` : '';
   el('ceny-stan').innerHTML = przebieg + pelna + blad + emagTxt;
   cenyRenderujFiltry(d);
+  cenyRenderujSort(d);
   el('ceny-hamulec').classList.toggle('hidden', d.wysylanie !== false);
   cenyRenderujKanaly(d);
 
@@ -4586,6 +4588,21 @@ function renderujCeny(d) {
     tr.innerHTML = `<td colspan="${widoczne.length + 1}" class="hint">Pokazano ${d.wiersze.length} z ${d.razem} — zawęź wyszukiwaniem.</td>`;
     tbody.appendChild(tr);
   }
+}
+
+// Kolejność wierszy (Domyślnie / Stan ↓) — lista z backendu (pricing/filtry-cen.js SORTY), wybór pamiętany
+// na tym komputerze. Stary backend (bez pola) = brak przełącznika.
+function cenyRenderujSort(d) {
+  const box = el('ceny-sort');
+  if (!d.sorty) { box.innerHTML = ''; return; }
+  cenySort = d.sort || '';
+  box.innerHTML = '<span class="hint">Sortuj:</span>' + d.sorty.map((k) => `<button type="button" class="ceny-chip${k.klucz === cenySort ? ' aktywny' : ''}"
+    data-ceny-sort="${cenyEsc(k.klucz)}" title="${cenyEsc(k.opis)}">${cenyEsc(k.nazwa)}</button>`).join('');
+  box.querySelectorAll('[data-ceny-sort]').forEach((b) => b.addEventListener('click', () => {
+    cenySort = b.dataset.cenySort;
+    try { localStorage.setItem('wms-ceny-sort', cenySort); } catch { /* bez pamięci — trudno */ }
+    odswiezCeny();
+  }));
 }
 
 // Chipy zakresu (Z automatem / Ręczne / Wszystkie) i sytuacji — nazwy, opisy i liczniki z backendu

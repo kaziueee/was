@@ -67,6 +67,15 @@ function porownaj(z, s) {
   return (a, b) => w(b) - w(a);
 }
 
+// Sortowanie po stanie „Razem” (decyzja usera 2026-10-16): malejąco, towar bez stanu z GT na końcu.
+// Remis zostawia dotychczasową kolejność — Array.sort jest stabilny, więc wołamy to PO porownaj().
+const SORTY = [
+  { klucz: '', nazwa: 'Domyślnie', opis: 'Ranking wybranej sytuacji (np. największy zysk z podwyżki), inaczej po SKU' },
+  { klucz: 'stan', nazwa: 'Stan ↓', opis: 'Największy stan Razem (K4+K4G+MAG+LS; zestaw — ile da się złożyć) na górze' },
+];
+const sortuj = (k) => (SORTY.some((x) => x.klucz === k) ? k : '');
+const poStanie = (razem) => (a, b) => (razem(b) ?? -1) - (razem(a) ?? -1);
+
 // Chipy z licznikami: zakres liczony przy bieżącej sytuacji, sytuacja przy bieżącym zakresie.
 function chipy(towary, z, s) {
   return {
@@ -75,4 +84,4 @@ function chipy(towary, z, s) {
   };
 }
 
-module.exports = { ZAKRESY, SYTUACJE, parametry, ofertaPasuje, towarPasuje, porownaj, chipy, ponizejMin };
+module.exports = { ZAKRESY, SYTUACJE, SORTY, sortuj, poStanie, parametry, ofertaPasuje, towarPasuje, porownaj, chipy, ponizejMin };

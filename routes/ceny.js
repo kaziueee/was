@@ -138,13 +138,18 @@ router.get('/macierz', asyncH(async (req, res) => {
   const kazdy = [...towary.values()];
   const wszystkie = kanal ? zawez(kazdy, kolumnyW) : kazdy;
   const wiersze = wszystkie.filter(pasuje).sort(q ? filtry.porownaj(zakres, 'wszystkie') : filtry.porownaj(zakres, sytuacja));
+  // Po stanie: stan z GT dla CAŁEGO wyniku, zanim go obetniemy do `limit` — inaczej na górze byłyby
+  // największe stany spośród pierwszych 200 wg innej kolejności. GT padnięte = kolejność domyślna.
+  const sort = filtry.sortuj(String(req.query.sort || ''));
+  let stanGt = sort === 'stan' ? await stanyGt(wiersze.map((t) => t.tw_id)) : undefined;
+  if (sort === 'stan' && stanGt) wiersze.sort(filtry.poStanie((t) => stanGt(t.tw_id)?.razem));
 
   const pokazane = wiersze.slice(0, limit);
   // Która komórka spełnia wybraną sytuację — ekran ją obrysowuje (w wierszu bywa kilka rynków).
   if (sytuacja !== 'wszystkie' && !q) {
     for (const t of pokazane) for (const o of Object.values(t.rynki)) o.trafienie = filtry.ofertaPasuje(o, zakres, sytuacja);
   }
-  const stanGt = await stanyGt(pokazane.map((t) => t.tw_id));
+  if (stanGt === undefined) stanGt = await stanyGt(pokazane.map((t) => t.tw_id));
   for (const t of pokazane) t.stan_gt = stanGt ? stanGt(t.tw_id) : null;
 
   res.json({
@@ -160,6 +165,8 @@ router.get('/macierz', asyncH(async (req, res) => {
     blad: stan.get('blad'),
     zakres,
     sytuacja,
+    sort,
+    sorty: filtry.SORTY,
     ...filtry.chipy(wszystkie, zakres, sytuacja),     // { zakresy: [...], sytuacje: [...] } z licznikami
     razem: wiersze.length,
     wiersze: pokazane,

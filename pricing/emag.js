@@ -168,7 +168,8 @@ async function prowizjaOferty(id) {
   if (!skonfigurowany()) throw new Error('eMAG: brak EMAG_RO_USER / EMAG_RO_PASS w .env');
   const auth = 'Basic ' + Buffer.from(`${process.env.EMAG_RO_USER}:${process.env.EMAG_RO_PASS}`).toString('base64');
   const r = await fetch(`https://marketplace-api.emag.ro/api/v1/commission/estimate/${encodeURIComponent(id)}`, { headers: { Authorization: auth } });
-  if (r.status === 401 || r.status === 403) throw new Error(`eMAG commission/estimate: HTTP ${r.status}`);
+  // 401/403/429/5xx = „nie wiemy teraz” → wyjątek (nic nie zapisujemy); 404 = eMAG nie ma stawki → null.
+  if (r.status === 401 || r.status === 403 || r.status === 429 || r.status >= 500) throw new Error(`eMAG commission/estimate: HTTP ${r.status}`);
   const j = await r.json().catch(() => null);
   const v = Number(j?.data?.value);
   return r.ok && v > 0 && v < 100 ? v : null;

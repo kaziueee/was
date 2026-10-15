@@ -67,8 +67,12 @@ async function odswiezProwizje(surowe, limit = 120) {
   for (const o of doPobrania) {
     const id = idPoSku.get(String(o.sku).trim().toUpperCase());
     if (!id) continue;
-    const v = await emag.prowizjaOferty(id);
-    zapisz.run(v, o.id);      // null też zapisujemy z czasem — nie pytamy o tę samą ofertę co przebieg
+    let v;
+    try { v = await emag.prowizjaOferty(id); } catch (e) {
+      if (/HTTP (429|401|403)/.test(e.message)) break;   // limit albo dostęp — dokończy następny przebieg
+      continue;                                           // chwilowy błąd jednej oferty — bez zapisu
+    }
+    zapisz.run(v, o.id);      // null (eMAG nie zna stawki) też z czasem — nie pytamy co przebieg
     if (v != null) pobrane++;
     await sleep(350);         // limit eMAG: 3 zapytania/s
   }

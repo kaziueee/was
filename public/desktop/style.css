@@ -1212,8 +1212,13 @@ main {
 .ceny-proba { font-size: 0.8rem; padding: 0.2rem 0.6rem; border-radius: 4px; background: #fde8e6; color: #b42318; border: 1px solid #b42318; font-weight: 600; }
 .ceny-blad { color: #b42318; }
 .ceny-pasek { display: flex; flex-wrap: wrap; gap: 0.6rem 1.2rem; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; }
-.ceny-widoki, .ceny-filtry, .ceny-kanaly { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
-.ceny-kanaly { flex-basis: 100%; }
+.ceny-widoki, .ceny-filtry, .ceny-kanaly, .ceny-rzad { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.ceny-kanaly, .ceny-sytuacje { flex-basis: 100%; }
+.ceny-sytuacje .ceny-chip { font-size: 0.8rem; padding: 0.22rem 0.65rem; }
+.ceny-chip.zero:not(.aktywny) { color: #99a; border-style: dashed; }
+/* komórka spełniająca wybraną sytuację (wiersz ma kilka rynków) */
+.ceny-kom.trafienie { box-shadow: inset 0 0 0 2px #1d3557; }
+.ceny-kom.off.bb.trafienie { box-shadow: inset 3px 0 0 #1f7a3d, inset 0 0 0 2px #1d3557; }
 .ceny-chip.ceny-kanal.rynek { padding: 0.2rem 0.6rem; font-size: 0.8rem; }
 .ceny-chip.ceny-kanal.zero:not(.aktywny) { color: #99a; border-style: dashed; }
 .ceny-chip { font: inherit; font-size: 0.85rem; border: 1px solid #ccd; background: #fff; color: #1d3557; border-radius: 999px; padding: 0.3rem 0.8rem; cursor: pointer; }

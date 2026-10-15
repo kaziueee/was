@@ -803,14 +803,10 @@
           <button type="button" class="ceny-chip" data-ceny-widok="powiazania">Do powiązania <b id="ceny-l-powiazania"></b></button>
         </div>
         <div class="ceny-filtry" id="ceny-filtry">
-          <button type="button" class="ceny-chip aktywny" data-ceny-filtr="automat">Z automatem <b id="ceny-l-automat"></b></button>
-          <button type="button" class="ceny-chip" data-ceny-filtr="szansa" title="Nie mamy Buy Boxa, ale zwycięzca stoi nad naszym minimum — automat może go odbić">Szansa na Buy Box <b id="ceny-l-szansa"></b></button>
-          <button type="button" class="ceny-chip" data-ceny-filtr="podwyzka" title="Mamy Buy Box, a następny konkurent jest wyraźnie wyżej — automat podniesie cenę i zysk. Na eMAG (ceny konkurencji nieznane): szukanie +3% na przebieg, po utracie Buy Boxa powrót">Do podwyżki <b id="ceny-l-podwyzka"></b></button>
-          <button type="button" class="ceny-chip" data-ceny-filtr="ponizej" title="Cena poniżej minimum z kalkulatora (marża poniżej 20%). Automat podniesie ją od razu do minimum — od najniższego zysku">Poniżej minimum <b id="ceny-l-ponizej"></b></button>
-          <button type="button" class="ceny-chip" data-ceny-filtr="decyzja">Do zmiany ceny <b id="ceny-l-decyzja"></b></button>
-          <button type="button" class="ceny-chip" data-ceny-filtr="wszystkie">Wszystkie ze stanem <b id="ceny-l-wszystkie"></b></button>
+          <div class="ceny-rzad" id="ceny-zakresy" title="Zakres — które oferty"></div>
           <input type="search" id="ceny-szukaj" placeholder="Szukaj SKU, ASIN, PNK lub nazwy…" autocomplete="off">
         </div>
+        <div class="ceny-rzad ceny-sytuacje" id="ceny-sytuacje" title="Sytuacja oferty — łączy się z zakresem i kanałem"></div>
         <div class="ceny-kanaly" id="ceny-kanaly" title="Kanał sprzedaży — zawęża kolumny i liczniki filtrów"></div>
       </div>
       <div id="ceny-widok-macierz">

@@ -7,7 +7,8 @@
 // wyniki i zapisuje decyzję człowieka: automat (auto = 1, ceny idą na Amazona) albo ręczny (0). Montowane z auth.wymagajRoli('admin') — na czas
 // testów tylko administrator (decyzja usera 2026-10-13); biuro dostanie dostęp po testach.
 //
-//   GET  /api/ceny/macierz?q=&filtr=automat|szansa|podwyzka|ponizej|decyzja|wszystkie&kanal=&limit=   wiersze SKU × rynek
+//   GET  /api/ceny/macierz?q=&zakres=automat|reczne|wszystkie&sytuacja=…&kanal=&limit=   wiersze SKU × rynek
+//        (sytuacje: pricing/filtry-cen.js; stary `filtr=` nadal rozumiany)
 //        kanal = platforma (amazon, emag) albo klucz kolumny (DE, FR, …, EMAG_RO); puste = wszystkie
 //   GET  /api/ceny/towar/:tw_id                                        karta SKU: wszystkie rynki towaru + historia
 //   GET  /api/ceny/log?limit=                                          zmiany cen (auto) + działania ludzi
@@ -26,6 +27,7 @@ const { KOLUMNY, kluczKolumny, kolumna } = require('../pricing/kolumny');
 const { wycenaHurtem } = require('../services/cennik');
 const { pobierzStanyGt, sumaRazem } = require('../services/gt-produkty');
 const { pewneDopasowanie, znajdzTowar, powiaz, usunPowiazanie } = require('../pricing/powiazania');
+const filtry = require('../pricing/filtry-cen');
 
 // Stan z GT (master stanów) dla pokazanych towarów: Razem (bez BRK) i K4. GT padnięte = null,
 // ekran pokazuje wtedy „—", a nie zero (zero to pewna informacja, której nie mamy).
@@ -47,30 +49,17 @@ const linki = (o) => (o.platforma === 'emag' ? emag.linkiOferty(o.asin) : linkiO
 // Pola kanału doklejane do każdej oferty — ekran nie zgaduje waluty ani nazwy z kodu rynku.
 const zKanalem = (o) => {
   const k = kolumna(o.platforma, o.rynek) || {};
+  // Marża i zysk z decyzji są liczone przy cenie SPRZED zmiany. Gdy platforma pokazuje już cenę,
+  // którą wysłaliśmy, do następnego przebiegu (do 30 min) przy nowej cenie wisiałaby stara marża
+  // (NERCHIBAN3 15.10: 35,99 RON i „zysk −2,57 zł” z ceny 25,99) — bierzemy policzone dla nowej.
+  if (o.wyslano && o.cena > 0 && Math.abs(o.cena - o.cena_nowa) < 0.005 && o.zysk_nowa != null) {
+    o = { ...o, zysk: o.zysk_nowa, marza: o.marza_nowa };
+  }
   return { ...o, kolumna: kluczKolumny(o.platforma, o.rynek), kanal_nazwa: k.nazwa || `${o.platforma} ${o.rynek}`,
     waluta: k.waluta || '', tylko_odczyt: !!k.tylkoOdczyt, linki: linki(o) };
 };
-const ZMIANY_KODY = ['podwyzka', 'podwyzka_limit', 'sonda', 'sonda_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min', 'cofniecie'];
 
-// Filtry „gdzie warto włączyć automat" — z ostatniej decyzji (liczonej też dla ofert ręcznych):
-//   szansa   — nie mamy BB, a zwycięzca stoi nad naszą podłogą: zejście w pasie może dać BB
-//              (bez remisu z FBA, BB pod podłogą i przegranej „nie przez cenę")
-//   podwyzka — mamy BB, następny konkurent wyraźnie wyżej: automat podniósłby cenę; na eMAG także
-//              „szukanie” (sonda) — BB nasz, ceny konkurencji nieznane, krok +3%
-//   ponizej  — obecna cena poniżej minimum z kalkulatora (marża < 20%), bez względu na decyzję; nie
-//              liczymy oferty, na którą podniesienie do minimum już poszło (czeka na potwierdzenie)
-// Kolejność (po cenie DOCELOWEJ, nie pierwszym schodku): szansa od największego zysku po zejściu,
-// podwyżka od największego zysku do zyskania na sztuce, poniżej minimum od najmniejszego zysku.
-const zKodem = (...kody) => (o) => kody.includes(o.kod);
-const ponizejMin = (o) => o.min > 0 && o.cena > 0 && o.cena < o.min - 0.005
-  && !(o.wyslano && o.cena_nowa >= o.min - 0.005 && (!o.obs_czas || o.dec_czas > o.obs_czas));
-const FILTRY = {
-  szansa: { oferta: zKodem('obnizka', 'obnizka_limit'), wartosc: (o) => o.zysk_cel ?? o.zysk_nowa ?? -Infinity },
-  podwyzka: { oferta: zKodem('podwyzka', 'podwyzka_limit', 'sonda', 'sonda_limit'), wartosc: (o) => (o.zysk_cel ?? o.zysk_nowa ?? 0) - (o.zysk ?? 0) },
-  ponizej: { oferta: ponizejMin, wartosc: (o) => -(o.zysk ?? 0) },
-};
-const pasujeFiltr = (t, f) => Object.values(t.rynki).some(FILTRY[f].oferta);
-const wartoscFiltra = (t, f) => Math.max(...Object.values(t.rynki).filter(FILTRY[f].oferta).map(FILTRY[f].wartosc));
+// Filtry macierzy: zakres × sytuacja — pricing/filtry-cen.js (czyste, z testami).
 
 // Ostatnia obserwacja i ostatnia decyzja każdej oferty — jedno zapytanie, korelowane po max(id).
 const SQL_OFERTY = `
@@ -110,7 +99,7 @@ const asyncH = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).c
 
 router.get('/macierz', asyncH(async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
-  const filtr = ['automat', 'szansa', 'podwyzka', 'ponizej', 'decyzja', 'wszystkie'].includes(req.query.filtr) ? req.query.filtr : 'automat';
+  const { zakres, sytuacja } = filtry.parametry(req.query);
   const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);
   // Nieznany kanał = wszystkie (nie pusta macierz) — stary link albo kanał wycofany z kolumn.
   const kolKanalu = kolumnyKanalu(String(req.query.kanal || ''));
@@ -137,18 +126,17 @@ router.get('/macierz', asyncH(async (req, res) => {
     if (q && !(String(t.symbol).toLowerCase().includes(q) || String(t.nazwa || '').toLowerCase().includes(q)
       || of.some((o) => o.sku.toLowerCase().includes(q) || String(o.asin || '').toLowerCase() === q))) return false;
     if (q) return true;                                  // wyszukiwanie ma pierwszeństwo przed filtrem
-    if (filtr === 'automat') return of.some((o) => o.auto);
-    if (filtr === 'decyzja') return of.some((o) => ZMIANY_KODY.includes(o.kod));
-    if (FILTRY[filtr]) return pasujeFiltr(t, filtr);
-    return true;
+    return filtry.towarPasuje(t, zakres, sytuacja);
   };
   const kazdy = [...towary.values()];
   const wszystkie = kanal ? zawez(kazdy, kolumnyW) : kazdy;
-  const wiersze = wszystkie.filter(pasuje).sort(FILTRY[filtr] && !q
-    ? (a, b) => wartoscFiltra(b, filtr) - wartoscFiltra(a, filtr)
-    : (a, b) => String(a.symbol).localeCompare(String(b.symbol)));
+  const wiersze = wszystkie.filter(pasuje).sort(q ? filtry.porownaj(zakres, 'wszystkie') : filtry.porownaj(zakres, sytuacja));
 
   const pokazane = wiersze.slice(0, limit);
+  // Która komórka spełnia wybraną sytuację — ekran ją obrysowuje (w wierszu bywa kilka rynków).
+  if (sytuacja !== 'wszystkie' && !q) {
+    for (const t of pokazane) for (const o of Object.values(t.rynki)) o.trafienie = filtry.ofertaPasuje(o, zakres, sytuacja);
+  }
   const stanGt = await stanyGt(pokazane.map((t) => t.tw_id));
   for (const t of pokazane) t.stan_gt = stanGt ? stanGt(t.tw_id) : null;
 
@@ -163,14 +151,9 @@ router.get('/macierz', asyncH(async (req, res) => {
     przebieg: stan.get('przebieg'),
     obserwacja_pelna: stan.get('obserwacja_pelna'),
     blad: stan.get('blad'),
-    liczniki: {
-      automat: wszystkie.filter((t) => Object.values(t.rynki).some((o) => o.auto)).length,
-      szansa: wszystkie.filter((t) => pasujeFiltr(t, 'szansa')).length,
-      podwyzka: wszystkie.filter((t) => pasujeFiltr(t, 'podwyzka')).length,
-      ponizej: wszystkie.filter((t) => pasujeFiltr(t, 'ponizej')).length,
-      decyzja: wszystkie.filter((t) => Object.values(t.rynki).some((o) => ZMIANY_KODY.includes(o.kod))).length,
-      wszystkie: wszystkie.length,
-    },
+    zakres,
+    sytuacja,
+    ...filtry.chipy(wszystkie, zakres, sytuacja),     // { zakresy: [...], sytuacje: [...] } z licznikami
     razem: wiersze.length,
     wiersze: pokazane,
   });

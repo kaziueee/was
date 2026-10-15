@@ -1223,9 +1223,9 @@ main {
 .ceny-tabela td { vertical-align: top; }
 .ceny-tabela th { white-space: nowrap; }
 .ceny-towar { min-width: 11rem; }
-.ceny-towar-flex { display: flex; gap: 0.5rem; align-items: flex-start; }
+.ceny-towar-flex { display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start; }
 .ceny-towar-tresc { min-width: 0; }
-.ceny-miniatura { flex: 0 0 auto; display: block; width: 56px; height: 56px; border: 1px solid #e3e6ee; border-radius: 6px; background: #fff; overflow: hidden; }
+.ceny-miniatura { flex: 0 0 auto; display: block; width: 64px; height: 64px; border: 1px solid #e3e6ee; border-radius: 6px; background: #fff; overflow: hidden; }
 .ceny-miniatura img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .ceny-symbol { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; }
 .ceny-nazwa { font-size: 0.78rem; color: #666; max-width: 15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

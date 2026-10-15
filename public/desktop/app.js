@@ -4505,9 +4505,11 @@ function cenyCelHtml(o, w) {
 }
 
 // Stan z GT pod nazwą towaru: Razem (K4+K4G+MAG+LS, bez BRK) i półka zbioru K4 z rezerwacją.
-function cenyStanTekst(s) {
+// tylkoRazem — w macierzy sam stan „razem” (decyzja usera 2026-10-15); K4 z rezerwacją zostaje na karcie SKU.
+function cenyStanTekst(s, { tylkoRazem = false } = {}) {
   if (s === undefined) return '';                    // backend bez pola (przed restartem WMS)
   if (!s) return 'stan: — <span class="hint">(GT nie odpowiada)</span>';
+  if (tylkoRazem) return `stan: <b>${s.razem}</b>`;
   return `stan: <b>${s.razem}</b> razem · K4 <b>${s.k4}</b>${s.k4_rez ? ` (rez. ${s.k4_rez})` : ''}`;
 }
 
@@ -4603,7 +4605,7 @@ function cenyWiersz(t, rynki) {
     + `<div class="ceny-towar-tresc"><button type="button" class="ceny-symbol ceny-link-karta" title="Karta SKU">${cenyEsc(t.symbol)}</button><div class="ceny-nazwa" title="${cenyEsc(t.nazwa)}">${cenyEsc(t.nazwa)}</div></div></div>`;
   const tresc = td0.querySelector('.ceny-towar-tresc');
   td0.querySelector('.ceny-link-karta').addEventListener('click', () => cenyOtworzKarte(t.tw_id));
-  tresc.insertAdjacentHTML('beforeend', `<div class="ceny-stan">${cenyStanTekst(t.stan_gt)}</div>`);
+  tresc.insertAdjacentHTML('beforeend', `<div class="ceny-stan" title="Razem = K4 + K4G + MAG + LS (bez BRK)">${cenyStanTekst(t.stan_gt, { tylkoRazem: true })}</div>`);
   if (oferty.length) {
     const lbl = document.createElement('label');
     lbl.className = 'ceny-auto-wiersz';

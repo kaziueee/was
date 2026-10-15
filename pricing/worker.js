@@ -153,7 +153,7 @@ async function przebieg({ pelny = false } = {}) {
     const ob = obs.get(o.id);
     if (!ob) { kody.brak_odpowiedzi = (kody.brak_odpowiedzi || 0) + 1; continue; }
     const pas = (pasy.get(o.tw_id) || {})[kluczKolumny(o.platforma, o.rynek)] || null;
-    const d = decyzja(ob, pas || {}, {}, {
+    const d = decyzja(ob, pas || {}, kolumna(o.platforma, o.rynek)?.reguly || {}, {
       ostatniaPodwyzka: ostPodwyzka.get(o.id, okno) || null,
       blokadaPodwyzek: !!cofniecie.get(o.id, okno),
       obnizkiBezBb: obnizkiBezBb.get(o.id, o.id) || null,

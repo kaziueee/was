@@ -136,7 +136,7 @@ test('pas eMAG: stawka prowizji oferty z eMAG nadpisuje domyślne 16% (tylko kol
   assert.ok(Math.abs((z16.zysk - z18.zysk) / rynki.DOMYSLNE.ron - 89.99 / 1.21 * 0.02) < 0.01);
 });
 
-test('eMAG HU/BG: cena brutto z VAT danego rynku, linki na właściwą domenę, kolumny tylko do odczytu', () => {
+test('eMAG HU/BG: cena brutto z VAT danego rynku, linki na właściwą domenę, automat z regułami w walucie rynku', () => {
   const hu = emag.doOferty(surowa({ _kraj: 'HU', vat_id: 1, sale_price: 7164.7146 }));
   assert.strictEqual(hu.cena, 9099.19);                                   // × 1,27
   const bg = emag.zOferty(surowa({ _kraj: 'BG', vat_id: 6, sale_price: 19.5232, best_offer_sale_price: 19.5232 }));
@@ -144,7 +144,11 @@ test('eMAG HU/BG: cena brutto z VAT danego rynku, linki na właściwą domenę, 
   assert.strictEqual(emag.doOferty(surowa({ _kraj: 'HU', vat_id: 9 })).cena, null, 'vat_id z RO nie istnieje na HU');
   assert.strictEqual(emag.linkiOferty('D1', 'HU').produkt, 'https://www.emag.hu/-/pd/D1/');
   assert.strictEqual(kolumna('emag', 'HU').waluta, 'Ft');
-  assert.ok(kolumna('emag', 'BG').tylkoOdczyt && kolumna('emag', 'HU').tylkoOdczyt);
+  assert.ok(!kolumna('emag', 'BG').tylkoOdczyt && !kolumna('emag', 'HU').tylkoOdczyt, 'automat na HU i BG od 2026-10-15');
+  // HU: krok w forintach — 1 Ft pod zwycięzcę, nie 0,01 Ft (niewidoczne na stronie)
+  const dHu = decyzja({ cena: 9800, wysylka: 0, bbNasz: false, bbCena: 9500 }, { min: 8000, max: 12000 }, kolumna('emag', 'HU').reguly);
+  assert.strictEqual(dHu.cena, 9499);
+  assert.strictEqual(kolumna('emag', 'BG').reguly, undefined, 'BG w euro — reguły domyślne');
   // zapis ceny liczy netto z VAT rynku oferty
   const z = emag.zmianaCeny(surowa({ id: 7, _kraj: 'BG', vat_id: 6 }), 23.99);
   assert.strictEqual(Math.round(z.netto * 1.2 * 100) / 100, 23.99);

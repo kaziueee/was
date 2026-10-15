@@ -1,7 +1,6 @@
 'use strict';
 
-// Adapter eMAG Marketplace (RO) — NA RAZIE TYLKO ODCZYT: lista ofert, Genius, Buy Box. Repricer
-// nie wysyła cen na eMAG (routes/ceny.js nie pozwala włączyć automatu, worker wysyła tylko na Amazona).
+// Adapter eMAG Marketplace (RO): lista ofert, Genius, Buy Box i zmiana ceny (od 2026-10-15, test).
 //
 // API: https://marketplace-api.emag.ro/api-3/<zasób>/<akcja>, POST + Basic auth (EMAG_RO_USER /
 // EMAG_RO_PASS w .env). eMAG wpuszcza tylko z adresów IP dopisanych w panelu przy użytkowniku API —
@@ -106,7 +105,52 @@ function zOferty(o) {
   };
 }
 
+// Zmiana ceny = „light API” (POST offer/save, dokumentacja v4.5.2: tylko dane oferty, nie produktu;
+// wymagane `id`, reszta opcjonalna). Wysyłamy WYŁĄCZNIE id + sale_price NETTO (4 miejsca). Bez
+// `currency_type`: wszystkie nasze oferty mają currency RON / currency_type PLN, ale sale_price z
+// product_offer/read jest w RON (sprawdzone na stronie 15.10: NERB9837 103,2975 netto = 124,99 Lei),
+// a dokumentacja każe podawać currency_type tylko dla waluty innej niż lokalna.
+// Czysta funkcja: surowa oferta z API + cena BRUTTO → treść zapytania albo { blad }.
+function zmianaCeny(surowa, cenaBrutto) {
+  const v = VAT_RO[surowa?.vat_id];
+  if (!surowa?.id) return { blad: 'brak id oferty eMAG' };
+  if (v == null) return { blad: `nieznana stawka VAT (vat_id ${surowa.vat_id})` };
+  const c = zaokr(Number(cenaBrutto));
+  if (!(c > 0)) return { blad: `niepoprawna cena: ${cenaBrutto}` };
+  // Netto z 4 miejscami musi po × (1 + VAT) i zaokrągleniu dać DOKŁADNIE tę cenę brutto (tak liczy strona).
+  const n4 = (x) => Math.round(x * 10000) / 10000;
+  const netto = [0, 0.0001, -0.0001].map((d) => n4(c / (1 + v) + d)).find((x) => zaokr(x * (1 + v)) === c);
+  if (netto == null) return { blad: `nie da się wyrazić ${c} brutto ceną netto z 4 miejscami` };
+  // Zakres min/max zapisany na ofercie w eMAG (netto) — cena spoza niego zostałaby odrzucona.
+  const min = Number(surowa.min_sale_price), max = Number(surowa.max_sale_price);
+  if (min > 0 && netto < min) return { blad: `cena ${c} poniżej minimum ustawionego w eMAG (${brutto(min, surowa.vat_id)} brutto) — zmień zakres w panelu eMAG` };
+  if (max > 0 && netto > max) return { blad: `cena ${c} powyżej maksimum ustawionego w eMAG (${brutto(max, surowa.vat_id)} brutto) — zmień zakres w panelu eMAG` };
+  return { body: { data: [{ id: surowa.id, sale_price: netto }] }, cena: c, netto };
+}
+
+// Wysłanie zmiany ceny. Zwraca { ok, cena, netto, blad } — odmowa eMAG to wynik, nie wyjątek.
+async function ustawCene(surowa, cenaBrutto) {
+  const z = zmianaCeny(surowa, cenaBrutto);
+  if (z.blad) return { ok: false, blad: z.blad };
+  try {
+    await api('offer', 'save', z.body);
+    return { ok: true, cena: z.cena, netto: z.netto };
+  } catch (e) {
+    return { ok: false, blad: e.message };
+  }
+}
+
+// Jedna oferta po naszym SKU (part_number). Filtr po part_number skraca drogę; gdyby eMAG go
+// zignorował, porównanie poniżej i tak wybierze właściwą ofertę albo zejdziemy do pełnej listy.
+async function ofertaPoSku(sku) {
+  const k = String(sku).trim().toUpperCase();
+  const pasuje = (o) => String(o.part_number || '').trim().toUpperCase() === k;
+  const szybko = (await api('product_offer', 'read', { part_number: sku, currentPage: 1, itemsPerPage: 100 })).filter(pasuje);
+  if (szybko.length) return szybko;
+  return (await wszystkieOferty()).filter(pasuje);
+}
+
 // Strona produktu w eMAG po PNK (segment przed /pd/ to dowolny opis — eMAG przekierowuje).
 const linkiOferty = (pnk) => (pnk ? { produkt: `https://www.emag.ro/-/pd/${encodeURIComponent(pnk)}/` } : null);
 
-module.exports = { api, wszystkieOferty, doOferty, zOferty, linkiOferty, skonfigurowany, VAT_RO };
+module.exports = { api, wszystkieOferty, doOferty, zOferty, zmianaCeny, ustawCene, ofertaPoSku, linkiOferty, skonfigurowany, VAT_RO };

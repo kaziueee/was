@@ -6,7 +6,8 @@
 // w większości identycznych. Dlatego dla tych kanałów:
 //   - obserwacja bez zmian → nie dopisujemy wiersza, tylko podbijamy `widziana` w ostatnim
 //     (wiersz = odcinek czasu, w którym stan był taki sam: od `czas` do `widziana`),
-//   - decyzja bez zmian → nie zapisujemy jej drugi raz.
+//   - decyzja bez zmian → nie zapisujemy jej drugi raz (od 2026-10-15 na każdej platformie, o ile nie
+//     poszła na platformę ani nie skończyła się błędem — takie zapisujemy zawsze).
 // Czyste funkcje — testy w test/pricing-bez-zmian.test.js.
 
 const POLA_OBSERWACJI = ['cena', 'wysylka', 'bb_nasz', 'bb_cena', 'bb_fba', 'najtansza_inna', 'ofert', 'bb_nasza_inna'];

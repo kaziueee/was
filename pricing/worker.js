@@ -93,6 +93,7 @@ async function przebieg({ pelny = false } = {}) {
   if (obsA.bledyPaczek) wynik.bledy_paczek = obsA.bledyPaczek;
   if (emagOf.length) wynik.emag_obs = { ofert: obsE.size, zmian: obsE.nowe || 0 };
   const obs = { get: (id) => obsA.get(id) || obsE.get(id) };
+  const emagPoSku = new Map((emagSurowe || []).map((x) => [String(x.part_number || '').trim().toUpperCase(), x]));
 
   const zapisz = db.prepare(`INSERT INTO decyzje (oferta_id, cena_przed, cena_nowa, min, max, kod, powod, wyslano, auto, zysk, marza, zysk_nowa, blad, marza_nowa, cena_cel, zysk_cel)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -119,7 +120,7 @@ async function przebieg({ pelny = false } = {}) {
       FROM decyzje WHERE oferta_id = ? AND wyslano = 1 AND kod IN ('obnizka', 'na_min')
        AND czas >= datetime('now', '-72 hours')
        AND czas > COALESCE((SELECT MAX(czas) FROM obserwacje WHERE oferta_id = ? AND bb_nasz = 1), '')`);
-  // Kanał tylko do odczytu (eMAG) liczy decyzję co przebieg, ale zapisuje ją tylko, gdy się zmieniła.
+  // Decyzję liczymy co przebieg, ale niewysłaną zapisujemy tylko, gdy się zmieniła (niżej).
   const ostDecyzja = db.prepare('SELECT * FROM decyzje WHERE oferta_id = ? ORDER BY id DESC LIMIT 1');
   for (const o of oferty) {
     const ob = obs.get(o.id);
@@ -135,23 +136,31 @@ async function przebieg({ pelny = false } = {}) {
     const celOc = pas && d.zmiana && d.cel !== d.cena ? pas.ocen(d.cel) : potem;
     let wyslano = 0, blad = null;
     // Druga linia obrony obok POST /automat: bez pewnego dopasowania do GT nie wysyłamy, nawet gdy
-    // auto = 1 (np. włączone przed wprowadzeniem zasady albo przez bezpośredni zapis w bazie).
-    // Wysyłamy WYŁĄCZNIE na Amazona — eMAG na razie tylko obserwujemy (auto i tak jest tam blokowane w routes/ceny.js).
-    if (zapisWlaczony && o.auto && d.zmiana && pas && o.platforma === 'amazon' && pewneDopasowanie(o.dopasowanie)) {
+    // auto = 1 (np. włączone przed wprowadzeniem zasady albo przez bezpośredni zapis w bazie). Kanał
+    // `tylkoOdczyt` (pricing/kolumny.js) nie wysyła nigdy — także tu, nie tylko w routes/ceny.js.
+    const kanalZapis = !kolumna(o.platforma, o.rynek)?.tylkoOdczyt;
+    if (zapisWlaczony && o.auto && d.zmiana && pas && kanalZapis && pewneDopasowanie(o.dopasowanie)) {
       try {
-        const w = await ustawCene(o.rynek, o.sku, d.cena);
-        if (w.ok) { wyslano = 1; wysylka.wyslane++; doPotwierdzenia.push(o); }
-        else { blad = w.blad || `Amazon: ${w.status}`; wysylka.odrzucone++; }
+        let w;
+        if (o.platforma === 'amazon') w = await ustawCene(o.rynek, o.sku, d.cena);
+        else if (o.platforma === 'emag') {
+          // Oferta z listy pobranej na początku przebiegu: id eMAG, VAT i zakres min/max z panelu.
+          const s = emagPoSku.get(String(o.sku).trim().toUpperCase());
+          w = s ? await emag.ustawCene(s, d.cena) : { ok: false, blad: 'oferty nie ma na liście eMAG z tego przebiegu' };
+        } else w = { ok: false, blad: `zapis na ${o.platforma} nieobsługiwany` };
+        if (w.ok) { wyslano = 1; wysylka.wyslane++; if (o.platforma === 'amazon') doPotwierdzenia.push(o); }
+        else { blad = w.blad || `${o.platforma}: ${w.status}`; wysylka.odrzucone++; }
       } catch (e) { blad = e.message; wysylka.odrzucone++; }
-      console.log(new Date().toISOString(), `[pricing] ${o.rynek} ${o.sku}: ${ob.cena} → ${d.cena} ${wyslano ? 'WYSŁANO' : 'NIE WYSŁANO: ' + blad}`);
+      console.log(new Date().toISOString(), `[pricing] ${kluczKolumny(o.platforma, o.rynek)} ${o.sku}: ${ob.cena} → ${d.cena} ${wyslano ? 'WYSŁANO' : 'NIE WYSŁANO: ' + blad}`);
     }
     const wiersz = [o.id, ob.cena, d.cena, pas?.min ?? null, pas?.max ?? null, d.kod, d.powod, wyslano, o.auto,
       teraz?.zysk ?? null, teraz?.marza ?? null, potem?.zysk ?? null, blad, potem?.marza ?? null,
       d.cel ?? null, celOc?.zysk ?? null];
-    const tylkoOdczyt = !!kolumna(o.platforma, o.rynek)?.tylkoOdczyt;
-    if (!(tylkoOdczyt && takaSamaDecyzja(ostDecyzja.get(o.id), { kod: d.kod, cena_przed: ob.cena, cena_nowa: d.cena,
+    // Decyzja niewysłana, bez błędu i taka sama jak poprzednia nie dostaje nowego wiersza (eMAG to cały
+    // katalog co przebieg). Wysłane i odrzucone zapisujemy zawsze — na nich stoją reguły 6 i 8 i log.
+    if (wyslano || blad || !takaSamaDecyzja(ostDecyzja.get(o.id), { kod: d.kod, cena_przed: ob.cena, cena_nowa: d.cena,
       cena_cel: d.cel ?? null, min: pas?.min ?? null, max: pas?.max ?? null, zysk: teraz?.zysk ?? null,
-      zysk_nowa: potem?.zysk ?? null, zysk_cel: celOc?.zysk ?? null }))) wiersze.push(wiersz);
+      zysk_nowa: potem?.zysk ?? null, zysk_cel: celOc?.zysk ?? null })) wiersze.push(wiersz);
     if (o.auto) kody[d.kod] = (kody[d.kod] || 0) + 1;
   }
   db.exec('BEGIN');

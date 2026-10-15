@@ -81,3 +81,23 @@ test('pas eMAG RO: Genius z oferty (API) wygrywa z wymiarami z GT', () => {
   assert.ok(pasyZWyceny(w).DE.min > 0);
   assert.strictEqual(pasyZWyceny(w).PL, undefined, 'Amazon PL nie ma rynku w kalkulatorze');
 });
+
+test('eMAG: zmiana ceny — id + sale_price NETTO z 4 miejscami, dające dokładnie cenę brutto', () => {
+  const z = emag.zmianaCeny(surowa({ id: 3, min_sale_price: 30.9892, max_sale_price: 568.1363 }), 433.45);
+  assert.strictEqual(z.blad, undefined);
+  assert.deepStrictEqual(z.body, { data: [{ id: 3, sale_price: 358.2231 }] });
+  assert.strictEqual(Math.round(z.netto * 1.21 * 100) / 100, 433.45);
+  for (const c of [124.99, 15.01, 1087.66, 9.9, 0.99]) {
+    const n = emag.zmianaCeny(surowa({ id: 3 }), c).netto;
+    assert.strictEqual(Math.round(n * 1.21 * 100) / 100, c, `brutto ${c}`);
+  }
+});
+
+test('eMAG: zmiana ceny — poza zakresem min/max z eMAG albo bez id/VAT = odmowa, nic nie wysyłamy', () => {
+  const o = surowa({ id: 3, min_sale_price: 30.9892, max_sale_price: 100 });
+  assert.match(emag.zmianaCeny(o, 30).blad, /poniżej minimum ustawionego w eMAG \(37\.5 brutto\)/);
+  assert.match(emag.zmianaCeny(o, 130).blad, /powyżej maksimum/);
+  assert.match(emag.zmianaCeny(surowa({ id: 3, vat_id: 77 }), 50).blad, /VAT/);
+  assert.match(emag.zmianaCeny(surowa(), 50).blad, /id/);
+  assert.match(emag.zmianaCeny(o, 0).blad, /niepoprawna/);
+});

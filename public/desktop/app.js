@@ -4622,7 +4622,7 @@ function cenyKomorka(o, rynek) {
   const w = cenyWaluta(o);
   let pod = '';
   if (o.czeka) {
-    pod = `<div class="ceny-dec wyslano">✓ wysłano ${cenyGodzina(o.dec_czas)} · czeka na potwierdzenie z Amazona</div>`;
+    pod = `<div class="ceny-dec wyslano">✓ wysłano ${cenyGodzina(o.dec_czas)} · czeka na potwierdzenie z platformy</div>`;
   } else if (CENY_ZMIANY.includes(o.kod)) {
     const gora = o.cena_nowa > o.cena;
     // Wysłana decyzja ≠ propozycja: cena już poszła na Amazona, a obserwacja w komórce jest

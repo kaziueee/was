@@ -4546,7 +4546,7 @@ function renderujCeny(d) {
   const emagTxt = em.blad && (!em.sync || em.blad.czas > em.sync.czas) ? ` · <span class="ceny-blad">eMAG: ${cenyEsc(em.blad.wartosc)}</span>`
     : em.sync ? ` · eMAG RO ${cenyGodzina(em.sync.czas)}` : '';
   el('ceny-stan').innerHTML = przebieg + pelna + blad + emagTxt;
-  for (const k of ['automat', 'szansa', 'podwyzka', 'decyzja', 'wszystkie']) el(`ceny-l-${k}`).textContent = d.liczniki[k] ?? '';
+  for (const k of ['automat', 'szansa', 'podwyzka', 'ponizej', 'decyzja', 'wszystkie']) { const l = el(`ceny-l-${k}`); if (l) l.textContent = d.liczniki[k] ?? ''; }
   el('ceny-hamulec').classList.toggle('hidden', d.wysylanie !== false);
   document.querySelectorAll('[data-ceny-filtr]').forEach((b) => b.classList.toggle('aktywny', b.dataset.cenyFiltr === cenyFiltr));
   cenyRenderujKanaly(d);

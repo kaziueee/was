@@ -7,7 +7,7 @@
 // wyniki i zapisuje decyzję człowieka: automat (auto = 1, ceny idą na Amazona) albo ręczny (0). Montowane z auth.wymagajRoli('admin') — na czas
 // testów tylko administrator (decyzja usera 2026-10-13); biuro dostanie dostęp po testach.
 //
-//   GET  /api/ceny/macierz?q=&filtr=automat|szansa|podwyzka|decyzja|wszystkie&kanal=&limit=   wiersze SKU × rynek
+//   GET  /api/ceny/macierz?q=&filtr=automat|szansa|podwyzka|ponizej|decyzja|wszystkie&kanal=&limit=   wiersze SKU × rynek
 //        kanal = platforma (amazon, emag) albo klucz kolumny (DE, FR, …, EMAG_RO); puste = wszystkie
 //   GET  /api/ceny/towar/:tw_id                                        karta SKU: wszystkie rynki towaru + historia
 //   GET  /api/ceny/log?limit=                                          zmiany cen (auto) + działania ludzi
@@ -57,14 +57,20 @@ const ZMIANY_KODY = ['podwyzka', 'podwyzka_limit', 'sonda', 'sonda_limit', 'obni
 //              (bez remisu z FBA, BB pod podłogą i przegranej „nie przez cenę")
 //   podwyzka — mamy BB, następny konkurent wyraźnie wyżej: automat podniósłby cenę; na eMAG także
 //              „szukanie” (sonda) — BB nasz, ceny konkurencji nieznane, krok +3%
+//   ponizej  — obecna cena poniżej minimum z kalkulatora (marża < 20%), bez względu na decyzję; nie
+//              liczymy oferty, na którą podniesienie do minimum już poszło (czeka na potwierdzenie)
 // Kolejność (po cenie DOCELOWEJ, nie pierwszym schodku): szansa od największego zysku po zejściu,
-// podwyżka od największego zysku do zyskania na sztuce.
+// podwyżka od największego zysku do zyskania na sztuce, poniżej minimum od najmniejszego zysku.
+const zKodem = (...kody) => (o) => kody.includes(o.kod);
+const ponizejMin = (o) => o.min > 0 && o.cena > 0 && o.cena < o.min - 0.005
+  && !(o.wyslano && o.cena_nowa >= o.min - 0.005 && (!o.obs_czas || o.dec_czas > o.obs_czas));
 const FILTRY = {
-  szansa: { kody: ['obnizka', 'obnizka_limit'], wartosc: (o) => o.zysk_cel ?? o.zysk_nowa ?? -Infinity },
-  podwyzka: { kody: ['podwyzka', 'podwyzka_limit', 'sonda', 'sonda_limit'], wartosc: (o) => (o.zysk_cel ?? o.zysk_nowa ?? 0) - (o.zysk ?? 0) },
+  szansa: { oferta: zKodem('obnizka', 'obnizka_limit'), wartosc: (o) => o.zysk_cel ?? o.zysk_nowa ?? -Infinity },
+  podwyzka: { oferta: zKodem('podwyzka', 'podwyzka_limit', 'sonda', 'sonda_limit'), wartosc: (o) => (o.zysk_cel ?? o.zysk_nowa ?? 0) - (o.zysk ?? 0) },
+  ponizej: { oferta: ponizejMin, wartosc: (o) => -(o.zysk ?? 0) },
 };
-const pasujeFiltr = (t, f) => Object.values(t.rynki).some((o) => FILTRY[f].kody.includes(o.kod));
-const wartoscFiltra = (t, f) => Math.max(...Object.values(t.rynki).filter((o) => FILTRY[f].kody.includes(o.kod)).map(FILTRY[f].wartosc));
+const pasujeFiltr = (t, f) => Object.values(t.rynki).some(FILTRY[f].oferta);
+const wartoscFiltra = (t, f) => Math.max(...Object.values(t.rynki).filter(FILTRY[f].oferta).map(FILTRY[f].wartosc));
 
 // Ostatnia obserwacja i ostatnia decyzja każdej oferty — jedno zapytanie, korelowane po max(id).
 const SQL_OFERTY = `
@@ -104,7 +110,7 @@ const asyncH = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).c
 
 router.get('/macierz', asyncH(async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
-  const filtr = ['automat', 'szansa', 'podwyzka', 'decyzja', 'wszystkie'].includes(req.query.filtr) ? req.query.filtr : 'automat';
+  const filtr = ['automat', 'szansa', 'podwyzka', 'ponizej', 'decyzja', 'wszystkie'].includes(req.query.filtr) ? req.query.filtr : 'automat';
   const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);
   // Nieznany kanał = wszystkie (nie pusta macierz) — stary link albo kanał wycofany z kolumn.
   const kolKanalu = kolumnyKanalu(String(req.query.kanal || ''));
@@ -161,6 +167,7 @@ router.get('/macierz', asyncH(async (req, res) => {
       automat: wszystkie.filter((t) => Object.values(t.rynki).some((o) => o.auto)).length,
       szansa: wszystkie.filter((t) => pasujeFiltr(t, 'szansa')).length,
       podwyzka: wszystkie.filter((t) => pasujeFiltr(t, 'podwyzka')).length,
+      ponizej: wszystkie.filter((t) => pasujeFiltr(t, 'ponizej')).length,
       decyzja: wszystkie.filter((t) => Object.values(t.rynki).some((o) => ZMIANY_KODY.includes(o.kod))).length,
       wszystkie: wszystkie.length,
     },

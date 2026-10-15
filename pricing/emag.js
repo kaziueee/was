@@ -44,8 +44,12 @@ async function api(zasob, akcja, dane = {}, proby = 3, kraj = 'RO') {
   for (let i = 1; ; i++) {
     let r, j;
     try {
+      // Limit czasu obejmuje też czytanie odpowiedzi. Bez niego zawieszona strona listy ofert trzymała
+      // proces w nieskończoność (2026-10-16, product_offer/read na RO) — a worker z blokadą „trwa”
+      // nie zrobiłby już żadnego przebiegu do restartu. Timeout = błąd sieci = ponowienie niżej.
       r = await fetch(`${urlApi(kraj)}/api-3/${zasob}/${akcja}`, {
         method: 'POST', headers: { Authorization: auth, 'Content-Type': 'application/json' }, body: JSON.stringify(dane),
+        signal: AbortSignal.timeout(60_000),
       });
       j = await r.json();
     } catch (e) {
@@ -179,7 +183,7 @@ async function ustawCene(surowa, cenaBrutto) {
 async function prowizjaOferty(id, kraj = 'RO') {
   if (!skonfigurowany()) throw new Error('eMAG: brak EMAG_RO_USER / EMAG_RO_PASS w .env');
   const auth = 'Basic ' + Buffer.from(`${process.env.EMAG_RO_USER}:${process.env.EMAG_RO_PASS}`).toString('base64');
-  const r = await fetch(`${urlApi(kraj)}/api/v1/commission/estimate/${encodeURIComponent(id)}`, { headers: { Authorization: auth } });
+  const r = await fetch(`${urlApi(kraj)}/api/v1/commission/estimate/${encodeURIComponent(id)}`, { headers: { Authorization: auth }, signal: AbortSignal.timeout(30_000) });
   // 401/403/429/5xx = „nie wiemy teraz” → wyjątek (nic nie zapisujemy); 404 = eMAG nie ma stawki → null.
   if (r.status === 401 || r.status === 403 || r.status === 429 || r.status >= 500) throw new Error(`eMAG commission/estimate: HTTP ${r.status}`);
   const j = await r.json().catch(() => null);

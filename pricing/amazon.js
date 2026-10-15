@@ -37,6 +37,7 @@ async function dajToken() {
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: SPAPI_REFRESH_TOKEN,
       client_id: SPAPI_CLIENT_ID, client_secret: SPAPI_CLIENT_SECRET }),
+    signal: AbortSignal.timeout(30_000),
   });
   const j = await res.json();
   if (!j.access_token) throw new Error(`LWA: ${res.status} ${JSON.stringify(j).slice(0, 200)}`);
@@ -83,7 +84,7 @@ async function raport(reportType, marketplaceIds, opcje = {}) {
     const s = await api('GET', `/reports/2021-06-30/reports/${reportId}`);
     if (s.processingStatus === 'DONE') {
       const d = await api('GET', `/reports/2021-06-30/documents/${s.reportDocumentId}`);
-      const buf = Buffer.from(await (await fetch(d.url)).arrayBuffer());
+      const buf = Buffer.from(await (await fetch(d.url, { signal: AbortSignal.timeout(180_000) })).arrayBuffer());
       const dane = d.compressionAlgorithm === 'GZIP' ? zlib.gunzipSync(buf) : buf;
       return new TextDecoder(kodowanie(dane)).decode(dane);
     }

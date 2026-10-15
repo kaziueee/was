@@ -4703,7 +4703,7 @@ function cenyKomorka(o, rynek) {
   div.className = 'ceny-tresc';
   div.title = `${o.sku}${o.inne_oferty ? ` (+${o.inne_oferty} inna oferta tego towaru)` : ''} · stan ${o.ilosc} · obserwacja ${formatDatetime(o.obs_widziana || o.obs_czas)}`;
   div.innerHTML = o.obs_czas == null || o.cena == null
-    ? `<div class="ceny-m">${o.obs_czas == null ? 'jeszcze nie obserwowana' : 'brak naszej oferty w odpowiedzi'}</div><div class="ceny-m">stan ${o.ilosc}</div>`
+    ? `<div class="ceny-m ceny-zawijaj">${o.obs_czas == null ? 'jeszcze nie obserwowana' : 'brak naszej oferty w odpowiedzi'}</div><div class="ceny-m">stan ${o.ilosc}</div>`
     : `<div class="ceny-cena">${cenyLiczba(o.cena)} ${w}${o.wysylka ? ` <small>+${cenyLiczba(o.wysylka)}</small>` : ''}</div>`
     + (o.cena == null ? '' : `<div class="ceny-m">marża ${o.marza != null ? cenyLiczba(o.marza, 1) + '%' : '—'}</div>`)
     + (o.cena == null ? '' : `<div class="ceny-m">zysk ${o.zysk != null ? cenyLiczba(o.zysk) + ' zł' : '—'}</div>${gen}${bb}${pod}${wys}`)

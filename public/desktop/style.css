@@ -1246,7 +1246,9 @@ main {
 .ceny-kom.bb { background: #e3f3e8; }
 .ceny-kom.off.bb { background: #eceef1; box-shadow: inset 3px 0 0 #1f7a3d; }
 .ceny-kom-wrap { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.4rem; }
-.ceny-tresc { cursor: pointer; font-variant-numeric: tabular-nums; }
+.ceny-tresc { cursor: pointer; font-variant-numeric: tabular-nums; min-width: 0; flex: 1; }
+/* Komunikat zamiast ceny („brak naszej oferty w odpowiedzi”) łamie się — bez tego wjeżdżał pod przełącznik i ↗. */
+.ceny-kom .ceny-zawijaj { white-space: normal; line-height: 1.25; }
 .ceny-cena { font-weight: 700; font-size: 0.98rem; white-space: nowrap; }
 .ceny-cena small { font-weight: 400; color: #777; font-size: 0.75rem; }
 .ceny-m, .ceny-bb, .ceny-dec { font-size: 0.76rem; color: #5f6670; white-space: nowrap; }

@@ -157,3 +157,26 @@ test('Buy Box ma nasza inna oferta tego produktu — stoimy, nie konkurujemy sam
   assert.strictEqual(d.zmiana, false);
   assert.strictEqual(d.kod, 'bb_nasza_inna');
 });
+
+test('wojna o grosze: 3 obniżki z rzędu bez Buy Boxa — kolejna wstrzymana na 24 h', () => {
+  const o = obs({ cena: 25, bbNasz: false, bbCena: 29.5 });            // cel 29,49 − 4,99 = 24,50
+  const w = decyzja(o, pas, {}, { obnizkiBezBb: { n: 3, godzOd: 0.5 } });
+  assert.strictEqual(w.zmiana, false);
+  assert.strictEqual(w.kod, 'wojna_cenowa');
+  assert.strictEqual(w.cena, 25);
+  assert.strictEqual(w.cel, 24.5);                                      // ekran widzi, dokąd by zszedł
+  assert.match(w.powod, /następna za 24 h/);
+});
+
+test('wojna o grosze: po pauzie jedna obniżka, dwie obniżki to jeszcze nie wojna', () => {
+  const o = obs({ cena: 25, bbNasz: false, bbCena: 29.5 });
+  assert.strictEqual(decyzja(o, pas, {}, { obnizkiBezBb: { n: 3, godzOd: 24.2 } }).kod, 'obnizka');
+  assert.strictEqual(decyzja(o, pas, {}, { obnizkiBezBb: { n: 2, godzOd: 0.5 } }).kod, 'obnizka');
+});
+
+test('wojna o grosze wstrzymuje też zejście na minimum, ale nie podwyżki i nie powrót spod minimum', () => {
+  const ctx = { obnizkiBezBb: { n: 5, godzOd: 1 } };
+  assert.strictEqual(decyzja(obs({ cena: 25, bbNasz: false, bbCena: 22 }), pas, {}, ctx).kod, 'wojna_cenowa');   // byłoby na_min
+  assert.strictEqual(decyzja(obs({ cena: 18, bbNasz: false, bbCena: 22 }), pas, {}, ctx).kod, 'pod_min');
+  assert.strictEqual(decyzja(obs({ cena: 26, bbNasz: true, najtanszaInna: 32.99 }), pas, {}, ctx).kod, 'podwyzka');
+});

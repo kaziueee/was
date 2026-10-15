@@ -24,6 +24,13 @@
 //     `blokadaPodwyzekH` godzin; obniżki i podłoga działają normalnie.
 //  7. Cena poniżej minimum idzie od razu na minimum (bez schodka) i się nie cofa — utrata BB
 //     przy cenie minimalnej nie szkodzi (decyzja usera 2026-10-14).
+//  8. Wojna o grosze (decyzja usera 2026-10-15): po `wojnaObnizek` WYSŁANYCH obniżkach do ceny
+//     Buy Boxa (bez schodków −5% — te jeszcze nie dogoniły konkurenta) z rzędu,
+//     po których Buy Box ani razu nie był nasz, obniżki stają na `wojnaPauzaH` godzin od ostatniej.
+//     Drugi repricer odpowiada wtedy na każdy nasz krok w kilka minut — HWHHGV67 DE: 12 obniżek
+//     w 6 h (83,45 → 83,03 €) i ani razu BB. Kolejne kroki tylko oddają marżę. Po pauzie jedna
+//     obniżka; jeśli i ona nie da BB, znowu pauza — wojna idzie krokiem na dobę, nie co 30 min.
+//     Zdobyty Buy Box zeruje licznik; podwyżki, podłoga i powrót spod minimum działają normalnie.
 
 const DOMYSLNE_REGULY = {
   krok: 0.01,          // o ile schodzimy pod konkurenta
@@ -32,6 +39,8 @@ const DOMYSLNE_REGULY = {
   blokadaPodwyzekH: 24, // po cofnięciu podwyżki (utrata BB) tyle godzin bez kolejnych podwyżek
   maxWzrostPct: 10,    // największa podwyżka w jednym przebiegu — skok o 30–45% naraz (realne przypadki
                        // przy dalekim konkurencie) może odciąć sprzedaż albo Buy Box; podchodzimy schodami
+  wojnaObnizek: 3,     // tyle wysłanych obniżek z rzędu bez Buy Boxa = wojna o grosze (reguła 8)
+  wojnaPauzaH: 24,     // tyle godzin od ostatniej obniżki bez kolejnej
 };
 
 const zaokr = (x) => Math.round(x * 100) / 100;
@@ -50,6 +59,8 @@ const zaokr = (x) => Math.round(x * 100) / 100;
 // kontekst (z historii decyzji, liczy worker):
 //   ostatniaPodwyzka — { cena_przed, cena_nowa } ostatnia WYSŁANA podwyżka z okna blokady (albo null)
 //   blokadaPodwyzek  — true, gdy w oknie blokady było już cofnięcie
+//   obnizkiBezBb     — { n, godzOd }: wysłane obniżki od ostatniej obserwacji z NASZYM Buy Boxem
+//                      i ile godzin minęło od ostatniej z nich (reguła 8)
 // Zwraca { cena, cel, zmiana, kod, powod } — `cena` to cena towaru do ustawienia w tym przebiegu,
 // `cel` to cena docelowa (bez limitu schodka); bez zmiany cel = cena.
 function decyzja(obs, pas, reguly = {}, kontekst = {}) {
@@ -121,15 +132,22 @@ function decyzja(obs, pas, reguly = {}, kontekst = {}) {
 
   if (obs.bbNasz === false && obs.bbCena > 0) {
     const nasza = zaokr(cena + wys);
+    // Reguła 8: tylko obniżki wstrzymujemy — `cel`/`min` liczymy dalej, żeby ekran pokazał, dokąd
+    // automat by zszedł.
+    const wojna = kontekst.obnizkiBezBb;
+    const pauza = wojna && wojna.n >= r.wojnaObnizek && wojna.godzOd < r.wojnaPauzaH;
+    const obnizka = (cel, kod, powod) => (pauza
+      ? { ...zostaw('wojna_cenowa', `${wojna.n} obniżki z rzędu bez Buy Boxa — konkurent odpowiada na każdą; następna za ${Math.max(1, Math.ceil(r.wojnaPauzaH - wojna.godzOd))} h`), cel: zaokr(Math.max(min, cel)) }
+      : ustaw(cel, kod, powod));
     if (Math.abs(nasza - obs.bbCena) < 0.005 && obs.bbFba) {
       return zostaw('remis_fba', `ta sama cena co zwycięzca FBA (${obs.bbCena}) — obniżka nie gwarantuje Buy Boxa`);
     }
     const cel = zaokr(obs.bbCena - r.krok - wys);
     if (cel < min - 0.005) {
-      if (cena > min + 0.005) return ustaw(min, 'na_min', `Buy Box ${obs.bbCena} poniżej naszej podłogi — schodzimy na minimum ${min}`);
+      if (cena > min + 0.005) return obnizka(min, 'na_min', `Buy Box ${obs.bbCena} poniżej naszej podłogi — schodzimy na minimum ${min}`);
       return zostaw('pod_podloga', `Buy Box ${obs.bbCena} poniżej naszej podłogi ${min} — stoimy na minimum`);
     }
-    if (cel < cena - 0.005) return ustaw(cel, 'obnizka', `Buy Box ${obs.bbCena} (z wysyłką) — schodzimy o ${r.krok} niżej`);
+    if (cel < cena - 0.005) return obnizka(cel, 'obnizka', `Buy Box ${obs.bbCena} (z wysyłką) — schodzimy o ${r.krok} niżej`);
     // Jesteśmy tańsi albo równi, a Buy Boxa i tak nie mamy — cena nie jest powodem.
     return zostaw('przegrana_nie_cena', 'nasza cena nie wyższa niż Buy Box — przegrywamy z innego powodu niż cena');
   }

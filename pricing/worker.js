@@ -108,6 +108,17 @@ async function przebieg({ pelny = false } = {}) {
       AND cena_nowa > cena_przed AND czas >= datetime('now', ?) ORDER BY id DESC LIMIT 1`);
   const cofniecie = db.prepare(`SELECT 1 FROM decyzje WHERE oferta_id = ? AND kod LIKE 'cofniecie%'
       AND czas >= datetime('now', ?) LIMIT 1`);
+  // Reguła 8 (wojna o grosze): wysłane obniżki od ostatniej obserwacji z NASZYM Buy Boxem (najdalej
+  // 3 doby wstecz) i godziny od ostatniej z nich. Liczymy RÓŻNE ceny, nie wysyłki: Amazon potrafi
+  // pokazać nową cenę dopiero po >30 min i ta sama obniżka idzie 2–3 razy (HWHJDY16 DE 15.10:
+  // 71,43 wysłane trzy razy, BB przyszedł po trzecim) — to jeden krok, nie trzy. Schodki −5%
+  // (`obnizka_limit`, `na_min_limit`) się nie liczą: to zejście do dalekiego Buy Boxa, którego
+  // jeszcze nie dogoniliśmy, a nie konkurent odpowiadający na nasz krok (na produkcji liczenie
+  // schodków dawało 9 „wojen” zamiast 3).
+  const obnizkiBezBb = db.prepare(`SELECT COUNT(DISTINCT cena_nowa) AS n, (julianday('now') - julianday(MAX(czas))) * 24 AS godzOd
+      FROM decyzje WHERE oferta_id = ? AND wyslano = 1 AND kod IN ('obnizka', 'na_min')
+       AND czas >= datetime('now', '-72 hours')
+       AND czas > COALESCE((SELECT MAX(czas) FROM obserwacje WHERE oferta_id = ? AND bb_nasz = 1), '')`);
   // Kanał tylko do odczytu (eMAG) liczy decyzję co przebieg, ale zapisuje ją tylko, gdy się zmieniła.
   const ostDecyzja = db.prepare('SELECT * FROM decyzje WHERE oferta_id = ? ORDER BY id DESC LIMIT 1');
   for (const o of oferty) {
@@ -117,6 +128,7 @@ async function przebieg({ pelny = false } = {}) {
     const d = decyzja(ob, pas || {}, {}, {
       ostatniaPodwyzka: ostPodwyzka.get(o.id, okno) || null,
       blokadaPodwyzek: !!cofniecie.get(o.id, okno),
+      obnizkiBezBb: obnizkiBezBb.get(o.id, o.id) || null,
     });
     const teraz = pas && ob.cena ? pas.ocen(ob.cena) : null;
     const potem = pas && d.zmiana ? pas.ocen(d.cena) : teraz;

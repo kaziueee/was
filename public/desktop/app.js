@@ -4482,7 +4482,7 @@ const CENY_ZMIANY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', '
 const CENY_KOD_OPIS = {
   podwyzka: 'podwyżka', podwyzka_limit: 'podwyżka (schodek)', obnizka: 'obniżka', obnizka_limit: 'obniżka (schodek)',
   na_min: 'na minimum', na_min_limit: 'w stronę minimum', pod_min: 'od razu na minimum', top: 'mamy BB — bez zmiany',
-  top_bez_konkurencji: 'jedyna oferta', top_konk_nieznana: 'mamy BB — cen konkurencji eMAG nie podaje', cofniecie: 'cofnięcie podwyżki (utrata BB)', top_blokada: 'mamy BB — podwyżki wstrzymane', wojna_cenowa: 'wojna o grosze — obniżki wstrzymane na dobę', bb_nasza_inna: 'BB ma nasza inna oferta — stoi', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
+  top_bez_konkurencji: 'jedyna oferta', top_konk_nieznana: 'mamy BB — cen konkurencji eMAG nie podaje', cofniecie: 'cofnięcie podwyżki (utrata BB)', top_blokada: 'mamy BB — podwyżki wstrzymane', wojna_cenowa: 'wojna o grosze — obniżki wstrzymane na dobę', sonda: 'szukamy ceny konkurenta (+3%)', sonda_limit: 'szukamy ceny konkurenta (+3%)', bb_nasza_inna: 'BB ma nasza inna oferta — stoi', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
   przegrana_nie_cena: 'tańsi, a bez BB', brak_danych: 'brak danych o BB', brak_ceny: 'brak naszej ceny', brak_pasa: 'brak min/max',
 };
 const CENY_AKCJE = {

@@ -50,17 +50,18 @@ const zKanalem = (o) => {
   return { ...o, kolumna: kluczKolumny(o.platforma, o.rynek), kanal_nazwa: k.nazwa || `${o.platforma} ${o.rynek}`,
     waluta: k.waluta || '', tylko_odczyt: !!k.tylkoOdczyt, linki: linki(o) };
 };
-const ZMIANY_KODY = ['podwyzka', 'podwyzka_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min', 'cofniecie'];
+const ZMIANY_KODY = ['podwyzka', 'podwyzka_limit', 'sonda', 'sonda_limit', 'obnizka', 'obnizka_limit', 'na_min', 'na_min_limit', 'pod_min', 'cofniecie'];
 
 // Filtry „gdzie warto włączyć automat" — z ostatniej decyzji (liczonej też dla ofert ręcznych):
 //   szansa   — nie mamy BB, a zwycięzca stoi nad naszą podłogą: zejście w pasie może dać BB
 //              (bez remisu z FBA, BB pod podłogą i przegranej „nie przez cenę")
-//   podwyzka — mamy BB, następny konkurent wyraźnie wyżej: automat podniósłby cenę
+//   podwyzka — mamy BB, następny konkurent wyraźnie wyżej: automat podniósłby cenę; na eMAG także
+//              „szukanie” (sonda) — BB nasz, ceny konkurencji nieznane, krok +3%
 // Kolejność (po cenie DOCELOWEJ, nie pierwszym schodku): szansa od największego zysku po zejściu,
 // podwyżka od największego zysku do zyskania na sztuce.
 const FILTRY = {
   szansa: { kody: ['obnizka', 'obnizka_limit'], wartosc: (o) => o.zysk_cel ?? o.zysk_nowa ?? -Infinity },
-  podwyzka: { kody: ['podwyzka', 'podwyzka_limit'], wartosc: (o) => (o.zysk_cel ?? o.zysk_nowa ?? 0) - (o.zysk ?? 0) },
+  podwyzka: { kody: ['podwyzka', 'podwyzka_limit', 'sonda', 'sonda_limit'], wartosc: (o) => (o.zysk_cel ?? o.zysk_nowa ?? 0) - (o.zysk ?? 0) },
 };
 const pasujeFiltr = (t, f) => Object.values(t.rynki).some((o) => FILTRY[f].kody.includes(o.kod));
 const wartoscFiltra = (t, f) => Math.max(...Object.values(t.rynki).filter((o) => FILTRY[f].kody.includes(o.kod)).map(FILTRY[f].wartosc));

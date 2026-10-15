@@ -180,3 +180,31 @@ test('wojna o grosze wstrzymuje też zejście na minimum, ale nie podwyżki i ni
   assert.strictEqual(decyzja(obs({ cena: 18, bbNasz: false, bbCena: 22 }), pas, {}, ctx).kod, 'pod_min');
   assert.strictEqual(decyzja(obs({ cena: 26, bbNasz: true, najtanszaInna: 32.99 }), pas, {}, ctx).kod, 'podwyzka');
 });
+
+test('szukanie ceny konkurenta (eMAG): mamy BB, konkurencja nieznana — +3% na przebieg, nie ponad max', () => {
+  const o = obs({ cena: 25, wysylka: 0, bbNasz: true, konkurencjaNieznana: true, ofert: 4 });
+  const d = decyzja(o, pas);
+  assert.strictEqual(d.zmiana, true);
+  assert.strictEqual(d.kod, 'sonda');
+  assert.strictEqual(d.cena, 25.75);
+  const naMax = decyzja(obs({ cena: 29.5, wysylka: 0, bbNasz: true, konkurencjaNieznana: true }), pas);
+  assert.strictEqual(naMax.cena, 30);
+  assert.strictEqual(decyzja(obs({ cena: 30, wysylka: 0, bbNasz: true, konkurencjaNieznana: true }), pas).zmiana, false);
+});
+
+test('szukanie: po utracie BB powrót do ceny sprzed kroku, potem 24 h bez szukania', () => {
+  // krok 25 → 25,75 wysłany, BB stracony → cofnięcie na 25
+  const po = decyzja(obs({ cena: 25.75, wysylka: 0, bbNasz: false, bbCena: null, najtanszaNasza: false }), pas, {},
+    { ostatniaPodwyzka: { cena_przed: 25, cena_nowa: 25.75 } });
+  assert.strictEqual(po.kod, 'cofniecie');
+  assert.strictEqual(po.cena, 25);
+  // BB wrócił, ale w oknie blokady — nie szukamy znowu
+  const blok = decyzja(obs({ cena: 25, wysylka: 0, bbNasz: true, konkurencjaNieznana: true }), pas, {}, { blokadaPodwyzek: true });
+  assert.strictEqual(blok.zmiana, false);
+  assert.strictEqual(blok.kod, 'top_blokada');
+});
+
+test('szukanie nie dotyczy jedynej oferty ani ceny pod minimum', () => {
+  assert.strictEqual(decyzja(obs({ cena: 25, wysylka: 0, bbNasz: true, ofert: 1 }), pas).kod, 'top_bez_konkurencji');
+  assert.strictEqual(decyzja(obs({ cena: 18, wysylka: 0, bbNasz: true, konkurencjaNieznana: true }), pas).kod, 'pod_min');
+});

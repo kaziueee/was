@@ -50,14 +50,15 @@ test('eMAG: nie mamy Buy Boxa, ale „najlepsza oferta” to my — nie gonimy w
   assert.strictEqual(emag.zOferty(surowa({ best_offer_sale_price: 103.2975, buy_button_rank: 2 })).najtanszaNasza, true);
 });
 
-test('eMAG: mamy Buy Box i są inne oferty — konkurencja nieznana, model nie podnosi w ciemno', () => {
+test('eMAG: mamy Buy Box i są inne oferty — konkurencja nieznana, szukamy jej ceny krokiem +3%', () => {
   const ob = emag.zOferty(surowa({ number_of_offers: 4 }));
   assert.strictEqual(ob.bbNasz, true);
   assert.strictEqual(ob.najtanszaInna, null);
   assert.strictEqual(ob.konkurencjaNieznana, true);
   const d = decyzja(ob, { min: 100, max: 180 });
-  assert.strictEqual(d.zmiana, false);
-  assert.strictEqual(d.kod, 'top_konk_nieznana');
+  assert.strictEqual(d.zmiana, true);
+  assert.strictEqual(d.kod, 'sonda');
+  assert.strictEqual(d.cena, 128.74);                 // 124,99 × 1,03
   // jedyna oferta na produkcie — dawny kod bez zmian
   assert.strictEqual(decyzja(emag.zOferty(surowa()), { min: 100, max: 180 }).kod, 'top_bez_konkurencji');
 });

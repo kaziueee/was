@@ -31,6 +31,11 @@
 //     w 6 h (83,45 → 83,03 €) i ani razu BB. Kolejne kroki tylko oddają marżę. Po pauzie jedna
 //     obniżka; jeśli i ona nie da BB, znowu pauza — wojna idzie krokiem na dobę, nie co 30 min.
 //     Zdobyty Buy Box zeruje licznik; podwyżki, podłoga i powrót spod minimum działają normalnie.
+//  9. Szukanie ceny konkurenta (decyzja usera 2026-10-15, eMAG): mamy Buy Box, na produkcie są inne
+//     oferty, ale platforma nie podaje ich cen (`konkurencjaNieznana`). Podnosimy o `sondaKrokPct` na
+//     przebieg (nie wyżej niż max); gdy po takiej podwyżce stracimy BB, reguła 6 wraca do ostatniej
+//     ceny z BB i wstrzymuje podwyżki na `blokadaPodwyzekH` — cena staje tuż pod konkurentem.
+//     Jedyna oferta na produkcie (brak sygnału stopu) — bez zmian, nie podnosimy.
 
 const DOMYSLNE_REGULY = {
   krok: 0.01,          // o ile schodzimy pod konkurenta
@@ -41,6 +46,7 @@ const DOMYSLNE_REGULY = {
                        // przy dalekim konkurencie) może odciąć sprzedaż albo Buy Box; podchodzimy schodami
   wojnaObnizek: 3,     // tyle wysłanych obniżek z rzędu bez Buy Boxa = wojna o grosze (reguła 8)
   wojnaPauzaH: 24,     // tyle godzin od ostatniej obniżki bez kolejnej
+  sondaKrokPct: 3,     // krok szukania ceny konkurenta przy naszym BB, gdy jego ceny nie znamy (reguła 9)
 };
 
 const zaokr = (x) => Math.round(x * 100) / 100;
@@ -118,7 +124,14 @@ function decyzja(obs, pas, reguly = {}, kontekst = {}) {
     if (!(nast > 0)) {
       // eMAG przy naszym Buy Boxie podaje jako „najlepszą ofertę" nas samych — ceny następnego
       // konkurenta nie znamy, więc nie podnosimy w ciemno (inaczej „jedyna oferta" kłamałaby na ekranie).
-      if (obs.konkurencjaNieznana) return zostaw('top_konk_nieznana', 'mamy Buy Box; platforma nie podaje cen pozostałych ofert — nie podnosimy w ciemno');
+      if (obs.konkurencjaNieznana) {
+        if (kontekst.blokadaPodwyzek) {
+          return zostaw('top_blokada', `mamy Buy Box; szukanie ceny konkurenta wstrzymane po niedawnej utracie BB (${r.blokadaPodwyzekH} h)`);
+        }
+        const sonda = zaokr(Math.min(cena * (1 + r.sondaKrokPct / 100), max));
+        if (sonda - cena < 0.005) return zostaw('top', 'mamy Buy Box, cena na maksimum');
+        return ustaw(sonda, 'sonda', `mamy Buy Box, ceny konkurencji nieznane — szukamy jej: +${r.sondaKrokPct}% (po utracie BB powrót)`);
+      }
       return zostaw('top_bez_konkurencji', 'mamy Buy Box, brak innych ofert do porównania');
     }
     const cel = zaokr(Math.min(nast - r.krok - wys, max));

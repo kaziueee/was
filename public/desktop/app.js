@@ -4590,16 +4590,21 @@ function cenyWiersz(t, rynki) {
   const wl = oferty.filter((o) => o.auto).length;
   const td0 = document.createElement('td');
   td0.className = 'ceny-towar';
-  td0.innerHTML = `<button type="button" class="ceny-symbol ceny-link-karta" title="Karta SKU">${cenyEsc(t.symbol)}</button><div class="ceny-nazwa" title="${cenyEsc(t.nazwa)}">${cenyEsc(t.nazwa)}</div>`;
+  // Miniatura z tego samego źródła co Zebra (/api/produkty/:tw_Id/zdjecie — Sellasist po SKU, cache na
+  // dysku). To podgląd: brak zdjęcia albo błąd = ramka znika, wiersz wygląda jak dawniej. Klik = duże.
+  td0.innerHTML = `<div class="ceny-towar-flex"><a class="ceny-miniatura" href="/api/produkty/${Number(t.tw_id)}/zdjecie?rozmiar=duze" target="_blank" rel="noopener" title="Zdjęcie — otwórz duże">`
+    + `<img src="/api/produkty/${Number(t.tw_id)}/zdjecie?rozmiar=mini" alt="" loading="lazy" onerror="this.parentElement.remove()"></a>`
+    + `<div class="ceny-towar-tresc"><button type="button" class="ceny-symbol ceny-link-karta" title="Karta SKU">${cenyEsc(t.symbol)}</button><div class="ceny-nazwa" title="${cenyEsc(t.nazwa)}">${cenyEsc(t.nazwa)}</div></div></div>`;
+  const tresc = td0.querySelector('.ceny-towar-tresc');
   td0.querySelector('.ceny-link-karta').addEventListener('click', () => cenyOtworzKarte(t.tw_id));
-  td0.insertAdjacentHTML('beforeend', `<div class="ceny-stan">${cenyStanTekst(t.stan_gt)}</div>`);
+  tresc.insertAdjacentHTML('beforeend', `<div class="ceny-stan">${cenyStanTekst(t.stan_gt)}</div>`);
   if (oferty.length) {
     const lbl = document.createElement('label');
     lbl.className = 'ceny-auto-wiersz';
     lbl.appendChild(cenyPrzelacznik(wl === oferty.length ? 'on' : wl ? 'czesc' : '', `Automat dla wszystkich rynków ${t.symbol}`,
       () => cenyUstawAutomat(oferty, wl !== oferty.length)));
     lbl.append(` automat ${wl}/${oferty.length}`);
-    td0.appendChild(lbl);
+    tresc.appendChild(lbl);
   }
   tr.appendChild(td0);
   for (const r of rynki) tr.appendChild(cenyKomorka(t.rynki[r], r));

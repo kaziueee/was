@@ -51,8 +51,9 @@ test('towar bez Genius: bez opłaty Genius, droższy kurier, ale klient płaci 2
   // dopłata klienta liczy się po VAT i prowizji (jak cena towaru)
   const roznicaRon = (zB.zysk - zG.zysk) / g.ron;
   const wysylkaRon = (r.bezGenius.wysylkaEur - r.genius.wysylkaEur) * g.eur / g.ron;
-  const zDoplaty = 25 * (1 / 1.21 - r.prowizja / 100);
-  assert.ok(Math.abs(roznicaRon - (zDoplaty + 8 - wysylkaRon)) < 1e-9, roznicaRon);
+  const zDoplaty = 25 * (1 / 1.21 - r.prowizja / 100 / 1.21);    // prowizja eMAG od netto
+  const genius = 8 * r.genius.oplataZamUdzial;                    // opłata Genius oczekiwana (75%)
+  assert.ok(Math.abs(roznicaRon - (zDoplaty + genius - wysylkaRon)) < 1e-9, roznicaRon);
 });
 
 test('Genius eMAG RO: stała opłata za zamówienie wg progu ceny brutto (siatka od 01.01.2026)', () => {
@@ -67,15 +68,32 @@ test('Genius eMAG RO: stała opłata za zamówienie wg progu ceny brutto (siatka
   assert.strictEqual(rynki.oplataZamowienia({}, 100), 0);
 });
 
-test('Genius obniża zysk o pełną opłatę z progu, w jakim wylądowała cena', () => {
+test('Genius obniża zysk o opłatę z progu × udział zamówień klientów Genius (75%)', () => {
   const r = rynki.profilRynku(rynek('eMAG RO'), g);
   const bez = { ...r, oplataZam: undefined };
   for (const cena of [39.99, 69.99, 139.99]) {
     const a = rynki.wycenaPrzyCenie(60, r, g, cena), b = rynki.wycenaPrzyCenie(60, bez, g, cena);
     const roznicaRon = (b.zysk - a.zysk) / g.ron;
-    assert.ok(Math.abs(roznicaRon - rynki.oplataZamowienia(r, cena)) < 1e-9, `${cena}: ${roznicaRon}`);
-    assert.strictEqual(a.detal.oplataZam, rynki.oplataZamowienia(r, cena));
+    assert.ok(Math.abs(roznicaRon - rynki.oplataZamowienia(r, cena) * 0.75) < 1e-9, `${cena}: ${roznicaRon}`);
+    assert.strictEqual(a.detal.oplataZam, rynki.oplataZamowienia(r, cena));       // siatka — do pokazania
+    assert.ok(Math.abs(a.detal.oplataZamOczek - rynki.oplataZamOczekiwana(r, cena)) < 1e-9);
   }
+  // rynek bez `oplataZamUdzial` płaci pełną opłatę z każdego zamówienia
+  assert.strictEqual(rynki.oplataZamOczekiwana({ oplataZam: 'GENIUS_RO' }, 100), 8);
+});
+
+test('prowizja eMAG liczona od ceny BEZ VAT (aneks 30.09.2026), Amazon/Allegro od brutto jak dotąd', () => {
+  const r = rynek('eMAG RO');
+  assert.ok(Math.abs(rynki.prowizjaUlamek(r) - 0.16 / 1.21) < 1e-12);
+  assert.strictEqual(rynki.prowizjaUlamek(rynek('Allegro')), 0.133);
+  // przy 89,99 RON (lalka, Genius): prowizja 16% × 74,37 netto = 11,90 RON, nie 16% × 89,99 = 14,40
+  const bezProw = { ...r, prowizja: 0 };
+  const a = rynki.wycenaPrzyCenie(23.13, r, { ...g, genius: true }, 89.99);
+  const b = rynki.wycenaPrzyCenie(23.13, bezProw, { ...g, genius: true }, 89.99);
+  assert.ok(Math.abs((b.zysk - a.zysk) / g.ron - 89.99 / 1.21 * 0.16) < 1e-9);
+  // stawka oferty z eMAG (np. pluszak 18%) — nadpisanie `prowizja` w definicji rynku
+  const c = rynki.wycenaPrzyCenie(23.13, { ...r, prowizja: 18 }, { ...g, genius: true }, 89.99);
+  assert.ok(Math.abs((a.zysk - c.zysk) / g.ron - 89.99 / 1.21 * 0.02) < 1e-9);
 });
 
 test('Genius: cena z kalkulatora nie wisi tuż pod progiem z opłatą policzoną z niższego progu', () => {

@@ -21,7 +21,8 @@ const MNOZNIK_MAX = 1.5;
 // `ocen` liczy zysk (zł) i marżę (%) przy DOWOLNEJ cenie tą samą matematyką co Cennik
 // (rynki.wycenaPrzyCenie) — repricer zapisuje je przy każdej decyzji, ekran tylko czyta.
 // opcje.genius — Genius oferty eMAG z API (true/false); brak = z wymiarów GT.
-function pasyZWyceny(w, { genius } = {}) {
+// opcje.prowizja — stawka prowizji tej oferty z platformy (eMAG commission/estimate); brak = z config/rynki.
+function pasyZWyceny(w, { genius, prowizja } = {}) {
   if (!w) return {};
   // Docinanie kartonu ZAWSZE uwzględnione (decyzja usera 2026-10-14): towar oznaczony „Docinanie
   // kartonu: tak” jedzie w przyciętym kartonie, czyli w niższym progu DHL. Bez tego minimum było
@@ -33,8 +34,9 @@ function pasyZWyceny(w, { genius } = {}) {
     // Minimum liczone TUTAJ z `g` (z docinaniem), nie brane z w.rynki — tamta wycena (services/cennik)
     // idzie z checkboxem docinania wyłączonym. Wcześniej docinanie działało tylko w `ocen`, a minimum
     // zostało bez niego: 2026-10-14 automat podniósł przez to FR NERF7376 33,99 → 47,99 €.
-    const def = k.kalkulator && rynki.RYNKI.find((x) => x.nazwa === k.kalkulator);
+    let def = k.kalkulator && rynki.RYNKI.find((x) => x.nazwa === k.kalkulator);
     if (!def) continue;
+    if (k.platforma === 'emag' && prowizja > 0) def = { ...def, prowizja };
     const r = rynki.policzRynek(+w.koszt || 0, def, g);
     if (r && r.cena > 0 && !r.blad) {
       out[k.klucz] = {
@@ -49,10 +51,11 @@ function pasyZWyceny(w, { genius } = {}) {
   return out;
 }
 
-// twIds → Map(tw_Id → pasy wszystkich kanałów). geniusPoTw: Map(tw_Id → true/false) z ofert eMAG.
-async function pasyHurtem(twIds, geniusPoTw = new Map()) {
+// twIds → Map(tw_Id → pasy wszystkich kanałów). geniusPoTw: Map(tw_Id → true/false) z ofert eMAG,
+// prowizjaPoTw: Map(tw_Id → stawka %) z ofert eMAG (commission/estimate).
+async function pasyHurtem(twIds, geniusPoTw = new Map(), prowizjaPoTw = new Map()) {
   const wyceny = await wycenaHurtem(twIds);
-  return new Map([...wyceny].map(([id, w]) => [id, pasyZWyceny(w, { genius: geniusPoTw.get(id) })]));
+  return new Map([...wyceny].map(([id, w]) => [id, pasyZWyceny(w, { genius: geniusPoTw.get(id), prowizja: prowizjaPoTw.get(id) })]));
 }
 
 module.exports = { pasyHurtem, pasyZWyceny, MNOZNIK_MAX };

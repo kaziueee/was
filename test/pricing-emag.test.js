@@ -124,3 +124,13 @@ test('eMAG: „Invalid price” z offer_validation_status → blokada z opisem e
   assert.strictEqual(emag.doOferty(surowa({ offer_validation_status: { value: 1, description: 'Saleable', errors: null } })).blokada, null);
   assert.strictEqual(emag.doOferty(surowa()).blokada, null);
 });
+
+test('pas eMAG: stawka prowizji oferty z eMAG nadpisuje domyślne 16% (tylko kolumna eMAG)', () => {
+  const w = { koszt: 23.13, waga: 1.18, docinalny: false, genius: true };
+  const zwykly = pasyZWyceny(w, { genius: true });
+  const pluszak = pasyZWyceny(w, { genius: true, prowizja: 18 });
+  assert.ok(pluszak.EMAG_RO.min > zwykly.EMAG_RO.min, 'wyższa prowizja = wyższe minimum');
+  assert.strictEqual(pluszak.DE.min, zwykly.DE.min, 'Amazon bez zmian');
+  const z16 = zwykly.EMAG_RO.ocen(89.99), z18 = pluszak.EMAG_RO.ocen(89.99);
+  assert.ok(Math.abs((z16.zysk - z18.zysk) / rynki.DOMYSLNE.ron - 89.99 / 1.21 * 0.02) < 0.01);
+});

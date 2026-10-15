@@ -29,7 +29,7 @@ const { obserwuj } = require('./obserwuj');
 const { pasyHurtem } = require('./pas');
 const { decyzja, DOMYSLNE_REGULY } = require('./model');
 const { synchronizuj } = require('./sync-oferty');
-const { synchronizujEmag } = require('./sync-emag');
+const { synchronizujEmag, odswiezProwizje } = require('./sync-emag');
 const { obserwujEmag } = require('./obserwuj-emag');
 const emag = require('./emag');
 const { kluczKolumny, kolumna } = require('./kolumny');
@@ -65,6 +65,11 @@ async function przebieg({ pelny = false } = {}) {
       const s = await synchronizujEmag(emagSurowe);
       stan.set('sync_emag', JSON.stringify(s));
       wynik.emag = s.aktywne;
+      // Stawki prowizji per oferta — porcjami, błąd nie zatrzymuje przebiegu (kalkulator ma 16% domyślnie).
+      try {
+        const pr = await odswiezProwizje(emagSurowe);
+        if (pr.sprawdzone) wynik.emag_prowizje = pr;
+      } catch (e) { console.error(new Date().toISOString(), '[pricing] eMAG prowizje:', e.message); }
     } catch (e) {
       stan.set('blad_emag', e.message);
       console.error(new Date().toISOString(), '[pricing] eMAG:', e.message);
@@ -75,7 +80,7 @@ async function przebieg({ pelny = false } = {}) {
   const zapisWlaczony = process.env.PRICING_ZAPIS === '1';
   // Amazon: oferty z automatem co przebieg, cały katalog w pełnej obserwacji (limity API).
   // eMAG: zawsze cały katalog — obserwacja czyta listę pobraną wyżej, nie woła API po raz drugi.
-  const oferty = db.prepare(`SELECT id, platforma, rynek, sku, tw_id, auto, genius, dopasowanie FROM oferty
+  const oferty = db.prepare(`SELECT id, platforma, rynek, sku, tw_id, auto, genius, dopasowanie, prowizja FROM oferty
      WHERE ((platforma = 'amazon' AND ? AND (auto = 1 OR ?)) OR (platforma = 'emag' AND ?))
        AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all(PLATFORMY.has('amazon') ? 1 : 0, pelnyTeraz ? 1 : 0, emagSurowe ? 1 : 0);
   wynik.ofert = oferty.length;
@@ -85,10 +90,11 @@ async function przebieg({ pelny = false } = {}) {
   const amazon = oferty.filter((o) => o.platforma === 'amazon');
   const emagOf = oferty.filter((o) => o.platforma === 'emag');
   const geniusPoTw = new Map(emagOf.filter((o) => o.genius != null).map((o) => [o.tw_id, !!o.genius]));
+  const prowizjaPoTw = new Map(emagOf.filter((o) => o.prowizja > 0).map((o) => [o.tw_id, o.prowizja]));
   const [obsA, obsE, pasy] = await Promise.all([
     amazon.length ? obserwuj(amazon) : new Map(),
     emagOf.length ? obserwujEmag(emagOf, emagSurowe) : new Map(),
-    pasyHurtem(oferty.map((o) => o.tw_id), geniusPoTw),
+    pasyHurtem(oferty.map((o) => o.tw_id), geniusPoTw, prowizjaPoTw),
   ]);
   if (obsA.bledyPaczek) wynik.bledy_paczek = obsA.bledyPaczek;
   if (emagOf.length) wynik.emag_obs = { ofert: obsE.size, zmian: obsE.nowe || 0 };

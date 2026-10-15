@@ -117,6 +117,9 @@ if (!kolOferty.includes('dopasowanie')) db.exec('ALTER TABLE oferty ADD COLUMN d
 if (!kolOferty.includes('genius')) db.exec('ALTER TABLE oferty ADD COLUMN genius INTEGER');
 // Powód, dla którego platforma wstrzymała ofertę przez cenę (eMAG „Invalid price”); NULL = sprzedaje się.
 if (!kolOferty.includes('blokada')) db.exec('ALTER TABLE oferty ADD COLUMN blokada TEXT');
+// Stawka prowizji platformy dla TEJ oferty (eMAG: commission/estimate, % od ceny bez VAT) i kiedy pobrana.
+if (!kolOferty.includes('prowizja')) db.exec('ALTER TABLE oferty ADD COLUMN prowizja REAL');
+if (!kolOferty.includes('prowizja_czas')) db.exec('ALTER TABLE oferty ADD COLUMN prowizja_czas TEXT');
 // `oferty.zapis` (osobny przełącznik wysyłania, tryb Próba) zlikwidowany 2026-10-13 — w starszych
 // bazach kolumna zostaje, nic jej nie czyta: automat = wysyła, ręczny = nie.
 const kolObs = db.prepare('PRAGMA table_info(obserwacje)').all().map((k) => k.name);

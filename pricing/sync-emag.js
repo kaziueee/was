@@ -53,7 +53,29 @@ async function synchronizujEmag(surowe = null) {
   } catch (e) { db.exec('ROLLBACK'); throw e; }
 }
 
-module.exports = { synchronizujEmag };
+// Stawki prowizji per oferta (eMAG commission/estimate) — jedno zapytanie na ofertę, więc nie wszystkie
+// naraz: co przebieg najwyżej `limit` ofert ze stanem, najpierw bez stawki, potem najstarsze; stawka
+// żyje 7 dni. Pełne pokrycie ~1100 ofert = kilka przebiegów. Brak stawki = kalkulator bierze 16%.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function odswiezProwizje(surowe, limit = 120) {
+  const idPoSku = new Map((surowe || []).map((o) => [String(o.part_number || '').trim().toUpperCase(), o.id]));
+  const doPobrania = db.prepare(`SELECT id, sku FROM oferty WHERE platforma = 'emag' AND aktywna = 1 AND ilosc > 0
+      AND (prowizja_czas IS NULL OR prowizja_czas < datetime('now', '-7 days'))
+    ORDER BY prowizja_czas IS NOT NULL, prowizja_czas LIMIT ?`).all(limit);
+  const zapisz = db.prepare('UPDATE oferty SET prowizja = ?, prowizja_czas = CURRENT_TIMESTAMP WHERE id = ?');
+  let pobrane = 0;
+  for (const o of doPobrania) {
+    const id = idPoSku.get(String(o.sku).trim().toUpperCase());
+    if (!id) continue;
+    const v = await emag.prowizjaOferty(id);
+    zapisz.run(v, o.id);      // null też zapisujemy z czasem — nie pytamy o tę samą ofertę co przebieg
+    if (v != null) pobrane++;
+    await sleep(350);         // limit eMAG: 3 zapytania/s
+  }
+  return { sprawdzone: doPobrania.length, pobrane };
+}
+
+module.exports = { synchronizujEmag, odswiezProwizje };
 
 if (require.main === module) {
   synchronizujEmag()

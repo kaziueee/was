@@ -161,6 +161,19 @@ async function ustawCene(surowa, cenaBrutto) {
   }
 }
 
+// Stawka prowizji eMAG dla oferty (% od ceny bez VAT, np. 16) — osobne REST API, nie api-3:
+// GET /api/v1/commission/estimate/{id oferty} → {"data":{"value":"16.00","created":…}}. Zgadza się z
+// aneksem prowizyjnym i fakturami C-MKTP (2026-10-15). null = eMAG nie podał (nie zgadujemy).
+async function prowizjaOferty(id) {
+  if (!skonfigurowany()) throw new Error('eMAG: brak EMAG_RO_USER / EMAG_RO_PASS w .env');
+  const auth = 'Basic ' + Buffer.from(`${process.env.EMAG_RO_USER}:${process.env.EMAG_RO_PASS}`).toString('base64');
+  const r = await fetch(`https://marketplace-api.emag.ro/api/v1/commission/estimate/${encodeURIComponent(id)}`, { headers: { Authorization: auth } });
+  if (r.status === 401 || r.status === 403) throw new Error(`eMAG commission/estimate: HTTP ${r.status}`);
+  const j = await r.json().catch(() => null);
+  const v = Number(j?.data?.value);
+  return r.ok && v > 0 && v < 100 ? v : null;
+}
+
 // Jedna oferta po naszym SKU (part_number). Filtr po part_number skraca drogę; gdyby eMAG go
 // zignorował, porównanie poniżej i tak wybierze właściwą ofertę albo zejdziemy do pełnej listy.
 async function ofertaPoSku(sku) {
@@ -174,4 +187,4 @@ async function ofertaPoSku(sku) {
 // Strona produktu w eMAG po PNK (segment przed /pd/ to dowolny opis — eMAG przekierowuje).
 const linkiOferty = (pnk) => (pnk ? { produkt: `https://www.emag.ro/-/pd/${encodeURIComponent(pnk)}/` } : null);
 
-module.exports = { api, wszystkieOferty, doOferty, zOferty, zmianaCeny, ustawCene, ofertaPoSku, linkiOferty, skonfigurowany, VAT_RO };
+module.exports = { api, wszystkieOferty, doOferty, zOferty, zmianaCeny, ustawCene, ofertaPoSku, prowizjaOferty, linkiOferty, skonfigurowany, VAT_RO };

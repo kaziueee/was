@@ -83,14 +83,16 @@ const RYNKI = [
   //  - wysyłka Paxy: „A – Genius” HU 1,64 €, BG 1,99 € + paliwo (HU 0,16, BG 0,19 €/paczkę) + zwroty
   //    (HU 0,04, BG 0,19 €/paczkę); kurier Sameday HU 3,99 / 4,99 € za pobraniem (śr. 4,59), BG 5,49 €
   //    + prowizja pobraniowa (~1,78 €/paczkę). Cennik z aneksu (BG 7,86 €) NIE odpowiada fakturom,
-  //  - opłata za dostawę od klienta (HU 86% zamówień, BG 52%) — NIE liczona (wysKlient 0), dopóki nie
-  //    potwierdzimy, że trafia do nas, a nie do eMAG.
+  //  - opłata za dostawę od klienta TRAFIA DO NAS (eMAG bierze od niej prowizję — pozycja faktury
+  //    „Shipping tax commission”; pobrana kwota = towar brutto + dostawa). Średnio na każde zamówienie
+  //    (order/read 16.08–15.10): HU automat 752 Ft (81% płaci 490–1280), kurier 1750 Ft; BG automat
+  //    0,52 € (30% płaci), kurier 5 €. Na RO od 15.10 opłatę za automat pobiera eMAG (stąd tam 0).
   { nazwa: 'eMAG HU',     kraj: 'HU', waluta: 'HUF', vat: 27, prowizja: 18, prowizjaOdNetto: true, typ: 'flat',
-    genius:    { oplataZam: 'GENIUS_HU', oplataZamUdzial: 0.2, wysylkaEur: 1.84, wysKlient: 0 },
-    bezGenius: { wysylkaEur: 4.79, wysKlient: 0 } },
+    genius:    { oplataZam: 'GENIUS_HU', oplataZamUdzial: 0.2, wysylkaEur: 1.84, wysKlient: 752 },
+    bezGenius: { wysylkaEur: 4.79, wysKlient: 1750 } },
   { nazwa: 'eMAG BG',     kraj: 'BG', waluta: 'EUR', vat: 20, prowizja: 18, prowizjaOdNetto: true, typ: 'flat',
-    genius:    { oplataZam: 'GENIUS_BG', oplataZamUdzial: 0.3, wysylkaEur: 2.37, wysKlient: 0 },
-    bezGenius: { wysylkaEur: 7.65, wysKlient: 0 } },
+    genius:    { oplataZam: 'GENIUS_BG', oplataZamUdzial: 0.3, wysylkaEur: 2.37, wysKlient: 0.52 },
+    bezGenius: { wysylkaEur: 7.65, wysKlient: 5 } },
   // Kaufland DE: ta sama umowa DHL do Niemiec co Amazon DE (koszt po wadze). Prowizja 13% dla zabawek
   // (kauflandglobalmarketplace.com/en/conditions) - od ceny BRUTTO wraz z wysylka, netto + VAT -> model amazon-dhl.
   { nazwa: 'Kaufland DE', kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 13, wysKlient: 4.99, typ: 'amazon-dhl' },

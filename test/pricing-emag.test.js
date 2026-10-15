@@ -36,6 +36,20 @@ test('eMAG: przegrywamy Buy Box — cena zwycięzcy brutto to Buy Box i najtańs
   assert.strictEqual(ob.konkurencjaNieznana, false);
 });
 
+test('eMAG: nie mamy Buy Boxa, ale „najlepsza oferta” to my — nie gonimy własnej ceny', () => {
+  // FPCNM42 15.10: nasze 209,98 = best_offer_sale_price, rank 2 — Buy Box ma oferta za 219,00
+  const ob = emag.zOferty(surowa({ sale_price: 173.5372, best_offer_sale_price: 173.5372, buy_button_rank: 2, number_of_offers: 2 }));
+  assert.strictEqual(ob.bbNasz, false);
+  assert.strictEqual(ob.najtanszaNasza, true);
+  assert.strictEqual(ob.bbCena, null);
+  assert.strictEqual(ob.najtanszaInna, null);
+  const d = decyzja(ob, { min: 170, max: 260 });
+  assert.strictEqual(d.zmiana, false);
+  assert.strictEqual(d.kod, 'przegrana_nie_cena');
+  // remis co do grosza traktujemy tak samo — nie wiemy, czy Buy Box ma oferta w tej samej cenie
+  assert.strictEqual(emag.zOferty(surowa({ best_offer_sale_price: 103.2975, buy_button_rank: 2 })).najtanszaNasza, true);
+});
+
 test('eMAG: mamy Buy Box i są inne oferty — konkurencja nieznana, model nie podnosi w ciemno', () => {
   const ob = emag.zOferty(surowa({ number_of_offers: 4 }));
   assert.strictEqual(ob.bbNasz, true);

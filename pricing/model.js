@@ -54,6 +54,7 @@ const zaokr = (x) => Math.round(x * 100) / 100;
 //   najtanszaInna,   // najtańsza landed oferta INNEGO sprzedawcy (null = brak)
 //   bbInnaNasza,     // Buy Box ma nasza INNA oferta tego samego ASIN-u
 //   konkurencjaNieznana, // mamy Buy Box, są inne oferty, ale platforma nie podaje ich cen (eMAG)
+//   najtanszaNasza,  // nie mamy Buy Boxa, choć nasza oferta jest najtańsza (eMAG: Buy Box nie tylko po cenie)
 // }
 // pas: { min, max } — ceny towaru (bez wysyłki) z kalkulatora
 // kontekst (z historii decyzji, liczy worker):
@@ -128,6 +129,11 @@ function decyzja(obs, pas, reguly = {}, kontekst = {}) {
       return ustaw(cel, 'podwyzka', `mamy Buy Box, następny konkurent ${nast} (z wysyłką) — podnosimy pod niego`);
     }
     return zostaw('top', 'mamy Buy Box, cena już tuż pod konkurentem albo na maksimum');
+  }
+
+  // eMAG przyznaje Buy Box nie tylko po cenie — gdy już jesteśmy najtańsi, obniżka tylko oddaje marżę.
+  if (obs.bbNasz === false && obs.najtanszaNasza) {
+    return zostaw('przegrana_nie_cena', 'jesteśmy najtańsi (albo na równi), a Buy Box ma inna oferta — obniżka nie pomoże');
   }
 
   if (obs.bbNasz === false && obs.bbCena > 0) {

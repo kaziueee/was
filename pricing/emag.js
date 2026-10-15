@@ -10,8 +10,11 @@
 //   part_number            — nasz symbol (SKU), part_number_key — PNK, czyli identyfikator produktu w eMAG
 //   sale_price             — cena NETTO, 4 miejsca po przecinku; brutto = × (1 + VAT) (vat_id 9 = 21%)
 //   buy_button_rank        — 1 = mamy Buy Box („buy button"); >1 = przegrywamy; null = oferta nie walczy
-//   best_offer_sale_price  — cena netto zwycięzcy. Gdy mamy Buy Box, to NASZA cena — ceny następnego
-//                            konkurenta API nie podaje, więc podwyżki „pod konkurenta" na eMAG nie liczymy
+//   best_offer_sale_price  — cena netto NAJTAŃSZEJ oferty na produkcie — NIE zwycięzcy Buy Boxa (test
+//                            15.10: FPCNM42 nasze 209,98 = „best”, a Buy Box ma Jucarii Papetarie za 219,00).
+//                            Gdy to nasza cena, jesteśmy najtańsi i obniżka nic nie da. Gdy mamy Buy Box,
+//                            ceny następnego konkurenta API nie podaje — podwyżek „pod konkurenta" nie liczymy.
+//   main_offer_price       — nieopisane w dokumentacji i niezgodne ze stroną (FPCNM42: 199,90) — nie używamy
 //   number_of_offers       — ile ofert na produkcie (z naszą)
 //   genius_computed        — >0 = Genius aktywny (1/2/2 = automat; 1/3/0 = kwalifikuje się tylko do
 //                            Genius z dostawą do domu, nieaktywny; 0/0/0 = bez Genius)
@@ -91,14 +94,21 @@ function zOferty(o) {
   // Mamy Buy Box: „najlepsza oferta" to zwykle my; tańsza od nas = konkurent bez Buy Boxa (inne
   // kryteria eMAG niż cena) — to jedyna cena konkurencji, jaką wtedy znamy.
   const tanszaInna = bbNasz && best != null && cena != null && best < cena - 0.005 ? best : null;
+  // Nie mamy Buy Boxa, a najtańsza oferta to my (albo remis): Buy Box ma oferta nie tańsza od nas,
+  // jej ceny API nie podaje. Wcześniej brana za „cenę Buy Boxa”, przez co repricer gonił własną cenę
+  // o grosz w dół co przebieg. Pomiar 15.10: 48 z 358 ofert bez Buy Boxa, w tym 24 z 90 w filtrze
+  // „Szansa na Buy Box” (cała jego czołówka — „różnica do Buy Boxa 0,01”).
+  const najtanszaNasza = bbNasz === false && best != null && cena != null && best >= cena - 0.005;
+  const zwyciezca = bbNasz === false && !najtanszaNasza ? best : null;
   return {
     cena,
     wysylka: 0,
     bbNasz,
     bbInnaNasza: false,
-    bbCena: bbNasz === false ? best : bbNasz ? cena : null,
+    bbCena: bbNasz ? cena : zwyciezca,
     bbFba: false,
-    najtanszaInna: bbNasz === false ? best : tanszaInna,
+    najtanszaInna: bbNasz === false ? zwyciezca : tanszaInna,
+    najtanszaNasza,
     // Mamy Buy Box, na produkcie są inne oferty, ale ich cen API nie podaje.
     konkurencjaNieznana: !!(bbNasz && tanszaInna == null && ofert > 1),
     ofert,

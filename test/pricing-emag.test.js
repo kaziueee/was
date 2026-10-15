@@ -75,10 +75,10 @@ test('eMAG: oferta bez rangi Buy Boxa — nie wiadomo, nic nie decydujemy', () =
   assert.strictEqual(decyzja(ob, { min: 100, max: 180 }).kod, 'brak_danych');
 });
 
-test('kolumny: Amazon zostaje pod kodem rynku, eMAG dostaje własny klucz i jest tylko do odczytu', () => {
+test('kolumny: Amazon zostaje pod kodem rynku, eMAG dostaje własny klucz i automat (od 2026-10-15)', () => {
   assert.strictEqual(kluczKolumny('amazon', 'DE'), 'DE');
   assert.strictEqual(kluczKolumny('emag', 'RO'), 'EMAG_RO');
-  assert.strictEqual(kolumna('emag', 'RO').tylkoOdczyt, true);
+  assert.ok(!kolumna('emag', 'RO').tylkoOdczyt);
   assert.strictEqual(kolumna('emag', 'RO').waluta, 'RON');
   assert.ok(!kolumna('amazon', 'DE').tylkoOdczyt);
 });
@@ -114,4 +114,13 @@ test('eMAG: zmiana ceny — poza zakresem min/max z eMAG albo bez id/VAT = odmow
   assert.match(emag.zmianaCeny(surowa({ id: 3, vat_id: 77 }), 50).blad, /VAT/);
   assert.match(emag.zmianaCeny(surowa(), 50).blad, /id/);
   assert.match(emag.zmianaCeny(o, 0).blad, /niepoprawna/);
+});
+
+test('eMAG: „Invalid price” z offer_validation_status → blokada z opisem eMAG (obiekt albo tekst JSON)', () => {
+  const st = { value: 2, description: 'Invalid price', errors: 'Price seems to be too low compared to other prices' };
+  assert.strictEqual(emag.doOferty(surowa({ offer_validation_status: st })).blokada,
+    'Invalid price: Price seems to be too low compared to other prices');
+  assert.strictEqual(emag.doOferty(surowa({ offer_validation_status: JSON.stringify(st) })).blokada.startsWith('Invalid price'), true);
+  assert.strictEqual(emag.doOferty(surowa({ offer_validation_status: { value: 1, description: 'Saleable', errors: null } })).blokada, null);
+  assert.strictEqual(emag.doOferty(surowa()).blokada, null);
 });

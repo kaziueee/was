@@ -80,7 +80,18 @@ function doOferty(o) {
     ilosc: stan,
     aktywna: Number(o.status) === 1,
     genius: Number(o.genius_computed) > 0 ? 1 : 0,
+    blokada: blokadaCeny(o),
   };
+}
+
+// offer_validation_status 2 = „Invalid price” — eMAG wstrzymuje sprzedaż, bo cena odstaje od innych
+// (15.10: 21 z 1115 aktywnych ofert, np. „Price seems to be too low compared to other prices”).
+// Oferta jest wtedy aktywna, ale się nie sprzedaje — pokazujemy to na ekranie Ceny.
+function blokadaCeny(o) {
+  let w = o.offer_validation_status;
+  if (typeof w === 'string') { try { w = JSON.parse(w); } catch { w = null; } }
+  if (!w || Number(w.value) !== 2) return null;
+  return [w.description || 'Invalid price', w.errors].filter(Boolean).join(': ');
 }
 
 // Surowa oferta z API → obserwacja w kształcie pricing/model.js. Porównujemy ceny TOWARU (bez

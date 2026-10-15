@@ -1,8 +1,8 @@
 'use strict';
 
 // Ekran „Ceny" (repricer) — odczyt bazy repricera `db/pricing.db` + włączanie/wyłączanie automatu.
-// Kanały (kolumny) z pricing/kolumny.js: Amazon DE…PL i eMAG RO. eMAG jest TYLKO DO ODCZYTU —
-// POST /automat odrzuca włączenie automatu na kanale `tylkoOdczyt` (zasada 5: blokada w backendzie).
+// Kanały (kolumny) z pricing/kolumny.js: Amazon DE…PL i eMAG RO (automat od 2026-10-15). Kanał oznaczony
+// `tylkoOdczyt` — POST /automat odrzuca na nim włączenie automatu (zasada 5: blokada w backendzie).
 // Liczy i obserwuje osobny proces (pricing/worker.js, zadanie WMS-Pricing); WMS tylko czyta jego
 // wyniki i zapisuje decyzję człowieka: automat (auto = 1, ceny idą na Amazona) albo ręczny (0). Montowane z auth.wymagajRoli('admin') — na czas
 // testów tylko administrator (decyzja usera 2026-10-13); biuro dostanie dostęp po testach.
@@ -67,7 +67,7 @@ const wartoscFiltra = (t, f) => Math.max(...Object.values(t.rynki).filter((o) =>
 
 // Ostatnia obserwacja i ostatnia decyzja każdej oferty — jedno zapytanie, korelowane po max(id).
 const SQL_OFERTY = `
-  SELECT o.id, o.platforma, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.dopasowanie, o.genius,
+  SELECT o.id, o.platforma, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.dopasowanie, o.genius, o.blokada,
          b.czas AS obs_czas, COALESCE(b.widziana, b.czas) AS obs_widziana, b.cena, b.wysylka, b.bb_nasz, b.bb_cena, b.bb_fba, b.najtansza_inna, b.ofert, b.bb_nasza_inna,
          d.kod, d.cena_nowa, d.powod, d.min, d.max, d.zysk, d.marza, d.zysk_nowa,
          d.czas AS dec_czas, d.wyslano, d.blad AS dec_blad, d.marza_nowa, d.cena_cel, d.zysk_cel

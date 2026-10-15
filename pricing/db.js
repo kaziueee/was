@@ -115,6 +115,8 @@ CREATE TABLE IF NOT EXISTS stan (
 const kolOferty = db.prepare('PRAGMA table_info(oferty)').all().map((k) => k.name);
 if (!kolOferty.includes('dopasowanie')) db.exec('ALTER TABLE oferty ADD COLUMN dopasowanie TEXT');
 if (!kolOferty.includes('genius')) db.exec('ALTER TABLE oferty ADD COLUMN genius INTEGER');
+// Powód, dla którego platforma wstrzymała ofertę przez cenę (eMAG „Invalid price”); NULL = sprzedaje się.
+if (!kolOferty.includes('blokada')) db.exec('ALTER TABLE oferty ADD COLUMN blokada TEXT');
 // `oferty.zapis` (osobny przełącznik wysyłania, tryb Próba) zlikwidowany 2026-10-13 — w starszych
 // bazach kolumna zostaje, nic jej nie czyta: automat = wysyła, ręczny = nie.
 const kolObs = db.prepare('PRAGMA table_info(obserwacje)').all().map((k) => k.name);

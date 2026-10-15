@@ -4473,7 +4473,7 @@ el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
   window.addEventListener('wms-zalogowano', odswiez);
 })();
 
-// === CENY (repricer: Amazon + eMAG RO tylko do odczytu) ===
+// === CENY (repricer: Amazon + eMAG RO) ===
 // Dane liczy osobny proces (pricing/worker.js) do db/pricing.db; tu tylko odczyt + włącz/wyłącz
 // automat. Backend: routes/ceny.js (na czas testów tylko admin). Nigdy nie włączamy automatu na cały katalog —
 // tylko wskazane oferty (komórka) albo wszystkie rynki jednego towaru (przełącznik przy SKU).
@@ -4542,7 +4542,7 @@ function renderujCeny(d) {
   const blad = d.blad && (!d.przebieg || d.blad.czas > d.przebieg.czas) ? ` · <span class="ceny-blad">błąd: ${cenyEsc(d.blad.wartosc)}</span>` : '';
   const em = d.emag || {};
   const emagTxt = em.blad && (!em.sync || em.blad.czas > em.sync.czas) ? ` · <span class="ceny-blad">eMAG: ${cenyEsc(em.blad.wartosc)}</span>`
-    : em.sync ? ` · eMAG RO (tylko odczyt) ${cenyGodzina(em.sync.czas)}` : '';
+    : em.sync ? ` · eMAG RO ${cenyGodzina(em.sync.czas)}` : '';
   el('ceny-stan').innerHTML = przebieg + pelna + blad + emagTxt;
   for (const k of ['automat', 'szansa', 'podwyzka', 'decyzja', 'wszystkie']) el(`ceny-l-${k}`).textContent = d.liczniki[k] ?? '';
   el('ceny-hamulec').classList.toggle('hidden', d.wysylanie !== false);
@@ -4614,6 +4614,9 @@ function cenyPoWyslaniu(o) {
   return { ...o, cena: o.cena_nowa, marza: o.marza_nowa, zysk: o.zysk_nowa, kod: 'wyslano', czeka: true };
 }
 
+// Platforma wstrzymała ofertę przez cenę (eMAG „Invalid price”) — oferta aktywna, ale się nie sprzedaje.
+const cenyBlokadaHtml = (o) => (o.blokada ? `<div class="ceny-dec dol" title="${cenyEsc(o.blokada)}">⚠ ${o.platforma === 'emag' ? 'eMAG' : 'platforma'} wstrzymał ofertę: ${/too low/i.test(o.blokada) ? 'cena zbyt niska' : 'cena odrzucona'}</div>` : '');
+
 function cenyKomorka(o, rynek) {
   const td = document.createElement('td');
   if (!o) { td.innerHTML = '<span class="hint">—</span>'; return td; }
@@ -4647,7 +4650,8 @@ function cenyKomorka(o, rynek) {
     ? `<div class="ceny-m">${o.obs_czas == null ? 'jeszcze nie obserwowana' : 'brak naszej oferty w odpowiedzi'}</div><div class="ceny-m">stan ${o.ilosc}</div>`
     : `<div class="ceny-cena">${cenyLiczba(o.cena)} ${w}${o.wysylka ? ` <small>+${cenyLiczba(o.wysylka)}</small>` : ''}</div>`
     + (o.cena == null ? '' : `<div class="ceny-m">marża ${o.marza != null ? cenyLiczba(o.marza, 1) + '%' : '—'}</div>`)
-    + (o.cena == null ? '' : `<div class="ceny-m">zysk ${o.zysk != null ? cenyLiczba(o.zysk) + ' zł' : '—'}</div>${gen}${bb}${pod}${wys}`);
+    + (o.cena == null ? '' : `<div class="ceny-m">zysk ${o.zysk != null ? cenyLiczba(o.zysk) + ' zł' : '—'}</div>${gen}${bb}${pod}${wys}`)
+    + cenyBlokadaHtml(o);
   div.addEventListener('click', () => cenyOtworzKarte(o.tw_id, rynek));
   const wrap = document.createElement('div');
   wrap.className = 'ceny-kom-wrap';
@@ -4809,7 +4813,7 @@ async function odswiezCenyKarta() {
         <div class="ceny-karta-tyt"><h3>${cenyEsc(d.symbol)}</h3><div class="ceny-nazwa-pelna">${cenyEsc(d.nazwa)}</div><div class="ceny-fakty"><span>${cenyStanTekst(d.stan_gt)}</span>${fakty}</div></div>
         <label class="ceny-auto-wiersz duzy" id="ceny-karta-auto"></label>
       </div>
-      <p class="hint">Rynki od największego zysku na sztuce. Zielone tło = mamy Buy Box, szare = ręczny (automat wyłączony). Włączony automat zmienia ceny na Amazonie; eMAG na razie tylko obserwujemy.</p>
+      <p class="hint">Rynki od największego zysku na sztuce. Zielone tło = mamy Buy Box, szare = ręczny (automat wyłączony). Włączony automat zmienia ceny na platformie (Amazon, eMAG RO).</p>
       <div class="ceny-rynki">${oferty.map(cenyKartaRynekHtml).join('')}</div>`;
     const lbl = el('ceny-karta-auto');
     if (zeStanem.length) {
@@ -4848,7 +4852,7 @@ function cenyKartaRynekHtml(o) {
         <td>${cenyEsc(x.powod)}${x.auto ? '' : ' <span class="hint">(automat wył.)</span>'}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">Brak decyzji.</p>';
   const zmiany = o.zmiany.length ? `<p class="hint">${o.zmiany.map((z) => `${formatDatetime(z.czas)} ${cenyEsc(z.kto || '?')}: ${cenyEsc(CENY_AKCJE[z.akcja] || z.akcja)}`).join(' · ')}</p>` : '';
   return `<section class="ceny-rynek${o.bb_nasz ? ' bb' : ''}${o.auto ? '' : ' off'}" data-ceny-rynek="${o.kolumna || o.rynek}">
-    <div class="ceny-k-rynek"><h4>${cenyEsc(cenyKanal(o))}</h4><div class="ceny-sku">${cenyEsc(o.sku)} · stan ${o.ilosc}</div>
+    <div class="ceny-k-rynek"><h4>${cenyEsc(cenyKanal(o))}</h4><div class="ceny-sku">${cenyEsc(o.sku)} · stan ${o.ilosc}</div>${cenyBlokadaHtml(o)}
       <div class="ceny-m">${stanBb}</div>
       ${o.genius == null ? '' : `<div class="ceny-m">${o.genius ? 'Genius aktywny — opłata Genius, dostawa do automatu' : 'bez Genius — kurier do domu, klient płaci 25 RON'}</div>`}
       ${o.tylko_odczyt ? '<div class="hint">tylko odczyt — repricer nie zmienia tu cen</div>'

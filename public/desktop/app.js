@@ -4509,7 +4509,12 @@ function cenyCelHtml(o, w) {
 function cenyStanTekst(s, { tylkoRazem = false } = {}) {
   if (s === undefined) return '';                    // backend bez pola (przed restartem WMS)
   if (!s) return 'stan: — <span class="hint">(GT nie odpowiada)</span>';
-  if (tylkoRazem) return `stan: <b>${s.razem}</b>`;
+  // Zestaw: stan = ile kompletów da się złożyć ze składników (tak liczy Sellasist), nie stan GT zestawu.
+  const zest = !s.zestaw ? '' : s.sklad_nieokreslony
+    ? ' <span class="hint" title="Zestaw bez składu w GT — pokazany własny stan zestawu">zestaw?</span>'
+    : ` <span class="hint" title="Zestaw: tyle kompletów da się złożyć ze składników (stan − rezerwacje na K4+K4G+MAG+LS) — tyle samo Sellasist wystawia na platformy${s.zmontowane ? `; zmontowanych w GT: ${s.zmontowane}` : ''}">zestaw</span>`;
+  if (tylkoRazem) return `stan: <b>${s.razem}</b>${zest}`;
+  if (s.zestaw) return `stan: <b>${s.razem}</b>${zest} do złożenia${s.zmontowane ? ` · zmontowanych ${s.zmontowane}` : ''}`;
   return `stan: <b>${s.razem}</b> razem · K4 <b>${s.k4}</b>${s.k4_rez ? ` (rez. ${s.k4_rez})` : ''}`;
 }
 
@@ -4841,7 +4846,7 @@ async function odswiezCenyKarta() {
         <div class="ceny-karta-tyt"><h3>${cenyEsc(d.symbol)}</h3><div class="ceny-nazwa-pelna">${cenyEsc(d.nazwa)}</div><div class="ceny-fakty"><span>${cenyStanTekst(d.stan_gt)}</span>${fakty}</div></div>
         <label class="ceny-auto-wiersz duzy" id="ceny-karta-auto"></label>
       </div>
-      <p class="hint">Rynki od największego zysku na sztuce. Zielone tło = mamy Buy Box, szare = ręczny (automat wyłączony). Włączony automat zmienia ceny na platformie (Amazon, eMAG RO; eMAG HU i BG na razie tylko obserwacja).</p>
+      <p class="hint">Rynki od największego zysku na sztuce. Zielone tło = mamy Buy Box, szare = ręczny (automat wyłączony). Włączony automat zmienia ceny na platformie (Amazon, eMAG RO, HU i BG — każdy rynek z własnym minimum).</p>
       <div class="ceny-rynki">${oferty.map(cenyKartaRynekHtml).join('')}</div>`;
     const lbl = el('ceny-karta-auto');
     if (zeStanem.length) {

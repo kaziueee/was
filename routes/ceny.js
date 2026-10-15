@@ -26,17 +26,24 @@ const emag = require('../pricing/emag');
 const { KOLUMNY, kluczKolumny, kolumna } = require('../pricing/kolumny');
 const { wycenaHurtem } = require('../services/cennik');
 const { pobierzStanyGt, sumaRazem } = require('../services/gt-produkty');
+const { doZlozeniaMapa } = require('../services/gt-zestawy');
 const { pewneDopasowanie, znajdzTowar, powiaz, usunPowiazanie } = require('../pricing/powiazania');
 const filtry = require('../pricing/filtry-cen');
 
 // Stan z GT (master stanów) dla pokazanych towarów: Razem (bez BRK) i K4. GT padnięte = null,
 // ekran pokazuje wtedy „—", a nie zero (zero to pewna informacja, której nie mamy).
+// Zestaw (rodzaj 8): Razem = ile kompletów da się złożyć ze składników — tyle samo Sellasist wystawia
+// na platformy; własny stan GT zestawu to tylko zmontowane sztuki (zwykle 0), idzie do `zmontowane`.
 async function stanyGt(twIds) {
   try {
-    const m = await pobierzStanyGt(twIds);
+    const [m, zestawy] = await Promise.all([pobierzStanyGt(twIds), doZlozeniaMapa(twIds)]);
     return (id) => {
       const s = m.get(String(id));
-      return s ? { razem: sumaRazem(s), k4: s.K4?.ilosc ?? 0, k4_rez: s.K4?.rezerwacja ?? 0 } : null;
+      if (!s) return null;
+      const st = { razem: sumaRazem(s), k4: s.K4?.ilosc ?? 0, k4_rez: s.K4?.rezerwacja ?? 0 };
+      if (!zestawy.has(Number(id))) return st;
+      const z = zestawy.get(Number(id));
+      return { ...st, zestaw: true, zmontowane: st.razem, razem: z ?? st.razem, sklad_nieokreslony: z == null };
     };
   } catch (e) {
     console.error('[ceny] GT stany:', e.message);

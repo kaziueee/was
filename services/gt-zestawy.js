@@ -23,7 +23,9 @@
 //
 // Rzuca gdy GT SQL niedostepny - wywolujacy (endpoint) mapuje na 503, jak inne ekrany GT-only.
 
-const { query } = require('./gt-sql');
+const { query, naCzesci } = require('./gt-sql');
+const { MAGAZYNY_RAZEM } = require('../config/magazyny');
+const { ileDoZlozenia } = require('./zestawy-model');
 
 const RODZAJ_ZESTAW = 8;
 const MAG_K4_SYMBOL = 'K4';
@@ -161,4 +163,38 @@ async function rozbicieDlaProduktu(twId) {
 // Test/diagnostyka - wymusza swiezy odczyt (pomija cache).
 function wyczyscCache() { cache = null; }
 
-module.exports = { wZestawach, wZestawachMapa, rozbicieDlaProduktu, zbudujModel, wyczyscCache };
+// tw_Id → ile kompletów da się złożyć ze składników (wzór i pomiar w services/zestawy-model.js).
+// Wpis TYLKO dla zestawów (rodzaj 8) — zwykły towar nie ma wpisu; null = skład nieokreślony w GT.
+// Inny model niż wyżej (tam: zestawy ZMONTOWANE na K4, tu: każdy zestaw z listy, potencjał ze składników).
+async function doZlozeniaMapa(twIds) {
+  const ids = [...new Set(twIds.map(Number).filter((x) => x > 0))];
+  const sklady = new Map();                       // zestaw → [{ skladnik, liczba }]
+  for (const czesc of naCzesci(ids, 1000)) {
+    const p = { rodzaj: RODZAJ_ZESTAW };
+    const lista = czesc.map((id, i) => { p[`t${i}`] = id; return `@t${i}`; }).join(',');
+    const { recordset } = await query(
+      `SELECT t.tw_Id AS zestaw, k.kpl_IdSkladnik AS skladnik, k.kpl_Liczba AS liczba
+       FROM tw__Towar t LEFT JOIN tw_Komplet k ON k.kpl_IdKomplet = t.tw_Id
+       WHERE t.tw_Rodzaj = @rodzaj AND t.tw_Id IN (${lista})`, p);
+    for (const r of recordset) {
+      if (!sklady.has(r.zestaw)) sklady.set(r.zestaw, []);
+      if (r.skladnik != null) sklady.get(r.zestaw).push({ skladnik: r.skladnik, liczba: Number(r.liczba) || 0 });
+    }
+  }
+  const skladniki = [...new Set([...sklady.values()].flat().map((x) => x.skladnik))];
+  const dostepne = new Map();
+  for (const czesc of naCzesci(skladniki, 1000)) {
+    const p = {};
+    const lista = czesc.map((id, i) => { p[`s${i}`] = id; return `@s${i}`; }).join(',');
+    const magi = MAGAZYNY_RAZEM.map((kod, i) => { p[`m${i}`] = kod; return `@m${i}`; }).join(',');
+    const { recordset } = await query(
+      `SELECT s.st_TowId AS id, SUM(s.st_Stan - s.st_StanRez) AS dostepne
+       FROM tw_Stan s JOIN sl_Magazyn m ON m.mag_Id = s.st_MagId
+       WHERE s.st_TowId IN (${lista}) AND m.mag_Symbol IN (${magi})
+       GROUP BY s.st_TowId`, p);
+    for (const r of recordset) dostepne.set(r.id, Number(r.dostepne) || 0);
+  }
+  return new Map([...sklady].map(([id, sklad]) => [id, ileDoZlozenia(sklad, dostepne)]));
+}
+
+module.exports = { wZestawach, wZestawachMapa, rozbicieDlaProduktu, zbudujModel, wyczyscCache, doZlozeniaMapa };

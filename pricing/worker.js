@@ -154,7 +154,7 @@ async function przebieg({ pelny = false } = {}) {
           const s = emagPoSku.get(String(o.sku).trim().toUpperCase());
           w = s ? await emag.ustawCene(s, d.cena) : { ok: false, blad: 'oferty nie ma na liście eMAG z tego przebiegu' };
         } else w = { ok: false, blad: `zapis na ${o.platforma} nieobsługiwany` };
-        if (w.ok) { wyslano = 1; wysylka.wyslane++; if (o.platforma === 'amazon') doPotwierdzenia.push(o); }
+        if (w.ok) { wyslano = 1; wysylka.wyslane++; doPotwierdzenia.push(o); }
         else { blad = w.blad || `${o.platforma}: ${w.status}`; wysylka.odrzucone++; }
       } catch (e) { blad = e.message; wysylka.odrzucone++; }
       console.log(new Date().toISOString(), `[pricing] ${kluczKolumny(o.platforma, o.rynek)} ${o.sku}: ${ob.cena} → ${d.cena} ${wyslano ? 'WYSŁANO' : 'NIE WYSŁANO: ' + blad}`);
@@ -185,6 +185,8 @@ async function przebieg({ pelny = false } = {}) {
 // Sprawdzamy więc wysłane oferty jeszcze raz po PRICING_POTWIERDZENIE_MIN (domyślnie 5) — sama
 // obserwacja, bez decyzji. Ekran WMS od razu ma wtedy faktyczny stan (cena i Buy Box po zmianie).
 const POTWIERDZENIE_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE_MIN, 5, 'PRICING_POTWIERDZENIE_MIN');
+// eMAG wprowadza nową cenę po ~4 min (test FPCNM42 15.10) — sprawdzamy później niż Amazona.
+const POTWIERDZENIE_EMAG_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE_EMAG_MIN, 8, 'PRICING_POTWIERDZENIE_EMAG_MIN');
 
 async function przebiegBezpieczny(opcje) {
   const t0 = Date.now();
@@ -202,7 +204,11 @@ async function przebiegBezpieczny(opcje) {
   }
 }
 
-async function potwierdz(oferty) {
+async function potwierdz(wszystkie) {
+  const oferty = wszystkie.filter((o) => o.platforma === 'amazon');
+  const emagOf = wszystkie.filter((o) => o.platforma === 'emag');
+  if (emagOf.length) await potwierdzEmag(emagOf);
+  if (!oferty.length) return;
   try {
     const obs = await obserwuj(oferty);
     for (const o of oferty) {
@@ -212,6 +218,26 @@ async function potwierdz(oferty) {
     }
   } catch (e) {
     console.error(new Date().toISOString(), '[pricing] błąd potwierdzenia:', e.message);
+  }
+}
+
+// eMAG: bez pobierania całej listy (32 zapytania) — po jednym zapytaniu na wysłaną ofertę, a obserwacja
+// tą samą drogą co w przebiegu (obserwujEmag: zmieniony stan = nowy wiersz, ekran przestaje „czekać”).
+async function potwierdzEmag(oferty) {
+  try {
+    const surowe = [];
+    for (const o of oferty) {
+      surowe.push(...await emag.ofertaPoSku(o.sku));
+      await new Promise((r) => setTimeout(r, 350));
+    }
+    const obs = await obserwujEmag(oferty, surowe);
+    for (const o of oferty) {
+      const ob = obs.get(o.id);
+      console.log(new Date().toISOString(), `[pricing] potwierdzenie EMAG_RO ${o.sku}: na eMAG ${ob ? ob.cena : '?'}`
+        + `, Buy Box ${ob ? (ob.bbNasz ? 'nasz' : ob.bbNasz === false ? 'INNY' : '?') : '?'}`);
+    }
+  } catch (e) {
+    console.error(new Date().toISOString(), '[pricing] błąd potwierdzenia eMAG:', e.message);
   }
 }
 
@@ -249,9 +275,9 @@ if (require.main === module) {
       trwa = true;
       const doPotwierdzenia = await przebiegBezpieczny();
       trwa = false;
-      if (doPotwierdzenia.length) {
-        setTimeout(async () => { if (trwa) return; trwa = true; await potwierdz(doPotwierdzenia); trwa = false; }, POTWIERDZENIE_MS);
-      }
+      const potw = (lista, ms) => lista.length && setTimeout(async () => { if (trwa) return; trwa = true; await potwierdz(lista); trwa = false; }, ms);
+      potw(doPotwierdzenia.filter((o) => o.platforma !== 'emag'), POTWIERDZENIE_MS);
+      potw(doPotwierdzenia.filter((o) => o.platforma === 'emag'), POTWIERDZENIE_EMAG_MS);
     };
     tik();
     setInterval(tik, ms);

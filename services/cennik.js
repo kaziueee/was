@@ -20,6 +20,7 @@ const rynki = require('../config/rynki');
 const kartony = require('./kartony');                               // lista kartonow (DB) - do oceny docinki
 const { maWlasnyKarton, ocenDocinkeZListy } = require('../config/kartony');
 const { rozbierzWymiary } = require('./gt-atrybuty');
+const { kosztZakupu } = require('./zestawy-model');
 
 // tekst GT ("0,874" albo "1.31") -> liczba; 0 gdy brak/niepoprawne.
 function liczba(v) {
@@ -27,7 +28,14 @@ function liczba(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-const KOLUMNY = `t.tw_Id, t.tw_Symbol, t.tw_Nazwa, c.tc_CenaNetto0 AS koszt,
+// Zestaw (rodzaj 8): koszt = suma składników (services/zestawy-model.js kosztZakupu). Podzapytania liczą
+// się dla każdego wiersza, ale zwykły towar nie ma wierszy w tw_Komplet, więc to tani pusty lookup.
+const KOLUMNY = `t.tw_Id, t.tw_Symbol, t.tw_Nazwa, t.tw_Rodzaj AS rodzaj, c.tc_CenaNetto0 AS koszt,
+            (SELECT SUM(k.kpl_Liczba * cs.tc_CenaNetto0) FROM tw_Komplet k
+               JOIN tw_Cena cs ON cs.tc_IdTowar = k.kpl_IdSkladnik WHERE k.kpl_IdKomplet = t.tw_Id) AS kosztSkladnikow,
+            (SELECT COUNT(*) FROM tw_Komplet k WHERE k.kpl_IdKomplet = t.tw_Id) AS skladnikow,
+            (SELECT COUNT(*) FROM tw_Komplet k LEFT JOIN tw_Cena cs ON cs.tc_IdTowar = k.kpl_IdSkladnik
+               WHERE k.kpl_IdKomplet = t.tw_Id AND ISNULL(cs.tc_CenaNetto0, 0) <= 0) AS skladnikowBezCeny,
             pw.pwd_Tekst06 AS wagaRzecz, pw.pwd_Tekst10 AS gabKarton, pw.pwd_Tekst09 AS gabZwykla,
             pw.pwd_Tekst07 AS wymiary, pw.pwd_Tekst04 AS zbiorcze
        FROM tw__Towar t
@@ -57,7 +65,8 @@ async function wycenaHurtem(twIds, nadpisz = {}) {
 
 function wycenaZWiersza(row, nadpisz = {}) {
 
-  const koszt = Number(row.koszt) || 0;
+  const kz = kosztZakupu(row);   // zestaw: suma składników; zwykły towar: kartoteka
+  const koszt = kz.koszt;
   const rzecz = liczba(row.wagaRzecz);
   const gabZwykla = liczba(row.gabZwykla);   // pwd_Tekst09 (z wymiarow produktu)
   const gabKarton = liczba(row.gabKarton);   // pwd_Tekst10 (z najmniejszego kartonu WMS)
@@ -100,6 +109,9 @@ function wycenaZWiersza(row, nadpisz = {}) {
     sku: row.tw_Symbol,
     nazwa: row.tw_Nazwa,
     koszt,
+    kosztZrodlo: kz.zrodlo,        // 'kartoteka' | 'skladniki' (zestaw)
+    kosztKartoteka: kz.kartoteka,  // zestaw: cena zakupu z kartoteki zestawu — do pokazania obok
+    kosztUwaga: kz.uwaga || null,
     waga,
     wagaGT,
     wagaZnana,

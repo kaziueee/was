@@ -181,7 +181,8 @@ router.get('/towar/:tw_id', asyncH(async (req, res) => {
   let gt = null;
   try {
     const w = (await wycenaHurtem([twId])).get(twId);
-    if (w) gt = { koszt: w.koszt, waga: w.waga, wagaZnana: w.wagaZnana, docinalny: w.docinalny };
+    if (w) gt = { koszt: w.koszt, kosztZrodlo: w.kosztZrodlo, kosztKartoteka: w.kosztKartoteka, kosztUwaga: w.kosztUwaga,
+      waga: w.waga, wagaZnana: w.wagaZnana, docinalny: w.docinalny };
   } catch (e) {
     console.error('[ceny] GT:', e.message);
   }

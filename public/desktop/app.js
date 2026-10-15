@@ -2114,7 +2114,7 @@ function renderCennik(d) {
     : '';
   const docinanieOpis = d.docinanieAktywne ? ' · <strong>docięcie</strong>: cały cennik DHL −1 próg' : '';
   el('cennik-info').innerHTML =
-    `<strong>${d.sku}</strong> — ${d.nazwa || ''} · koszt zakupu <strong>${fmtCennik(d.koszt)} zł</strong> · waga rozliczeniowa <strong>${fmtCennik(d.waga, 2)} kg</strong> <span class="opis">(${wagaOpis})</span>${trybOpis}${docinanieOpis}`;
+    `<strong>${d.sku}</strong> — ${d.nazwa || ''} · koszt zakupu <strong>${fmtCennik(d.koszt)} zł</strong>${kosztZestawuOpis(d)} · waga rozliczeniowa <strong>${fmtCennik(d.waga, 2)} kg</strong> <span class="opis">(${wagaOpis})</span>${trybOpis}${docinanieOpis}`;
   el('cennik-info').classList.remove('hidden');
   const tbody = el('cennik-tbody'); tbody.innerHTML = '';
   for (const r of d.rynki) {
@@ -4506,6 +4506,13 @@ function cenyCelHtml(o, w) {
 
 // Stan z GT pod nazwą towaru: Razem (K4+K4G+MAG+LS, bez BRK) i półka zbioru K4 z rezerwacją.
 // tylkoRazem — w macierzy sam stan „razem” (decyzja usera 2026-10-15); K4 z rezerwacją zostaje na karcie SKU.
+// Zestaw: koszt liczony z sumy składników (services/zestawy-model.js) — obok cena z kartoteki zestawu.
+function kosztZestawuOpis(w) {
+  if (w.kosztZrodlo === 'skladniki') return ` <span class="hint" title="Zestaw: suma cen zakupu składników × ilość w zestawie">ze składników · kartoteka zestawu ${Number(w.kosztKartoteka || 0).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł</span>`;
+  if (w.kosztUwaga) return ` <span class="hint">z kartoteki zestawu (${w.kosztUwaga})</span>`;
+  return '';
+}
+
 function cenyStanTekst(s, { tylkoRazem = false } = {}) {
   if (s === undefined) return '';                    // backend bez pola (przed restartem WMS)
   if (!s) return 'stan: — <span class="hint">(GT nie odpowiada)</span>';
@@ -4839,7 +4846,7 @@ async function odswiezCenyKarta() {
     const zeStanem = oferty.filter((o) => o.ilosc > 0 && !o.tylko_odczyt);
     const wl = zeStanem.filter((o) => o.auto).length;
     const fakty = d.gt_ok
-      ? `<span>Koszt zakupu (GT) <b>${cenyLiczba(d.gt.koszt)} zł</b></span><span>Waga rozliczeniowa <b>${cenyLiczba(d.gt.waga, 2)} kg</b>${d.gt.wagaZnana ? '' : ' (domyślna — brak wymiarów)'}</span><span>Docinanie <b>${d.gt.docinalny ? 'tak' : 'nie'}</b></span>`
+      ? `<span>Koszt zakupu (GT) <b>${cenyLiczba(d.gt.koszt)} zł</b>${kosztZestawuOpis(d.gt)}</span><span>Waga rozliczeniowa <b>${cenyLiczba(d.gt.waga, 2)} kg</b>${d.gt.wagaZnana ? '' : ' (domyślna — brak wymiarów)'}</span><span>Docinanie <b>${d.gt.docinalny ? 'tak' : 'nie'}</b></span>`
       : '<span class="ceny-blad">Subiekt nie odpowiada — bez kosztu i wagi</span>';
     box.innerHTML = `<div class="ceny-karta-gora">
         <div><button type="button" class="btn btn-small" id="ceny-karta-wroc">← Macierz</button></div>

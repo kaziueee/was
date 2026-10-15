@@ -19,6 +19,10 @@ const DB_PATH = process.env.PRICING_DB || path.join(__dirname, '..', 'db', 'pric
 
 const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA journal_mode = WAL');
+// Bazę piszą trzy procesy: worker, WMS (przełącznik automatu na ekranie Ceny) i skrypty CLI. Bez
+// czasu oczekiwania drugi piszący dostaje „database is locked” od razu, gdy worker akurat zapisuje
+// przebieg (2026-10-15: emag-cena.js wysłał cenę BG, a wpis do logu przepadł).
+db.exec('PRAGMA busy_timeout = 15000');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS oferty (

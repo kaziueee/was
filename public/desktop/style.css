@@ -1230,7 +1230,13 @@ main {
 .ceny-symbol { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; }
 .ceny-nazwa { font-size: 0.78rem; color: #666; max-width: 15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ceny-auto-wiersz { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.35rem; font-size: 0.78rem; color: #666; cursor: pointer; }
-.ceny-kom { min-width: 8.5rem; }
+.ceny-kom { min-width: 8.5rem; max-width: 11rem; }
+/* Opisy decyzji i Buy Boxa łamią się do 2 linii zamiast rozpychać kolumnę (7 rynków na jednym ekranie). */
+.ceny-kom .ceny-dec, .ceny-kom .ceny-bb, .ceny-kom .ceny-cel { white-space: normal; line-height: 1.25; }
+/* Kolumna „Towar” przypięta przy przewijaniu w bok. */
+.ceny-tabela thead th:first-child { position: sticky; left: 0; z-index: 2; }
+.ceny-tabela td.ceny-towar { position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: 1px 0 0 #e3e6ee; }
+.ceny-tabela tbody tr:hover td.ceny-towar { background: #f8f9fa; }
 .ceny-kom.off { background: #eceef1; }
 .ceny-kom.bb { background: #e3f3e8; }
 .ceny-kom.off.bb { background: #eceef1; box-shadow: inset 3px 0 0 #1f7a3d; }

@@ -4550,7 +4550,13 @@ function renderujCeny(d) {
   cenyRenderujKanaly(d);
 
   const kolumny = d.kolumny || d.rynki.map((r) => ({ klucz: r, nazwa: `Amazon ${r}` }));
-  el('ceny-thead').innerHTML = `<tr><th>Towar</th>${kolumny.map((k) => `<th>${cenyEsc(k.nazwa)}${k.tylko_odczyt ? ' <span class="hint" title="Repricer tylko obserwuje — cen nie zmienia">· odczyt</span>' : ''}</th>`).join('')}</tr>`;
+  // Kolumny bez żadnej oferty w tym widoku (np. IT/ES/NL przy „Z automatem”) chowamy — przy 7 rynkach
+  // macierz nie mieściła się na ekranie. Pusty widok = wszystkie kolumny (nagłówek ma sens dalej).
+  const zOfertami = kolumny.filter((k) => d.wiersze.some((t) => t.rynki[k.klucz]));
+  const widoczne = zOfertami.length ? zOfertami : kolumny;
+  const ukryte = kolumny.filter((k) => !widoczne.includes(k));
+  el('ceny-ukryte').textContent = ukryte.length ? `Ukryte kolumny bez ofert w tym widoku: ${ukryte.map((k) => k.nazwa).join(', ')}` : '';
+  el('ceny-thead').innerHTML = `<tr><th>Towar</th>${widoczne.map((k) => `<th>${cenyEsc(k.nazwa)}${k.tylko_odczyt ? ' <span class="hint" title="Repricer tylko obserwuje — cen nie zmienia">· odczyt</span>' : ''}</th>`).join('')}</tr>`;
   const tbody = el('ceny-tbody');
   tbody.innerHTML = '';
   const brak = el('ceny-brak');
@@ -4559,12 +4565,12 @@ function renderujCeny(d) {
     : cenyFiltr === 'automat' && kolumny.every((k) => k.tylko_odczyt) ? 'Na tym kanale repricer tylko obserwuje — automatu nie da się włączyć. Wybierz „Wszystkie ze stanem”, „Szansa na Buy Box” albo „Do zmiany ceny”.'
     : cenyFiltr === 'automat' ? 'Automat nie jest jeszcze włączony dla żadnej oferty. Wyszukaj SKU albo wybierz „Wszystkie ze stanem” i włącz przełącznik w komórce.'
       : 'Brak ofert.';
-  for (const t of d.wiersze) tbody.appendChild(cenyWiersz(t, d.rynki));
+  for (const t of d.wiersze) tbody.appendChild(cenyWiersz(t, widoczne.map((k) => k.klucz)));
   // licznik zakładki „Do powiązania" — widoczny od razu, nie dopiero po wejściu w nią
   api('/api/ceny/powiazania').then((p) => { el('ceny-l-powiazania').textContent = p.bez.length + p.do_potwierdzenia.length || ''; }).catch(() => {});
   if (d.razem > d.wiersze.length) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td colspan="${d.rynki.length + 1}" class="hint">Pokazano ${d.wiersze.length} z ${d.razem} — zawęź wyszukiwaniem.</td>`;
+    tr.innerHTML = `<td colspan="${widoczne.length + 1}" class="hint">Pokazano ${d.wiersze.length} z ${d.razem} — zawęź wyszukiwaniem.</td>`;
     tbody.appendChild(tr);
   }
 }

@@ -21,6 +21,7 @@ const DOMYSLNE = {
   minzysk: 5,       // prog min. zysku netto (zl) - podbija cene
   eur: 4.20,        // PLN za 1 EUR (ostrozny kurs)
   ron: 0.79,        // PLN za 1 RON (ostrozny: NBP 14.10.2026 = 0,8179; ~4% ponizej, jak EUR 4,20 przy 4,37)
+  huf: 0.0115,      // PLN za 1 HUF (ostrozny: NBP 15.10.2026 = 0,011998; ~4% ponizej)
   paliwowa: 14,     // doplata paliwowa DHL %
   vatProwizji: 23,  // prowizja Amazon to netto -> dolicz VAT (reverse-charge PL)
   ads: 3,           // narzut Allegro Ads/promo %
@@ -71,6 +72,25 @@ const RYNKI = [
   { nazwa: 'eMAG RO',     kraj: 'RO', waluta: 'RON', vat: 21, prowizja: 16, prowizjaOdNetto: true, typ: 'flat',
     genius:    { oplataZam: 'GENIUS_RO', oplataZamUdzial: 0.75, wysylkaEur: 1.78, wysKlient: 0 },
     bezGenius: { wysylkaEur: 4.88, wysKlient: 25 } },
+  // eMAG HU i BG (dodane 2026-10-15, na razie tylko obserwacja). To samo konto i ta sama umowa co RO;
+  // liczby z API eMAG (16.08–15.10.2026) i faktur Paxy 08/2026 (0859 = HU, 0861 = BG):
+  //  - prowizja 18% od ceny bez VAT (commission/estimate: 38/40 ofert HU i 39/40 BG = 18%, reszta 21%);
+  //    stawkę konkretnej oferty i tak podaje repricer (pricing/pas.js),
+  //  - VAT HU 27%, BG 20% (vat/read),
+  //  - Genius: opłata za zamówienie klienta Genius — siatki nie znamy, średnia z flag zamówień:
+  //    HU 509 HUF (5600 / 11 zam.), BG 1,25 € (16,20 / 13); udział zamówień Genius w zamówieniach do
+  //    automatu: HU 11/57 = 19% → 20%, BG 13/43 = 30%,
+  //  - wysyłka Paxy: „A – Genius” HU 1,64 €, BG 1,99 € + paliwo (HU 0,16, BG 0,19 €/paczkę) + zwroty
+  //    (HU 0,04, BG 0,19 €/paczkę); kurier Sameday HU 3,99 / 4,99 € za pobraniem (śr. 4,59), BG 5,49 €
+  //    + prowizja pobraniowa (~1,78 €/paczkę). Cennik z aneksu (BG 7,86 €) NIE odpowiada fakturom,
+  //  - opłata za dostawę od klienta (HU 86% zamówień, BG 52%) — NIE liczona (wysKlient 0), dopóki nie
+  //    potwierdzimy, że trafia do nas, a nie do eMAG.
+  { nazwa: 'eMAG HU',     kraj: 'HU', waluta: 'HUF', vat: 27, prowizja: 18, prowizjaOdNetto: true, typ: 'flat',
+    genius:    { oplataZam: 'GENIUS_HU', oplataZamUdzial: 0.2, wysylkaEur: 1.84, wysKlient: 0 },
+    bezGenius: { wysylkaEur: 4.79, wysKlient: 0 } },
+  { nazwa: 'eMAG BG',     kraj: 'BG', waluta: 'EUR', vat: 20, prowizja: 18, prowizjaOdNetto: true, typ: 'flat',
+    genius:    { oplataZam: 'GENIUS_BG', oplataZamUdzial: 0.3, wysylkaEur: 2.37, wysKlient: 0 },
+    bezGenius: { wysylkaEur: 7.65, wysKlient: 0 } },
   // Kaufland DE: ta sama umowa DHL do Niemiec co Amazon DE (koszt po wadze). Prowizja 13% dla zabawek
   // (kauflandglobalmarketplace.com/en/conditions) - od ceny BRUTTO wraz z wysylka, netto + VAT -> model amazon-dhl.
   { nazwa: 'Kaufland DE', kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 13, wysKlient: 4.99, typ: 'amazon-dhl' },
@@ -94,6 +114,8 @@ const ALLEGRO_PROGI = [[45, 0], [65, 2.1], [100, 3.2], [150, 5.5], [200, 7.6], [
 // Fakturowana osobno (E-MKTP, co pol miesiaca). Faktura dla PL platnika VAT = odwrotne obciazenie, koszt = netto.
 const OPLATY_ZAM = {
   GENIUS_RO: [[40, 3], [50, 4], [75, 5], [Infinity, 8]],
+  GENIUS_HU: [[Infinity, 509]],     // HUF — średnia z zamówień (siatki HU nie znamy)
+  GENIUS_BG: [[Infinity, 1.25]],    // EUR — średnia z zamówień (siatki BG nie znamy)
 };
 
 // Automat paczkowy eMAG (easybox): najwieksza skrytka 470 × 440 × 390 mm (eMAG Marketplace infocenter,
@@ -122,7 +144,7 @@ function profilRynku(r, g) {
 }
 
 // --- helpery (czyste) ---
-const kursDla = (waluta, g) => (waluta === 'EUR' ? +g.eur || 0 : waluta === 'RON' ? +g.ron || 0 : 1);
+const kursDla = (waluta, g) => (waluta === 'EUR' ? +g.eur || 0 : waluta === 'RON' ? +g.ron || 0 : waluta === 'HUF' ? +g.huf || 0 : 1);
 
 // zaokraglenie do NAJBLIZSZEJ koncowki ,99 (nie zawsze w gore - inaczej cena tuz nad cala zlotowka
 // skakalaby o ~1 i marza rozjezdzalaby sie w gore).

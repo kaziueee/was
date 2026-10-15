@@ -45,7 +45,7 @@ async function stanyGt(twIds) {
 }
 
 // Linki do oferty — każda platforma po swojemu (Amazon po ASIN, eMAG po PNK trzymanym w `asin`).
-const linki = (o) => (o.platforma === 'emag' ? emag.linkiOferty(o.asin) : linkiOferty(o.rynek, o.asin));
+const linki = (o) => (o.platforma === 'emag' ? emag.linkiOferty(o.asin, o.rynek) : linkiOferty(o.rynek, o.asin));
 // Pola kanału doklejane do każdej oferty — ekran nie zgaduje waluty ani nazwy z kodu rynku.
 const zKanalem = (o) => {
   const k = kolumna(o.platforma, o.rynek) || {};

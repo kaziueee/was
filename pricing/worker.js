@@ -4,9 +4,9 @@
 // nie może zatrzymać magazynu. Na SRV chodzi jako zadanie harmonogramu `WMS-Pricing`.
 //
 // Co przebieg (PRICING_INTERWAL_MIN, domyślnie 30 min):
-//   1. raz na dobę — synchronizacja listy ofert z Amazona (pricing/sync-oferty.js); eMAG RO co
-//      przebieg (pricing/sync-emag.js) — ta sama lista służy do obserwacji, więc to jedno pobranie
-//      (~32 zapytania). eMAG jest TYLKO DO ODCZYTU: decyzje liczymy, ceny nie wychodzą.
+//   1. raz na dobę — synchronizacja listy ofert z Amazona (pricing/sync-oferty.js); eMAG RO, HU i BG
+//      (PRICING_EMAG_KRAJE) co przebieg (pricing/sync-emag.js) — ta sama lista służy do obserwacji,
+//      więc to jedno pobranie na rynek (~30 zapytań). Ceny wychodzą tylko na kanały bez `tylkoOdczyt`.
 //      Bez EMAG_RO_USER w .env część eMAG jest pomijana; jej błąd (np. IP spoza listy w panelu
 //      eMAG) nie zatrzymuje przebiegu Amazona.
 //   2. obserwacja ofert: z włączonym automatem ZAWSZE, pozostałe ze stanem raz na
@@ -43,6 +43,8 @@ const PELNY_MS = interwalMsZMinut(process.env.PRICING_PELNY_MIN, 360, 'PRICING_P
 // PRICING_PLATFORMY=emag nie dotyka API Amazona, więc nie zjada limitów workera na SRV.
 const PLATFORMY = new Set(String(process.env.PRICING_PLATFORMY || 'amazon,emag').split(',').map((x) => x.trim().toLowerCase()));
 const SYNC_MS = 24 * 60 * 60 * 1000;
+// Rynki eMAG obsługiwane przez ten proces (pricing/emag.js KRAJE); domyślnie wszystkie.
+const EMAG_KRAJE = String(process.env.PRICING_EMAG_KRAJE || 'RO,HU,BG').split(',').map((x) => x.trim().toUpperCase()).filter((k) => emag.KRAJE[k]);
 
 const minelo = (klucz, ms) => {
   const s = stan.get(klucz);
@@ -57,22 +59,33 @@ async function przebieg({ pelny = false } = {}) {
     wynik.sync = s.reduce((a, x) => a + x.ofert, 0);
   }
 
-  // eMAG: lista ofert = synchronizacja + materiał do obserwacji. Błąd tylko odnotowujemy.
+  // eMAG: lista ofert = synchronizacja + materiał do obserwacji, osobno na każdy rynek (RO, HU, BG —
+  // to samo konto i dane logowania). Błąd jednego rynku tylko odnotowujemy, reszta idzie dalej.
   let emagSurowe = null;
+  const emagKraje = new Set();
   if (PLATFORMY.has('emag') && emag.skonfigurowany()) {
-    try {
-      emagSurowe = await emag.wszystkieOferty();
-      const s = await synchronizujEmag(emagSurowe);
-      stan.set('sync_emag', JSON.stringify(s));
-      wynik.emag = s.aktywne;
-      // Stawki prowizji per oferta — porcjami, błąd nie zatrzymuje przebiegu (kalkulator ma 16% domyślnie).
+    emagSurowe = [];
+    const podsum = {};
+    for (const kraj of EMAG_KRAJE) {
       try {
-        const pr = await odswiezProwizje(emagSurowe);
-        if (pr.sprawdzone) wynik.emag_prowizje = pr;
-      } catch (e) { console.error(new Date().toISOString(), '[pricing] eMAG prowizje:', e.message); }
-    } catch (e) {
-      stan.set('blad_emag', e.message);
-      console.error(new Date().toISOString(), '[pricing] eMAG:', e.message);
+        const lista = await emag.wszystkieOferty(kraj);
+        const s = await synchronizujEmag(lista, kraj);
+        emagSurowe.push(...lista);
+        emagKraje.add(kraj);
+        podsum[kraj] = s;
+        // Stawki prowizji per oferta — porcjami; błąd nie zatrzymuje przebiegu (kalkulator ma stawkę domyślną).
+        try {
+          const pr = await odswiezProwizje(lista, 120, kraj);
+          if (pr.sprawdzone) (wynik.emag_prowizje ||= {})[kraj] = pr;
+        } catch (e) { console.error(new Date().toISOString(), `[pricing] eMAG ${kraj} prowizje:`, e.message); }
+      } catch (e) {
+        stan.set('blad_emag', `${kraj}: ${e.message}`);
+        console.error(new Date().toISOString(), `[pricing] eMAG ${kraj}:`, e.message);
+      }
+    }
+    if (emagKraje.size) {
+      stan.set('sync_emag', JSON.stringify(podsum));
+      wynik.emag = Object.fromEntries(Object.entries(podsum).map(([k, s]) => [k, s.aktywne]));
     }
   }
 
@@ -82,15 +95,22 @@ async function przebieg({ pelny = false } = {}) {
   // eMAG: zawsze cały katalog — obserwacja czyta listę pobraną wyżej, nie woła API po raz drugi.
   const oferty = db.prepare(`SELECT id, platforma, rynek, sku, tw_id, auto, genius, dopasowanie, prowizja FROM oferty
      WHERE ((platforma = 'amazon' AND ? AND (auto = 1 OR ?)) OR (platforma = 'emag' AND ?))
-       AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all(PLATFORMY.has('amazon') ? 1 : 0, pelnyTeraz ? 1 : 0, emagSurowe ? 1 : 0);
+       AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all(PLATFORMY.has('amazon') ? 1 : 0, pelnyTeraz ? 1 : 0, emagKraje.size ? 1 : 0)
+    .filter((o) => o.platforma !== 'emag' || emagKraje.has(o.rynek));     // rynek eMAG z błędem pobrania — bez decyzji
   wynik.ofert = oferty.length;
   wynik.pelny = pelnyTeraz;
   if (!oferty.length) return wynik;
 
   const amazon = oferty.filter((o) => o.platforma === 'amazon');
   const emagOf = oferty.filter((o) => o.platforma === 'emag');
-  const geniusPoTw = new Map(emagOf.filter((o) => o.genius != null).map((o) => [o.tw_id, !!o.genius]));
-  const prowizjaPoTw = new Map(emagOf.filter((o) => o.prowizja > 0).map((o) => [o.tw_id, o.prowizja]));
+  // Genius i stawka prowizji są per RYNEK (ten sam towar: RO 16%, HU 18%) — mapa tw_Id → { kolumna: wartość }.
+  const poKolumnie = (pole, ok, wartosc) => {
+    const m = new Map();
+    for (const o of emagOf) if (ok(o[pole])) (m.get(o.tw_id) || m.set(o.tw_id, {}).get(o.tw_id))[kluczKolumny(o.platforma, o.rynek)] = wartosc(o[pole]);
+    return m;
+  };
+  const geniusPoTw = poKolumnie('genius', (v) => v != null, (v) => !!v);
+  const prowizjaPoTw = poKolumnie('prowizja', (v) => v > 0, (v) => v);
   const [obsA, obsE, pasy] = await Promise.all([
     amazon.length ? obserwuj(amazon) : new Map(),
     emagOf.length ? obserwujEmag(emagOf, emagSurowe) : new Map(),
@@ -99,7 +119,8 @@ async function przebieg({ pelny = false } = {}) {
   if (obsA.bledyPaczek) wynik.bledy_paczek = obsA.bledyPaczek;
   if (emagOf.length) wynik.emag_obs = { ofert: obsE.size, zmian: obsE.nowe || 0 };
   const obs = { get: (id) => obsA.get(id) || obsE.get(id) };
-  const emagPoSku = new Map((emagSurowe || []).map((x) => [String(x.part_number || '').trim().toUpperCase(), x]));
+  const kluczEmag = (kraj, sku) => `${kraj}|${String(sku || '').trim().toUpperCase()}`;
+  const emagPoSku = new Map((emagSurowe || []).map((x) => [kluczEmag(x._kraj, x.part_number), x]));
 
   const zapisz = db.prepare(`INSERT INTO decyzje (oferta_id, cena_przed, cena_nowa, min, max, kod, powod, wyslano, auto, zysk, marza, zysk_nowa, blad, marza_nowa, cena_cel, zysk_cel)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -151,7 +172,7 @@ async function przebieg({ pelny = false } = {}) {
         if (o.platforma === 'amazon') w = await ustawCene(o.rynek, o.sku, d.cena);
         else if (o.platforma === 'emag') {
           // Oferta z listy pobranej na początku przebiegu: id eMAG, VAT i zakres min/max z panelu.
-          const s = emagPoSku.get(String(o.sku).trim().toUpperCase());
+          const s = emagPoSku.get(kluczEmag(o.rynek, o.sku));
           w = s ? await emag.ustawCene(s, d.cena) : { ok: false, blad: 'oferty nie ma na liście eMAG z tego przebiegu' };
         } else w = { ok: false, blad: `zapis na ${o.platforma} nieobsługiwany` };
         if (w.ok) { wyslano = 1; wysylka.wyslane++; doPotwierdzenia.push(o); }
@@ -227,13 +248,13 @@ async function potwierdzEmag(oferty) {
   try {
     const surowe = [];
     for (const o of oferty) {
-      surowe.push(...await emag.ofertaPoSku(o.sku));
+      surowe.push(...await emag.ofertaPoSku(o.sku, o.rynek));
       await new Promise((r) => setTimeout(r, 350));
     }
     const obs = await obserwujEmag(oferty, surowe);
     for (const o of oferty) {
       const ob = obs.get(o.id);
-      console.log(new Date().toISOString(), `[pricing] potwierdzenie EMAG_RO ${o.sku}: na eMAG ${ob ? ob.cena : '?'}`
+      console.log(new Date().toISOString(), `[pricing] potwierdzenie EMAG_${o.rynek} ${o.sku}: na eMAG ${ob ? ob.cena : '?'}`
         + `, Buy Box ${ob ? (ob.bbNasz ? 'nasz' : ob.bbNasz === false ? 'INNY' : '?') : '?'}`);
     }
   } catch (e) {

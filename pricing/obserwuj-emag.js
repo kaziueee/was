@@ -11,10 +11,12 @@ const emag = require('./emag');
 const { db } = require('./db');
 const { takaSamaObserwacja } = require('./bez-zmian');
 
-// oferty: [{ id, sku }]; surowe: wynik emag.wszystkieOferty() (gdy null — pobieramy)
+// oferty: [{ id, sku, rynek }]; surowe: oferty z emag.wszystkieOferty(kraj) — z polem `_kraj`, może być
+// kilka rynków naraz (gdy null — pobieramy RO). Klucz = rynek + SKU: ten sam SKU jest na RO, HU i BG.
+const klucz = (kraj, sku) => `${kraj || 'RO'}|${String(sku || '').trim().toUpperCase()}`;
 async function obserwujEmag(oferty, surowe = null) {
   const lista = surowe || await emag.wszystkieOferty();
-  const poSku = new Map(lista.map((o) => [String(o.part_number || '').trim().toUpperCase(), o]));
+  const poSku = new Map(lista.map((o) => [klucz(o._kraj, o.part_number), o]));
   const zapisz = db.prepare(`INSERT INTO obserwacje (oferta_id, cena, wysylka, bb_nasz, bb_cena, bb_fba, najtansza_inna, ofert, bb_nasza_inna)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const ostatnia = db.prepare('SELECT * FROM obserwacje WHERE oferta_id = ? ORDER BY id DESC LIMIT 1');
@@ -25,7 +27,7 @@ async function obserwujEmag(oferty, surowe = null) {
   db.exec('BEGIN');
   try {
     for (const o of oferty) {
-      const surowa = poSku.get(String(o.sku).trim().toUpperCase());
+      const surowa = poSku.get(klucz(o.rynek, o.sku));
       if (!surowa) continue;
       const obs = emag.zOferty(surowa);
       wynik.set(o.id, obs);

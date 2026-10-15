@@ -4473,7 +4473,7 @@ el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
   window.addEventListener('wms-zalogowano', odswiez);
 })();
 
-// === CENY (repricer: Amazon + eMAG RO) ===
+// === CENY (repricer: Amazon + eMAG RO/HU/BG) ===
 // Dane liczy osobny proces (pricing/worker.js) do db/pricing.db; tu tylko odczyt + włącz/wyłącz
 // automat. Backend: routes/ceny.js (na czas testów tylko admin). Nigdy nie włączamy automatu na cały katalog —
 // tylko wskazane oferty (komórka) albo wszystkie rynki jednego towaru (przełącznik przy SKU).
@@ -4544,7 +4544,7 @@ function renderujCeny(d) {
   const blad = d.blad && (!d.przebieg || d.blad.czas > d.przebieg.czas) ? ` · <span class="ceny-blad">błąd: ${cenyEsc(d.blad.wartosc)}</span>` : '';
   const em = d.emag || {};
   const emagTxt = em.blad && (!em.sync || em.blad.czas > em.sync.czas) ? ` · <span class="ceny-blad">eMAG: ${cenyEsc(em.blad.wartosc)}</span>`
-    : em.sync ? ` · eMAG RO ${cenyGodzina(em.sync.czas)}` : '';
+    : em.sync ? ` · eMAG ${cenyGodzina(em.sync.czas)}` : '';
   el('ceny-stan').innerHTML = przebieg + pelna + blad + emagTxt;
   cenyRenderujFiltry(d);
   el('ceny-hamulec').classList.toggle('hidden', d.wysylanie !== false);
@@ -4841,7 +4841,7 @@ async function odswiezCenyKarta() {
         <div class="ceny-karta-tyt"><h3>${cenyEsc(d.symbol)}</h3><div class="ceny-nazwa-pelna">${cenyEsc(d.nazwa)}</div><div class="ceny-fakty"><span>${cenyStanTekst(d.stan_gt)}</span>${fakty}</div></div>
         <label class="ceny-auto-wiersz duzy" id="ceny-karta-auto"></label>
       </div>
-      <p class="hint">Rynki od największego zysku na sztuce. Zielone tło = mamy Buy Box, szare = ręczny (automat wyłączony). Włączony automat zmienia ceny na platformie (Amazon, eMAG RO).</p>
+      <p class="hint">Rynki od największego zysku na sztuce. Zielone tło = mamy Buy Box, szare = ręczny (automat wyłączony). Włączony automat zmienia ceny na platformie (Amazon, eMAG RO; eMAG HU i BG na razie tylko obserwacja).</p>
       <div class="ceny-rynki">${oferty.map(cenyKartaRynekHtml).join('')}</div>`;
     const lbl = el('ceny-karta-auto');
     if (zeStanem.length) {

@@ -135,3 +135,26 @@ test('pas eMAG: stawka prowizji oferty z eMAG nadpisuje domyślne 16% (tylko kol
   const z16 = zwykly.EMAG_RO.ocen(89.99), z18 = pluszak.EMAG_RO.ocen(89.99);
   assert.ok(Math.abs((z16.zysk - z18.zysk) / rynki.DOMYSLNE.ron - 89.99 / 1.21 * 0.02) < 0.01);
 });
+
+test('eMAG HU/BG: cena brutto z VAT danego rynku, linki na właściwą domenę, kolumny tylko do odczytu', () => {
+  const hu = emag.doOferty(surowa({ _kraj: 'HU', vat_id: 1, sale_price: 7164.7146 }));
+  assert.strictEqual(hu.cena, 9099.19);                                   // × 1,27
+  const bg = emag.zOferty(surowa({ _kraj: 'BG', vat_id: 6, sale_price: 19.5232, best_offer_sale_price: 19.5232 }));
+  assert.strictEqual(bg.cena, 23.43);                                     // × 1,20
+  assert.strictEqual(emag.doOferty(surowa({ _kraj: 'HU', vat_id: 9 })).cena, null, 'vat_id z RO nie istnieje na HU');
+  assert.strictEqual(emag.linkiOferty('D1', 'HU').produkt, 'https://www.emag.hu/-/pd/D1/');
+  assert.strictEqual(kolumna('emag', 'HU').waluta, 'Ft');
+  assert.ok(kolumna('emag', 'BG').tylkoOdczyt && kolumna('emag', 'HU').tylkoOdczyt);
+  // zapis ceny liczy netto z VAT rynku oferty
+  const z = emag.zmianaCeny(surowa({ id: 7, _kraj: 'BG', vat_id: 6 }), 23.99);
+  assert.strictEqual(Math.round(z.netto * 1.2 * 100) / 100, 23.99);
+});
+
+test('pas eMAG: stawka i Genius per kolumna (RO 16%, HU 18%) — ten sam towar, różne minimum', () => {
+  const w = { koszt: 23.13, waga: 1.18, docinalny: false, genius: true };
+  const p = pasyZWyceny(w, { genius: { EMAG_RO: true, EMAG_HU: false }, prowizja: { EMAG_RO: 16, EMAG_HU: 21 } });
+  const p18 = pasyZWyceny(w, { genius: { EMAG_RO: true, EMAG_HU: false }, prowizja: { EMAG_RO: 16, EMAG_HU: 18 } });
+  assert.ok(p.EMAG_HU && p.EMAG_BG && p.EMAG_RO);
+  assert.ok(p.EMAG_HU.min > p18.EMAG_HU.min, 'wyższa stawka na HU = wyższe minimum na HU');
+  assert.strictEqual(p.EMAG_RO.min, p18.EMAG_RO.min, 'RO bez zmian');
+});

@@ -1,6 +1,7 @@
 'use strict';
 
-// Adapter eMAG Marketplace (RO): lista ofert, Genius, Buy Box i zmiana ceny (od 2026-10-15, test).
+// Adapter eMAG Marketplace (RO, HU, BG): lista ofert, Genius, Buy Box i zmiana ceny (RO od 2026-10-15;
+// HU i BG od 2026-10-15 tylko obserwacja — pricing/kolumny.js `tylkoOdczyt`).
 //
 // API: https://marketplace-api.emag.ro/api-3/<zasób>/<akcja>, POST + Basic auth (EMAG_RO_USER /
 // EMAG_RO_PASS w .env). eMAG wpuszcza tylko z adresów IP dopisanych w panelu przy użytkowniku API —
@@ -20,20 +21,30 @@
 //                            Genius z dostawą do domu, nieaktywny; 0/0/0 = bez Genius)
 //   commission             — zawsze null; prowizję bierzemy z faktur (config/rynki.js)
 
-const URL_API = 'https://marketplace-api.emag.ro/api-3';
-const VAT_RO = { 9: 0.21, 10: 0.11, 5: 0 };   // z vat/read 2026-10-14; nieznany vat_id = brak ceny brutto
+// Rynki eMAG — jedno konto i te same dane logowania API (sprawdzone 15.10.2026), osobne domeny,
+// waluty i słowniki VAT (vat/read na każdej platformie; nieznany vat_id = brak ceny brutto).
+// Surowe oferty z wszystkieOferty(kraj) dostają pole `_kraj`, więc dalsze funkcje (cena brutto,
+// zapis ceny, linki) wiedzą, z którego rynku są, bez przekazywania kraju przez cały łańcuch.
+const KRAJE = {
+  RO: { domena: 'ro', vat: { 9: 0.21, 10: 0.11, 5: 0 } },
+  HU: { domena: 'hu', vat: { 1: 0.27, 2: 0.18, 3: 0.05, 4: 0 } },
+  BG: { domena: 'bg', vat: { 6: 0.2, 7: 0, 8: 0.09 } },
+};
+const VAT_RO = KRAJE.RO.vat;
+const krajOferty = (o) => (o && KRAJE[o._kraj] ? o._kraj : 'RO');
+const urlApi = (kraj = 'RO') => `https://marketplace-api.emag.${KRAJE[kraj].domena}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const zaokr = (x) => Math.round(x * 100) / 100;
 
 const skonfigurowany = () => !!(process.env.EMAG_RO_USER && process.env.EMAG_RO_PASS);
 
-async function api(zasob, akcja, dane = {}, proby = 3) {
+async function api(zasob, akcja, dane = {}, proby = 3, kraj = 'RO') {
   if (!skonfigurowany()) throw new Error('eMAG: brak EMAG_RO_USER / EMAG_RO_PASS w .env');
   const auth = 'Basic ' + Buffer.from(`${process.env.EMAG_RO_USER}:${process.env.EMAG_RO_PASS}`).toString('base64');
   for (let i = 1; ; i++) {
     let r, j;
     try {
-      r = await fetch(`${URL_API}/${zasob}/${akcja}`, {
+      r = await fetch(`${urlApi(kraj)}/api-3/${zasob}/${akcja}`, {
         method: 'POST', headers: { Authorization: auth, 'Content-Type': 'application/json' }, body: JSON.stringify(dane),
       });
       j = await r.json();
@@ -42,7 +53,7 @@ async function api(zasob, akcja, dane = {}, proby = 3) {
       await sleep(2000 * i);
       continue;
     }
-    if (r.status === 401 || r.status === 403) throw new Error(`eMAG ${zasob}/${akcja}: HTTP ${r.status} ${(j.messages || []).join(' ')} — sprawdź login i czy IP tej maszyny jest na liście w panelu eMAG`);
+    if (r.status === 401 || r.status === 403) throw new Error(`eMAG ${kraj} ${zasob}/${akcja}: HTTP ${r.status} ${(j.messages || []).join(' ')} — sprawdź login i czy IP tej maszyny jest na liście w panelu eMAG`);
     if (r.status === 429 || r.status >= 500) {
       if (i >= proby) throw new Error(`eMAG ${zasob}/${akcja}: HTTP ${r.status}`);
       await sleep(3000 * i);
@@ -53,19 +64,19 @@ async function api(zasob, akcja, dane = {}, proby = 3) {
   }
 }
 
-// Wszystkie oferty konta (aktywne i nie), strona po 100. ~3200 ofert = 32 zapytania.
-async function wszystkieOferty() {
+// Wszystkie oferty konta na rynku (aktywne i nie), strona po 100. ~3200 ofert = 32 zapytania.
+async function wszystkieOferty(kraj = 'RO') {
   const wynik = [];
   for (let strona = 1; ; strona++) {
-    const paczka = await api('product_offer', 'read', { currentPage: strona, itemsPerPage: 100 });
-    wynik.push(...paczka);
+    const paczka = await api('product_offer', 'read', { currentPage: strona, itemsPerPage: 100 }, 3, kraj);
+    wynik.push(...paczka.map((o) => ({ ...o, _kraj: kraj })));
     if (paczka.length < 100) return wynik;
     await sleep(300);
   }
 }
 
-const brutto = (netto, vatId) => {
-  const v = VAT_RO[vatId];
+const brutto = (netto, vatId, kraj = 'RO') => {
+  const v = KRAJE[kraj].vat[vatId];
   return netto > 0 && v != null ? zaokr(netto * (1 + v)) : null;
 };
 
@@ -76,7 +87,7 @@ function doOferty(o) {
     sku: String(o.part_number || '').trim(),
     pnk: o.part_number_key || null,
     nazwa: o.name || null,
-    cena: brutto(Number(o.sale_price), o.vat_id),
+    cena: brutto(Number(o.sale_price), o.vat_id, krajOferty(o)),
     ilosc: stan,
     aktywna: Number(o.status) === 1,
     genius: Number(o.genius_computed) > 0 ? 1 : 0,
@@ -98,8 +109,8 @@ function blokadaCeny(o) {
 // dostawy): koszt dostawy konkurenta nie jest w API, a przy automacie i tak płaci go klient eMAG-owi.
 function zOferty(o) {
   const rank = o.buy_button_rank == null ? null : Number(o.buy_button_rank);
-  const cena = brutto(Number(o.sale_price), o.vat_id);
-  const best = brutto(Number(o.best_offer_sale_price), o.vat_id);
+  const cena = brutto(Number(o.sale_price), o.vat_id, krajOferty(o));
+  const best = brutto(Number(o.best_offer_sale_price), o.vat_id, krajOferty(o));
   const ofert = o.number_of_offers == null ? null : Number(o.number_of_offers);
   const bbNasz = rank === 1 ? true : rank > 1 ? false : null;
   // Mamy Buy Box: „najlepsza oferta" to zwykle my; tańsza od nas = konkurent bez Buy Boxa (inne
@@ -133,7 +144,8 @@ function zOferty(o) {
 // a dokumentacja każe podawać currency_type tylko dla waluty innej niż lokalna.
 // Czysta funkcja: surowa oferta z API + cena BRUTTO → treść zapytania albo { blad }.
 function zmianaCeny(surowa, cenaBrutto) {
-  const v = VAT_RO[surowa?.vat_id];
+  const kraj = krajOferty(surowa);
+  const v = KRAJE[kraj].vat[surowa?.vat_id];
   if (!surowa?.id) return { blad: 'brak id oferty eMAG' };
   if (v == null) return { blad: `nieznana stawka VAT (vat_id ${surowa.vat_id})` };
   const c = zaokr(Number(cenaBrutto));
@@ -144,8 +156,8 @@ function zmianaCeny(surowa, cenaBrutto) {
   if (netto == null) return { blad: `nie da się wyrazić ${c} brutto ceną netto z 4 miejscami` };
   // Zakres min/max zapisany na ofercie w eMAG (netto) — cena spoza niego zostałaby odrzucona.
   const min = Number(surowa.min_sale_price), max = Number(surowa.max_sale_price);
-  if (min > 0 && netto < min) return { blad: `cena ${c} poniżej minimum ustawionego w eMAG (${brutto(min, surowa.vat_id)} brutto) — zmień zakres w panelu eMAG` };
-  if (max > 0 && netto > max) return { blad: `cena ${c} powyżej maksimum ustawionego w eMAG (${brutto(max, surowa.vat_id)} brutto) — zmień zakres w panelu eMAG` };
+  if (min > 0 && netto < min) return { blad: `cena ${c} poniżej minimum ustawionego w eMAG (${brutto(min, surowa.vat_id, kraj)} brutto) — zmień zakres w panelu eMAG` };
+  if (max > 0 && netto > max) return { blad: `cena ${c} powyżej maksimum ustawionego w eMAG (${brutto(max, surowa.vat_id, kraj)} brutto) — zmień zakres w panelu eMAG` };
   return { body: { data: [{ id: surowa.id, sale_price: netto }] }, cena: c, netto };
 }
 
@@ -154,7 +166,7 @@ async function ustawCene(surowa, cenaBrutto) {
   const z = zmianaCeny(surowa, cenaBrutto);
   if (z.blad) return { ok: false, blad: z.blad };
   try {
-    await api('offer', 'save', z.body);
+    await api('offer', 'save', z.body, 3, krajOferty(surowa));
     return { ok: true, cena: z.cena, netto: z.netto };
   } catch (e) {
     return { ok: false, blad: e.message };
@@ -164,10 +176,10 @@ async function ustawCene(surowa, cenaBrutto) {
 // Stawka prowizji eMAG dla oferty (% od ceny bez VAT, np. 16) — osobne REST API, nie api-3:
 // GET /api/v1/commission/estimate/{id oferty} → {"data":{"value":"16.00","created":…}}. Zgadza się z
 // aneksem prowizyjnym i fakturami C-MKTP (2026-10-15). null = eMAG nie podał (nie zgadujemy).
-async function prowizjaOferty(id) {
+async function prowizjaOferty(id, kraj = 'RO') {
   if (!skonfigurowany()) throw new Error('eMAG: brak EMAG_RO_USER / EMAG_RO_PASS w .env');
   const auth = 'Basic ' + Buffer.from(`${process.env.EMAG_RO_USER}:${process.env.EMAG_RO_PASS}`).toString('base64');
-  const r = await fetch(`https://marketplace-api.emag.ro/api/v1/commission/estimate/${encodeURIComponent(id)}`, { headers: { Authorization: auth } });
+  const r = await fetch(`${urlApi(kraj)}/api/v1/commission/estimate/${encodeURIComponent(id)}`, { headers: { Authorization: auth } });
   // 401/403/429/5xx = „nie wiemy teraz” → wyjątek (nic nie zapisujemy); 404 = eMAG nie ma stawki → null.
   if (r.status === 401 || r.status === 403 || r.status === 429 || r.status >= 500) throw new Error(`eMAG commission/estimate: HTTP ${r.status}`);
   const j = await r.json().catch(() => null);
@@ -177,15 +189,16 @@ async function prowizjaOferty(id) {
 
 // Jedna oferta po naszym SKU (part_number). Filtr po part_number skraca drogę; gdyby eMAG go
 // zignorował, porównanie poniżej i tak wybierze właściwą ofertę albo zejdziemy do pełnej listy.
-async function ofertaPoSku(sku) {
+async function ofertaPoSku(sku, kraj = 'RO') {
   const k = String(sku).trim().toUpperCase();
   const pasuje = (o) => String(o.part_number || '').trim().toUpperCase() === k;
-  const szybko = (await api('product_offer', 'read', { part_number: sku, currentPage: 1, itemsPerPage: 100 })).filter(pasuje);
+  const szybko = (await api('product_offer', 'read', { part_number: sku, currentPage: 1, itemsPerPage: 100 }, 3, kraj))
+    .filter(pasuje).map((o) => ({ ...o, _kraj: kraj }));
   if (szybko.length) return szybko;
-  return (await wszystkieOferty()).filter(pasuje);
+  return (await wszystkieOferty(kraj)).filter(pasuje);
 }
 
 // Strona produktu w eMAG po PNK (segment przed /pd/ to dowolny opis — eMAG przekierowuje).
-const linkiOferty = (pnk) => (pnk ? { produkt: `https://www.emag.ro/-/pd/${encodeURIComponent(pnk)}/` } : null);
+const linkiOferty = (pnk, kraj = 'RO') => (pnk ? { produkt: `https://www.emag.${(KRAJE[kraj] || KRAJE.RO).domena}/-/pd/${encodeURIComponent(pnk)}/` } : null);
 
-module.exports = { api, wszystkieOferty, doOferty, zOferty, zmianaCeny, ustawCene, ofertaPoSku, prowizjaOferty, linkiOferty, skonfigurowany, VAT_RO };
+module.exports = { api, wszystkieOferty, doOferty, zOferty, zmianaCeny, ustawCene, ofertaPoSku, prowizjaOferty, linkiOferty, skonfigurowany, VAT_RO, KRAJE };

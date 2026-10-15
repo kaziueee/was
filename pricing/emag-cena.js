@@ -26,7 +26,7 @@ async function main(argv) {
   // --kraj HU|BG (domyślnie RO); reszta: <SKU> <cena brutto w walucie rynku> [--zapisz]
   const i = argv.indexOf('--kraj');
   const kraj = i >= 0 ? String(argv[i + 1] || '').toUpperCase() : 'RO';
-  const [sku, cena, flaga] = argv.filter((x, n) => n !== i && n !== i + 1);
+  const [sku, cena, flaga] = i >= 0 ? argv.filter((x, n) => n !== i && n !== i + 1) : argv;   // bez --kraj nic nie wycinamy
   if (!emag.KRAJE[kraj] || !sku || !(Number(cena) > 0)) throw new Error('Użycie: node pricing/emag-cena.js <SKU> <cena brutto> [--kraj RO|HU|BG] [--zapisz]');
   const lista = await emag.ofertaPoSku(sku, kraj);
   if (lista.length !== 1) throw new Error(`SKU ${sku}: ${lista.length} ofert w eMAG — oczekiwano dokładnie jednej`);

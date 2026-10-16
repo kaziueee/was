@@ -20,6 +20,11 @@
 //   shipping_rate  — wysyłka płacona przez klienta (z grupy wysyłkowej), amount — stan,
 //   status         — AVAILABLE / ONHOLD / INCOMPLETE, is_live — czy oferta faktycznie widnieje w sklepie
 //
+// Pomiar na koncie OkiToys 2026-10-16: storefronty DE, CZ, SK — sprzedaje tylko DE (1078 ofert, 909
+// widocznych); CZ i SK po 19 ofert, prawie wszystkie ONHOLD. id_offer = symbol GT (1077/1078 wprost).
+// Wysyłka na każdej ofercie 4,99 € (grupa „Kurier DHL”, za zamówienie). Prowizja z
+// POST /info/commission-rates/lookup: 13% + 0 stałej na 50/50 sprawdzonych EAN-ach (zabawki).
+//
 // GET /buybox?id_product&storefront&condition=new — do 10 najlepszych ofert produktu z ceną TOWARU
 // (`price`, bez wysyłki) i wysyłką osobno; nasza oferta to wpis z `id_unit`/`id_offer` (te pola
 // Kaufland pokazuje tylko właścicielowi). Ranga liczy się od ceny z wysyłką, vouchera i czasu dostawy.
@@ -149,9 +154,12 @@ async function unitPoSku(sku, rynek = 'DE') {
     .map((u) => ({ ...u, _rynek: String(rynek).toUpperCase() }));
 }
 
-// Smart Pricing Kauflandu (sam przestawia cenę między `minimum_price` a `listing_price`) — przy nim
-// nasz repricer i automat Kauflandu ciągnęłyby cenę w dwie strony, jak Automate Pricing na Amazonie.
-const smartPricing = (u) => Number(u?.minimum_price) > 0;
+// Smart Pricing Kauflandu sam przestawia cenę między `minimum_price` a `listing_price` — przy nim nasz
+// repricer i automat Kauflandu ciągnęłyby cenę w dwie strony, jak Automate Pricing na Amazonie.
+// Pomiar 2026-10-16 (DE, 1078 ofert): `minimum_price` jest ustawione na KAŻDEJ ofercie, ale na 1060
+// równe `listing_price` — Smart Pricing nie ma wtedy pola manewru (wyłączony). Działa na 18 ofertach,
+// gdzie minimum < cena (np. JAK21940: 15,99 i minimum 14,00, sprzedaje się za 14,00).
+const smartPricing = (u) => Number(u?.minimum_price) > 0 && Number(u.minimum_price) < Number(u.listing_price);
 
 // Surowy unit z API → wiersz `oferty` (ceny w walucie storefrontu, z VAT — tak jak na stronie).
 function doOferty(u) {
@@ -243,18 +251,22 @@ function blokadaCeny(powody) {
   return p ? `${p.reason}: ${p.reason_description || 'cena do sprawdzenia'}` : null;
 }
 
-// Zmiana ceny = PATCH /units/{id_unit}?storefront=… z samym `listing_price` w centach (pozostałe pola
-// zostają, bo PATCH zmienia tylko podane). Czysta funkcja: unit + cena → zapytanie albo { blad }.
+// Zmiana ceny = PATCH /units/{id_unit}?storefront=… z `listing_price` w centach (pozostałe pola zostają,
+// bo PATCH zmienia tylko podane). Gdy oferta ma `minimum_price` równe cenie (Smart Pricing wyłączony —
+// tak jest prawie wszędzie), przesuwamy je razem z ceną: obniżka pod stare minimum zostawiłaby ofertę
+// niespójną, a podwyżka bez niego włączyłaby Smart Pricing (pole manewru od starej ceny do nowej).
+// Na ofercie z działającym Smart Pricing nie zapisujemy wcale — dwa automaty na jednej cenie.
+// Czysta funkcja: unit + cena → zapytanie albo { blad }.
 function zmianaCeny(u, cena) {
   if (!u?.id_unit) return { blad: 'brak id_unit oferty Kaufland' };
   const c = zaokr(Number(cena));
   if (!(c > 0)) return { blad: `niepoprawna cena: ${cena}` };
-  const centy = Math.round(c * 100);
-  // Smart Pricing: Kaufland sam przestawia cenę nad `minimum_price` — nasza cena pod nim nie zadziała.
-  if (smartPricing(u) && centy < Number(u.minimum_price)) {
-    return { blad: `cena ${c} poniżej minimum Smart Pricing w Kauflandzie (${zCentow(u.minimum_price)}) — zmień w panelu Kaufland` };
+  if (smartPricing(u)) {
+    return { blad: `w Kauflandzie działa Smart Pricing (cena ${zCentow(u.listing_price)}, minimum ${zCentow(u.minimum_price)}) — wyłącz go w panelu Kaufland (minimum = cena), inaczej dwa automaty ciągną cenę` };
   }
-  return { sciezka: `/units/${encodeURIComponent(u.id_unit)}`, query: { storefront: sf(rynekUnitu(u)) }, body: { listing_price: centy }, cena: c };
+  const centy = Math.round(c * 100);
+  const body = Number(u.minimum_price) > 0 ? { listing_price: centy, minimum_price: centy } : { listing_price: centy };
+  return { sciezka: `/units/${encodeURIComponent(u.id_unit)}`, query: { storefront: sf(rynekUnitu(u)) }, body, cena: c };
 }
 
 // Wysłanie zmiany ceny. Zwraca { ok, cena, blad } — odmowa Kauflandu to wynik, nie wyjątek.
@@ -264,7 +276,7 @@ async function ustawCene(u, cena) {
   try {
     const j = await api('PATCH', z.sciezka, { query: z.query, body: z.body });
     const po = j?.data || j;
-    return { ok: true, cena: z.cena, listing: zCentow(po?.listing_price) };
+    return { ok: true, cena: z.cena, listing: zCentow(po?.listing_price), minimum: zCentow(po?.minimum_price) };
   } catch (e) {
     return { ok: false, blad: e.message };
   }

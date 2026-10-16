@@ -64,8 +64,9 @@ test('Kaufland: unit → wiersz oferty (centy → EUR, SKU z id_offer, produkt i
   assert.strictEqual(o.ean, '5010993000000');
   assert.strictEqual(o.smart, false);
   // cena oferty = `price` (to, co widzi klient), nie `listing_price` — różnią się przy Smart Pricing
-  assert.strictEqual(kaufland.doOferty(unit({ price: 4199, minimum_price: 3999 })).cena, 41.99);
-  assert.strictEqual(kaufland.doOferty(unit({ minimum_price: 3999 })).smart, true);
+  assert.strictEqual(kaufland.doOferty(unit({ price: 3999, minimum_price: 3999 })).cena, 39.99);
+  assert.strictEqual(kaufland.doOferty(unit({ minimum_price: 3999 })).smart, true, 'minimum < cena = Smart Pricing działa');
+  assert.strictEqual(kaufland.doOferty(unit({ minimum_price: 4499 })).smart, false, 'minimum = cena — wyłączony (tak jest na 1060 z 1078 ofert)');
   assert.strictEqual(kaufland.doOferty(unit({ status: 'ONHOLD' })).aktywna, false);
   assert.strictEqual(kaufland.doOferty(unit({ id_offer: null })).sku, '');
 });
@@ -131,15 +132,18 @@ test('Kaufland: nas nie ma w rankingu (poza top 10 / niewidoczna) — cena z uni
   assert.strictEqual(decyzja(pusty, { min: 30, max: 60 }).kod, 'brak_danych');
 });
 
-test('Kaufland: zmiana ceny = PATCH listing_price w centach na storefroncie oferty; Smart Pricing pilnuje minimum', () => {
+test('Kaufland: zmiana ceny = PATCH listing_price w centach na storefroncie oferty; minimum = cena przesuwa się razem z nią', () => {
   const z = kaufland.zmianaCeny(unit(), 42.99);
   assert.deepStrictEqual(z.body, { listing_price: 4299 });
   assert.strictEqual(z.sciezka, '/units/501');
   assert.deepStrictEqual(z.query, { storefront: 'de' });
   assert.strictEqual(z.cena, 42.99);
   assert.strictEqual(kaufland.zmianaCeny(unit(), 19.999).body.listing_price, 2000, 'zaokrąglenie do centa');
-  assert.match(kaufland.zmianaCeny(unit({ minimum_price: 4000 }), 39.99).blad, /Smart Pricing/);
-  assert.strictEqual(kaufland.zmianaCeny(unit({ minimum_price: 4000 }), 40).body.listing_price, 4000);
+  // minimum = cena (Smart Pricing wyłączony): obie wartości idą razem — w dół i w górę
+  assert.deepStrictEqual(kaufland.zmianaCeny(unit({ minimum_price: 4499 }), 39.99).body, { listing_price: 3999, minimum_price: 3999 });
+  assert.deepStrictEqual(kaufland.zmianaCeny(unit({ minimum_price: 4499 }), 47.99).body, { listing_price: 4799, minimum_price: 4799 });
+  // działający Smart Pricing (minimum < cena) — nie zapisujemy
+  assert.match(kaufland.zmianaCeny(unit({ minimum_price: 4000 }), 43.99).blad, /Smart Pricing/);
   assert.match(kaufland.zmianaCeny(unit({ id_unit: null }), 40).blad, /id_unit/);
   assert.match(kaufland.zmianaCeny(unit(), 0).blad, /niepoprawna/);
   assert.deepStrictEqual(kaufland.zmianaCeny(unit({ _rynek: 'CZ' }), 400).query, { storefront: 'cz' });

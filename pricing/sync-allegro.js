@@ -60,7 +60,7 @@ async function synchronizujAllegro(konto, surowe = null) {
 module.exports = { synchronizujAllegro };
 
 if (require.main === module) {
-  require('dotenv').config({ quiet: true });
+  require('../config/env');
   const konto = String(process.argv[2] || '').toUpperCase();
   if (!allegro.KONTA[konto]) { console.error(`Użycie: node pricing/sync-allegro.js <${Object.keys(allegro.KONTA).join('|')}>`); process.exit(1); }
   synchronizujAllegro(konto)

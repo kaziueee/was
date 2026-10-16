@@ -12,7 +12,7 @@
 //
 // Uruchomienie: node pricing/sync-empik.js
 
-require('dotenv').config({ quiet: true });
+require('../config/env');
 const empik = require('./empik');
 const { db } = require('./db');
 const { mapaKartoteki, przypisz } = require('./sync-oferty');

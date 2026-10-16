@@ -10,7 +10,7 @@
 // (prowizja bez VAT), commission_vat, total_commission (z VAT), category_label. Zamówienie:
 // shipping_type_label (metoda dostawy), order_state.
 
-require('dotenv').config({ quiet: true });
+require('../config/env');
 const empik = require('./empik');
 
 const zaokr = (x, n = 2) => Math.round(x * 10 ** n) / 10 ** n;

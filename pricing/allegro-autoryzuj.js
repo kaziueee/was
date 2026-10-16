@@ -9,7 +9,7 @@
 // (inny login = nic nie zapisujemy) i zapisuje tokeny w pricing.db (tabela allegro_tokeny).
 // Hasła nikt tu nie wpisuje — logowanie jest po stronie Allegro.
 
-require('dotenv').config({ quiet: true });
+require('../config/env');
 const allegro = require('./allegro');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

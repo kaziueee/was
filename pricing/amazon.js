@@ -7,7 +7,7 @@
 // Klucze w `.env` (prywatna aplikacja "WMS Pricing", self-authorized): SPAPI_CLIENT_ID,
 // SPAPI_CLIENT_SECRET, SPAPI_REFRESH_TOKEN. Token LWA bez AWS SigV4.
 
-require('dotenv').config();
+require('../config/env');
 const zlib = require('node:zlib');
 
 const HOST = 'https://sellingpartnerapi-eu.amazon.com';

@@ -8,7 +8,7 @@
 // Wymaga w .env: WMS_RCLONE_REMOTE (+ rclone w PATH lub WMS_RCLONE_BIN, opcjonalnie WMS_RCLONE_CONFIG).
 // Uruchom z katalogu projektu:  node scripts/backup-chmura-teraz.js
 
-require('dotenv').config();
+require('../config/env');
 const backup = require('../services/backup');
 
 const r = backup.wyslijTeraz();

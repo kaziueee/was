@@ -30,7 +30,7 @@
 // Kaufland pokazuje tylko właścicielowi). Ranga liczy się od ceny z wysyłką, vouchera i czasu dostawy.
 
 const crypto = require('crypto');
-require('dotenv').config({ quiet: true });
+require('../config/env');
 
 const URL_API = 'https://sellerapi.kaufland.com/v2';
 // Rynek w pricing.db = kod storefrontu wielkimi literami (jak eMAG: RO/HU/BG). Domena tylko do linku —

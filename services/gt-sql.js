@@ -4,7 +4,7 @@
 // produktow. Dane polaczenia w .env (patrz .env.example), GT_SQL_PASSWORD nie jest
 // w repo. To polaczenie jest tylko do odczytu - zapisy do GT ida przez Sfere (GtBridge).
 
-require('dotenv').config();
+require('../config/env');
 const sql = require('mssql');
 
 const config = {

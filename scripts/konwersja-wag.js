@@ -20,7 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const sql = require('mssql');
-require('dotenv').config();
+require('../config/env');
 
 const arg = (n) => (process.argv.find((a) => a.startsWith(`--${n}=`)) || '').split('=')[1];
 const ZAPISZ = process.argv.includes('--zapisz');

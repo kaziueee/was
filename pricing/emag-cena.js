@@ -7,7 +7,7 @@
 //
 // Zapis zostawia ślad jak korekta z ekranu: decyzja `korekta` (wyslano = 1) i wpis w `zmiany`.
 
-require('dotenv').config({ quiet: true });
+require('../config/env');
 const emag = require('./emag');
 const { db } = require('./db');
 

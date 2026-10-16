@@ -8,7 +8,7 @@
 //
 // Każda wysłana zmiana zostawia ślad jak korekta z ekranu: decyzja `korekta` i wpis `smart_pricing_wyl` w `zmiany`.
 
-require('dotenv').config({ quiet: true });
+require('../config/env');
 const kaufland = require('./kaufland');
 const { db } = require('./db');
 

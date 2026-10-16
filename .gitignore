@@ -24,3 +24,11 @@ scripts/raport-*.json
 
 # cache zdjec produktow z Sellasist (services/zdjecia.js) - odtwarza sie sam
 db/zdjecia/
+
+# Sekrety: jawne kopie .env (np. 1.env, env-przed-*.bak) i zaszyfrowany .env.dpapi
+# (DPAPI, config/sekrety.js) - nigdy do repo. Repo bylo publiczne, a na SRV lezal
+# nieignorowany C:\was\1.env z kluczami: jedno `git add -A` dzielilo nas od wycieku.
+*.env
+.env.*
+!.env.example
+*.bak

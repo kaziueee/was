@@ -26,7 +26,7 @@
 const fs = require('fs');
 const path = require('path');
 const sql = require('mssql');
-require('dotenv').config();
+require('../config/env');
 
 const {
   sprawdzWymiary, zlozWymiary, liczWageGabarytowa, KOLUMNY, TYP_OBIEKTU_TOWAR,

@@ -24,6 +24,7 @@ const { db, stan } = require('../pricing/db');
 const { linkiOferty } = require('../pricing/amazon');
 const emag = require('../pricing/emag');
 const empik = require('../pricing/empik');
+const allegro = require('../pricing/allegro');
 const { KOLUMNY, kluczKolumny, kolumna } = require('../pricing/kolumny');
 const { wycenaHurtem } = require('../services/cennik');
 const { pobierzStanyGt, sumaRazem } = require('../services/gt-produkty');
@@ -52,10 +53,11 @@ async function stanyGt(twIds) {
   }
 }
 
-// Linki do oferty — każda platforma po swojemu (Amazon po ASIN, eMAG po PNK, Empik po numerze produktu —
-// oba trzymane w `asin`).
+// Linki do oferty — każda platforma po swojemu (Amazon po ASIN, eMAG po PNK, Empik po numerze produktu,
+// Allegro po numerze oferty — wszystkie trzymane w `asin`).
 const linki = (o) => (o.platforma === 'emag' ? emag.linkiOferty(o.asin, o.rynek)
-  : o.platforma === 'empik' ? empik.linkiOferty(o.asin) : linkiOferty(o.rynek, o.asin));
+  : o.platforma === 'empik' ? empik.linkiOferty(o.asin) : o.platforma === 'allegro' ? allegro.linkiOferty(o.asin)
+  : linkiOferty(o.rynek, o.asin));
 // Pola kanału doklejane do każdej oferty — ekran nie zgaduje waluty ani nazwy z kodu rynku.
 const zKanalem = (o) => {
   const k = kolumna(o.platforma, o.rynek) || {};
@@ -66,7 +68,7 @@ const zKanalem = (o) => {
     o = { ...o, zysk: o.zysk_nowa, marza: o.marza_nowa };
   }
   return { ...o, kolumna: kluczKolumny(o.platforma, o.rynek), kanal_nazwa: k.nazwa || `${o.platforma} ${o.rynek}`,
-    waluta: k.waluta || '', tylko_odczyt: !!k.tylkoOdczyt, linki: linki(o) };
+    waluta: k.waluta || '', tylko_odczyt: !!k.tylkoOdczyt, bez_konkurencji: !!k.bezKonkurencji, linki: linki(o) };
 };
 
 // Filtry macierzy: zakres × sytuacja — pricing/filtry-cen.js (czyste, z testami).
@@ -99,7 +101,7 @@ function chipyKanalow(towary, pasuje) {
     const kol = KOLUMNY.filter((k) => k.platforma === p);
     if (kol.length === 1) { chipy.push({ klucz: p, nazwa: kol[0].nazwa, n: ile(kol) }); continue; }
     chipy.push({ klucz: p, nazwa: `${kol[0].nazwa.split(' ')[0]} — wszystkie`, n: ile(kol) });
-    for (const k of kol) chipy.push({ klucz: k.klucz, nazwa: k.rynek, n: ile([k]), rynek: true });
+    for (const k of kol) chipy.push({ klucz: k.klucz, nazwa: k.etykieta || k.rynek, n: ile([k]), rynek: true });
   }
   return chipy;
 }
@@ -162,6 +164,7 @@ router.get('/macierz', asyncH(async (req, res) => {
     kanaly: chipyKanalow(kazdy, pasuje),
     emag: { sync: stan.get('sync_emag'), blad: stan.get('blad_emag') },
     empik: { sync: stan.get('sync_empik'), blad: stan.get('blad_empik') },
+    allegro: { sync: stan.get('sync_allegro'), blad: stan.get('blad_allegro') },
     wysylanie: process.env.PRICING_ZAPIS === '1',    // globalny hamulec workera (ten sam .env)
     gt_ok: !!stanGt,
     przebieg: stan.get('przebieg'),

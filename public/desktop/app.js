@@ -4473,7 +4473,7 @@ el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
   window.addEventListener('wms-zalogowano', odswiez);
 })();
 
-// === CENY (repricer: Amazon + eMAG RO/HU/BG + Empik — tylko odczyt) ===
+// === CENY (repricer: Amazon + eMAG RO/HU/BG + Empik i Allegro — tylko odczyt) ===
 // Dane liczy osobny proces (pricing/worker.js) do db/pricing.db; tu tylko odczyt + włącz/wyłącz
 // automat. Backend: routes/ceny.js (na czas testów tylko admin). Nigdy nie włączamy automatu na cały katalog —
 // tylko wskazane oferty (komórka) albo wszystkie rynki jednego towaru (przełącznik przy SKU).
@@ -4484,6 +4484,7 @@ const CENY_KOD_OPIS = {
   na_min: 'na minimum', na_min_limit: 'w stronę minimum', pod_min: 'od razu na minimum', top: 'mamy BB — bez zmiany',
   top_bez_konkurencji: 'jedyna oferta', top_konk_nieznana: 'mamy BB — cen konkurencji eMAG nie podaje', cofniecie: 'cofnięcie podwyżki (utrata BB)', top_blokada: 'mamy BB — podwyżki wstrzymane', wojna_cenowa: 'wojna o grosze — obniżki wstrzymane na dobę', sonda: 'szukamy ceny konkurenta (+3%)', sonda_limit: 'szukamy ceny konkurenta (+3%)', bb_nasza_inna: 'BB ma nasza inna oferta — stoi', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
   przegrana_nie_cena: 'tańsi, a bez BB', brak_danych: 'brak danych o BB', brak_ceny: 'brak naszej ceny', brak_pasa: 'brak min/max',
+  bez_konkurencji: 'w pasie (konkurencji nie widać)',
 };
 const CENY_AKCJE = {
   automat_wl: 'włączył automat', automat_wyl: 'wyłączył automat',
@@ -4558,7 +4559,7 @@ function renderujCeny(d) {
   // Platformy z własną synchronizacją listy: godzina ostatniej albo błąd, jeśli przyszedł po niej.
   const platforma = (nazwa, x = {}) => (x.blad && (!x.sync || x.blad.czas > x.sync.czas) ? ` · <span class="ceny-blad">${nazwa}: ${cenyEsc(x.blad.wartosc)}</span>`
     : x.sync ? ` · ${nazwa} ${cenyGodzina(x.sync.czas)}` : '');
-  el('ceny-stan').innerHTML = przebieg + pelna + blad + platforma('eMAG', d.emag) + platforma('Empik', d.empik);
+  el('ceny-stan').innerHTML = przebieg + pelna + blad + platforma('eMAG', d.emag) + platforma('Empik', d.empik) + platforma('Allegro', d.allegro);
   cenyRenderujFiltry(d);
   cenyRenderujSort(d);
   el('ceny-hamulec').classList.toggle('hidden', d.wysylanie !== false);
@@ -4894,7 +4895,8 @@ function cenyKartaRynekHtml(o) {
   const w = cenyWaluta(o);
   const obs = o.obs_czas != null && o.cena != null;
   const stanBb = !obs ? (o.obs_czas == null ? 'jeszcze nie obserwowana' : `${cenyKanal(o)} nie zwrócił naszej oferty`)
-    : o.bb_nasz ? 'mamy Buy Box' : o.bb_nasza_inna ? 'Buy Box ma nasza INNA oferta tego produktu' : o.bb_cena != null ? `Buy Box ma ${o.bb_fba ? 'oferta FBA' : 'inny sprzedawca'}` : 'brak Buy Boxa';
+    : o.bb_nasz ? 'mamy Buy Box' : o.bb_nasza_inna ? 'Buy Box ma nasza INNA oferta tego produktu' : o.bb_cena != null ? `Buy Box ma ${o.bb_fba ? 'oferta FBA' : 'inny sprzedawca'}`
+    : o.bez_konkurencji ? 'kto ma najlepszą ofertę — nie wiadomo (API tego nie podaje)' : 'brak Buy Boxa';
   const zmiana = CENY_ZMIANY.includes(o.kod);
   const dec = o.czeka ? `<b class="ceny-wyslano">✓ wysłano ${cenyLiczba(o.cena_nowa)} ${w} o ${cenyGodzina(o.dec_czas)}</b><br><span class="hint">Amazon przyjął zmianę; potwierdzimy ją kilka minut po wysłaniu. ${cenyEsc(o.powod)}</span>`
     : !o.kod ? '<span class="hint">brak decyzji</span>'
@@ -4916,12 +4918,13 @@ function cenyKartaRynekHtml(o) {
         : o.ilosc > 0 ? `<label class="ceny-auto-wiersz" data-ceny-auto="${o.id}"> automat</label>` : '<div class="hint">bez stanu — automat nie działa</div>'}
       <div class="ceny-linki">${linki}</div></div>
     <div class="ceny-k-cena"><span class="ceny-et">${o.czeka ? `Cena · wysłana ${cenyGodzina(o.dec_czas)}` : `Cena · stan z ${cenyGodzina(o.obs_czas)}`}</span>${obs ? `<b class="ceny-duza">${cenyLiczba(o.cena)} ${w}</b>
-      <span class="ceny-m">${o.platforma === 'emag' ? (o.genius ? 'dostawę do automatu opłaca klient w eMAG' : 'kurier do domu: klient płaci 25 RON') : o.wysylka ? `+ wysyłka ${cenyLiczba(o.wysylka)} ${w}` : 'wysyłka gratis'}</span>
+      <span class="ceny-m">${o.platforma === 'emag' ? (o.genius ? 'dostawę do automatu opłaca klient w eMAG' : 'kurier do domu: klient płaci 25 RON') : o.platforma === 'allegro' ? 'dostawa wg cennika oferty (kalkulator: dopłata Smart)' : o.wysylka ? `+ wysyłka ${cenyLiczba(o.wysylka)} ${w}` : 'wysyłka gratis'}</span>
       <span class="ceny-m">marża ${o.marza != null ? cenyLiczba(o.marza, 1) + '%' : '—'}</span><span class="ceny-m">zysk ${o.zysk != null ? cenyLiczba(o.zysk) + ' zł' : '—'}</span>` : '<span class="hint">—</span>'}</div>
     <div class="ceny-k-konk"><span class="ceny-et">Konkurencja (${o.platforma === 'emag' ? 'cena towaru' : 'z wysyłką'})</span>
-      <span>Buy Box: <b>${o.bb_cena != null ? `${cenyLiczba(o.bb_cena)} ${w}` : '—'}</b>${o.bb_cena != null ? (o.bb_nasz ? ' (my)' : o.bb_fba ? ' (FBA)' : '') : ''}</span>
+      ${o.bez_konkurencji ? `<span class="hint">${cenyEsc(cenyKanal(o))} nie podaje przez API cen innych sprzedawców — repricer pilnuje tylko minimum</span>`
+        : `<span>Buy Box: <b>${o.bb_cena != null ? `${cenyLiczba(o.bb_cena)} ${w}` : '—'}</b>${o.bb_cena != null ? (o.bb_nasz ? ' (my)' : o.bb_fba ? ' (FBA)' : '') : ''}</span>
       <span class="ceny-m">najtańsza inna: ${o.najtansza_inna != null ? `${cenyLiczba(o.najtansza_inna)} ${w}` : '—'}</span>
-      <span class="ceny-m">ofert: ${o.ofert ?? '—'}</span>
+      <span class="ceny-m">ofert: ${o.ofert ?? '—'}</span>`}
       <span class="ceny-m">pas: ${o.min != null ? `${cenyLiczba(o.min)} – ${cenyLiczba(o.max)} ${w}` : 'brak (kalkulator nie zna rynku)'}</span></div>
     <div class="ceny-k-auto"><span class="ceny-et">Co zrobiłby automat</span>${dec}</div>
     <div class="ceny-k-wykres">${cenyWykres(o.obserwacje)}</div>

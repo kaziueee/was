@@ -36,6 +36,8 @@
 //     przebieg (nie wyżej niż max); gdy po takiej podwyżce stracimy BB, reguła 6 wraca do ostatniej
 //     ceny z BB i wstrzymuje podwyżki na `blokadaPodwyzekH` — cena staje tuż pod konkurentem.
 //     Jedyna oferta na produkcie (brak sygnału stopu) — bez zmian, nie podnosimy.
+// 10. Platforma w ogóle nie podaje cen konkurencji (`konkurencjaNiedostepna`, Allegro od 2026-10-16) —
+//     pilnujemy tylko podłogi: cena pod minimum idzie na minimum (reguła 7), poza tym bez zmian.
 
 const DOMYSLNE_REGULY = {
   krok: 0.01,          // o ile schodzimy pod konkurenta
@@ -61,6 +63,7 @@ const zaokr = (x) => Math.round(x * 100) / 100;
 //   bbInnaNasza,     // Buy Box ma nasza INNA oferta tego samego ASIN-u
 //   konkurencjaNieznana, // mamy Buy Box, są inne oferty, ale platforma nie podaje ich cen (eMAG)
 //   najtanszaNasza,  // nie mamy Buy Boxa, choć nasza oferta jest najtańsza (eMAG: Buy Box nie tylko po cenie)
+//   konkurencjaNiedostepna, // platforma nie podaje cen innych sprzedawców (Allegro) — reguła 10
 // }
 // pas: { min, max } — ceny towaru (bez wysyłki) z kalkulatora
 // kontekst (z historii decyzji, liczy worker):
@@ -118,6 +121,8 @@ function decyzja(obs, pas, reguly = {}, kontekst = {}) {
 
   // Cena poza pasem (np. ktoś zmienił ją ręcznie, albo zmienił się koszt) — wracamy do pasa schodkami.
   if (cena < min - 0.005) return ustaw(min, 'pod_min', `cena ${cena} poniżej minimum ${min} — od razu na minimum`);
+
+  if (obs.konkurencjaNiedostepna) return zostaw('bez_konkurencji', 'platforma nie podaje cen konkurencji — pilnujemy tylko minimum');
 
   if (obs.bbNasz === true) {
     const nast = obs.najtanszaInna;

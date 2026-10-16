@@ -9,7 +9,9 @@
 //      więc to jedno pobranie na rynek (~30 zapytań). Ceny wychodzą tylko na kanały bez `tylkoOdczyt`.
 //      Bez EMAG_RO_USER w .env część eMAG jest pomijana; jej błąd (np. IP spoza listy w panelu
 //      eMAG) nie zatrzymuje przebiegu Amazona. Empik (pricing/sync-empik.js, od 2026-10-16) — lista
-//      ofert razem z pełną obserwacją (PRICING_PELNY_MIN); bez EMPIK_API_KEY pomijany.
+//      ofert razem z pełną obserwacją (PRICING_PELNY_MIN); bez EMPIK_API_KEY pomijany. Allegro
+//      (pricing/sync-allegro.js, od 2026-10-16) — lista aktywnych ofert każdego podpiętego konta co przebieg
+//      (~4 zapytania na konto), jak eMAG; bez ALLEGRO_CLIENT_ID albo bez tokenu konta — pomijane.
 //   2. obserwacja ofert: z włączonym automatem ZAWSZE, pozostałe ze stanem raz na
 //      PRICING_PELNY_MIN (domyślnie 360 min) — żeby przed włączeniem automatu było widać,
 //      co by zrobił, bez odpytywania całego katalogu co pół godziny (Amazon i Empik; eMAG co przebieg)
@@ -36,6 +38,9 @@ const emag = require('./emag');
 const { synchronizujEmpik } = require('./sync-empik');
 const { obserwujEmpik } = require('./obserwuj-empik');
 const empik = require('./empik');
+const { synchronizujAllegro } = require('./sync-allegro');
+const { obserwujAllegro } = require('./obserwuj-allegro');
+const allegro = require('./allegro');
 const { kluczKolumny, kolumna } = require('./kolumny');
 const { takaSamaDecyzja } = require('./bez-zmian');
 const { ustawCene } = require('./amazon');
@@ -45,10 +50,12 @@ const { interwalMsZMinut } = require('../services/interwal');
 const PELNY_MS = interwalMsZMinut(process.env.PRICING_PELNY_MIN, 360, 'PRICING_PELNY_MIN');
 // Które platformy obsługuje ten proces (domyślnie wszystkie). Do testów na drugiej maszynie:
 // PRICING_PLATFORMY=emag nie dotyka API Amazona, więc nie zjada limitów workera na SRV.
-const PLATFORMY = new Set(String(process.env.PRICING_PLATFORMY || 'amazon,emag,empik').split(',').map((x) => x.trim().toLowerCase()));
+const PLATFORMY = new Set(String(process.env.PRICING_PLATFORMY || 'amazon,emag,empik,allegro').split(',').map((x) => x.trim().toLowerCase()));
 const SYNC_MS = 24 * 60 * 60 * 1000;
 // Rynki eMAG obsługiwane przez ten proces (pricing/emag.js KRAJE); domyślnie wszystkie.
 const EMAG_KRAJE = String(process.env.PRICING_EMAG_KRAJE || 'RO,HU,BG').split(',').map((x) => x.trim().toUpperCase()).filter((k) => emag.KRAJE[k]);
+// Konta Allegro obsługiwane przez ten proces (pricing/allegro.js KONTA); domyślnie wszystkie podpięte.
+const ALLEGRO_KONTA = String(process.env.PRICING_ALLEGRO_KONTA || Object.keys(allegro.KONTA).join(',')).split(',').map((x) => x.trim().toUpperCase()).filter((k) => allegro.KONTA[k]);
 
 const minelo = (klucz, ms) => {
   const s = stan.get(klucz);
@@ -114,13 +121,39 @@ async function przebieg({ pelny = false } = {}) {
     }
   }
 
+  // Allegro: lista aktywnych ofert każdego podpiętego konta (jak eMAG — ta sama lista idzie do obserwacji).
+  // Konto bez tokenu pomijamy po cichu (jeszcze niepodpięte); błąd jednego konta nie zatrzymuje reszty.
+  const allegroSurowe = [];
+  const allegroKonta = new Set();
+  if (PLATFORMY.has('allegro') && allegro.skonfigurowany()) {
+    const podsum = {};
+    const podpiete = allegro.kontaAutoryzowane();
+    for (const konto of ALLEGRO_KONTA.filter((k) => podpiete.includes(k))) {
+      try {
+        const lista = await allegro.wszystkieOferty(konto);
+        podsum[konto] = await synchronizujAllegro(konto, lista);
+        allegroSurowe.push(...lista);
+        allegroKonta.add(konto);
+      } catch (e) {
+        stan.set('blad_allegro', `${konto}: ${e.message}`);
+        console.error(new Date().toISOString(), `[pricing] Allegro ${konto}:`, e.message);
+      }
+    }
+    if (allegroKonta.size) {
+      stan.set('sync_allegro', JSON.stringify(podsum));
+      wynik.allegro = Object.fromEntries(Object.entries(podsum).map(([k, x]) => [k, x.aktywne]));
+    }
+  }
+
   // Amazon i Empik: oferty z automatem co przebieg, cały katalog w pełnej obserwacji (limity API).
-  // eMAG: zawsze cały katalog — obserwacja czyta listę pobraną wyżej, nie woła API po raz drugi.
+  // eMAG i Allegro: zawsze cały katalog — obserwacja czyta listę pobraną wyżej, nie woła API po raz drugi.
   const oferty = db.prepare(`SELECT id, platforma, rynek, sku, asin, tw_id, auto, genius, dopasowanie, prowizja FROM oferty
-     WHERE ((platforma = 'amazon' AND ? AND (auto = 1 OR ?)) OR (platforma = 'emag' AND ?) OR (platforma = 'empik' AND ? AND (auto = 1 OR ?)))
+     WHERE ((platforma = 'amazon' AND ? AND (auto = 1 OR ?)) OR (platforma = 'emag' AND ?) OR (platforma = 'empik' AND ? AND (auto = 1 OR ?))
+            OR (platforma = 'allegro' AND ?))
        AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all(PLATFORMY.has('amazon') ? 1 : 0, pelnyTeraz ? 1 : 0, emagKraje.size ? 1 : 0,
-    empikOk ? 1 : 0, pelnyTeraz ? 1 : 0)
-    .filter((o) => o.platforma !== 'emag' || emagKraje.has(o.rynek));     // rynek eMAG z błędem pobrania — bez decyzji
+    empikOk ? 1 : 0, pelnyTeraz ? 1 : 0, allegroKonta.size ? 1 : 0)
+    .filter((o) => o.platforma !== 'emag' || emagKraje.has(o.rynek))       // rynek eMAG z błędem pobrania — bez decyzji
+    .filter((o) => o.platforma !== 'allegro' || allegroKonta.has(o.rynek)); // konto Allegro z błędem pobrania — też
   wynik.ofert = oferty.length;
   wynik.pelny = pelnyTeraz;
   if (!oferty.length) return wynik;
@@ -128,6 +161,7 @@ async function przebieg({ pelny = false } = {}) {
   const amazon = oferty.filter((o) => o.platforma === 'amazon');
   const emagOf = oferty.filter((o) => o.platforma === 'emag');
   const empikOf = oferty.filter((o) => o.platforma === 'empik');
+  const allegroOf = oferty.filter((o) => o.platforma === 'allegro');
   // Genius i stawka prowizji są per RYNEK (ten sam towar: RO 16%, HU 18%) — mapa tw_Id → { kolumna: wartość }.
   const poKolumnie = (pole, ok, wartosc) => {
     const m = new Map();
@@ -142,16 +176,19 @@ async function przebieg({ pelny = false } = {}) {
     console.error(new Date().toISOString(), '[pricing] Empik obserwacja:', e.message);
     return new Map();
   }) : new Map();
-  const [obsA, obsE, obsP, pasy] = await Promise.all([
+  const [obsA, obsE, obsP, obsL, pasy] = await Promise.all([
     amazon.length ? obserwuj(amazon) : new Map(),
     emagOf.length ? obserwujEmag(emagOf, emagSurowe) : new Map(),
     obsEmpik,
+    allegroOf.length ? obserwujAllegro(allegroOf, allegroSurowe) : new Map(),
     pasyHurtem(oferty.map((o) => o.tw_id), geniusPoTw, prowizjaPoTw),
   ]);
   if (obsA.bledyPaczek) wynik.bledy_paczek = obsA.bledyPaczek;
   if (emagOf.length) wynik.emag_obs = { ofert: obsE.size, zmian: obsE.nowe || 0 };
   if (empikOf.length) wynik.empik_obs = { ofert: obsP.size, zmian: obsP.nowe || 0 };
-  const obs = { get: (id) => obsA.get(id) || obsE.get(id) || obsP.get(id) };
+  if (allegroOf.length) wynik.allegro_obs = { ofert: obsL.size, zmian: obsL.nowe || 0 };
+  const obs = { get: (id) => obsA.get(id) || obsE.get(id) || obsP.get(id) || obsL.get(id) };
+  const allegroPoId = new Map(allegroSurowe.map((x) => [`${x._konto}|${x.id}`, x]));
   const kluczEmag = (kraj, sku) => `${kraj}|${String(sku || '').trim().toUpperCase()}`;
   const emagPoSku = new Map((emagSurowe || []).map((x) => [kluczEmag(x._kraj, x.part_number), x]));
 
@@ -213,6 +250,10 @@ async function przebieg({ pelny = false } = {}) {
           // Oferta z listy pobranej na początku przebiegu: id eMAG, VAT i zakres min/max z panelu.
           const s = emagPoSku.get(kluczEmag(o.rynek, o.sku));
           w = s ? await emag.ustawCene(s, d.cena) : { ok: false, blad: 'oferty nie ma na liście eMAG z tego przebiegu' };
+        } else if (o.platforma === 'allegro') {
+          // Oferta z listy tego przebiegu (numer, format, reguła cenowa Allegro — zmianaCeny ją sprawdza).
+          const s = allegroPoId.get(`${o.rynek}|${o.asin}`);
+          w = s ? await allegro.ustawCene(s, d.cena) : { ok: false, blad: 'oferty nie ma na liście Allegro z tego przebiegu' };
         } else w = { ok: false, blad: `zapis na ${o.platforma} nieobsługiwany` };
         if (w.ok) { wyslano = 1; wysylka.wyslane++; doPotwierdzenia.push(o); }
         else { blad = w.blad || `${o.platforma}: ${w.status}`; wysylka.odrzucone++; }
@@ -278,6 +319,8 @@ const POTWIERDZENIE_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE_MIN,
 const POTWIERDZENIE_EMAG_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE_EMAG_MIN, 8, 'PRICING_POTWIERDZENIE_EMAG_MIN');
 // Empik: czas od importu cen (PRI01) do ceny na stronie jeszcze nieznany — do zmierzenia testem zapisu.
 const POTWIERDZENIE_EMPIK_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE_EMPIK_MIN, 10, 'PRICING_POTWIERDZENIE_EMPIK_MIN');
+// Allegro: PATCH 200 = „zmiany wdrożymy od razu” (dokumentacja), 202 = w toku — czas do zmierzenia testem zapisu.
+const POTWIERDZENIE_ALLEGRO_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE_ALLEGRO_MIN, 5, 'PRICING_POTWIERDZENIE_ALLEGRO_MIN');
 
 async function przebiegBezpieczny(opcje) {
   const t0 = Date.now();
@@ -299,8 +342,10 @@ async function potwierdz(wszystkie) {
   const oferty = wszystkie.filter((o) => o.platforma === 'amazon');
   const emagOf = wszystkie.filter((o) => o.platforma === 'emag');
   const empikOf = wszystkie.filter((o) => o.platforma === 'empik');
+  const allegroOf = wszystkie.filter((o) => o.platforma === 'allegro');
   if (emagOf.length) await potwierdzEmag(emagOf);
   if (empikOf.length) await potwierdzEmpik(empikOf);
+  if (allegroOf.length) await potwierdzAllegro(allegroOf);
   if (!oferty.length) return;
   try {
     const obs = await obserwuj(oferty);
@@ -354,6 +399,24 @@ async function potwierdzEmpik(oferty) {
   }
 }
 
+// Allegro: po jednym zapytaniu na wysłaną ofertę (po numerze), obserwacja tą samą drogą co w przebiegu.
+async function potwierdzAllegro(oferty) {
+  try {
+    const surowe = [];
+    for (const o of oferty) {
+      const s = await allegro.ofertaPoId(o.rynek, o.asin);
+      if (s) surowe.push(s);
+    }
+    const obs = await obserwujAllegro(oferty, surowe);
+    for (const o of oferty) {
+      const ob = obs.get(o.id);
+      console.log(new Date().toISOString(), `[pricing] potwierdzenie ALLEGRO_${o.rynek} ${o.sku}: na Allegro ${ob ? ob.cena : '?'}`);
+    }
+  } catch (e) {
+    console.error(new Date().toISOString(), '[pricing] błąd potwierdzenia Allegro:', e.message);
+  }
+}
+
 module.exports = { przebieg };
 
 // Log do pliku pisze SAM worker (logs/pricing.log), a zadanie harmonogramu uruchamia node.exe
@@ -392,6 +455,7 @@ if (require.main === module) {
       potw(doPotwierdzenia.filter((o) => o.platforma === 'amazon'), POTWIERDZENIE_MS);
       potw(doPotwierdzenia.filter((o) => o.platforma === 'emag'), POTWIERDZENIE_EMAG_MS);
       potw(doPotwierdzenia.filter((o) => o.platforma === 'empik'), POTWIERDZENIE_EMPIK_MS);
+      potw(doPotwierdzenia.filter((o) => o.platforma === 'allegro'), POTWIERDZENIE_ALLEGRO_MS);
     };
     tik();
     setInterval(tik, ms);

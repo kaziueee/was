@@ -38,8 +38,8 @@ const SYTUACJE = [
   { klucz: 'ponizej', nazwa: 'Poniżej minimum', opis: 'Nasza cena poniżej minimum z kalkulatora (marża < 20%) — od najniższego zysku',
     oferta: ponizejMin, wartosc: (o) => -(o.zysk ?? 0) },
   { klucz: 'zablokowane', nazwa: 'Zablokowane', opis: 'Platforma wstrzymała ofertę przez cenę (eMAG „Invalid price”)', oferta: (o) => !!o.blokada },
-  { klucz: 'brak_danych', nazwa: 'Brak danych', opis: 'Brak danych o Buy Boxie, brak naszej ceny w odpowiedzi platformy albo brak minimum/maksimum (np. Amazon PL)',
-    oferta: zKodem('brak_danych', 'brak_ceny', 'brak_pasa') },
+  { klucz: 'brak_danych', nazwa: 'Brak danych', opis: 'Brak danych o Buy Boxie (Allegro nie podaje cen konkurencji), brak naszej ceny w odpowiedzi platformy albo brak minimum/maksimum (np. Amazon PL)',
+    oferta: zKodem('brak_danych', 'brak_ceny', 'brak_pasa', 'bez_konkurencji') },
 ];
 
 const zakres = (k) => ZAKRESY.find((z) => z.klucz === k) || ZAKRESY[0];

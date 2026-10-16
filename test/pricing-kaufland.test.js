@@ -168,3 +168,17 @@ test('Kaufland: kolumna KAUFLAND_DE tylko do odczytu, pas min/max z kalkulatora 
   assert.ok(pasy.KAUFLAND_DE && pasy.KAUFLAND_DE.min > 0, 'minimum z kalkulatora');
   assert.strictEqual(pasy.KAUFLAND_DE.max, +(pasy.KAUFLAND_DE.min * 1.5).toFixed(2));
 });
+
+test('Kaufland: wyłączenie Smart Pricing zamraża cenę, za którą oferta stoi teraz (cena = minimum = price)', () => {
+  // JAK21940 16.10: listing 15,99, minimum 14,00, sprzedaje się za 14,00
+  const z = kaufland.wylaczenieSmartPricing(unit({ listing_price: 1599, minimum_price: 1400, price: 1400 }));
+  assert.deepStrictEqual(z.body, { listing_price: 1400, minimum_price: 1400 });
+  assert.strictEqual(z.cena, 14);
+  assert.strictEqual(z.sciezka, '/units/501');
+  // Smart Pricing trzyma cenę między minimum a ceną (TM13802: 24,99 / 14,00 / 23,79) — zamrażamy 23,79
+  assert.deepStrictEqual(kaufland.wylaczenieSmartPricing(unit({ listing_price: 2499, minimum_price: 1400, price: 2379 })).body,
+    { listing_price: 2379, minimum_price: 2379 });
+  assert.match(kaufland.wylaczenieSmartPricing(unit({ minimum_price: 4499 })).blad, /nie działa/);
+  // po wyłączeniu zwykły zapis ceny już przechodzi
+  assert.ok(!kaufland.zmianaCeny(unit({ listing_price: 1400, minimum_price: 1400, price: 1400 }), 14.5).blad);
+});

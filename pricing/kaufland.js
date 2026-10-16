@@ -269,9 +269,19 @@ function zmianaCeny(u, cena) {
   return { sciezka: `/units/${encodeURIComponent(u.id_unit)}`, query: { storefront: sf(rynekUnitu(u)) }, body, cena: c };
 }
 
+// Wyłączenie Smart Pricing na ofercie: cena i minimum = cena, za którą oferta stoi TERAZ (`price`, zwykle
+// równa staremu minimum) — klient nie widzi zmiany, a cenę od tej chwili ustawia już tylko repricer.
+// Podniesienie do starego `listing_price` byłoby podwyżką, o której decyduje człowiek, nie wyłączenie automatu.
+function wylaczenieSmartPricing(u) {
+  if (!u?.id_unit) return { blad: 'brak id_unit oferty Kaufland' };
+  if (!smartPricing(u)) return { blad: 'Smart Pricing nie działa na tej ofercie (minimum = cena)' };
+  const centy = Number(u.price) > 0 ? Number(u.price) : Number(u.listing_price);
+  return { sciezka: `/units/${encodeURIComponent(u.id_unit)}`, query: { storefront: sf(rynekUnitu(u)) },
+    body: { listing_price: centy, minimum_price: centy }, cena: zCentow(centy) };
+}
+
 // Wysłanie zmiany ceny. Zwraca { ok, cena, blad } — odmowa Kauflandu to wynik, nie wyjątek.
-async function ustawCene(u, cena) {
-  const z = zmianaCeny(u, cena);
+async function ustawCene(u, cena, z = zmianaCeny(u, cena)) {
   if (z.blad) return { ok: false, blad: z.blad };
   try {
     const j = await api('PATCH', z.sciezka, { query: z.query, body: z.body });
@@ -290,5 +300,5 @@ const linkiOferty = (idProduktu, rynek = 'DE') => {
 
 module.exports = {
   api, podpis, adres, naglowki, storefronty, wszystkieUnits, unitPoSku, doOferty, zBuyboxa, buybox, buyboxyHurtem,
-  kluczProduktu, powodyNieLive, blokadaCeny, zmianaCeny, ustawCene, linkiOferty, skonfigurowany, smartPricing, STOREFRONTY,
+  kluczProduktu, powodyNieLive, blokadaCeny, zmianaCeny, wylaczenieSmartPricing, ustawCene, linkiOferty, skonfigurowany, smartPricing, STOREFRONTY,
 };

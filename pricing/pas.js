@@ -13,9 +13,8 @@
 
 const { wycenaHurtem } = require('../services/cennik');
 const rynki = require('../config/rynki');
-const { KOLUMNY } = require('./kolumny');
-
-const MNOZNIK_MAX = 1.5;
+const { KOLUMNY, kluczKolumny } = require('./kolumny');
+const { MNOZNIK_MAX, zGranicami } = require('./granice');
 
 // wycena (z wycenaHurtem) → { DE: {min, max, koszt, waga, ocen(cena) → {zysk, marza}}, …, EMAG_RO }
 // `ocen` liczy zysk (zł) i marżę (%) przy DOWOLNEJ cenie tą samą matematyką co Cennik
@@ -66,4 +65,17 @@ async function pasyHurtem(twIds, geniusPoTw = new Map(), prowizjaPoTw = new Map(
   return new Map([...wyceny].map(([id, w]) => [id, pasyZWyceny(w, { genius: geniusPoTw.get(id), prowizja: prowizjaPoTw.get(id) })]));
 }
 
-module.exports = { pasyHurtem, pasyZWyceny, MNOZNIK_MAX };
+// Pas JEDNEJ oferty (karta SKU, ręczna cena, granice): ta sama wycena co w workerze — Genius i stawka
+// prowizji z wiersza oferty eMAG — plus ręczne granice oferty (pricing/granice.js). w = wycena towaru
+// z wycenaHurtem (null = Subiekt nie odpowiada). Zwraca { pas, kalk }: pas po granicach (null = brak
+// pasa) i pas z samego kalkulatora (null = rynek bez kalkulatora / brak wyceny).
+function pasOferty(w, o) {
+  const klucz = kluczKolumny(o.platforma, o.rynek);
+  const opcje = o.platforma === 'emag'
+    ? { genius: o.genius != null ? { [klucz]: !!o.genius } : undefined, prowizja: o.prowizja > 0 ? { [klucz]: o.prowizja } : undefined }
+    : {};
+  const kalk = (w && pasyZWyceny(w, opcje)[klucz]) || null;
+  return { pas: zGranicami(kalk, o), kalk };
+}
+
+module.exports = { pasyHurtem, pasyZWyceny, pasOferty, MNOZNIK_MAX };

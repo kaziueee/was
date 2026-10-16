@@ -1347,6 +1347,18 @@ main {
 .mca-tabela tr.mca-podmin td { background: #fff4f2; }
 .mca-akcje { justify-content: flex-end; }
 
+/* Ceny: ręczna cena i ręczne granice (karta SKU) */
+.ceny-k-reczne { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; border-top: 1px solid #e5e7eb; padding-top: 0.45rem; font-size: 0.88rem; }
+.ceny-k-reczne form { display: grid; gap: 0.2rem; align-content: start; }
+.ceny-reczne-wiersz { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+.ceny-reczne-wiersz input { width: 6.5rem; padding: 0.25rem 0.4rem; font: inherit; font-variant-numeric: tabular-nums; border: 1px solid #c4cad1; border-radius: 4px; }
+.ceny-reczne-wiersz input::placeholder { color: #a0a7b0; font-style: italic; }   /* podpowiedź z kalkulatora ≠ wpisana wartość */
+.ceny-reczna-podglad { min-height: 1.1em; }
+.ceny-recznie { color: #1d3557; font-weight: 600; }
+.mcr-box { max-width: 560px; }
+.mcr-zgoda { display: flex; gap: 0.4rem; align-items: center; font-weight: 600; font-size: 0.88rem; margin: 0.3rem 0; }
+.mcr-zgoda.hidden { display: none; }
+
 /* Ceny: Do powiązania */
 .ceny-h3 { margin: 1.2rem 0 0.4rem; font-size: 1rem; color: #1d3557; }
 .cp-nazwa { max-width: 26rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.82rem; }

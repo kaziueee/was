@@ -9,7 +9,7 @@
 //   powiazania  — ręczne SKU → tw_Id (wygrywa z automatem, przeżywa synchronizację)
 //   obserwacje  — co widzieliśmy przy każdym przebiegu (nasza cena, Buy Box, konkurencja)
 //   decyzje     — co repricer postanowił i czy wysłał (log „dlaczego ta cena")
-//   zmiany      — ręczne działania ludzi (włącz/wyłącz automat)
+//   zmiany      — ręczne działania ludzi (włącz/wyłącz automat, ręczna cena, granice)
 //   stan        — znaczniki czasu workera
 
 const path = require('path');
@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS zmiany (
   czas        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   kto         TEXT,
   oferta_id   INTEGER,
-  akcja       TEXT NOT NULL,                -- 'automat_wl' | 'automat_wyl' | ...
+  akcja       TEXT NOT NULL,                -- 'automat_wl' | 'automat_wyl' | 'korekta_ceny' | 'granice' | ...
   opis        TEXT
 );
 
@@ -124,6 +124,10 @@ if (!kolOferty.includes('blokada')) db.exec('ALTER TABLE oferty ADD COLUMN bloka
 // Stawka prowizji platformy dla TEJ oferty (eMAG: commission/estimate, % od ceny bez VAT) i kiedy pobrana.
 if (!kolOferty.includes('prowizja')) db.exec('ALTER TABLE oferty ADD COLUMN prowizja REAL');
 if (!kolOferty.includes('prowizja_czas')) db.exec('ALTER TABLE oferty ADD COLUMN prowizja_czas TEXT');
+// Ręczne granice repricera dla TEJ oferty (kwota w walucie rynku); NULL = z kalkulatora (pricing/granice.js).
+// Tylko w WMS — zakresu min/max w panelu platformy nie dotykamy (decyzja usera 2026-10-16).
+if (!kolOferty.includes('min_reczne')) db.exec('ALTER TABLE oferty ADD COLUMN min_reczne REAL');
+if (!kolOferty.includes('max_reczne')) db.exec('ALTER TABLE oferty ADD COLUMN max_reczne REAL');
 // `oferty.zapis` (osobny przełącznik wysyłania, tryb Próba) zlikwidowany 2026-10-13 — w starszych
 // bazach kolumna zostaje, nic jej nie czyta: automat = wysyła, ręczny = nie.
 const kolObs = db.prepare('PRAGMA table_info(obserwacje)').all().map((k) => k.name);

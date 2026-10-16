@@ -901,6 +901,21 @@
       </div>
     </div>
 
+    <!-- Ceny: potwierdzenie ręcznej ceny / ręcznych granic (cenyOknoPotwierdzenia w app.js) -->
+    <div id="modal-ceny-reczna" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="mcr-tytul">
+      <div class="modal-box mca-box mcr-box">
+        <h3 id="mcr-tytul" class="mca-tytul"></h3>
+        <div id="mcr-tresc"></div>
+        <div id="mcr-ostrzezenia" class="mca-ostrzezenie hidden"></div>
+        <label id="mcr-zgoda-wiersz" class="mcr-zgoda hidden"><input type="checkbox" id="mcr-zgoda"> Rozumiem — mimo to zatwierdzam</label>
+        <p id="mcr-uwaga" class="hint"></p>
+        <div class="modal-akcje mca-akcje">
+          <button type="button" id="mcr-anuluj" class="btn">Anuluj</button>
+          <button type="button" id="mcr-ok" class="btn btn-primary"></button>
+        </div>
+      </div>
+    </div>
+
     <div id="modal-produkt" class="modal-overlay hidden">
       <div class="modal-box">
         <div class="modal-naglowek">

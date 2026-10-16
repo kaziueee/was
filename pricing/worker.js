@@ -17,7 +17,8 @@
 //   2. obserwacja ofert: z włączonym automatem ZAWSZE, pozostałe ze stanem raz na
 //      PRICING_PELNY_MIN (domyślnie 360 min) — żeby przed włączeniem automatu było widać,
 //      co by zrobił, bez odpytywania całego katalogu co pół godziny (Amazon i Empik; eMAG co przebieg)
-//   3. pas [min, max] i zysk z kalkulatora WMS (pricing/pas.js)
+//   3. pas [min, max] i zysk z kalkulatora WMS (pricing/pas.js); ręczne min/max oferty z ekranu Ceny
+//      wygrywają z kalkulatorem (pricing/granice.js)
 //   4. decyzja (pricing/model.js) → tabela `decyzje`
 //
 // Dwa tryby oferty (decyzja usera 2026-10-13 — tryb Próba zlikwidowany):
@@ -32,6 +33,7 @@
 const { db, stan } = require('./db');
 const { obserwuj } = require('./obserwuj');
 const { pasyHurtem } = require('./pas');
+const { zGranicami } = require('./granice');
 const { decyzja, DOMYSLNE_REGULY } = require('./model');
 const { synchronizuj } = require('./sync-oferty');
 const { synchronizujEmag, odswiezProwizje } = require('./sync-emag');
@@ -179,7 +181,7 @@ async function przebieg({ pelny = false } = {}) {
   // Amazon i Empik: oferty z automatem co przebieg, cały katalog w pełnej obserwacji (limity API).
   // eMAG, Allegro i Kaufland: zawsze cały katalog — obserwacja czyta listę pobraną wyżej (Kaufland dokłada
   // ranking Buy Boxa per produkt).
-  const oferty = db.prepare(`SELECT id, platforma, rynek, sku, asin, tw_id, auto, genius, dopasowanie, prowizja FROM oferty
+  const oferty = db.prepare(`SELECT id, platforma, rynek, sku, asin, tw_id, auto, genius, dopasowanie, prowizja, min_reczne, max_reczne FROM oferty
      WHERE ((platforma = 'amazon' AND ? AND (auto = 1 OR ?)) OR (platforma = 'emag' AND ?) OR (platforma = 'empik' AND ? AND (auto = 1 OR ?))
             OR (platforma = 'allegro' AND ?) OR (platforma = 'kaufland' AND ?))
        AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all(PLATFORMY.has('amazon') ? 1 : 0, pelnyTeraz ? 1 : 0, emagKraje.size ? 1 : 0,
@@ -242,8 +244,9 @@ async function przebieg({ pelny = false } = {}) {
   const wiersze = [];
   // Kontekst reguły „czułej na utratę BB" (pricing/model.js, reguła 6) — z historii decyzji tej oferty.
   const okno = `-${DOMYSLNE_REGULY.blokadaPodwyzekH} hours`;
+  // Ręczna podwyżka z ekranu (`korekta`) to decyzja człowieka, nie podwyżka „po zysk” — reguła 6 jej nie cofa.
   const ostPodwyzka = db.prepare(`SELECT cena_przed, cena_nowa FROM decyzje WHERE oferta_id = ? AND wyslano = 1
-      AND cena_nowa > cena_przed AND czas >= datetime('now', ?) ORDER BY id DESC LIMIT 1`);
+      AND cena_nowa > cena_przed AND kod <> 'korekta' AND czas >= datetime('now', ?) ORDER BY id DESC LIMIT 1`);
   const cofniecie = db.prepare(`SELECT 1 FROM decyzje WHERE oferta_id = ? AND kod LIKE 'cofniecie%'
       AND czas >= datetime('now', ?) LIMIT 1`);
   // Reguła 8 (wojna o grosze): wysłane obniżki od ostatniej obserwacji z NASZYM Buy Boxem (najdalej
@@ -259,15 +262,20 @@ async function przebieg({ pelny = false } = {}) {
        AND czas > COALESCE((SELECT MAX(czas) FROM obserwacje WHERE oferta_id = ? AND bb_nasz = 1), '')`);
   // Decyzję liczymy co przebieg, ale niewysłaną zapisujemy tylko, gdy się zmieniła (niżej).
   const ostDecyzja = db.prepare('SELECT * FROM decyzje WHERE oferta_id = ? ORDER BY id DESC LIMIT 1');
+  // Automat czytany jeszcze raz tuż przed wysłaniem: przebieg trwa minuty, a w tym czasie człowiek mógł go
+  // wyłączyć albo zmienić cenę ręcznie (POST /api/ceny/cena wyłącza automat) — stara kopia by to nadpisała.
+  const autoTeraz = db.prepare('SELECT auto FROM oferty WHERE id = ?');
   for (const o of oferty) {
     const ob = obs.get(o.id);
     if (!ob) { kody.brak_odpowiedzi = (kody.brak_odpowiedzi || 0) + 1; continue; }
-    const pas = (pasy.get(o.tw_id) || {})[kluczKolumny(o.platforma, o.rynek)] || null;
+    const pas = zGranicami((pasy.get(o.tw_id) || {})[kluczKolumny(o.platforma, o.rynek)] || null, o);
     const d = decyzja(ob, pas || {}, kolumna(o.platforma, o.rynek)?.reguly || {}, {
       ostatniaPodwyzka: ostPodwyzka.get(o.id, okno) || null,
       blokadaPodwyzek: !!cofniecie.get(o.id, okno),
       obnizkiBezBb: obnizkiBezBb.get(o.id, o.id) || null,
     });
+    if (pas?.blad && d.kod === 'brak_pasa') d.powod = pas.blad;   // sprzeczne ręczne granice — powiedz które
+    if (o.auto && d.zmiana && autoTeraz.get(o.id)?.auto !== 1) o.auto = 0;
     const teraz = pas && ob.cena ? pas.ocen(ob.cena) : null;
     const potem = pas && d.zmiana ? pas.ocen(d.cena) : teraz;
     const celOc = pas && d.zmiana && d.cel !== d.cena ? pas.ocen(d.cel) : potem;
@@ -362,6 +370,29 @@ const POTWIERDZENIE_EMAG_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE
 const POTWIERDZENIE_EMPIK_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE_EMPIK_MIN, 10, 'PRICING_POTWIERDZENIE_EMPIK_MIN');
 // Allegro: PATCH 200 = „zmiany wdrożymy od razu” (dokumentacja), 202 = w toku — czas do zmierzenia testem zapisu.
 const POTWIERDZENIE_ALLEGRO_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE_ALLEGRO_MIN, 5, 'PRICING_POTWIERDZENIE_ALLEGRO_MIN');
+
+// Ręczne zmiany cen z ekranu (POST /api/ceny/cena) wysyła WMS, nie worker — worker tylko je potwierdza,
+// tą samą drogą co własne wysyłki. Sprawdzamy dwa razy: po czasie propagacji platformy i po trzykrotności
+// (Amazon 3–10 min, eMAG RO bywa wolniejszy), bo oferty bez automatu obserwujemy tylko co 6 h.
+// Zapamiętane w pamięci procesu — po restarcie korekta z ostatnich 2 h może być sprawdzona raz jeszcze.
+const PROPAGACJA_MS = { amazon: POTWIERDZENIE_MS, emag: POTWIERDZENIE_EMAG_MS, empik: POTWIERDZENIE_EMPIK_MS, allegro: POTWIERDZENIE_ALLEGRO_MS };
+const sprawdzoneKorekty = new Map();   // id decyzji → ile razy sprawdzona
+function korektyDoPotwierdzenia() {
+  const wiersze = db.prepare(`SELECT d.id AS dec_id, (julianday('now') - julianday(d.czas)) * 86400000 AS ms,
+      o.id, o.platforma, o.rynek, o.sku, o.asin, o.tw_id, o.auto, o.genius, o.dopasowanie, o.prowizja
+    FROM decyzje d JOIN oferty o ON o.id = d.oferta_id
+    WHERE d.kod = 'korekta' AND d.wyslano = 1 AND d.czas >= datetime('now', '-2 hours')`).all();
+  const lista = [];
+  for (const w of wiersze) {
+    const n = sprawdzoneKorekty.get(w.dec_id) || 0;
+    const opoznienie = PROPAGACJA_MS[w.platforma] || POTWIERDZENIE_MS;
+    if (n >= 2 || !PLATFORMY.has(w.platforma) || w.ms < opoznienie * (n ? 3 : 1)) continue;
+    sprawdzoneKorekty.set(w.dec_id, n + 1);
+    if (!lista.some((o) => o.id === w.id)) lista.push(w);
+  }
+  for (const id of sprawdzoneKorekty.keys()) if (!wiersze.some((w) => w.dec_id === id)) sprawdzoneKorekty.delete(id);
+  return lista;
+}
 
 async function przebiegBezpieczny(opcje) {
   const t0 = Date.now();
@@ -477,7 +508,7 @@ async function potwierdzKaufland(oferty) {
   }
 }
 
-module.exports = { przebieg };
+module.exports = { przebieg, korektyDoPotwierdzenia };
 
 // Log do pliku pisze SAM worker (logs/pricing.log), a zadanie harmonogramu uruchamia node.exe
 // bezpośrednio. Wcześniej log szedł przez `cmd /c ... >> plik` — Stop-ScheduledTask zabijał wtedy
@@ -505,9 +536,10 @@ if (require.main === module) {
     const ms = interwalMsZMinut(process.env.PRICING_INTERWAL_MIN, 30, 'PRICING_INTERWAL_MIN');
     console.log(`[pricing] worker startuje, przebieg co ${ms / 60000} min, `
       + (process.env.PRICING_ZAPIS === '1' ? 'oferty z automatem zmieniają ceny na Amazonie' : 'HAMULEC: PRICING_ZAPIS ≠ 1, żadna cena nie idzie na Amazona'));
-    let trwa = false;
+    let trwa = false, korekty = false;
     const tik = async () => {
-      if (trwa) return;
+      // Przebieg trafił na potwierdzanie ręcznej korekty (kilka sekund) — czekamy, zamiast tracić 30 min.
+      if (trwa) { if (korekty) setTimeout(tik, 15_000); return; }
       trwa = true;
       const doPotwierdzenia = await przebiegBezpieczny();
       trwa = false;
@@ -519,5 +551,14 @@ if (require.main === module) {
     };
     tik();
     setInterval(tik, ms);
+    // Ręczne korekty z ekranu — co minutę, gdy nic innego nie trwa (przebieg i potwierdzenia dzielą `trwa`).
+    setInterval(async () => {
+      if (trwa) return;
+      let lista;
+      try { lista = korektyDoPotwierdzenia(); } catch (e) { console.error(new Date().toISOString(), '[pricing] korekty:', e.message); return; }
+      if (!lista.length) return;
+      trwa = korekty = true;
+      try { await potwierdz(lista); } finally { trwa = korekty = false; }
+    }, 60_000);
   }
 }

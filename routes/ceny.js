@@ -13,6 +13,10 @@
 //   GET  /api/ceny/towar/:tw_id                                        karta SKU: wszystkie rynki towaru + historia
 //   GET  /api/ceny/log?limit=                                          zmiany cen (auto) + działania ludzi
 //   POST /api/ceny/automat  { ids: [oferta_id...], auto: true|false }  — tylko podane oferty, nigdy hurtem
+//   GET  /api/ceny/cena/podglad?oferta_id=&cena=                      zysk/marża przy wpisanej cenie + ostrzeżenia
+//   POST /api/ceny/cena     { oferta_id, cena, potwierdz }             ręczna cena → platforma (pricing/reczna-cena.js);
+//        wyłącza automat na tej ofercie (decyzja usera 2026-10-16); z ostrzeżeniami tylko z potwierdz = true
+//   POST /api/ceny/granice  { oferta_id, min, max, potwierdz }         ręczne min/max repricera (puste = kalkulator)
 //   GET  /api/ceny/powiazania                                          oferty do powiązania (bez GT / po obcięciu) + ręczne
 //   POST /api/ceny/powiaz        { sku, kod }                          powiąż SKU z towarem GT (symbol/EAN)
 //   POST /api/ceny/powiaz/potwierdz { sku }                            potwierdź obecne dopasowanie jako ręczne
@@ -32,6 +36,9 @@ const { pobierzStanyGt, sumaRazem } = require('../services/gt-produkty');
 const { doZlozeniaMapa } = require('../services/gt-zestawy');
 const { pewneDopasowanie, znajdzTowar, powiaz, usunPowiazanie } = require('../pricing/powiazania');
 const filtry = require('../pricing/filtry-cen');
+const { pasOferty } = require('../pricing/pas');
+const granice = require('../pricing/granice');
+const reczna = require('../pricing/reczna-cena');
 
 // Stan z GT (master stanów) dla pokazanych towarów: Razem (bez BRK) i K4. GT padnięte = null,
 // ekran pokazuje wtedy „—", a nie zero (zero to pewna informacja, której nie mamy).
@@ -70,7 +77,8 @@ const zKanalem = (o) => {
     o = { ...o, zysk: o.zysk_nowa, marza: o.marza_nowa };
   }
   return { ...o, kolumna: kluczKolumny(o.platforma, o.rynek), kanal_nazwa: k.nazwa || `${o.platforma} ${o.rynek}`,
-    waluta: k.waluta || '', tylko_odczyt: !!k.tylkoOdczyt, bez_konkurencji: !!k.bezKonkurencji, linki: linki(o) };
+    waluta: k.waluta || '', tylko_odczyt: !!k.tylkoOdczyt, bez_konkurencji: !!k.bezKonkurencji, linki: linki(o),
+    reczna_cena: reczna.obslugiwana(o.platforma) };
 };
 
 // Filtry macierzy: zakres × sytuacja — pricing/filtry-cen.js (czyste, z testami).
@@ -78,6 +86,7 @@ const zKanalem = (o) => {
 // Ostatnia obserwacja i ostatnia decyzja każdej oferty — jedno zapytanie, korelowane po max(id).
 const SQL_OFERTY = `
   SELECT o.id, o.platforma, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.dopasowanie, o.genius, o.blokada,
+         o.prowizja, o.min_reczne, o.max_reczne,
          b.czas AS obs_czas, COALESCE(b.widziana, b.czas) AS obs_widziana, b.cena, b.wysylka, b.bb_nasz, b.bb_cena, b.bb_fba, b.najtansza_inna, b.ofert, b.bb_nasza_inna,
          d.kod, d.cena_nowa, d.powod, d.min, d.max, d.zysk, d.marza, d.zysk_nowa,
          d.czas AS dec_czas, d.wyslano, d.blad AS dec_blad, d.marza_nowa, d.cena_cel, d.zysk_cel
@@ -196,13 +205,9 @@ router.get('/towar/:tw_id', asyncH(async (req, res) => {
   const zmiany = db.prepare('SELECT czas, kto, akcja FROM zmiany WHERE oferta_id = ? ORDER BY id DESC LIMIT 20');
 
   let gt = null;
-  try {
-    const w = (await wycenaHurtem([twId])).get(twId);
-    if (w) gt = { koszt: w.koszt, kosztZrodlo: w.kosztZrodlo, kosztKartoteka: w.kosztKartoteka, kosztUwaga: w.kosztUwaga,
-      waga: w.waga, wagaZnana: w.wagaZnana, docinalny: w.docinalny };
-  } catch (e) {
-    console.error('[ceny] GT:', e.message);
-  }
+  const { w, gtOk } = await wycenaTowaru(twId, { swieza: true });
+  if (w) gt = { koszt: w.koszt, kosztZrodlo: w.kosztZrodlo, kosztKartoteka: w.kosztKartoteka, kosztUwaga: w.kosztUwaga,
+    waga: w.waga, wagaZnana: w.wagaZnana, docinalny: w.docinalny };
 
   const stanGt = await stanyGt([twId]);
   res.json({
@@ -215,6 +220,10 @@ router.get('/towar/:tw_id', asyncH(async (req, res) => {
     przebieg: stan.get('przebieg'),
     oferty: oferty.map((o) => ({
       ...zKanalem(o),
+      // Pas na TERAZ (koszt z GT, ręczne granice), nie z ostatniej decyzji — po zmianie granic ekran
+      // pokazuje nowe od razu, a automat użyje ich w najbliższym przebiegu.
+      granice: { min_reczne: o.min_reczne, max_reczne: o.max_reczne, ...opisPasa(pasOferty(w, o)), gt_ok: gtOk },
+      propagacja: reczna.propagacja(o.platforma),
       decyzje: decyzje.all(o.id),
       obserwacje: obserwacje.all(o.id).reverse(),
       zmiany: zmiany.all(o.id),
@@ -275,6 +284,124 @@ router.post('/automat', (req, res) => {
   } catch (e) { db.exec('ROLLBACK'); throw e; }
   res.json({ ok: true, zmienione, pominiete });
 });
+
+// --- Ręczna cena i ręczne granice -------------------------------------------------------------
+// Czysta logika (walidacja, pas po granicach, ostrzeżenia) w pricing/granice.js; wysyłka per platforma
+// w pricing/reczna-cena.js. Wycena z GT jest potrzebna do zysku i minimum — trzymamy ją minutę, bo
+// podgląd woła ją przy każdej zmianie wpisanej ceny.
+const WYCENA_MS = 60_000;
+const wyceny = new Map();   // tw_id → { w, czas }
+async function wycenaTowaru(twId, { swieza = false } = {}) {
+  const c = wyceny.get(twId);
+  if (!swieza && c && Date.now() - c.czas < WYCENA_MS) return { w: c.w, gtOk: true };
+  try {
+    const w = (await wycenaHurtem([twId])).get(twId) || null;
+    wyceny.set(twId, { w, czas: Date.now() });
+    if (wyceny.size > 500) wyceny.delete(wyceny.keys().next().value);
+    return { w, gtOk: true };
+  } catch (e) {
+    console.error('[ceny] GT:', e.message);
+    return { w: null, gtOk: false };
+  }
+}
+
+// Pas → JSON dla ekranu (bez funkcji `ocen`).
+const opisPasa = ({ pas, kalk }) => ({
+  min: pas?.min ?? null, max: pas?.max ?? null, zrodlo_min: pas?.zrodlo_min ?? null, zrodlo_max: pas?.zrodlo_max ?? null,
+  kalk_min: kalk?.min ?? null, kalk_max: kalk?.max ?? null, blad: pas?.blad ?? null,
+});
+
+const ofertaPoId = (id) => (Number.isInteger(Number(id))
+  ? db.prepare(SQL_OFERTY.replace('AND o.ilosc > 0', '') + ' AND o.id = ?').get(Number(id)) || null : null);
+
+// Cena, którą oferta ma TERAZ: wysłana decyzja nowsza niż obserwacja = cena już poszła na platformę
+// (tak samo liczy ekran — cenyPoWyslaniu w public/desktop/app.js).
+const cenaTeraz = (o) => (o.wyslano && o.dec_czas && !(o.obs_czas && o.obs_czas > o.dec_czas) ? o.cena_nowa : o.cena) ?? null;
+
+async function ocenaRecznejCeny(o, cenaWe) {
+  const c = granice.walidujCene(cenaWe);
+  if (c.blad) return { blad: c.blad };
+  const { w, gtOk } = await wycenaTowaru(o.tw_id);
+  const p = pasOferty(w, o);
+  const teraz = cenaTeraz(o);
+  const ocena = granice.ocenCene(c.cena, { teraz, pas: p.pas, gtOk, niepewneDopasowanie: !pewneDopasowanie(o.dopasowanie) });
+  const przed = teraz != null && p.pas?.ocen ? p.pas.ocen(teraz) : null;
+  return { cena: c.cena, teraz, p, ocena, przed, gtOk };
+}
+
+router.get('/cena/podglad', asyncH(async (req, res) => {
+  const o = ofertaPoId(req.query.oferta_id);
+  if (!o) return res.status(404).json({ blad: 'Nie ma takiej oferty' });
+  const r = await ocenaRecznejCeny(o, req.query.cena);
+  if (r.blad) return res.status(400).json({ blad: r.blad });
+  res.json({
+    oferta_id: o.id, kolumna: kluczKolumny(o.platforma, o.rynek), kanal_nazwa: kolumna(o.platforma, o.rynek)?.nazwa || `${o.platforma} ${o.rynek}`,
+    waluta: kolumna(o.platforma, o.rynek)?.waluta || '', sku: o.sku, auto: !!o.auto,
+    cena: r.cena, zysk: r.ocena.zysk, marza: r.ocena.marza, ostrzezenia: r.ocena.ostrzezenia,
+    teraz: r.teraz, zysk_teraz: r.przed?.zysk ?? null, marza_teraz: r.przed?.marza ?? null,
+    granice: opisPasa(r.p), gt_ok: r.gtOk, obslugiwana: reczna.obslugiwana(o.platforma), propagacja: reczna.propagacja(o.platforma),
+  });
+}));
+
+router.post('/cena', asyncH(async (req, res) => {
+  const o = ofertaPoId(req.body?.oferta_id);
+  if (!o) return res.status(404).json({ blad: 'Nie ma takiej oferty' });
+  const kol = kluczKolumny(o.platforma, o.rynek);
+  if (!reczna.obslugiwana(o.platforma)) return res.status(400).json({ blad: `${kol}: ręczna zmiana ceny z ekranu jeszcze nieobsługiwana` });
+  const r = await ocenaRecznejCeny(o, req.body?.cena);
+  if (r.blad) return res.status(400).json({ blad: r.blad });
+  if (r.teraz != null && Math.abs(r.cena - r.teraz) < 0.005) return res.status(400).json({ blad: `${kol} ${o.sku}: ${granice.pl(r.cena)} to już obecna cena` });
+  // Ostrzeżenia (pod minimum, strata, skok…) nie blokują — ale bez wyraźnego potwierdzenia nie wysyłamy.
+  if (r.ocena.ostrzezenia.length && req.body?.potwierdz !== true) {
+    return res.status(409).json({ blad: `Cena wymaga potwierdzenia: ${r.ocena.ostrzezenia.map((x) => x.tekst).join('; ')}`, ostrzezenia: r.ocena.ostrzezenia, potwierdzenie: true });
+  }
+
+  const kto = req.body.operator || null;              // wstrzyknięty z sesji (services/auth)
+  // Ręczna cena wyłącza automat na tej ofercie (decyzja usera 2026-10-16). Wyłączamy PRZED wysłaniem:
+  // worker sprawdza automat jeszcze raz tuż przed swoją wysyłką, więc przebieg, który właśnie trwa,
+  // nie nadpisze ręcznej ceny. Odmowa platformy = nic się nie zmieniło, automat wraca.
+  const byl = o.auto === 1;
+  if (byl) db.prepare('UPDATE oferty SET auto = 0 WHERE id = ?').run(o.id);
+  const w = await reczna.wyslij(o, r.cena);
+  if (!w.ok && byl) db.prepare('UPDATE oferty SET auto = 1 WHERE id = ? AND auto = 0').run(o.id);
+
+  const pas = r.p.pas;
+  const po = pas?.ocen ? pas.ocen(r.cena) : null;
+  db.prepare(`INSERT INTO decyzje (oferta_id, cena_przed, cena_nowa, cena_cel, min, max, kod, powod, wyslano, auto, zysk, marza, zysk_nowa, marza_nowa, zysk_cel, blad)
+              VALUES (?, ?, ?, ?, ?, ?, 'korekta', ?, ?, 0, ?, ?, ?, ?, ?, ?)`)
+    .run(o.id, r.teraz, r.cena, r.cena, pas?.min ?? null, pas?.max ?? null, `ręczna zmiana ceny (${kto || 'ekran'})`, w.ok ? 1 : 0,
+      r.przed?.zysk ?? null, r.przed?.marza ?? null, po?.zysk ?? null, po?.marza ?? null, po?.zysk ?? null, w.ok ? null : (w.blad || 'odrzucone'));
+  if (w.ok) {
+    const log = db.prepare('INSERT INTO zmiany (kto, oferta_id, akcja, opis) VALUES (?, ?, ?, ?)');
+    log.run(kto, o.id, 'korekta_ceny', `${kol} ${o.sku}: ${r.teraz != null ? granice.pl(r.teraz) : '?'} → ${granice.pl(r.cena)}`);
+    if (byl) log.run(kto, o.id, 'automat_wyl', `${kol} ${o.sku}: ręczna zmiana ceny`);
+  }
+  console.log(new Date().toISOString(), `[ceny] ręczna cena ${kol} ${o.sku}: ${r.teraz} → ${r.cena} ${w.ok ? 'WYSŁANO' : `ODRZUCONO: ${w.blad}`} (${kto || '?'})`);
+  if (!w.ok) return res.status(502).json({ blad: `${kolumna(o.platforma, o.rynek)?.nazwa || kol} nie przyjął zmiany: ${w.blad}` });
+  res.json({ ok: true, cena: w.cena ?? r.cena, automat_wylaczony: byl, propagacja: reczna.propagacja(o.platforma) });
+}));
+
+router.post('/granice', asyncH(async (req, res) => {
+  const o = ofertaPoId(req.body?.oferta_id);
+  if (!o) return res.status(404).json({ blad: 'Nie ma takiej oferty' });
+  const { w, gtOk } = await wycenaTowaru(o.tw_id, { swieza: true });
+  const { kalk } = pasOferty(w, o);
+  const g = granice.walidujGranice(req.body?.min, req.body?.max, kalk);
+  if (g.blad) return res.status(400).json({ blad: g.blad });
+  const ostrzezenia = granice.ocenGranice(g, kalk, { gtOk });
+  if (ostrzezenia.length && req.body?.potwierdz !== true) {
+    return res.status(409).json({ blad: `Granice wymagają potwierdzenia: ${ostrzezenia.map((x) => x.tekst).join('; ')}`, ostrzezenia, potwierdzenie: true });
+  }
+  const nowe = { ...o, min_reczne: g.min, max_reczne: g.max };
+  const kol = kluczKolumny(o.platforma, o.rynek);
+  if (g.min !== (o.min_reczne ?? null) || g.max !== (o.max_reczne ?? null)) {
+    const t = (v) => (v == null ? 'kalkulator' : granice.pl(v));
+    db.prepare('UPDATE oferty SET min_reczne = ?, max_reczne = ? WHERE id = ?').run(g.min, g.max, o.id);
+    db.prepare("INSERT INTO zmiany (kto, oferta_id, akcja, opis) VALUES (?, ?, 'granice', ?)")
+      .run(req.body.operator || null, o.id, `${kol} ${o.sku}: min ${t(o.min_reczne)} → ${t(g.min)}, max ${t(o.max_reczne)} → ${t(g.max)}`);
+  }
+  res.json({ ok: true, granice: { min_reczne: g.min, max_reczne: g.max, ...opisPasa(pasOferty(w, nowe)), gt_ok: gtOk } });
+}));
 
 // --- Do powiązania ---------------------------------------------------------------------------
 router.get('/powiazania', (req, res) => {

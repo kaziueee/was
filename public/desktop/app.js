@@ -4484,12 +4484,13 @@ const CENY_KOD_OPIS = {
   na_min: 'na minimum', na_min_limit: 'w stronę minimum', pod_min: 'od razu na minimum', top: 'mamy BB — bez zmiany',
   top_bez_konkurencji: 'jedyna oferta', top_konk_nieznana: 'mamy BB — cen konkurencji eMAG nie podaje', cofniecie: 'cofnięcie podwyżki (utrata BB)', top_blokada: 'mamy BB — podwyżki wstrzymane', wojna_cenowa: 'wojna o grosze — obniżki wstrzymane na dobę', sonda: 'szukamy ceny konkurenta (+3%)', sonda_limit: 'szukamy ceny konkurenta (+3%)', bb_nasza_inna: 'BB ma nasza inna oferta — stoi', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
   przegrana_nie_cena: 'tańsi, a bez BB', brak_danych: 'brak danych o BB', brak_ceny: 'brak naszej ceny', brak_pasa: 'brak min/max',
-  bez_konkurencji: 'w pasie (konkurencji nie widać)',
+  bez_konkurencji: 'w pasie (konkurencji nie widać)', korekta: 'ręczna zmiana ceny',
 };
 const CENY_AKCJE = {
   automat_wl: 'włączył automat', automat_wyl: 'wyłączył automat',
   powiazanie: 'powiązał z innym towarem GT', powiazanie_potw: 'potwierdził powiązanie z GT', powiazanie_usun: 'usunął powiązanie z GT',
   wysylanie_wl: 'włączył WYSYŁANIE cen na Amazona', wysylanie_wyl: 'wyłączył wysyłanie cen',
+  korekta_ceny: 'zmienił cenę ręcznie', granice: 'zmienił granice automatu',
 };
 // Wybrany kanał (marketplace) pamiętamy w przeglądarce — wygoda jednego stanowiska, nie stan systemu.
 let cenyKanalWybor = (() => { try { return localStorage.getItem('wms-ceny-kanal') || ''; } catch { return ''; } })();
@@ -4668,7 +4669,7 @@ function cenyWiersz(t, rynki) {
 // „czeka na potwierdzenie”; worker sprawdza ofertę ponownie kilka minut po wysłaniu.
 function cenyPoWyslaniu(o) {
   if (!o.wyslano || !o.dec_czas || (o.obs_czas && o.obs_czas > o.dec_czas)) return o;
-  return { ...o, cena: o.cena_nowa, marza: o.marza_nowa, zysk: o.zysk_nowa, kod: 'wyslano', czeka: true };
+  return { ...o, cena: o.cena_nowa, marza: o.marza_nowa, zysk: o.zysk_nowa, kod: 'wyslano', kod_dec: o.kod, czeka: true };
 }
 
 // Platforma wstrzymała ofertę przez cenę (eMAG „Invalid price”) — oferta aktywna, ale się nie sprzedaje.
@@ -4682,7 +4683,10 @@ function cenyKomorka(o, rynek) {
   const w = cenyWaluta(o);
   let pod = '';
   if (o.czeka) {
-    pod = `<div class="ceny-dec wyslano">✓ wysłano ${cenyGodzina(o.dec_czas)} · czeka na potwierdzenie z platformy</div>`;
+    pod = `<div class="ceny-dec wyslano">✓ ${o.kod_dec === 'korekta' ? 'ręcznie · ' : ''}wysłano ${cenyGodzina(o.dec_czas)} · czeka na potwierdzenie z platformy</div>`;
+  } else if (o.kod === 'korekta') {
+    pod = o.wyslano ? `<div class="ceny-dec" title="${cenyEsc(o.powod)}">ręcznie ${cenyLiczba(o.cena_nowa)} ${w} · ${cenyGodzina(o.dec_czas)}</div>`
+      : `<div class="ceny-dec dol" title="${cenyEsc(o.dec_blad)}">✗ ręczna zmiana na ${cenyLiczba(o.cena_nowa)} ${w} odrzucona</div>`;
   } else if (CENY_ZMIANY.includes(o.kod)) {
     const gora = o.cena_nowa > o.cena;
     // Wysłana decyzja ≠ propozycja: cena już poszła na Amazona, a obserwacja w komórce jest
@@ -4708,7 +4712,8 @@ function cenyKomorka(o, rynek) {
     : `<div class="ceny-cena">${cenyLiczba(o.cena)} ${w}${o.wysylka ? ` <small>+${cenyLiczba(o.wysylka)}</small>` : ''}</div>`
     + (o.cena == null ? '' : `<div class="ceny-m">marża ${o.marza != null ? cenyLiczba(o.marza, 1) + '%' : '—'}</div>`)
     + (o.cena == null ? '' : `<div class="ceny-m">zysk ${o.zysk != null ? cenyLiczba(o.zysk) + ' zł' : '—'}</div>${gen}${bb}${pod}${wys}`)
-    + cenyBlokadaHtml(o);
+    + cenyBlokadaHtml(o)
+    + (o.min_reczne != null || o.max_reczne != null ? `<div class="ceny-m ceny-recznie" title="Automat liczy z ręcznych granic, nie z kalkulatora — karta SKU">granice ręczne${o.min_reczne != null ? ` · min ${cenyLiczba(o.min_reczne)}` : ''}${o.max_reczne != null ? ` · max ${cenyLiczba(o.max_reczne)}` : ''}</div>` : '');
   div.addEventListener('click', () => cenyOtworzKarte(o.tw_id, rynek));
   const wrap = document.createElement('div');
   wrap.className = 'ceny-kom-wrap';
@@ -4883,6 +4888,7 @@ async function odswiezCenyKarta() {
       const o = oferty.find((x) => String(x.id) === slot.dataset.cenyAuto);
       slot.prepend(cenyPrzelacznikOferty(o, o.rynek));
     });
+    box.querySelectorAll('[data-ceny-reczne]').forEach((sek) => cenyPodepnijReczne(sek, oferty.find((x) => String(x.id) === sek.dataset.cenyReczne)));
     el('ceny-karta-wroc').addEventListener('click', () => { cenyPokazWidok('macierz'); odswiezCeny(); });
     if (cenyKartaRynek) box.querySelector(`[data-ceny-rynek="${cenyKartaRynek}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   } catch (err) {
@@ -4898,8 +4904,10 @@ function cenyKartaRynekHtml(o) {
     : o.bb_nasz ? 'mamy Buy Box' : o.bb_nasza_inna ? 'Buy Box ma nasza INNA oferta tego produktu' : o.bb_cena != null ? `Buy Box ma ${o.bb_fba ? 'oferta FBA' : 'inny sprzedawca'}`
     : o.bez_konkurencji ? 'kto ma najlepszą ofertę — nie wiadomo (API tego nie podaje)' : 'brak Buy Boxa';
   const zmiana = CENY_ZMIANY.includes(o.kod);
-  const dec = o.czeka ? `<b class="ceny-wyslano">✓ wysłano ${cenyLiczba(o.cena_nowa)} ${w} o ${cenyGodzina(o.dec_czas)}</b><br><span class="hint">Amazon przyjął zmianę; potwierdzimy ją kilka minut po wysłaniu. ${cenyEsc(o.powod)}</span>`
+  const dec = o.czeka ? `<b class="ceny-wyslano">✓ ${o.kod_dec === 'korekta' ? 'ręcznie ' : ''}wysłano ${cenyLiczba(o.cena_nowa)} ${w} o ${cenyGodzina(o.dec_czas)}</b><br><span class="hint">${cenyEsc(cenyKanal(o))} przyjął zmianę; potwierdzimy ją kilka minut po wysłaniu${o.propagacja ? ` (${cenyEsc(o.propagacja)})` : ''}. ${cenyEsc(o.powod)}</span>`
     : !o.kod ? '<span class="hint">brak decyzji</span>'
+    : o.kod === 'korekta' ? (o.wyslano ? `<b>ręcznie ${cenyLiczba(o.cena_nowa)} ${w}</b><br><span class="hint">${cenyEsc(o.powod)} · ${cenyGodzina(o.dec_czas)} — automat liczy od nowa w najbliższym przebiegu</span>`
+      : `<span class="ceny-blad">✗ ręczna zmiana na ${cenyLiczba(o.cena_nowa)} ${w} odrzucona: ${cenyEsc(o.dec_blad)}</span><br><span class="hint">${cenyEsc(o.powod)} · ${cenyGodzina(o.dec_czas)}</span>`)
     : `${zmiana ? `<b class="${o.wyslano ? 'ceny-wyslano' : o.cena_nowa > o.cena ? 'ceny-gora' : 'ceny-dol'}">${o.wyslano ? '✓ wysłano' : o.auto ? '' : 'podpowiedź: '}${o.wyslano ? '' : o.cena_nowa > o.cena ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}</b>${o.zysk_nowa != null ? ` → zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}<br>${cenyCelHtml(o, w)}` : `<b>${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</b><br>`}
        ${o.dec_blad ? `<span class="ceny-blad">✗ nie wysłano: ${cenyEsc(o.dec_blad)}</span><br>` : ''}
        <span class="hint">${cenyEsc(o.powod)} · decyzja ${cenyGodzina(o.dec_czas)}</span>`;
@@ -4925,11 +4933,169 @@ function cenyKartaRynekHtml(o) {
         : `<span>Buy Box: <b>${o.bb_cena != null ? `${cenyLiczba(o.bb_cena)} ${w}` : '—'}</b>${o.bb_cena != null ? (o.bb_nasz ? ' (my)' : o.bb_fba ? ' (FBA)' : '') : ''}</span>
       <span class="ceny-m">najtańsza inna: ${o.najtansza_inna != null ? `${cenyLiczba(o.najtansza_inna)} ${w}` : '—'}</span>
       <span class="ceny-m">ofert: ${o.ofert ?? '—'}</span>`}
-      <span class="ceny-m">pas: ${o.min != null ? `${cenyLiczba(o.min)} – ${cenyLiczba(o.max)} ${w}` : 'brak (kalkulator nie zna rynku)'}</span></div>
+      <span class="ceny-m">pas: ${cenyPasTekst(o)}</span></div>
     <div class="ceny-k-auto"><span class="ceny-et">Co zrobiłby automat</span>${dec}</div>
     <div class="ceny-k-wykres">${cenyWykres(o.obserwacje)}</div>
+    ${cenyReczneHtml(o)}
     <details class="ceny-k-hist"><summary>Historia decyzji (${o.decyzje.length})</summary>${zmiany}${histDec}</details>
   </section>`;
+}
+
+// --- Ręczna cena i ręczne granice (karta SKU) ---------------------------------------------------
+// Backend (routes/ceny.js + pricing/granice.js) liczy zysk, pilnuje granic i odrzuca cenę z ostrzeżeniami
+// bez potwierdzenia — tu tylko podgląd i okno. Ręczna cena wyłącza automat na ofercie (decyzja usera 2026-10-16).
+const CENY_AKCJE_Z_OPISEM = ['korekta_ceny', 'granice', 'automat_wyl'];   // automat_wyl: „ręczna zmiana ceny”
+const cenyZrodlo = (z) => (z === 'reczne' ? 'ręczne' : z === 'z_min' ? 'ręczne min × 1,5' : 'kalkulator');
+const cenyDoPola = (v) => (v == null ? '' : String(v).replace('.', ','));
+
+// Pas na teraz (koszt z GT + ręczne granice); bez danych z trasy /towar — z ostatniej decyzji.
+function cenyPasTekst(o) {
+  const g = o.granice;
+  if (!g) return o.min != null ? `${cenyLiczba(o.min)} – ${cenyLiczba(o.max)} ${cenyWaluta(o)}` : 'brak (kalkulator nie zna rynku)';
+  if (g.min == null) return g.gt_ok === false ? 'nieznany — Subiekt nie odpowiada' : 'brak (kalkulator nie zna rynku — ustaw ręczne minimum)';
+  const tekst = `${cenyLiczba(g.min)}${g.zrodlo_min === 'reczne' ? ' <b>(ręczne)</b>' : ''} – ${cenyLiczba(g.max)}${g.zrodlo_max !== 'kalkulator' ? ` <b>(${cenyZrodlo(g.zrodlo_max)})</b>` : ''} ${cenyWaluta(o)}`;
+  return g.blad ? `${tekst} <span class="ceny-blad">${cenyEsc(g.blad)}</span>` : tekst;
+}
+
+function cenyReczneHtml(o) {
+  const w = cenyWaluta(o);
+  const g = o.granice || {};
+  const reczne = g.min_reczne != null || g.max_reczne != null;
+  const kalk = g.kalk_min != null ? `kalkulator ${cenyLiczba(g.kalk_min)} – ${cenyLiczba(g.kalk_max)} ${w}` : g.gt_ok === false ? 'kalkulator: Subiekt nie odpowiada' : 'kalkulator nie zna tego rynku';
+  const cena = o.reczna_cena
+    ? `<form class="ceny-reczna-cena" novalidate><span class="ceny-et">Ręczna cena</span>
+        <div class="ceny-reczne-wiersz"><input type="text" inputmode="decimal" name="cena" autocomplete="off" placeholder="${o.cena != null ? cenyLiczba(o.cena) : ''}" aria-label="Nowa cena ${cenyEsc(cenyKanal(o))}"> ${w}
+          <button class="btn btn-small btn-primary">Wyślij…</button></div>
+        <span class="ceny-m ceny-reczna-podglad">${o.auto ? 'Ręczna zmiana wyłączy automat na tej ofercie.' : 'Wpisz cenę — przed wysłaniem pokażemy marżę i zysk.'}</span></form>`
+    : `<div><span class="ceny-et">Ręczna cena</span><div class="hint">z ekranu jeszcze niedostępna dla ${cenyEsc(cenyKanal(o))}</div></div>`;
+  return `<div class="ceny-k-reczne" data-ceny-reczne="${o.id}">${cena}
+    <form class="ceny-granice" novalidate><span class="ceny-et">Granice automatu${reczne ? ' · <b>ręczne</b>' : ''}</span>
+      <div class="ceny-reczne-wiersz">min <input type="text" inputmode="decimal" name="min" autocomplete="off" value="${cenyDoPola(g.min_reczne)}" placeholder="${g.kalk_min != null ? cenyLiczba(g.kalk_min) : '—'}" aria-label="Ręczne minimum">
+        max <input type="text" inputmode="decimal" name="max" autocomplete="off" value="${cenyDoPola(g.max_reczne)}" placeholder="${g.kalk_max != null ? cenyLiczba(g.kalk_max) : '—'}" aria-label="Ręczne maksimum"> ${w}
+        <button class="btn btn-small">Zapisz</button>${reczne ? '<button type="button" class="btn btn-small" data-ceny-kalk title="Usuń ręczne granice — min i max z kalkulatora">↺ z kalkulatora</button>' : ''}</div>
+      <span class="ceny-m">Puste pole = ${kalk}.</span></form></div>`;
+}
+
+const cenyPost = (url, body) => api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, operator: operator() }) });
+
+function cenyPodepnijReczne(sek, o) {
+  if (!sek || !o) return;
+  const w = cenyWaluta(o);
+  const fc = sek.querySelector('.ceny-reczna-cena');
+  if (fc) {
+    const pole = fc.querySelector('[name=cena]');
+    const podglad = fc.querySelector('.ceny-reczna-podglad');
+    let timer = null, nr = 0;
+    pole.addEventListener('input', () => {
+      clearTimeout(timer);
+      const cena = pole.value.trim();
+      if (!cena) { podglad.textContent = o.auto ? 'Ręczna zmiana wyłączy automat na tej ofercie.' : ''; podglad.classList.remove('ceny-blad'); return; }
+      timer = setTimeout(async () => {
+        const moj = ++nr;
+        try {
+          const p = await api(`/api/ceny/cena/podglad?${new URLSearchParams({ oferta_id: o.id, cena })}`);
+          if (moj !== nr) return;
+          podglad.classList.toggle('ceny-blad', p.ostrzezenia.length > 0);
+          podglad.textContent = `marża ${p.marza != null ? cenyLiczba(p.marza, 1) + '%' : '—'} · zysk ${p.zysk != null ? cenyLiczba(p.zysk) + ' zł' : '—'}`
+            + (p.ostrzezenia.length ? ` · ⚠ ${p.ostrzezenia.map((x) => x.tekst).join('; ')}` : '');
+        } catch (err) { if (moj === nr) { podglad.classList.add('ceny-blad'); podglad.textContent = err.message; } }
+      }, 350);
+    });
+    fc.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearTimeout(timer);
+      const btn = fc.querySelector('button');
+      btn.disabled = true;
+      try {
+        const p = await api(`/api/ceny/cena/podglad?${new URLSearchParams({ oferta_id: o.id, cena: pole.value.trim() })}`);
+        const g = p.granice || {};
+        const zm = p.teraz ? ` <span class="${p.cena > p.teraz ? 'ceny-gora' : 'ceny-dol'}">(${p.cena > p.teraz ? '+' : ''}${cenyLiczba(((p.cena - p.teraz) / p.teraz) * 100, 1)}%)</span>` : '';
+        const tak = await cenyOknoPotwierdzenia({
+          tytul: `Zmienić cenę ${p.kanal_nazwa} ${p.sku}?`,
+          tresc: `<table class="tabela mca-tabela"><thead><tr><th></th><th>Cena</th><th>Marża</th><th>Zysk/szt.</th></tr></thead><tbody>
+              <tr><td>Teraz</td><td>${p.teraz != null ? `${cenyLiczba(p.teraz)} ${w}` : '—'}</td><td>${p.marza_teraz != null ? cenyLiczba(p.marza_teraz, 1) + '%' : '—'}</td><td>${p.zysk_teraz != null ? cenyLiczba(p.zysk_teraz) + ' zł' : '—'}</td></tr>
+              <tr><td><b>Nowa</b></td><td><b>${cenyLiczba(p.cena)} ${w}</b>${zm}</td><td><b>${p.marza != null ? cenyLiczba(p.marza, 1) + '%' : '—'}</b></td><td><b>${p.zysk != null ? cenyLiczba(p.zysk) + ' zł' : '—'}</b></td></tr>
+            </tbody></table>
+            <p class="hint">Granice automatu: ${g.min != null ? `min ${cenyLiczba(g.min)} (${cenyZrodlo(g.zrodlo_min)}) · max ${cenyLiczba(g.max)} (${cenyZrodlo(g.zrodlo_max)}) ${w}` : 'brak'}</p>`,
+          ostrzezenia: p.ostrzezenia,
+          uwaga: `${p.auto ? '<b>Automat na tej ofercie zostanie wyłączony</b> — włączysz go z powrotem przełącznikiem. ' : ''}Cena idzie od razu na platformę. ${cenyEsc(p.propagacja || '')}.`,
+          przycisk: 'Wyślij na platformę',
+        });
+        if (!tak) return;
+        const r = await cenyPost('/api/ceny/cena', { oferta_id: o.id, cena: p.cena, ...(p.ostrzezenia.length ? { potwierdz: true } : {}) });
+        pokazKomunikat(`${p.kanal_nazwa} ${p.sku}: wysłano ${cenyLiczba(r.cena)} ${w}.${r.automat_wylaczony ? ' Automat na tej ofercie wyłączony.' : ''} Potwierdzenie z platformy pojawi się po kilku minutach.`, 'ok');
+        odswiezCenyKarta();
+      } catch (err) { pokazKomunikat(err.message, 'blad'); }
+      finally { btn.disabled = false; }
+    });
+  }
+  const fg = sek.querySelector('.ceny-granice');
+  const zapisz = async (min, max) => {
+    const body = { oferta_id: o.id, min, max };
+    try {
+      let r;
+      try { r = await cenyPost('/api/ceny/granice', body); }
+      catch (err) {
+        if (err.status !== 409 || !err.dane?.ostrzezenia) throw err;
+        const tak = await cenyOknoPotwierdzenia({
+          tytul: `Ustawić granice ${cenyKanal(o)} ${o.sku}?`,
+          tresc: `<p>min <b>${min ? `${cenyEsc(min)} ${w}` : 'z kalkulatora'}</b> · max <b>${max ? `${cenyEsc(max)} ${w}` : 'z kalkulatora'}</b></p>`,
+          ostrzezenia: err.dane.ostrzezenia,
+          uwaga: 'Automat użyje tych granic w najbliższym przebiegu.',
+          przycisk: 'Zapisz granice',
+        });
+        if (!tak) return;
+        r = await cenyPost('/api/ceny/granice', { ...body, potwierdz: true });
+      }
+      const g = r.granice;
+      pokazKomunikat(`${cenyKanal(o)} ${o.sku}: granice ${g.min_reczne == null && g.max_reczne == null ? 'z kalkulatora' : 'zapisane'} — min ${cenyLiczba(g.min)}, max ${cenyLiczba(g.max)} ${w}. Automat użyje ich w najbliższym przebiegu.`, 'ok');
+      odswiezCenyKarta();
+    } catch (err) { pokazKomunikat(err.message, 'blad'); }
+  };
+  fg.addEventListener('submit', (e) => { e.preventDefault(); zapisz(fg.querySelector('[name=min]').value.trim(), fg.querySelector('[name=max]').value.trim()); });
+  fg.querySelector('[data-ceny-kalk]')?.addEventListener('click', () => zapisz('', ''));
+}
+
+// Okno potwierdzenia ręcznej ceny / granic. Ostrzeżenia (pod minimum, strata, skok…) nie blokują, ale
+// przycisk działa dopiero po zaznaczeniu „rozumiem” — backend i tak odrzuci bez `potwierdz`.
+// Zwraca Promise<boolean>; Esc / klik w tło / Anuluj = false.
+function cenyOknoPotwierdzenia({ tytul, tresc, ostrzezenia = [], uwaga = '', przycisk }) {
+  el('mcr-tytul').textContent = tytul;
+  el('mcr-tresc').innerHTML = tresc;
+  const ostrz = el('mcr-ostrzezenia');
+  ostrz.classList.toggle('hidden', !ostrzezenia.length);
+  ostrz.innerHTML = ostrzezenia.map((x) => `<div>⚠ ${cenyEsc(x.tekst)}</div>`).join('');
+  const zgoda = el('mcr-zgoda');
+  zgoda.checked = false;
+  el('mcr-zgoda-wiersz').classList.toggle('hidden', !ostrzezenia.length);
+  el('mcr-uwaga').innerHTML = uwaga;
+  const ok = el('mcr-ok');
+  ok.textContent = przycisk;
+  ok.disabled = ostrzezenia.length > 0;
+  const modal = el('modal-ceny-reczna');
+  modal.classList.remove('hidden');
+  el('mcr-anuluj').focus();
+  return new Promise((resolve) => {
+    const zmiana = () => { ok.disabled = !zgoda.checked; };
+    const koniec = (wynik) => {
+      modal.classList.add('hidden');
+      ok.removeEventListener('click', tak);
+      el('mcr-anuluj').removeEventListener('click', nie);
+      zgoda.removeEventListener('change', zmiana);
+      modal.removeEventListener('click', tlo);
+      document.removeEventListener('keydown', esc, true);
+      resolve(wynik);
+    };
+    const tak = () => koniec(true);
+    const nie = () => koniec(false);
+    const tlo = (e) => { if (e.target === modal) koniec(false); };
+    const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); koniec(false); } };
+    ok.addEventListener('click', tak);
+    el('mcr-anuluj').addEventListener('click', nie);
+    if (ostrzezenia.length) zgoda.addEventListener('change', zmiana);
+    modal.addEventListener('click', tlo);
+    document.addEventListener('keydown', esc, true);
+  });
 }
 
 async function odswiezCenyPowiazania() {
@@ -4980,7 +5146,7 @@ async function odswiezCenyLog() {
         ? `${cenyLiczba(x.cena_przed)} → <strong>${cenyLiczba(x.cena_nowa)}</strong> ${w}${x.wyslano ? ' ✓' : ' <span class="hint">(nie wysłano)</span>'}`
         : cenyEsc(CENY_AKCJE[x.kod] || x.kod);
       return `<tr><td>${formatDatetime(x.czas)}</td><td>${cenyEsc(x.rynek)}</td><td>${cenyEsc(x.symbol_gt || x.sku)}</td><td>${zmiana}</td>
-        <td>${x.typ === 'decyzja' ? cenyEsc(x.powod) : ''}</td><td>${cenyEsc(x.kto || (x.typ === 'decyzja' ? 'system:ceny' : ''))}</td></tr>`;
+        <td>${x.typ === 'decyzja' || CENY_AKCJE_Z_OPISEM.includes(x.kod) ? cenyEsc(x.powod) : ''}</td><td>${cenyEsc(x.kto || (x.typ === 'decyzja' ? 'system:ceny' : ''))}</td></tr>`;
     }).join('') : '<tr><td colspan="6" class="hint">Brak wpisów.</td></tr>';
   } catch (err) { pokazKomunikat(err.message, 'blad'); }
 }

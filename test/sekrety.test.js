@@ -109,3 +109,10 @@ test('poza config/ nikt nie woła dotenv bezposrednio (tylko require config/env)
   przejdz(root);
   assert.deepStrictEqual(winni, [], `zamien require('dotenv').config() na require('<..>/config/env') w: ${winni.join(', ')}`);
 });
+
+test('most: do zaszyfrowania tylko niepuste jawne hasla Sfery', () => {
+  assert.deepStrictEqual(s.haslaMostuDoZaszyfrowania({ Sfera: { Uzytkownik: 'sa', UzytkownikHaslo: '', OperatorHaslo: 'x1' } }),
+    [['OperatorHaslo', 'OperatorHasloDpapi']]);
+  assert.deepStrictEqual(s.haslaMostuDoZaszyfrowania({ Sfera: { OperatorHaslo: '', OperatorHasloDpapi: 'AQAA' } }), []);
+  assert.deepStrictEqual(s.haslaMostuDoZaszyfrowania({}), []);
+});

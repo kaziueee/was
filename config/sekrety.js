@@ -170,7 +170,39 @@ function odszyfruj(plik) {
   return obj;
 }
 
+// Pojedyncze hasło -> base64 blobu DPAPI (do pól `*HasloDpapi` w appsettings mostu C#, który
+// odszyfrowuje je tym samym zakresem i entropią — bridge/GtBridge/Services/Sekrety.cs).
+// Tekst i blob idą przez stdin/stdout, nie przez linię poleceń ani plik.
+function zaszyfrujTekst(tekst) {
+  return powershell(
+    `$b=[Convert]::FromBase64String([Console]::In.ReadToEnd().Trim()); ` +
+    `$c=[Security.Cryptography.ProtectedData]::Protect($b,[Text.Encoding]::UTF8.GetBytes('${ENTROPIA}'),'LocalMachine'); ` +
+    `[Console]::Out.Write([Convert]::ToBase64String($c))`,
+    { input: Buffer.from(String(tekst), 'utf8').toString('base64') },
+  ).trim();
+}
+
+function odszyfrujTekst(blobBase64) {
+  const out = powershell(
+    `$b=[Convert]::FromBase64String([Console]::In.ReadToEnd().Trim()); ` +
+    `$p=[Security.Cryptography.ProtectedData]::Unprotect($b,[Text.Encoding]::UTF8.GetBytes('${ENTROPIA}'),'LocalMachine'); ` +
+    `[Console]::Out.Write([Convert]::ToBase64String($p))`,
+    { input: String(blobBase64) },
+  );
+  return Buffer.from(out.trim(), 'base64').toString('utf8');
+}
+
+// Pary pól hasła w sekcji "Sfera" appsettings mostu: jawne -> zaszyfrowane.
+const POLA_MOSTU = [['UzytkownikHaslo', 'UzytkownikHasloDpapi'], ['OperatorHaslo', 'OperatorHasloDpapi']];
+
+// Czysta część polecenia `most`: które jawne hasła trzeba przenieść. Puste jawne pole = nic
+// do zrobienia (puste hasło SQL `sa` to osobny problem, nie sekret do ukrycia).
+function haslaMostuDoZaszyfrowania(appsettings) {
+  const sfera = (appsettings && appsettings.Sfera) || {};
+  return POLA_MOSTU.filter(([jawne]) => typeof sfera[jawne] === 'string' && sfera[jawne] !== '');
+}
+
 module.exports = {
-  PLIK_DOMYSLNY, czySekret, sciezkaPliku, jawneSekrety, wydzielZEnv, cytuj, przywrocDoEnv, uzupelnijEnv,
-  zaszyfruj, odszyfruj,
+  PLIK_DOMYSLNY, POLA_MOSTU, czySekret, sciezkaPliku, jawneSekrety, wydzielZEnv, cytuj, przywrocDoEnv, uzupelnijEnv,
+  haslaMostuDoZaszyfrowania, zaszyfruj, odszyfruj, zaszyfrujTekst, odszyfrujTekst,
 };

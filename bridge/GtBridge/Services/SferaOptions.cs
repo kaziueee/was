@@ -28,5 +28,10 @@ namespace GtBridge.Services
 
         // Haslo operatora GT (jawne - szyfrowane w runtime). Puste = operator bez hasla.
         public string OperatorHaslo { get; set; } = "";
+
+        // Te same hasla zaszyfrowane DPAPI (base64) - wygrywaja z jawnymi, ktore wtedy zostaja puste.
+        // Wpisuje je `node scripts/sekrety.js most` (Services/Sekrety.cs, CLAUDE.md "Sekrety").
+        public string UzytkownikHasloDpapi { get; set; } = "";
+        public string OperatorHasloDpapi { get; set; } = "";
     }
 }

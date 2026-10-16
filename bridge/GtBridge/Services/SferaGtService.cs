@@ -124,12 +124,13 @@ namespace GtBridge.Services
             gt.Autentykacja = AutentykacjaMieszana;
             gt.Serwer = _opcje.Serwer;
             gt.Uzytkownik = _opcje.Uzytkownik;
-            gt.UzytkownikHaslo = dodatki.Szyfruj(_opcje.UzytkownikHaslo ?? "");
+            gt.UzytkownikHaslo = dodatki.Szyfruj(Sekrety.Haslo(_opcje.UzytkownikHaslo, _opcje.UzytkownikHasloDpapi));
             gt.Baza = _opcje.Baza;
             gt.Operator = _opcje.Operator;
-            if (!string.IsNullOrEmpty(_opcje.OperatorHaslo))
+            var hasloOperatora = Sekrety.Haslo(_opcje.OperatorHaslo, _opcje.OperatorHasloDpapi);
+            if (!string.IsNullOrEmpty(hasloOperatora))
             {
-                gt.OperatorHaslo = dodatki.Szyfruj(_opcje.OperatorHaslo);
+                gt.OperatorHaslo = dodatki.Szyfruj(hasloOperatora);
             }
 
             _subiekt = gt.Uruchom(UruchomDopasujOperatora, UruchomNowy | UruchomWTle);

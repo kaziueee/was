@@ -21,6 +21,10 @@ const KOLUMNY = [
   // osobny automat i osobne minimum na każdy rynek, nie przeliczanie z RO)
   { klucz: 'EMAG_HU', platforma: 'emag', rynek: 'HU', nazwa: 'eMAG HU', waluta: 'Ft', kalkulator: 'eMAG HU', reguly: { krok: 1, progPodwyzki: 40 } },
   { klucz: 'EMAG_BG', platforma: 'emag', rynek: 'BG', nazwa: 'eMAG BG', waluta: '€', kalkulator: 'eMAG BG' },
+  // Empik (Mirakl, od 2026-10-16): sama obserwacja. Bez `kalkulator`, dopóki nie znamy prowizji i kosztu
+  // wysyłki Empik — bez pasa repricer nie decyduje (brak_pasa), tak jak Amazon PL. Automat dopiero po
+  // ręcznym teście zapisu ceny (pricing/empik-cena.js) i decyzji usera.
+  { klucz: 'EMPIK_PL', platforma: 'empik', rynek: 'PL', nazwa: 'Empik', waluta: 'zł', tylkoOdczyt: true },
 ];
 
 const kluczKolumny = (platforma, rynek) => (platforma === 'amazon' ? rynek : `${String(platforma).toUpperCase()}_${rynek}`);

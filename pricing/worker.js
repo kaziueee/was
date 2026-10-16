@@ -8,10 +8,11 @@
 //      (PRICING_EMAG_KRAJE) co przebieg (pricing/sync-emag.js) — ta sama lista służy do obserwacji,
 //      więc to jedno pobranie na rynek (~30 zapytań). Ceny wychodzą tylko na kanały bez `tylkoOdczyt`.
 //      Bez EMAG_RO_USER w .env część eMAG jest pomijana; jej błąd (np. IP spoza listy w panelu
-//      eMAG) nie zatrzymuje przebiegu Amazona.
+//      eMAG) nie zatrzymuje przebiegu Amazona. Empik (pricing/sync-empik.js, od 2026-10-16) — lista
+//      ofert razem z pełną obserwacją (PRICING_PELNY_MIN); bez EMPIK_API_KEY pomijany.
 //   2. obserwacja ofert: z włączonym automatem ZAWSZE, pozostałe ze stanem raz na
 //      PRICING_PELNY_MIN (domyślnie 360 min) — żeby przed włączeniem automatu było widać,
-//      co by zrobił, bez odpytywania całego katalogu co pół godziny
+//      co by zrobił, bez odpytywania całego katalogu co pół godziny (Amazon i Empik; eMAG co przebieg)
 //   3. pas [min, max] i zysk z kalkulatora WMS (pricing/pas.js)
 //   4. decyzja (pricing/model.js) → tabela `decyzje`
 //
@@ -32,6 +33,9 @@ const { synchronizuj } = require('./sync-oferty');
 const { synchronizujEmag, odswiezProwizje } = require('./sync-emag');
 const { obserwujEmag } = require('./obserwuj-emag');
 const emag = require('./emag');
+const { synchronizujEmpik } = require('./sync-empik');
+const { obserwujEmpik } = require('./obserwuj-empik');
+const empik = require('./empik');
 const { kluczKolumny, kolumna } = require('./kolumny');
 const { takaSamaDecyzja } = require('./bez-zmian');
 const { ustawCene } = require('./amazon');
@@ -41,7 +45,7 @@ const { interwalMsZMinut } = require('../services/interwal');
 const PELNY_MS = interwalMsZMinut(process.env.PRICING_PELNY_MIN, 360, 'PRICING_PELNY_MIN');
 // Które platformy obsługuje ten proces (domyślnie wszystkie). Do testów na drugiej maszynie:
 // PRICING_PLATFORMY=emag nie dotyka API Amazona, więc nie zjada limitów workera na SRV.
-const PLATFORMY = new Set(String(process.env.PRICING_PLATFORMY || 'amazon,emag').split(',').map((x) => x.trim().toLowerCase()));
+const PLATFORMY = new Set(String(process.env.PRICING_PLATFORMY || 'amazon,emag,empik').split(',').map((x) => x.trim().toLowerCase()));
 const SYNC_MS = 24 * 60 * 60 * 1000;
 // Rynki eMAG obsługiwane przez ten proces (pricing/emag.js KRAJE); domyślnie wszystkie.
 const EMAG_KRAJE = String(process.env.PRICING_EMAG_KRAJE || 'RO,HU,BG').split(',').map((x) => x.trim().toUpperCase()).filter((k) => emag.KRAJE[k]);
@@ -91,11 +95,31 @@ async function przebieg({ pelny = false } = {}) {
 
   const pelnyTeraz = pelny || minelo('obserwacja_pelna', PELNY_MS);
   const zapisWlaczony = process.env.PRICING_ZAPIS === '1';
-  // Amazon: oferty z automatem co przebieg, cały katalog w pełnej obserwacji (limity API).
+
+  // Empik: lista ofert (OF21) razem z pełną obserwacją — P11 i tak podaje naszą cenę, więc między
+  // pełnymi przebiegami lista nie jest potrzebna. Błąd Empiku nie zatrzymuje reszty przebiegu.
+  let empikSurowe = null, empikOk = false;
+  if (PLATFORMY.has('empik') && empik.skonfigurowany()) {
+    try {
+      if (pelnyTeraz || minelo('sync_empik', PELNY_MS)) {
+        empikSurowe = await empik.wszystkieOferty();
+        const s = await synchronizujEmpik(empikSurowe);
+        stan.set('sync_empik', JSON.stringify(s));
+        wynik.empik = s.aktywne;
+      }
+      empikOk = true;
+    } catch (e) {
+      stan.set('blad_empik', e.message);
+      console.error(new Date().toISOString(), '[pricing] Empik:', e.message);
+    }
+  }
+
+  // Amazon i Empik: oferty z automatem co przebieg, cały katalog w pełnej obserwacji (limity API).
   // eMAG: zawsze cały katalog — obserwacja czyta listę pobraną wyżej, nie woła API po raz drugi.
-  const oferty = db.prepare(`SELECT id, platforma, rynek, sku, tw_id, auto, genius, dopasowanie, prowizja FROM oferty
-     WHERE ((platforma = 'amazon' AND ? AND (auto = 1 OR ?)) OR (platforma = 'emag' AND ?))
-       AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all(PLATFORMY.has('amazon') ? 1 : 0, pelnyTeraz ? 1 : 0, emagKraje.size ? 1 : 0)
+  const oferty = db.prepare(`SELECT id, platforma, rynek, sku, asin, tw_id, auto, genius, dopasowanie, prowizja FROM oferty
+     WHERE ((platforma = 'amazon' AND ? AND (auto = 1 OR ?)) OR (platforma = 'emag' AND ?) OR (platforma = 'empik' AND ? AND (auto = 1 OR ?)))
+       AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all(PLATFORMY.has('amazon') ? 1 : 0, pelnyTeraz ? 1 : 0, emagKraje.size ? 1 : 0,
+    empikOk ? 1 : 0, pelnyTeraz ? 1 : 0)
     .filter((o) => o.platforma !== 'emag' || emagKraje.has(o.rynek));     // rynek eMAG z błędem pobrania — bez decyzji
   wynik.ofert = oferty.length;
   wynik.pelny = pelnyTeraz;
@@ -103,6 +127,7 @@ async function przebieg({ pelny = false } = {}) {
 
   const amazon = oferty.filter((o) => o.platforma === 'amazon');
   const emagOf = oferty.filter((o) => o.platforma === 'emag');
+  const empikOf = oferty.filter((o) => o.platforma === 'empik');
   // Genius i stawka prowizji są per RYNEK (ten sam towar: RO 16%, HU 18%) — mapa tw_Id → { kolumna: wartość }.
   const poKolumnie = (pole, ok, wartosc) => {
     const m = new Map();
@@ -111,14 +136,22 @@ async function przebieg({ pelny = false } = {}) {
   };
   const geniusPoTw = poKolumnie('genius', (v) => v != null, (v) => !!v);
   const prowizjaPoTw = poKolumnie('prowizja', (v) => v > 0, (v) => v);
-  const [obsA, obsE, pasy] = await Promise.all([
+  // Empik: błąd P11 (limit, awaria) = oferty bez obserwacji w tym przebiegu, reszta idzie dalej.
+  const obsEmpik = empikOf.length ? obserwujEmpik(empikOf, { surowe: empikSurowe }).catch((e) => {
+    stan.set('blad_empik', e.message);
+    console.error(new Date().toISOString(), '[pricing] Empik obserwacja:', e.message);
+    return new Map();
+  }) : new Map();
+  const [obsA, obsE, obsP, pasy] = await Promise.all([
     amazon.length ? obserwuj(amazon) : new Map(),
     emagOf.length ? obserwujEmag(emagOf, emagSurowe) : new Map(),
+    obsEmpik,
     pasyHurtem(oferty.map((o) => o.tw_id), geniusPoTw, prowizjaPoTw),
   ]);
   if (obsA.bledyPaczek) wynik.bledy_paczek = obsA.bledyPaczek;
   if (emagOf.length) wynik.emag_obs = { ofert: obsE.size, zmian: obsE.nowe || 0 };
-  const obs = { get: (id) => obsA.get(id) || obsE.get(id) };
+  if (empikOf.length) wynik.empik_obs = { ofert: obsP.size, zmian: obsP.nowe || 0 };
+  const obs = { get: (id) => obsA.get(id) || obsE.get(id) || obsP.get(id) };
   const kluczEmag = (kraj, sku) => `${kraj}|${String(sku || '').trim().toUpperCase()}`;
   const emagPoSku = new Map((emagSurowe || []).map((x) => [kluczEmag(x._kraj, x.part_number), x]));
 
@@ -127,6 +160,9 @@ async function przebieg({ pelny = false } = {}) {
   const kody = {};
   const wysylka = { wyslane: 0, odrzucone: 0 };
   const doPotwierdzenia = [];   // oferty z przyjętą zmianą — sprawdzimy je jeszcze raz po kilku minutach
+  // Empik: import cen (PRI01) wolno wysłać najwyżej raz na minutę — decyzje zbieramy i po pętli idą
+  // jednym plikiem. { o, ob, d, wiersz } — wiersz decyzji dostaje wynik wysyłki przed zapisem do bazy.
+  const empikPaczka = [];
   // Decyzje liczymy w pamięci, a zapis do bazy robimy po wysłaniu — wywołania API nie mogą
   // trzymać otwartej transakcji SQLite (WMS czyta tę bazę w tym samym czasie).
   const wiersze = [];
@@ -161,12 +197,15 @@ async function przebieg({ pelny = false } = {}) {
     const teraz = pas && ob.cena ? pas.ocen(ob.cena) : null;
     const potem = pas && d.zmiana ? pas.ocen(d.cena) : teraz;
     const celOc = pas && d.zmiana && d.cel !== d.cena ? pas.ocen(d.cel) : potem;
-    let wyslano = 0, blad = null;
+    let wyslano = 0, blad = null, wPaczce = false;
     // Druga linia obrony obok POST /automat: bez pewnego dopasowania do GT nie wysyłamy, nawet gdy
     // auto = 1 (np. włączone przed wprowadzeniem zasady albo przez bezpośredni zapis w bazie). Kanał
     // `tylkoOdczyt` (pricing/kolumny.js) nie wysyła nigdy — także tu, nie tylko w routes/ceny.js.
     const kanalZapis = !kolumna(o.platforma, o.rynek)?.tylkoOdczyt;
-    if (zapisWlaczony && o.auto && d.zmiana && pas && kanalZapis && pewneDopasowanie(o.dopasowanie)) {
+    if (zapisWlaczony && o.auto && d.zmiana && pas && kanalZapis && pewneDopasowanie(o.dopasowanie) && o.platforma === 'empik') {
+      empikPaczka.push({ o, ob, d });
+      wPaczce = true;
+    } else if (zapisWlaczony && o.auto && d.zmiana && pas && kanalZapis && pewneDopasowanie(o.dopasowanie)) {
       try {
         let w;
         if (o.platforma === 'amazon') w = await ustawCene(o.rynek, o.sku, d.cena);
@@ -183,13 +222,15 @@ async function przebieg({ pelny = false } = {}) {
     const wiersz = [o.id, ob.cena, d.cena, pas?.min ?? null, pas?.max ?? null, d.kod, d.powod, wyslano, o.auto,
       teraz?.zysk ?? null, teraz?.marza ?? null, potem?.zysk ?? null, blad, potem?.marza ?? null,
       d.cel ?? null, celOc?.zysk ?? null];
+    if (wPaczce) empikPaczka[empikPaczka.length - 1].wiersz = wiersz;
     // Decyzja niewysłana, bez błędu i taka sama jak poprzednia nie dostaje nowego wiersza (eMAG to cały
     // katalog co przebieg). Wysłane i odrzucone zapisujemy zawsze — na nich stoją reguły 6 i 8 i log.
-    if (wyslano || blad || !takaSamaDecyzja(ostDecyzja.get(o.id), { kod: d.kod, cena_przed: ob.cena, cena_nowa: d.cena,
+    if (wPaczce || wyslano || blad || !takaSamaDecyzja(ostDecyzja.get(o.id), { kod: d.kod, cena_przed: ob.cena, cena_nowa: d.cena,
       cena_cel: d.cel ?? null, min: pas?.min ?? null, max: pas?.max ?? null, zysk: teraz?.zysk ?? null,
       zysk_nowa: potem?.zysk ?? null, zysk_cel: celOc?.zysk ?? null })) wiersze.push(wiersz);
     if (o.auto) kody[d.kod] = (kody[d.kod] || 0) + 1;
   }
+  if (empikPaczka.length) wynik.empik_import = await wyslijEmpik(empikPaczka, empikSurowe, wysylka, doPotwierdzenia);
   db.exec('BEGIN');
   try {
     for (const w of wiersze) zapisz.run(...w);
@@ -202,12 +243,41 @@ async function przebieg({ pelny = false } = {}) {
   return { ...wynik, automat: kody };
 }
 
+// Empik: jeden import cen (PRI01) na przebieg. Ofertę z OF21 bierzemy z listy tego przebiegu albo
+// pojedynczo po SKU — bez niej nie wiemy, czy oferta ma promocję, którą import by skasował, więc nie
+// wysyłamy. Wynik trafia do wierszy decyzji (indeksy jak w `wiersz` w przebiegu: 7 = wyslano, 12 = blad).
+// `ok` znaczy „Empik przyjął plik”; czy cena weszła, pokaże potwierdzenie (PRI02 + P11).
+const W_WYSLANO = 7, W_BLAD = 12;
+async function wyslijEmpik(paczka, surowe, wysylka, doPotwierdzenia) {
+  const poSku = new Map((surowe || []).map((x) => [String(x.shop_sku || '').trim().toUpperCase(), x]));
+  const doWyslania = [];
+  for (const x of paczka) {
+    let s = poSku.get(String(x.o.sku).trim().toUpperCase());
+    if (!s) {
+      try { s = (await empik.ofertaPoSku(x.o.sku))[0]; } catch (e) { x.blad = `nie udało się pobrać oferty Empik: ${e.message}`; }
+    }
+    if (s) doWyslania.push({ x, surowa: s });
+    else x.blad ||= 'oferty nie ma na liście Empik';
+  }
+  const res = doWyslania.length ? await empik.ustawCeny(doWyslania.map(({ x, surowa }) => ({ surowa, cena: x.d.cena }))) : { importId: null, wyniki: [] };
+  doWyslania.forEach(({ x }, i) => { const w = res.wyniki[i]; if (w.ok) x.ok = true; else x.blad = w.blad; });
+  for (const x of paczka) {
+    if (x.ok) { x.wiersz[W_WYSLANO] = 1; wysylka.wyslane++; doPotwierdzenia.push(x.o); }
+    else { x.wiersz[W_BLAD] = x.blad || 'Empik: nie wysłano'; wysylka.odrzucone++; }
+    console.log(new Date().toISOString(), `[pricing] EMPIK_PL ${x.o.sku}: ${x.ob.cena} → ${x.d.cena} ${x.ok ? `WYSŁANO (import ${res.importId})` : 'NIE WYSŁANO: ' + x.blad}`);
+  }
+  if (res.importId) stan.set('empik_import', JSON.stringify({ id: res.importId, ofert: paczka.filter((x) => x.ok).length }));
+  return res.importId;
+}
+
 // Potwierdzenie po wysłaniu: Amazon pokazuje nową cenę po ~3 min, a pełny przebieg jest co 30.
 // Sprawdzamy więc wysłane oferty jeszcze raz po PRICING_POTWIERDZENIE_MIN (domyślnie 5) — sama
 // obserwacja, bez decyzji. Ekran WMS od razu ma wtedy faktyczny stan (cena i Buy Box po zmianie).
 const POTWIERDZENIE_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE_MIN, 5, 'PRICING_POTWIERDZENIE_MIN');
 // eMAG wprowadza nową cenę po ~4 min (test FPCNM42 15.10) — sprawdzamy później niż Amazona.
 const POTWIERDZENIE_EMAG_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE_EMAG_MIN, 8, 'PRICING_POTWIERDZENIE_EMAG_MIN');
+// Empik: czas od importu cen (PRI01) do ceny na stronie jeszcze nieznany — do zmierzenia testem zapisu.
+const POTWIERDZENIE_EMPIK_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE_EMPIK_MIN, 10, 'PRICING_POTWIERDZENIE_EMPIK_MIN');
 
 async function przebiegBezpieczny(opcje) {
   const t0 = Date.now();
@@ -228,7 +298,9 @@ async function przebiegBezpieczny(opcje) {
 async function potwierdz(wszystkie) {
   const oferty = wszystkie.filter((o) => o.platforma === 'amazon');
   const emagOf = wszystkie.filter((o) => o.platforma === 'emag');
+  const empikOf = wszystkie.filter((o) => o.platforma === 'empik');
   if (emagOf.length) await potwierdzEmag(emagOf);
+  if (empikOf.length) await potwierdzEmpik(empikOf);
   if (!oferty.length) return;
   try {
     const obs = await obserwuj(oferty);
@@ -259,6 +331,26 @@ async function potwierdzEmag(oferty) {
     }
   } catch (e) {
     console.error(new Date().toISOString(), '[pricing] błąd potwierdzenia eMAG:', e.message);
+  }
+}
+
+// Empik: status ostatniego importu cen (PRI02, odrzucone linie z PRI03) i obserwacja wysłanych ofert z P11.
+async function potwierdzEmpik(oferty) {
+  try {
+    const imp = (() => { try { return JSON.parse(stan.get('empik_import')?.wartosc || 'null'); } catch { return null; } })();
+    if (imp?.id) {
+      const st = await empik.statusImportu(imp.id);
+      console.log(new Date().toISOString(), `[pricing] Empik import ${imp.id}: ${st ? `${st.status}, zmienione ${st.zmienione}, błędne linie ${st.bledy}` : 'brak statusu'}`);
+      if (st?.raport) console.error(new Date().toISOString(), '[pricing] Empik odrzucone ceny:', (await empik.raportBledow(imp.id)).trim().slice(0, 2000));
+    }
+    const obs = await obserwujEmpik(oferty);
+    for (const o of oferty) {
+      const ob = obs.get(o.id);
+      console.log(new Date().toISOString(), `[pricing] potwierdzenie EMPIK_PL ${o.sku}: na Empiku ${ob ? ob.cena : '?'}`
+        + `, Buy Box ${ob ? (ob.bbNasz ? 'nasz' : ob.bbNasz === false ? 'INNY' : '?') : '?'}`);
+    }
+  } catch (e) {
+    console.error(new Date().toISOString(), '[pricing] błąd potwierdzenia Empik:', e.message);
   }
 }
 
@@ -297,8 +389,9 @@ if (require.main === module) {
       const doPotwierdzenia = await przebiegBezpieczny();
       trwa = false;
       const potw = (lista, ms) => lista.length && setTimeout(async () => { if (trwa) return; trwa = true; await potwierdz(lista); trwa = false; }, ms);
-      potw(doPotwierdzenia.filter((o) => o.platforma !== 'emag'), POTWIERDZENIE_MS);
+      potw(doPotwierdzenia.filter((o) => o.platforma === 'amazon'), POTWIERDZENIE_MS);
       potw(doPotwierdzenia.filter((o) => o.platforma === 'emag'), POTWIERDZENIE_EMAG_MS);
+      potw(doPotwierdzenia.filter((o) => o.platforma === 'empik'), POTWIERDZENIE_EMPIK_MS);
     };
     tik();
     setInterval(tik, ms);

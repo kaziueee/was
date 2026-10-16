@@ -4473,7 +4473,7 @@ el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
   window.addEventListener('wms-zalogowano', odswiez);
 })();
 
-// === CENY (repricer: Amazon + eMAG RO/HU/BG) ===
+// === CENY (repricer: Amazon + eMAG RO/HU/BG + Empik — tylko odczyt) ===
 // Dane liczy osobny proces (pricing/worker.js) do db/pricing.db; tu tylko odczyt + włącz/wyłącz
 // automat. Backend: routes/ceny.js (na czas testów tylko admin). Nigdy nie włączamy automatu na cały katalog —
 // tylko wskazane oferty (komórka) albo wszystkie rynki jednego towaru (przełącznik przy SKU).
@@ -4555,10 +4555,10 @@ function renderujCeny(d) {
   const przebieg = d.przebieg ? `ostatni przebieg ${formatDatetime(d.przebieg.czas)}` : 'repricer jeszcze nie ruszył';
   const pelna = d.obserwacja_pelna ? ` · pełna obserwacja katalogu ${formatDatetime(d.obserwacja_pelna.czas)}` : '';
   const blad = d.blad && (!d.przebieg || d.blad.czas > d.przebieg.czas) ? ` · <span class="ceny-blad">błąd: ${cenyEsc(d.blad.wartosc)}</span>` : '';
-  const em = d.emag || {};
-  const emagTxt = em.blad && (!em.sync || em.blad.czas > em.sync.czas) ? ` · <span class="ceny-blad">eMAG: ${cenyEsc(em.blad.wartosc)}</span>`
-    : em.sync ? ` · eMAG ${cenyGodzina(em.sync.czas)}` : '';
-  el('ceny-stan').innerHTML = przebieg + pelna + blad + emagTxt;
+  // Platformy z własną synchronizacją listy: godzina ostatniej albo błąd, jeśli przyszedł po niej.
+  const platforma = (nazwa, x = {}) => (x.blad && (!x.sync || x.blad.czas > x.sync.czas) ? ` · <span class="ceny-blad">${nazwa}: ${cenyEsc(x.blad.wartosc)}</span>`
+    : x.sync ? ` · ${nazwa} ${cenyGodzina(x.sync.czas)}` : '');
+  el('ceny-stan').innerHTML = przebieg + pelna + blad + platforma('eMAG', d.emag) + platforma('Empik', d.empik);
   cenyRenderujFiltry(d);
   cenyRenderujSort(d);
   el('ceny-hamulec').classList.toggle('hidden', d.wysylanie !== false);

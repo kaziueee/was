@@ -1,7 +1,7 @@
 'use strict';
 
 // Ekran „Ceny" (repricer) — odczyt bazy repricera `db/pricing.db` + włączanie/wyłączanie automatu.
-// Kanały (kolumny) z pricing/kolumny.js: Amazon DE…PL i eMAG RO (automat od 2026-10-15). Kanał oznaczony
+// Kanały (kolumny) z pricing/kolumny.js: Amazon DE…PL, eMAG RO/HU/BG i Empik (tylko odczyt). Kanał oznaczony
 // `tylkoOdczyt` — POST /automat odrzuca na nim włączenie automatu (zasada 5: blokada w backendzie).
 // Liczy i obserwuje osobny proces (pricing/worker.js, zadanie WMS-Pricing); WMS tylko czyta jego
 // wyniki i zapisuje decyzję człowieka: automat (auto = 1, ceny idą na platformę) albo ręczny (0). Montowane z
@@ -23,6 +23,7 @@ const router = express.Router();
 const { db, stan } = require('../pricing/db');
 const { linkiOferty } = require('../pricing/amazon');
 const emag = require('../pricing/emag');
+const empik = require('../pricing/empik');
 const { KOLUMNY, kluczKolumny, kolumna } = require('../pricing/kolumny');
 const { wycenaHurtem } = require('../services/cennik');
 const { pobierzStanyGt, sumaRazem } = require('../services/gt-produkty');
@@ -51,8 +52,10 @@ async function stanyGt(twIds) {
   }
 }
 
-// Linki do oferty — każda platforma po swojemu (Amazon po ASIN, eMAG po PNK trzymanym w `asin`).
-const linki = (o) => (o.platforma === 'emag' ? emag.linkiOferty(o.asin, o.rynek) : linkiOferty(o.rynek, o.asin));
+// Linki do oferty — każda platforma po swojemu (Amazon po ASIN, eMAG po PNK, Empik po numerze produktu —
+// oba trzymane w `asin`).
+const linki = (o) => (o.platforma === 'emag' ? emag.linkiOferty(o.asin, o.rynek)
+  : o.platforma === 'empik' ? empik.linkiOferty(o.asin) : linkiOferty(o.rynek, o.asin));
 // Pola kanału doklejane do każdej oferty — ekran nie zgaduje waluty ani nazwy z kodu rynku.
 const zKanalem = (o) => {
   const k = kolumna(o.platforma, o.rynek) || {};
@@ -158,6 +161,7 @@ router.get('/macierz', asyncH(async (req, res) => {
     kanal,
     kanaly: chipyKanalow(kazdy, pasuje),
     emag: { sync: stan.get('sync_emag'), blad: stan.get('blad_emag') },
+    empik: { sync: stan.get('sync_empik'), blad: stan.get('blad_empik') },
     wysylanie: process.env.PRICING_ZAPIS === '1',    // globalny hamulec workera (ten sam .env)
     gt_ok: !!stanGt,
     przebieg: stan.get('przebieg'),

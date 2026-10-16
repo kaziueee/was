@@ -356,6 +356,16 @@ Wpisy jobów podpisują się `uzytkownik: 'system:<job>'` (np. `system:rozjazdy`
 
 Dlatego **żaden job nie mnoży minut sam** — wszystkie idą przez `services/interwal.js` (`interwalMsZMinut(surowe, domyslneMin, nazwa)`): ścina do limitu, mówi o tym w logu i sprowadza „brak wartości / śmieci / zero" do domyślnej. Czysta funkcja, testy w `test/interwal.test.js` (bez SQLite i GT). Dodając job z interwałem w `.env` — użyj jej, nie `min * 60 * 1000`.
 
+## Sekrety: `.env.dpapi` + jeden loader `config/env` (2026-10-16)
+
+Klucze API i hasła (Amazon SP-API, eMAG, Empik, Kaufland, Allegro, Sellasist) na SRV leżą w `C:\was\.env.dpapi` — zaszyfrowane DPAPI Windows (zakres maszyny), nie w `.env`. Odszyfruje je wyłącznie ten Windows; plik skopiowany gdziekolwiek indziej jest bezużyteczny. Powód: audyt 2026-10-16 — SRV to serwer terminalowy z ~30 kontami, a `.env` z kluczami czytało każde z nich (uprawnienia do `C:\was` są od tego dnia zawężone do Adm/SYSTEM/Administratorów; szyfrowanie to druga warstwa).
+
+- **Każdy proces wczytuje konfigurację przez `require('../config/env')`** (dotenv + `.env.dpapi`), nigdy `require('dotenv')` wprost — skrypt, który ominie loader, na produkcji „nie widzi kluczy". Pilnuje tego test w `test/sekrety.test.js`.
+- **Nowy / zrotowany klucz: dopisz go do `.env` jak dotąd** — działa od razu, bo jawny `.env` wygrywa z `.env.dpapi` — a potem na SRV `node scripts/sekrety.js zaszyfruj` (przenosi wszystko, co wygląda na sekret: `*KEY`, `*SECRET`, `*TOKEN`, `*PASS`, `*CLIENT_ID`). `lista` pokazuje nazwy i długości, nigdy wartości; `odszyfruj` = ścieżka awaryjna z powrotem do jawnego `.env`. Proces, który już chodzi, ma klucze w pamięci — nowe czyta przy następnym starcie, a przy starcie na Windows ostrzega w logu o jawnych sekretach w `.env`.
+- Mac (dev) nie ma DPAPI: tam zostaje `.env` z `chmod 600`.
+- Uszkodzony albo nieodszyfrowalny `.env.dpapi` **nie wywraca procesu** (WMS bez kluczy API dalej obsługuje magazyn) — za to krzyczy w logu `[sekrety]`.
+- Hasło operatora GT dla mostu C# siedzi w `bridge/GtBridge/appsettings.json` na SRV (plik oznaczony `skip-worktree`, czytelny tylko dla Adm/Administratorów). `.gitignore` łapie `*.env`, `.env.*` (poza `.env.example`) i `*.bak` — na SRV leżała kiedyś nieignorowana kopia `1.env` z kluczami.
+
 ## Stan obecny
 
 Zbudowane i działające: baza + `routes/` (lokalizacje, ruchy, magazyny, produkty, rozjazdy, sciezki), most C# (`/api/mm`, `/api/lok`), ekran Zebry „Ruch towaru", sprawdzarka „Sprawdź" (podgląd bez edycji, też dla ucznia), moduł Ścieżki (Faza 6: ścieżka „Ostatnie sztuki" + raport), panel desktopu (produkty, rozjazdy, ruchy, lokalizacje, wolne miejsca, MM), job rozjazdów.

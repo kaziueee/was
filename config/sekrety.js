@@ -39,6 +39,9 @@ const ENTROPIA = 'WMS-sekrety-v1';
 // wpada sam, bez dopisywania go tutaj. Login (`EMAG_RO_USER`) zostaje jawny: sam nic nie otwiera.
 const SEKRET_RE = /(KEY|SECRET|TOKEN|PASS|PASSWORD|CLIENT_ID)$/;
 
+// Komentarz zostawiany w `.env` w miejscu zaszyfrowanej zmiennej.
+const ZNACZNIK_RE = /^# ([A-Za-z_][A-Za-z0-9_]*) -> \.env\.dpapi\b/;
+
 function czySekret(nazwa) {
   return SEKRET_RE.test(String(nazwa));
 }
@@ -64,6 +67,8 @@ function wydzielZEnv(tekstEnv, nazwy) {
   const wartosci = {};
   const linie = tekstEnv.split(/\r?\n/);
   const eol = tekstEnv.includes('\r\n') ? '\r\n' : '\n';
+  // Po rotacji znacznik z poprzedniego szyfrowania już stoi w pliku — drugiego nie dokładamy.
+  const zeZnacznikiem = new Set(linie.map((l) => (l.match(ZNACZNIK_RE) || [])[1]).filter(Boolean));
   const wynik = linie.map((linia) => {
     const m = linia.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/);
     if (!m || !szukane.has(m[1])) return linia;
@@ -73,8 +78,8 @@ function wydzielZEnv(tekstEnv, nazwy) {
       throw new Error(`${nazwa}: wartość zajmuje kilka linii albo zmienna jest w .env dwa razy — popraw ręcznie`);
     }
     wartosci[nazwa] = zLinii;
-    return `# ${nazwa} -> ${PLIK_DOMYSLNY} (zaszyfrowane, node scripts/sekrety.js lista)`;
-  });
+    return zeZnacznikiem.has(nazwa) ? null : `# ${nazwa} -> ${PLIK_DOMYSLNY} (zaszyfrowane, node scripts/sekrety.js lista)`;
+  }).filter((l) => l !== null);
   for (const n of szukane) {
     if (!(n in wartosci)) throw new Error(`${n}: nie ma w .env`);
   }
@@ -98,12 +103,13 @@ function przywrocDoEnv(tekstEnv, wartosci) {
   const eol = tekstEnv.includes('\r\n') ? '\r\n' : '\n';
   const zostalo = new Map(Object.entries(wartosci));
   const linie = tekstEnv.split(/\r?\n/).map((linia) => {
-    const m = linia.match(/^# ([A-Za-z_][A-Za-z0-9_]*) -> /);
-    if (!m || !zostalo.has(m[1])) return linia;
+    const m = linia.match(ZNACZNIK_RE);
+    if (!m || !(m[1] in wartosci)) return linia;
+    if (!zostalo.has(m[1])) return null; // nadmiarowy znacznik tej samej zmiennej
     const v = zostalo.get(m[1]);
     zostalo.delete(m[1]);
     return `${m[1]}=${cytuj(v)}`;
-  });
+  }).filter((l) => l !== null);
   while (linie.length && linie[linie.length - 1] === '') linie.pop();
   for (const [k, v] of zostalo) linie.push(`${k}=${cytuj(v)}`);
   return linie.join(eol) + eol;

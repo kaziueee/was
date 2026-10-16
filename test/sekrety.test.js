@@ -70,6 +70,19 @@ test('przywrocDoEnv jest odwrotnoscia wydzielZEnv (sciezka awaryjna)', () => {
   assert.ok(z.indexOf('SPAPI_REFRESH_TOKEN=') < z.indexOf('EMAG_RO_USER='));
 });
 
+test('rotacja: nowy klucz dopisany do .env i zaszyfrowany ponownie nie mnozy znacznikow', () => {
+  const po1 = s.wydzielZEnv(ENV, ['SPAPI_REFRESH_TOKEN']).tekst;
+  const poRotacji = po1 + '\r\nSPAPI_REFRESH_TOKEN=Atzr|nowy';
+  const { tekst, wartosci } = s.wydzielZEnv(poRotacji, ['SPAPI_REFRESH_TOKEN']);
+  assert.deepStrictEqual(wartosci, { SPAPI_REFRESH_TOKEN: 'Atzr|nowy' });
+  assert.strictEqual(tekst.match(/^# SPAPI_REFRESH_TOKEN -> /gm).length, 1);
+  // a sciezka awaryjna sprzata nadmiarowy znacznik, gdyby ktos go wkleil recznie
+  const zDwoma = tekst + '\r\n# SPAPI_REFRESH_TOKEN -> .env.dpapi (zaszyfrowane)';
+  const z = s.przywrocDoEnv(zDwoma, wartosci);
+  assert.strictEqual(dotenv.parse(z).SPAPI_REFRESH_TOKEN, 'Atzr|nowy');
+  assert.ok(!/^# SPAPI_REFRESH_TOKEN -> /m.test(z));
+});
+
 test('uzupelnijEnv: jawne .env i srodowisko wygrywaja, puste NAZWA= nie zaslania sekretu', () => {
   const env = { USTAWIONE_KEY: 'z-env', PUSTE_KEY: '' };
   const ustawione = s.uzupelnijEnv(env, { USTAWIONE_KEY: 'z-dpapi', PUSTE_KEY: 'z-dpapi', NOWE_KEY: 'z-dpapi' });

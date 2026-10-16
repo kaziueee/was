@@ -12,7 +12,10 @@
 //
 // Używane wywołania Mirakl (dokumentacja developer.mirakl.com, seller API):
 //   A01   GET  /api/account                         nasz shop_id i nazwa sklepu — najwyżej RAZ NA DOBĘ
-//   OF21  GET  /api/offers?max=100&offset=…         nasze oferty: shop_sku = nasz SKU, product_sku = produkt Empik
+//   OF52  POST /api/offers/export/async  → OF53 status → OF54 pliki   CAŁA lista naszych ofert (JSON) jednym
+//              zleceniem: 6549 ofert w 16 s i 3 zapytaniach (2026-10-16). Pełny eksport najwyżej RAZ NA DOBĘ.
+//   OF21  GET  /api/offers?max=100&offset=…         pojedyncze oferty (filtr `sku`). NIE do całej listy: Empik dławi
+//              OF21 — 429 z Retry-After ~33 s; 66 stron szło 11–18 min i zatrzymało przebieg Amazona i eMAG (2026-10-16)
 //   P11   GET  /api/products/offers?product_ids=…   aktywne oferty WSZYSTKICH sklepów na produkcie, do 100
 //              produktów w zapytaniu, najwyżej 5 zapytań na minutę. Domyślne sortowanie „bestPrice”: cena
 //              łączna (towar + najtańsza dostawa), potem premium i ocena sklepu.
@@ -51,7 +54,8 @@ function czekajMs(retryAfter, proba, maxMs = 120_000) {
   return ms <= maxMs ? ms : null;
 }
 
-async function api(sciezka, { metoda = 'GET', query = null, body = undefined, proby = 3, timeoutMs = 60_000 } = {}) {
+// `url` = pełny adres zamiast /api/<sciezka> (pliki eksportu OF54 — adresy podaje OF53).
+async function api(sciezka, { metoda = 'GET', query = null, body = undefined, proby = 3, timeoutMs = 60_000, naglowki = {}, url = null } = {}) {
   if (!skonfigurowany()) throw new Error('Empik: brak EMPIK_API_KEY w .env');
   const qs = query ? '?' + new URLSearchParams(Object.entries(query).filter(([, v]) => v != null && v !== '')).toString() : '';
   for (let i = 1; ; i++) {
@@ -59,8 +63,8 @@ async function api(sciezka, { metoda = 'GET', query = null, body = undefined, pr
     try {
       // Limit czasu obejmuje też czytanie odpowiedzi (lekcja z eMAG 2026-10-16: zawieszona strona listy
       // trzymała workera w nieskończoność, a blokada „trwa” zatrzymałaby wszystkie przebiegi do restartu).
-      r = await fetch(`${URL_API()}/api/${sciezka}${qs}`, {
-        method: metoda, headers: { Authorization: process.env.EMPIK_API_KEY, Accept: 'application/json' }, body,
+      r = await fetch(url || `${URL_API()}/api/${sciezka}${qs}`, {
+        method: metoda, headers: { Authorization: process.env.EMPIK_API_KEY, Accept: 'application/json', ...naglowki }, body,
         signal: AbortSignal.timeout(timeoutMs),
       });
       tekst = await r.text();
@@ -91,19 +95,54 @@ async function sklep() {
   return { id: liczba(dane?.shop_id), nazwa: dane?.shop_name ? String(dane.shop_name) : null };
 }
 
-// Wszystkie nasze oferty (OF21). Przesuwamy offset o tyle, ile przyszło, i kończymy po total_count —
-// gdyby Empik nie przyjął `max`, pętla i tak przejdzie całą listę (po 10), a nie urwie się po 1. stronie.
-async function wszystkieOferty() {
-  const wynik = [];
-  for (let offset = 0; ;) {
-    const { dane } = await api('offers', { query: { max: 100, offset } });
-    const paczka = Array.isArray(dane?.offers) ? dane.offers : [];
-    wynik.push(...paczka);
-    offset += paczka.length;
-    const razem = liczba(dane?.total_count);
-    if (!paczka.length || (razem != null ? wynik.length >= razem : paczka.length < 100)) return wynik;
-    await sleep(500);
+// Wszystkie nasze oferty — eksport asynchroniczny (OF52 → OF53 → OF54), z nieaktywnymi. Wynik w kształcie
+// OF21 (zEksportu), więc reszta adaptera nie rozróżnia źródła. Pełny eksport wolno zlecić raz na dobę;
+// zlecenie powtórzone wcześniej Mirakl zwraca jako to samo tracking_id.
+async function wszystkieOferty({ czekajMs = 10 * 60_000, coMs = 15_000 } = {}) {
+  const { dane } = await api('offers/export/async', {
+    metoda: 'POST', proby: 1,
+    body: JSON.stringify({ export_type: 'application/json', include_inactive_offers: true }),
+    naglowki: { 'Content-Type': 'application/json' },
+  });
+  const id = dane?.tracking_id;
+  if (!id) throw new Error('Empik OF52: brak tracking_id w odpowiedzi');
+  const koniec = Date.now() + czekajMs;
+  for (;;) {
+    await sleep(coMs);
+    const { dane: s } = await api(`offers/export/async/status/${encodeURIComponent(id)}`);
+    if (s?.status === 'FAILED') throw new Error(`Empik OF52: eksport nieudany ${JSON.stringify(s.error || {})}`);
+    if (s?.status === 'COMPLETED') {
+      const wynik = [];
+      for (const url of s.urls || []) {
+        const { dane: plik } = await api('', { url });
+        wynik.push(...(Array.isArray(plik) ? plik : plik?.offers || plik?.data || []).map(zEksportu));
+      }
+      return wynik;
+    }
+    if (Date.now() > koniec) throw new Error(`Empik OF52: eksport ${id} nie skończył się w ${czekajMs / 60_000} min (status ${s?.status})`);
   }
+}
+
+// Oferta z eksportu OF52 → kształt OF21 (pola, z których korzysta adapter). Eksport podaje ceny jako
+// `prices` [{ origin_price, discount_price?, … }] — bez kanałów jedna pozycja; więcej = ceny kanałowe/terminowe.
+// Nie ma nazwy produktu (synchronizacja zostawia wtedy dotychczasową).
+function zEksportu(o, teraz = new Date()) {
+  const ceny = Array.isArray(o?.prices) ? o.prices : [];
+  const c = ceny[0] || {};
+  const bazowa = liczba(c.origin_price ?? c.unit_origin_price ?? c.price);
+  const rabat = liczba(c.discount_price ?? c.unit_discount_price);
+  // Rabat liczy się do ceny tylko w swoim terminie; do blokady zmiany ceny (`discount`) — zawsze,
+  // także zaplanowany, bo import cen (PRI01) skasowałby go tak samo.
+  const wTerminie = rabat > 0 && (!c.discount_start_date || new Date(c.discount_start_date) <= teraz)
+    && (!c.discount_end_date || new Date(c.discount_end_date) >= teraz);
+  return {
+    offer_id: o?.offer_id, shop_sku: o?.shop_sku, product_sku: o?.product_sku, product_title: o?.product_title || null,
+    active: o?.active === true && o?.deleted !== true, quantity: o?.quantity,
+    price: bazowa, min_shipping_price: o?.min_shipping_price,
+    applicable_pricing: { price: wTerminie ? rabat : bazowa, unit_discount_price: wTerminie ? rabat : null },
+    discount: rabat > 0 ? { discount_price: rabat, start_date: c.discount_start_date || null, end_date: c.discount_end_date || null } : null,
+    all_prices: ceny,
+  };
 }
 
 // Jedna nasza oferta po SKU (OF21 z filtrem `sku`) — do zapisu ceny poza przebiegiem z pełną listą.
@@ -254,6 +293,6 @@ function linkiOferty(produkt) {
 }
 
 module.exports = {
-  api, sklep, wszystkieOferty, ofertaPoSku, ofertyProduktow, doOferty, obserwacja, cenaOferty, cenaLaczna, promocja,
+  api, sklep, wszystkieOferty, zEksportu, ofertaPoSku, ofertyProduktow, doOferty, obserwacja, cenaOferty, cenaLaczna, promocja,
   zmianaCeny, plikCen, ustawCeny, statusImportu, raportBledow, linkiOferty, czekajMs, skonfigurowany,
 };

@@ -133,3 +133,58 @@ test('Empik: pomiar z zamówień — prowizja od towaru i od całości, dostawa 
   assert.strictEqual(p.kategorie[0]['prow_%_calosci'], 10, '16,20 / (150 + 11,99)');
   assert.deepStrictEqual(p.dostawy.map((d) => [d.metoda, d.zamowien, d['gratis_%']]), [['Paczkomaty InPost', 2, 50]]);
 });
+
+test('Empik: oferta z eksportu OF52 → kształt OF21 (cena bazowa, rabat w terminie, usunięta = nieaktywna)', () => {
+  const teraz = new Date('2026-10-16T12:00:00Z');
+  const eksport = (o) => ({ offer_id: 208756900, shop_sku: 'NERF5035', product_sku: '1528221610', active: true, deleted: false, quantity: 10,
+    min_shipping_price: 0, prices: [{ origin_price: 161.99, volume_prices: [{ quantity_threshold: 1, unit_origin_price: 161.99 }] }], ...o });
+  const z = empik.zEksportu(eksport(), teraz);
+  assert.deepStrictEqual(empik.doOferty(z), { sku: 'NERF5035', produkt: '1528221610', nazwa: null, cena: 161.99, ilosc: 10, aktywna: true });
+  assert.strictEqual(empik.promocja(z), null);
+  assert.deepStrictEqual(empik.zmianaCeny(z, 150), { sku: 'NERF5035', cena: 150 });
+  assert.strictEqual(empik.doOferty(empik.zEksportu(eksport({ deleted: true }), teraz)).aktywna, false);
+
+  const wTerminie = empik.zEksportu(eksport({ prices: [{ origin_price: 161.99, discount_price: 139.99, discount_start_date: '2026-10-01T00:00:00Z', discount_end_date: '2026-10-31T00:00:00Z' }] }), teraz);
+  assert.strictEqual(empik.cenaOferty(wTerminie), 139.99, 'klient widzi cenę promocyjną');
+  assert.match(empik.zmianaCeny(wTerminie, 150).blad, /promocja/);
+  const zaplanowany = empik.zEksportu(eksport({ prices: [{ origin_price: 161.99, discount_price: 139.99, discount_start_date: '2026-11-01T00:00:00Z' }] }), teraz);
+  assert.strictEqual(empik.cenaOferty(zaplanowany), 161.99, 'rabat jeszcze nie działa');
+  assert.match(empik.zmianaCeny(zaplanowany, 150).blad, /promocja/, 'ale import cen skasowałby i zaplanowany');
+});
+
+test('Empik: lista ofert eksportem OF52 → OF53 → OF54 (atrapa API)', async () => {
+  const http = require('node:http');
+  const zapytania = [];
+  const srv = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      zapytania.push({ m: req.method, u: req.url, auth: req.headers.authorization, ct: req.headers['content-type'], body });
+      const json = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (req.url === '/api/offers/export/async') return json({ tracking_id: 'abc' });
+      if (req.url === '/api/offers/export/async/status/abc') {
+        return json(zapytania.filter((z) => z.u.includes('/status/')).length < 2 ? { status: 'PENDING' }
+          : { status: 'COMPLETED', urls: [`http://127.0.0.1:${srv.address().port}/plik/1`] });
+      }
+      if (req.url === '/plik/1') return json([{ shop_sku: 'A1', product_sku: '111', active: true, quantity: 2, prices: [{ origin_price: 10 }] },
+        { shop_sku: 'B2', product_sku: '222', active: false, quantity: 0, prices: [{ origin_price: 20 }] }]);
+      res.writeHead(404); res.end('{}');
+    });
+  });
+  await new Promise((r) => srv.listen(0, r));
+  const env = { k: process.env.EMPIK_API_KEY, u: process.env.EMPIK_API_URL };
+  process.env.EMPIK_API_KEY = 'klucz'; process.env.EMPIK_API_URL = `http://127.0.0.1:${srv.address().port}`;
+  try {
+    const lista = await empik.wszystkieOferty({ coMs: 5 });
+    assert.deepStrictEqual(lista.map((o) => [o.shop_sku, o.active, empik.cenaOferty(o)]), [['A1', true, 10], ['B2', false, 20]]);
+    const post = zapytania[0];
+    assert.strictEqual(post.m, 'POST');
+    assert.strictEqual(post.ct, 'application/json');
+    assert.deepStrictEqual(JSON.parse(post.body), { export_type: 'application/json', include_inactive_offers: true });
+    assert.ok(zapytania.every((z) => z.auth === 'klucz'), 'klucz w nagłówku także przy pobieraniu pliku');
+  } finally {
+    srv.close();
+    if (env.k === undefined) delete process.env.EMPIK_API_KEY; else process.env.EMPIK_API_KEY = env.k;
+    if (env.u === undefined) delete process.env.EMPIK_API_URL; else process.env.EMPIK_API_URL = env.u;
+  }
+});

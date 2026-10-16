@@ -9,7 +9,7 @@
 //      więc to jedno pobranie na rynek (~30 zapytań). Ceny wychodzą tylko na kanały bez `tylkoOdczyt`.
 //      Bez EMAG_RO_USER w .env część eMAG jest pomijana; jej błąd (np. IP spoza listy w panelu
 //      eMAG) nie zatrzymuje przebiegu Amazona. Empik (pricing/sync-empik.js, od 2026-10-16) — lista
-//      ofert razem z pełną obserwacją (PRICING_PELNY_MIN); bez EMPIK_API_KEY pomijany. Allegro
+//      ofert raz na dobę eksportem OF52 (~20 s); bez EMPIK_API_KEY pomijany. Allegro
 //      (pricing/sync-allegro.js, od 2026-10-16) — lista aktywnych ofert każdego podpiętego konta co przebieg
 //      (~4 zapytania na konto), jak eMAG; bez ALLEGRO_CLIENT_ID albo bez tokenu konta — pomijane.
 //      Kaufland (PRICING_KAUFLAND_RYNKI, domyślnie DE) tak samo co przebieg (pricing/sync-kaufland.js +
@@ -133,12 +133,13 @@ async function przebieg({ pelny = false } = {}) {
   const pelnyTeraz = pelny || minelo('obserwacja_pelna', PELNY_MS);
   const zapisWlaczony = process.env.PRICING_ZAPIS === '1';
 
-  // Empik: lista ofert (OF21) razem z pełną obserwacją — P11 i tak podaje naszą cenę, więc między
-  // pełnymi przebiegami lista nie jest potrzebna. Błąd Empiku nie zatrzymuje reszty przebiegu.
+  // Empik: lista ofert raz na dobę (eksport OF52 — pełny wolno raz na dobę; OF21 strona po stronie Empik
+  // dławi i przebieg stał przez to 17 min). Naszą cenę i Buy Box daje obserwacja (P11), więc między
+  // synchronizacjami lista nie jest potrzebna. Błąd Empiku nie zatrzymuje reszty przebiegu.
   let empikSurowe = null, empikOk = false;
   if (PLATFORMY.has('empik') && empik.skonfigurowany()) {
     try {
-      if (pelnyTeraz || minelo('sync_empik', PELNY_MS)) {
+      if (minelo('sync_empik', SYNC_MS)) {
         empikSurowe = await empik.wszystkieOferty();
         const s = await synchronizujEmpik(empikSurowe);
         stan.set('sync_empik', JSON.stringify(s));

@@ -1,11 +1,12 @@
 'use strict';
 
-// Synchronizacja listy ofert Empik (OF21) do db/pricing.db: platforma 'empik', rynek 'PL'. Czyta Empik
+// Synchronizacja listy ofert Empik (eksport OF52, raz na dobę) do db/pricing.db: platforma 'empik', rynek 'PL'. Czyta Empik
 // i GT (ceny zmienia worker, nie synchronizacja). Zasady jak Amazon i eMAG (pricing/sync-oferty.js,
 // pricing/sync-emag.js): nowe oferty wchodzą z automatem wyłączonym, ręczne powiązanie wygrywa
 // z automatycznym dopasowaniem, oferta znikająca z listy dostaje aktywna = 0 (historia zostaje).
 // Nieaktywne oferty Empik (active = false, np. stan 0) zapisujemy z aktywna = 0 — karta SKU pokaże,
-// że oferta istnieje. Numer produktu Empik (product_sku) idzie do kolumny `asin` (link, P11).
+// że oferta istnieje. Numer produktu Empik (product_sku) idzie do kolumny `asin` (link, P11). Eksport nie
+// podaje nazwy produktu — zostaje ta z poprzedniej synchronizacji.
 //
 // `surowe` = wynik empik.wszystkieOferty(), gdy worker już go ma.
 //
@@ -26,7 +27,8 @@ async function synchronizujEmpik(surowe = null) {
     INSERT INTO oferty (platforma, rynek, sku, asin, tw_id, symbol_gt, dopasowanie, nazwa, cena, ilosc, kanal, aktywna, widziana)
     VALUES ('empik', 'PL', ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, CURRENT_TIMESTAMP)
     ON CONFLICT (platforma, rynek, sku) DO UPDATE SET
-      asin = excluded.asin, tw_id = excluded.tw_id, symbol_gt = excluded.symbol_gt, dopasowanie = excluded.dopasowanie, nazwa = excluded.nazwa,
+      asin = excluded.asin, tw_id = excluded.tw_id, symbol_gt = excluded.symbol_gt, dopasowanie = excluded.dopasowanie,
+      nazwa = COALESCE(excluded.nazwa, oferty.nazwa),
       cena = excluded.cena, ilosc = excluded.ilosc, aktywna = excluded.aktywna, widziana = CURRENT_TIMESTAMP`);
   const wygas = db.prepare(`UPDATE oferty SET aktywna = 0 WHERE platforma = 'empik' AND rynek = 'PL' AND widziana < ?`);
 

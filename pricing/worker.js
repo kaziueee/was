@@ -41,6 +41,7 @@ const { obserwujEmag } = require('./obserwuj-emag');
 const emag = require('./emag');
 const { synchronizujEmpik } = require('./sync-empik');
 const { obserwujEmpik } = require('./obserwuj-empik');
+const { odswiezStawki } = require('./empik-prowizje');
 const empik = require('./empik');
 const { synchronizujAllegro } = require('./sync-allegro');
 const { obserwujAllegro } = require('./obserwuj-allegro');
@@ -146,6 +147,8 @@ async function przebieg({ pelny = false } = {}) {
         const s = await synchronizujEmpik(empikSurowe);
         stan.set('sync_empik', JSON.stringify(s));
         wynik.empik = s.aktywne;
+        // Stawki prowizji per kategoria z zamówień (pricing/empik-prowizje.js) — razem z listą, raz na dobę.
+        try { wynik.empik_stawki = await odswiezStawki(); } catch (e) { console.error(new Date().toISOString(), '[pricing] Empik stawki:', e.message); }
       }
       empikOk = true;
     } catch (e) {
@@ -199,13 +202,14 @@ async function przebieg({ pelny = false } = {}) {
   const allegroOf = oferty.filter((o) => o.platforma === 'allegro');
   const kauflandOf = oferty.filter((o) => o.platforma === 'kaufland');
   // Genius i stawka prowizji są per RYNEK (ten sam towar: RO 16%, HU 18%) — mapa tw_Id → { kolumna: wartość }.
-  const poKolumnie = (pole, ok, wartosc) => {
+  const poKolumnie = (lista, pole, ok, wartosc) => {
     const m = new Map();
-    for (const o of emagOf) if (ok(o[pole])) (m.get(o.tw_id) || m.set(o.tw_id, {}).get(o.tw_id))[kluczKolumny(o.platforma, o.rynek)] = wartosc(o[pole]);
+    for (const o of lista) if (ok(o[pole])) (m.get(o.tw_id) || m.set(o.tw_id, {}).get(o.tw_id))[kluczKolumny(o.platforma, o.rynek)] = wartosc(o[pole]);
     return m;
   };
-  const geniusPoTw = poKolumnie('genius', (v) => v != null, (v) => !!v);
-  const prowizjaPoTw = poKolumnie('prowizja', (v) => v > 0, (v) => v);
+  const geniusPoTw = poKolumnie(emagOf, 'genius', (v) => v != null, (v) => !!v);
+  // Stawka prowizji per oferta: eMAG z commission/estimate, Empik z kategorii (pricing/empik-prowizje.js).
+  const prowizjaPoTw = poKolumnie([...emagOf, ...empikOf], 'prowizja', (v) => v > 0, (v) => v);
   // Empik: błąd P11 (limit, awaria) = oferty bez obserwacji w tym przebiegu, reszta idzie dalej.
   const obsEmpik = empikOf.length ? obserwujEmpik(empikOf, { surowe: empikSurowe }).catch((e) => {
     stan.set('blad_empik', e.message);

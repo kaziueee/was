@@ -154,14 +154,19 @@ async function ofertaPoSku(sku) {
 }
 
 // Oferty wszystkich sklepów na produktach (P11), po 100 produktów; 5 zapytań/min → co 13 s.
-// Zwraca Map(product_sku → [oferty w kolejności Mirakl]).
+// Zwraca Map(product_sku → [oferty w kolejności Mirakl]); `wynik.kategorie` = Map(product_sku → kod
+// kategorii Empik) — z tej samej odpowiedzi, do stawki prowizji (pricing/empik-prowizje.js).
 async function ofertyProduktow(productSkus, { odstepMs = 13_000 } = {}) {
   const unikalne = [...new Set(productSkus.filter(Boolean).map(String))];
   const wynik = new Map();
+  wynik.kategorie = new Map();
   for (let i = 0; i < unikalne.length; i += 100) {
     if (i) await sleep(odstepMs);
     const { dane } = await api('products/offers', { query: { product_ids: unikalne.slice(i, i + 100).join(',') } });
-    for (const p of dane?.products || []) wynik.set(String(p.product_sku), Array.isArray(p.offers) ? p.offers : []);
+    for (const p of dane?.products || []) {
+      wynik.set(String(p.product_sku), Array.isArray(p.offers) ? p.offers : []);
+      if (p.category_code) wynik.kategorie.set(String(p.product_sku), String(p.category_code));
+    }
   }
   return wynik;
 }

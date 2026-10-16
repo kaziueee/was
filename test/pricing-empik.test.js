@@ -110,14 +110,27 @@ test('Empik: link do karty produktu po numerze (z „p” albo bez)', () => {
   assert.strictEqual(empik.linkiOferty('ABC-1'), null);
 });
 
-test('Empik: kolumna tylko do odczytu, bez kalkulatora — repricer nie liczy pasa ani nie decyduje', () => {
+test('Empik: kolumna tylko do odczytu z minimum z kalkulatora (rynek „Empik”)', () => {
   assert.strictEqual(kluczKolumny('empik', 'PL'), 'EMPIK_PL');
   const k = kolumna('empik', 'PL');
   assert.strictEqual(k.tylkoOdczyt, true);
-  assert.strictEqual(k.kalkulator, undefined);
-  const pasy = pasyZWyceny({ koszt: 30, waga: 1, docinalny: false });
-  assert.strictEqual(pasy.EMPIK_PL, undefined);
-  assert.strictEqual(decyzja({ cena: 59.99, bbNasz: false, bbCena: 50 }, {}).kod, 'brak_pasa');
+  assert.strictEqual(k.kalkulator, 'Empik');
+  const pas = pasyZWyceny({ koszt: 20, waga: 1, docinalny: false }).EMPIK_PL;
+  assert.strictEqual(pas.min, 46.99);
+  assert.strictEqual(pas.max, 70.48);
+  assert.ok(Math.abs(pas.ocen(46.99).marza - 19.5) < 0.1);
+});
+
+test('Empik: rekompensata Premium = ujemna opłata za zamówienie wg wartości × udział zamówień Premium', () => {
+  const rynki = require('../config/rynki');
+  const e = rynki.RYNKI.find((x) => x.nazwa === 'Empik');
+  assert.deepStrictEqual([49.99, 59.99, 60, 99.99, 100, 149.99, 150, 300].map((c) => rynki.oplataZamowienia(e, c)),
+    [-6.41, -6.41, -5.74, -5.74, -4.02, -4.02, -3.30, -3.30]);
+  assert.strictEqual(+rynki.oplataZamOczekiwana(e, 79.99).toFixed(4), -2.5256, '5,74 × 44%');
+  // Prowizja od całości brutto (towar + 6,61 dostawy klienta), VAT 23%, koszt wysyłki 9,26 netto
+  const w = rynki.wycenaPrzyCenie(40, e, { ...rynki.DOMYSLNE }, 79.99);
+  const oczek = (79.99 + 6.61) * (1 / 1.23 - 0.1055) - (40 + 9.26 + 3 - 5.74 * 0.44);
+  assert.ok(Math.abs(w.zysk - oczek) < 0.01, `${w.zysk} vs ${oczek}`);
 });
 
 test('Empik: pomiar z zamówień — prowizja od towaru i od całości, dostawa per metoda, bez anulowanych', () => {
@@ -187,4 +200,33 @@ test('Empik: lista ofert eksportem OF52 → OF53 → OF54 (atrapa API)', async (
     if (env.k === undefined) delete process.env.EMPIK_API_KEY; else process.env.EMPIK_API_KEY = env.k;
     if (env.u === undefined) delete process.env.EMPIK_API_URL; else process.env.EMPIK_API_URL = env.u;
   }
+});
+
+test('Empik: stawka prowizji kategorii z zamówień — od 20.07.2026 wygrywa nowa, starsza tylko gdy brak nowszej', () => {
+  const { stawkaLinii, stawkiKategorii } = require('../pricing/empik-prowizje');
+  assert.strictEqual(stawkaLinii({ price: 74.99, shipping_price: 0, commission_fee: 8.77 }), 11.7);
+  assert.strictEqual(stawkaLinii({ price: 61.99, shipping_price: 11.99, commission_fee: 6.36 }), 8.6, 'prowizja liczona od towaru i dostawy');
+  assert.strictEqual(stawkaLinii({ price: 0, shipping_price: 0, commission_fee: 0 }), null);
+  assert.strictEqual(stawkaLinii({ price: 10, commission_fee: null }), null);
+  const zam = (d, kod, cena, fee, stan = 'SHIPPED') => ({ created_date: `${d}T10:00:00Z`, order_state: stan,
+    order_lines: [{ category_code: kod, category_label: kod, price: cena, shipping_price: 0, commission_fee: fee }] });
+  const s = stawkiKategorii([
+    zam('2026-07-10', 'FIG', 100, 12), zam('2026-07-21', 'FIG', 100, 11.7), zam('2026-08-01', 'FIG', 50, 5.85),
+    zam('2026-06-01', 'STARA', 100, 9.5),                                   // sprzedana tylko przed zmianą
+    zam('2026-08-02', 'REMIS', 100, 7.7), zam('2026-08-03', 'REMIS', 100, 8.5), // remis → wyższa
+    zam('2026-08-04', 'ANUL', 100, 99, 'CANCELED'),
+  ]);
+  assert.deepStrictEqual([s.FIG.stawka, s.FIG.zrodlo, s.FIG.linii], [11.7, 'po', 2]);
+  assert.deepStrictEqual([s.STARA.stawka, s.STARA.zrodlo], [9.5, 'przed']);
+  assert.strictEqual(s.REMIS.stawka, 8.5);
+  assert.strictEqual(s.ANUL, undefined, 'anulowane nie płacą prowizji');
+});
+
+test('Empik: minimum liczone ze stawki oferty (kategoria), a bez niej ze średniej rynku', () => {
+  const w = { koszt: 20, waga: 1, docinalny: false };
+  const srednia = pasyZWyceny(w).EMPIK_PL.min;
+  const pistolet = pasyZWyceny(w, { prowizja: { EMPIK_PL: 8.6 } }).EMPIK_PL.min;
+  const figurka = pasyZWyceny(w, { prowizja: { EMPIK_PL: 11.7 } }).EMPIK_PL.min;
+  assert.ok(pistolet < srednia && srednia < figurka, `${pistolet} < ${srednia} < ${figurka}`);
+  assert.strictEqual(pasyZWyceny(w, { prowizja: { EMAG_RO: 16 } }).EMPIK_PL.min, srednia, 'stawka innego kanału nie wpływa na Empik');
 });

@@ -11,6 +11,7 @@
 const empik = require('./empik');
 const { db, stan } = require('./db');
 const { takaSamaObserwacja } = require('./bez-zmian');
+const { stawkiZapisane } = require('./empik-prowizje');
 
 const DOBA_MS = 24 * 60 * 60 * 1000;
 
@@ -30,7 +31,9 @@ async function naszSklep() {
   }
 }
 
-// oferty: [{ id, sku, asin (= product_sku Empik) }]; surowe: lista OF21 z tego przebiegu albo null.
+// oferty: [{ id, sku, asin (= product_sku Empik), prowizja }]; surowe: lista OF21 z tego przebiegu albo null.
+// Przy okazji przypisuje ofercie stawkę prowizji jej kategorii (P11 podaje kategorię produktu) — używa jej
+// minimum z kalkulatora od następnego przebiegu, tak jak stawek eMAG.
 async function obserwujEmpik(oferty, { surowe = null, sklep = null } = {}) {
   const s = sklep || await naszSklep();
   const idPoSku = new Map((surowe || []).map((o) => [String(o.shop_sku || '').trim().toUpperCase(), o.offer_id]));
@@ -38,6 +41,8 @@ async function obserwujEmpik(oferty, { surowe = null, sklep = null } = {}) {
   const zapisz = db.prepare(`INSERT INTO obserwacje (oferta_id, cena, wysylka, bb_nasz, bb_cena, bb_fba, najtansza_inna, ofert, bb_nasza_inna)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const ostatnia = db.prepare('SELECT * FROM obserwacje WHERE oferta_id = ? ORDER BY id DESC LIMIT 1');
+  const stawki = stawkiZapisane();
+  const ustawProwizje = db.prepare('UPDATE oferty SET prowizja = ?, prowizja_czas = CURRENT_TIMESTAMP WHERE id = ?');
   const widziana = db.prepare('UPDATE obserwacje SET widziana = CURRENT_TIMESTAMP WHERE id = ?');
   const b = (v) => (v == null ? null : v ? 1 : 0);
   const wynik = new Map();
@@ -45,6 +50,8 @@ async function obserwujEmpik(oferty, { surowe = null, sklep = null } = {}) {
   db.exec('BEGIN');
   try {
     for (const o of oferty) {
+      const stawka = stawki[p11.kategorie?.get(String(o.asin))]?.stawka;
+      if (stawka > 0 && Math.abs(stawka - (o.prowizja || 0)) > 0.001) ustawProwizje.run(stawka, o.id);
       const obs = empik.obserwacja(p11.get(String(o.asin)), { offerId: idPoSku.get(String(o.sku).trim().toUpperCase()) ?? null, sklep: s });
       if (!obs) continue;                       // naszej oferty nie ma wśród aktywnych ofert produktu
       wynik.set(o.id, obs);

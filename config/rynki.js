@@ -96,6 +96,20 @@ const RYNKI = [
   // Kaufland DE: ta sama umowa DHL do Niemiec co Amazon DE (koszt po wadze). Prowizja 13% dla zabawek
   // (kauflandglobalmarketplace.com/en/conditions) - od ceny BRUTTO wraz z wysylka, netto + VAT -> model amazon-dhl.
   { nazwa: 'Kaufland DE', kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 13, wysKlient: 4.99, typ: 'amazon-dhl' },
+  // Empik (EmpikPlace, dodany 2026-10-16 pod repricer). Liczby zmierzone, nie z cennika:
+  //  - prowizja 10,55% od CAŁOŚCI brutto (towar + dostawa): OR11 z 90 dni (1249 zam.: 14 576 zł netto przy
+  //    138 166 zł) i rozliczenie Empik 30.09–15.10.2026 (2 565,87 zł przy 24 327,97 zł). Zależy od kategorii
+  //    (od 20.07.2026: 6,7–11,7%, np. pistolety/naboje 8,6%, figurki/tory 11,7%) — repricer bierze stawkę
+  //    kategorii oferty (pricing/empik-prowizje.js), 10,55% to średnia dla Cennika i ofert bez kategorii,
+  //  - nasz koszt wysyłki 9,26 zł netto = miks metod (ZK Empik od 04.2026: paczkomat 51%, salon Empik 36%,
+  //    kurier 7%, DPD Pickup 3%, pobranie 3%) × koszt paczki: InPost Paczkomat Standard 10,44 (faktura
+  //    07.2026, nasza umowa), salon 7,52 (DPD, cennik Empik–DPD bez paliwowej, płatnik 444368), kurier DPD 9,49,
+  //    DPD Pickup 7,29, pobranie +2,02 (specyfikacje DPD 09.2026),
+  //  - klient płaci za dostawę średnio 6,61 zł brutto na zamówienie (OR11; zamówienia Empik Premium = 0),
+  //  - Empik Premium: za darmową dostawę Empik oddaje stałą kwotę netto, odliczaną od prowizji, wg wartości
+  //    zamówienia i metody — `oplataZam` UJEMNA (EMPIK_PREMIUM) × udział zamówień Premium 44%.
+  { nazwa: 'Empik', kraj: 'PL', waluta: 'PLN', vat: 23, prowizja: 10.55, typ: 'flat',
+    wysylka: 9.26, wysKlient: 6.61, oplataZam: 'EMPIK_PREMIUM', oplataZamUdzial: 0.44 },
 ];
 
 // DHL Parcel Connect - cena netto PLN po rabacie, wg wagi (umowa Okitrade 06.2026). NASZ koszt.
@@ -118,6 +132,10 @@ const OPLATY_ZAM = {
   GENIUS_RO: [[40, 3], [50, 4], [75, 5], [Infinity, 8]],
   GENIUS_HU: [[Infinity, 509]],     // HUF — średnia z zamówień (siatki HU nie znamy)
   GENIUS_BG: [[Infinity, 1.25]],    // EUR — średnia z zamówień (siatki BG nie znamy)
+  // Rekompensata Empik Premium (UJEMNA = przychód): stawki netto z rozliczeń 08–09.2026 (363 zamówienia,
+  // „Odliczono od prowizji”) — paczkomat <60: 6,30 · 60–100: 5,24 · 100–150: 3,10 · ≥150: 1,95; salon <100:
+  // 6,60 · ≥100: 5,60 — ważone udziałem metod w zamówieniach Premium (paczkomat 63%, salon 37%).
+  EMPIK_PREMIUM: [[60, -6.41], [100, -5.74], [150, -4.02], [Infinity, -3.30]],
 };
 
 // Automat paczkowy eMAG (easybox): najwieksza skrytka 470 × 440 × 390 mm (eMAG Marketplace infocenter,

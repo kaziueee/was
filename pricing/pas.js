@@ -39,7 +39,7 @@ function pasyZWyceny(w, { genius, prowizja } = {}) {
     let def = k.kalkulator && rynki.RYNKI.find((x) => x.nazwa === k.kalkulator);
     if (!def) continue;
     let gk = g;
-    if (k.platforma === 'emag') {
+    if (k.platforma === 'emag' || k.platforma === 'empik') {
       const p = dlaKolumny(prowizja, k.klucz), gen = dlaKolumny(genius, k.klucz);
       if (p > 0) def = { ...def, prowizja: p };
       if (typeof gen === 'boolean') gk = { ...g, genius: gen };

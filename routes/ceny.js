@@ -4,8 +4,8 @@
 // Kanały (kolumny) z pricing/kolumny.js: Amazon DE…PL i eMAG RO (automat od 2026-10-15). Kanał oznaczony
 // `tylkoOdczyt` — POST /automat odrzuca na nim włączenie automatu (zasada 5: blokada w backendzie).
 // Liczy i obserwuje osobny proces (pricing/worker.js, zadanie WMS-Pricing); WMS tylko czyta jego
-// wyniki i zapisuje decyzję człowieka: automat (auto = 1, ceny idą na Amazona) albo ręczny (0). Montowane z auth.wymagajRoli('admin') — na czas
-// testów tylko administrator (decyzja usera 2026-10-13); biuro dostanie dostęp po testach.
+// wyniki i zapisuje decyzję człowieka: automat (auto = 1, ceny idą na platformę) albo ręczny (0). Montowane z
+// auth.wymagajRoli('admin', 'biuro') — w testach tylko administrator (2026-10-13), biuro od 2026-10-16 (decyzja usera).
 //
 //   GET  /api/ceny/macierz?q=&zakres=automat|reczne|wszystkie&sytuacja=…&kanal=&limit=   wiersze SKU × rynek
 //        (sytuacje: pricing/filtry-cen.js; stary `filtr=` nadal rozumiany)

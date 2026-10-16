@@ -1914,14 +1914,14 @@ el('zwroty-zazn-wszystkie').addEventListener('change', (e) => {
 
 function pokazZakladkeAdmina() {
   const admin = !!(window.WMS && WMS.jestAdmin());
-  for (const id of ['tab-uzytkownicy', 'tab-kartony', 'tab-ceny']) {
+  for (const id of ['tab-uzytkownicy', 'tab-kartony']) {
     const tab = el(id);
     if (tab) tab.style.display = admin ? '' : 'none';
   }
-  // Ceny i sprzedaz: admin + biuro. Zamkiem jest backend (auth.wymagajRoli) - tu tylko UX.
+  // Cennik, sprzedaz i ceny (repricer, od 2026-10-16): admin + biuro. Zamkiem jest backend (auth.wymagajRoli) - tu tylko UX.
   const rola = (window.WMS?.user() || {}).rola;
   const biuro = !window.WMS || rola === 'admin' || rola === 'biuro';
-  for (const id of ['tab-cennik', 'tab-sprzedaz']) {
+  for (const id of ['tab-cennik', 'tab-sprzedaz', 'tab-ceny']) {
     const tab = el(id);
     if (tab) tab.style.display = biuro ? '' : 'none';
   }

@@ -297,7 +297,7 @@ Miniatura produktu na Zebrze — nagłówek kroku wyboru w **Ruchu**, karta w **
 
 Zakładka desktopu **„Sprzedaż"** (`#sprzedaz`): lista SKU, którym chcemy podbić sprzedaż (motywacyjne zadanie dla biura), i efekt: **przed startem (śr. szt./tydz. z 4 tyg.) · od startu · ostatnie 7 dni**. Liczone **na żywo z FS z magazynu K4** (`dok_Typ=2`, `dok_Status=1`, `dok_MagId=4` — decyzja usera; FS z MAG to ~0,2% sztuk; pozycje pod `ob_DokHanId`) przy każdym otwarciu — w WMS trzymamy tylko listę (`zadania_sprzedazowe`, klucz `tw_Id`), nie liczby. **Paragony (PA) i korekty (KFS) świadomie pominięte** (decyzja usera): ~99,7% FS powstaje z ZK, czyli to sprzedaż internetowa; PA to stanowiska 1/2. Czysta logika dat w `services/sprzedaz-model.js` (testy `test/sprzedaz-model.test.js`), zapytanie `services/gt-sprzedaz.js`, trasa `routes/sprzedaz.js`. GT padnięte → lista zostaje, liczby „—" (`gt_ok:false`).
 
-**Rola `biuro`** = magazynier + Cennik + Sprzedaż. `/api/cennik` i `/api/sprzedaz` mają `auth.wymagajRoli('admin', 'biuro')` — **także na odczyt** (koszt zakupu nie jest dla hali). Ukrycie zakładek na desktopie (`pokazZakladkeAdmina`) to tylko UX.
+**Rola `biuro`** = magazynier + Cennik + Sprzedaż + Ceny (repricer, od 2026-10-16 — z przełączaniem automatu). `/api/cennik`, `/api/sprzedaz` i `/api/ceny` mają `auth.wymagajRoli('admin', 'biuro')` — **także na odczyt** (koszt zakupu nie jest dla hali). Ukrycie zakładek na desktopie (`pokazZakladkeAdmina`) to tylko UX.
 
 ## Most C# — endpointy (localhost:5000)
 

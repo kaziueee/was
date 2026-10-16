@@ -87,7 +87,7 @@ app.use('/api/do-sprawdzenia', doSprawdzeniaRouter);  // czysty odczyt (GT + kop
 // Ceny i sprzedaz tylko dla admin/biuro - takze odczyt (koszt zakupu nie jest dla hali).
 app.use('/api/cennik', auth.wymagajRoli('admin', 'biuro'), cennikRouter);  // odczyt z GT - koszt zakupu (tc_CenaNetto0) + ceny per rynek
 app.use('/api/sprzedaz', auth.wymagajRoli('admin', 'biuro'), sprzedazRouter);  // zadanie sprzedazowe (FS z GT)
-app.use('/api/ceny', auth.wymagajRoli('admin'), cenyRouter);  // repricer: odczyt db/pricing.db (liczy osobny proces pricing/worker.js). Na czas testów tylko admin
+app.use('/api/ceny', auth.wymagajRoli('admin', 'biuro'), cenyRouter);  // repricer: odczyt db/pricing.db (liczy osobny proces pricing/worker.js); admin + biuro od 2026-10-16 (decyzja usera), także przełączanie automatu
 app.use('/api/magazyny', magazynyRouter);
 app.use('/api/status', statusRouter); // publiczny - pasek stanu na ekranie logowania
 // GET-y to czysty odczyt z GT (skany, wyszukiwanie) - otwarte. PUT /:id/atrybuty zapisuje

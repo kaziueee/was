@@ -4473,7 +4473,7 @@ el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
   window.addEventListener('wms-zalogowano', odswiez);
 })();
 
-// === CENY (repricer: Amazon + eMAG RO/HU/BG + Empik i Allegro — tylko odczyt) ===
+// === CENY (repricer: Amazon + eMAG RO/HU/BG + Empik, Allegro i Kaufland DE — tylko odczyt) ===
 // Dane liczy osobny proces (pricing/worker.js) do db/pricing.db; tu tylko odczyt + włącz/wyłącz
 // automat. Backend: routes/ceny.js (na czas testów tylko admin). Nigdy nie włączamy automatu na cały katalog —
 // tylko wskazane oferty (komórka) albo wszystkie rynki jednego towaru (przełącznik przy SKU).
@@ -4559,7 +4559,7 @@ function renderujCeny(d) {
   // Platformy z własną synchronizacją listy: godzina ostatniej albo błąd, jeśli przyszedł po niej.
   const platforma = (nazwa, x = {}) => (x.blad && (!x.sync || x.blad.czas > x.sync.czas) ? ` · <span class="ceny-blad">${nazwa}: ${cenyEsc(x.blad.wartosc)}</span>`
     : x.sync ? ` · ${nazwa} ${cenyGodzina(x.sync.czas)}` : '');
-  el('ceny-stan').innerHTML = przebieg + pelna + blad + platforma('eMAG', d.emag) + platforma('Empik', d.empik) + platforma('Allegro', d.allegro);
+  el('ceny-stan').innerHTML = przebieg + pelna + blad + platforma('eMAG', d.emag) + platforma('Empik', d.empik) + platforma('Allegro', d.allegro) + platforma('Kaufland', d.kaufland);
   cenyRenderujFiltry(d);
   cenyRenderujSort(d);
   el('ceny-hamulec').classList.toggle('hidden', d.wysylanie !== false);
@@ -4672,7 +4672,7 @@ function cenyPoWyslaniu(o) {
 }
 
 // Platforma wstrzymała ofertę przez cenę (eMAG „Invalid price”) — oferta aktywna, ale się nie sprzedaje.
-const cenyBlokadaHtml = (o) => (o.blokada ? `<div class="ceny-dec dol" title="${cenyEsc(o.blokada)}">⚠ ${o.platforma === 'emag' ? 'eMAG' : 'platforma'} wstrzymał ofertę: ${/too low/i.test(o.blokada) ? 'cena zbyt niska' : 'cena odrzucona'}</div>` : '');
+const cenyBlokadaHtml = (o) => (o.blokada ? `<div class="ceny-dec dol" title="${cenyEsc(o.blokada)}">⚠ ${o.platforma === 'emag' ? 'eMAG' : o.platforma === 'kaufland' ? 'Kaufland' : 'platforma'} wstrzymał ofertę: ${/too low/i.test(o.blokada) ? 'cena zbyt niska' : /price_check_needed/.test(o.blokada) ? 'cena do sprawdzenia' : 'cena odrzucona'}</div>` : '');
 
 function cenyKomorka(o, rynek) {
   const td = document.createElement('td');

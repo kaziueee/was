@@ -25,6 +25,7 @@ const { linkiOferty } = require('../pricing/amazon');
 const emag = require('../pricing/emag');
 const empik = require('../pricing/empik');
 const allegro = require('../pricing/allegro');
+const kaufland = require('../pricing/kaufland');
 const { KOLUMNY, kluczKolumny, kolumna } = require('../pricing/kolumny');
 const { wycenaHurtem } = require('../services/cennik');
 const { pobierzStanyGt, sumaRazem } = require('../services/gt-produkty');
@@ -54,9 +55,10 @@ async function stanyGt(twIds) {
 }
 
 // Linki do oferty — każda platforma po swojemu (Amazon po ASIN, eMAG po PNK, Empik po numerze produktu,
-// Allegro po numerze oferty — wszystkie trzymane w `asin`).
+// Allegro po numerze oferty, Kaufland po id_product — wszystkie trzymane w `asin`).
 const linki = (o) => (o.platforma === 'emag' ? emag.linkiOferty(o.asin, o.rynek)
   : o.platforma === 'empik' ? empik.linkiOferty(o.asin) : o.platforma === 'allegro' ? allegro.linkiOferty(o.asin)
+  : o.platforma === 'kaufland' ? kaufland.linkiOferty(o.asin, o.rynek)
   : linkiOferty(o.rynek, o.asin));
 // Pola kanału doklejane do każdej oferty — ekran nie zgaduje waluty ani nazwy z kodu rynku.
 const zKanalem = (o) => {
@@ -165,6 +167,7 @@ router.get('/macierz', asyncH(async (req, res) => {
     emag: { sync: stan.get('sync_emag'), blad: stan.get('blad_emag') },
     empik: { sync: stan.get('sync_empik'), blad: stan.get('blad_empik') },
     allegro: { sync: stan.get('sync_allegro'), blad: stan.get('blad_allegro') },
+    kaufland: { sync: stan.get('sync_kaufland'), blad: stan.get('blad_kaufland') },
     wysylanie: process.env.PRICING_ZAPIS === '1',    // globalny hamulec workera (ten sam .env)
     gt_ok: !!stanGt,
     przebieg: stan.get('przebieg'),

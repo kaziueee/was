@@ -12,6 +12,8 @@
 //      ofert razem z pełną obserwacją (PRICING_PELNY_MIN); bez EMPIK_API_KEY pomijany. Allegro
 //      (pricing/sync-allegro.js, od 2026-10-16) — lista aktywnych ofert każdego podpiętego konta co przebieg
 //      (~4 zapytania na konto), jak eMAG; bez ALLEGRO_CLIENT_ID albo bez tokenu konta — pomijane.
+//      Kaufland (PRICING_KAUFLAND_RYNKI, domyślnie DE) tak samo co przebieg (pricing/sync-kaufland.js +
+//      ranking Buy Boxa per produkt, pricing/obserwuj-kaufland.js); bez KAUFLAND_CLIENT_KEY pomijany.
 //   2. obserwacja ofert: z włączonym automatem ZAWSZE, pozostałe ze stanem raz na
 //      PRICING_PELNY_MIN (domyślnie 360 min) — żeby przed włączeniem automatu było widać,
 //      co by zrobił, bez odpytywania całego katalogu co pół godziny (Amazon i Empik; eMAG co przebieg)
@@ -41,6 +43,9 @@ const empik = require('./empik');
 const { synchronizujAllegro } = require('./sync-allegro');
 const { obserwujAllegro } = require('./obserwuj-allegro');
 const allegro = require('./allegro');
+const { synchronizujKaufland } = require('./sync-kaufland');
+const { obserwujKaufland } = require('./obserwuj-kaufland');
+const kaufland = require('./kaufland');
 const { kluczKolumny, kolumna } = require('./kolumny');
 const { takaSamaDecyzja } = require('./bez-zmian');
 const { ustawCene } = require('./amazon');
@@ -50,12 +55,14 @@ const { interwalMsZMinut } = require('../services/interwal');
 const PELNY_MS = interwalMsZMinut(process.env.PRICING_PELNY_MIN, 360, 'PRICING_PELNY_MIN');
 // Które platformy obsługuje ten proces (domyślnie wszystkie). Do testów na drugiej maszynie:
 // PRICING_PLATFORMY=emag nie dotyka API Amazona, więc nie zjada limitów workera na SRV.
-const PLATFORMY = new Set(String(process.env.PRICING_PLATFORMY || 'amazon,emag,empik,allegro').split(',').map((x) => x.trim().toLowerCase()));
+const PLATFORMY = new Set(String(process.env.PRICING_PLATFORMY || 'amazon,emag,empik,allegro,kaufland').split(',').map((x) => x.trim().toLowerCase()));
 const SYNC_MS = 24 * 60 * 60 * 1000;
 // Rynki eMAG obsługiwane przez ten proces (pricing/emag.js KRAJE); domyślnie wszystkie.
 const EMAG_KRAJE = String(process.env.PRICING_EMAG_KRAJE || 'RO,HU,BG').split(',').map((x) => x.trim().toUpperCase()).filter((k) => emag.KRAJE[k]);
 // Konta Allegro obsługiwane przez ten proces (pricing/allegro.js KONTA); domyślnie wszystkie podpięte.
 const ALLEGRO_KONTA = String(process.env.PRICING_ALLEGRO_KONTA || Object.keys(allegro.KONTA).join(',')).split(',').map((x) => x.trim().toUpperCase()).filter((k) => allegro.KONTA[k]);
+// Storefronty Kaufland (pricing/kaufland.js STOREFRONTY); domyślnie tylko DE — inne dopiero, gdy znamy ich koszty.
+const KAUFLAND_RYNKI = String(process.env.PRICING_KAUFLAND_RYNKI || 'DE').split(',').map((x) => x.trim().toUpperCase()).filter((k) => kaufland.STOREFRONTY[k]);
 
 const minelo = (klucz, ms) => {
   const s = stan.get(klucz);
@@ -97,6 +104,29 @@ async function przebieg({ pelny = false } = {}) {
     if (emagKraje.size) {
       stan.set('sync_emag', JSON.stringify(podsum));
       wynik.emag = Object.fromEntries(Object.entries(podsum).map(([k, s]) => [k, s.aktywne]));
+    }
+  }
+
+  // Kaufland: lista ofert (units) = synchronizacja + nasze id_unit do obserwacji i zapisu, osobno na
+  // storefront. Bez kluczy w .env pomijany; błąd nie zatrzymuje Amazona ani eMAG.
+  const kauflandSurowe = [];
+  const kauflandRynki = new Set();
+  if (PLATFORMY.has('kaufland') && kaufland.skonfigurowany()) {
+    const podsum = {};
+    for (const rynek of KAUFLAND_RYNKI) {
+      try {
+        const lista = await kaufland.wszystkieUnits(rynek);
+        podsum[rynek] = await synchronizujKaufland(lista, rynek);
+        kauflandSurowe.push(...lista);
+        kauflandRynki.add(rynek);
+      } catch (e) {
+        stan.set('blad_kaufland', `${rynek}: ${e.message}`);
+        console.error(new Date().toISOString(), `[pricing] Kaufland ${rynek}:`, e.message);
+      }
+    }
+    if (kauflandRynki.size) {
+      stan.set('sync_kaufland', JSON.stringify(podsum));
+      wynik.kaufland = Object.fromEntries(Object.entries(podsum).map(([k, s]) => [k, s.aktywne]));
     }
   }
 
@@ -146,14 +176,16 @@ async function przebieg({ pelny = false } = {}) {
   }
 
   // Amazon i Empik: oferty z automatem co przebieg, cały katalog w pełnej obserwacji (limity API).
-  // eMAG i Allegro: zawsze cały katalog — obserwacja czyta listę pobraną wyżej, nie woła API po raz drugi.
+  // eMAG, Allegro i Kaufland: zawsze cały katalog — obserwacja czyta listę pobraną wyżej (Kaufland dokłada
+  // ranking Buy Boxa per produkt).
   const oferty = db.prepare(`SELECT id, platforma, rynek, sku, asin, tw_id, auto, genius, dopasowanie, prowizja FROM oferty
      WHERE ((platforma = 'amazon' AND ? AND (auto = 1 OR ?)) OR (platforma = 'emag' AND ?) OR (platforma = 'empik' AND ? AND (auto = 1 OR ?))
-            OR (platforma = 'allegro' AND ?))
+            OR (platforma = 'allegro' AND ?) OR (platforma = 'kaufland' AND ?))
        AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all(PLATFORMY.has('amazon') ? 1 : 0, pelnyTeraz ? 1 : 0, emagKraje.size ? 1 : 0,
-    empikOk ? 1 : 0, pelnyTeraz ? 1 : 0, allegroKonta.size ? 1 : 0)
+    empikOk ? 1 : 0, pelnyTeraz ? 1 : 0, allegroKonta.size ? 1 : 0, kauflandRynki.size ? 1 : 0)
     .filter((o) => o.platforma !== 'emag' || emagKraje.has(o.rynek))       // rynek eMAG z błędem pobrania — bez decyzji
-    .filter((o) => o.platforma !== 'allegro' || allegroKonta.has(o.rynek)); // konto Allegro z błędem pobrania — też
+    .filter((o) => o.platforma !== 'allegro' || allegroKonta.has(o.rynek))  // konto Allegro z błędem pobrania — też
+    .filter((o) => o.platforma !== 'kaufland' || kauflandRynki.has(o.rynek));
   wynik.ofert = oferty.length;
   wynik.pelny = pelnyTeraz;
   if (!oferty.length) return wynik;
@@ -162,6 +194,7 @@ async function przebieg({ pelny = false } = {}) {
   const emagOf = oferty.filter((o) => o.platforma === 'emag');
   const empikOf = oferty.filter((o) => o.platforma === 'empik');
   const allegroOf = oferty.filter((o) => o.platforma === 'allegro');
+  const kauflandOf = oferty.filter((o) => o.platforma === 'kaufland');
   // Genius i stawka prowizji są per RYNEK (ten sam towar: RO 16%, HU 18%) — mapa tw_Id → { kolumna: wartość }.
   const poKolumnie = (pole, ok, wartosc) => {
     const m = new Map();
@@ -176,21 +209,24 @@ async function przebieg({ pelny = false } = {}) {
     console.error(new Date().toISOString(), '[pricing] Empik obserwacja:', e.message);
     return new Map();
   }) : new Map();
-  const [obsA, obsE, obsP, obsL, pasy] = await Promise.all([
+  const [obsA, obsE, obsP, obsL, pasy, obsK] = await Promise.all([
     amazon.length ? obserwuj(amazon) : new Map(),
     emagOf.length ? obserwujEmag(emagOf, emagSurowe) : new Map(),
     obsEmpik,
     allegroOf.length ? obserwujAllegro(allegroOf, allegroSurowe) : new Map(),
     pasyHurtem(oferty.map((o) => o.tw_id), geniusPoTw, prowizjaPoTw),
+    kauflandOf.length ? obserwujKaufland(kauflandOf, kauflandSurowe) : new Map(),
   ]);
   if (obsA.bledyPaczek) wynik.bledy_paczek = obsA.bledyPaczek;
   if (emagOf.length) wynik.emag_obs = { ofert: obsE.size, zmian: obsE.nowe || 0 };
+  if (kauflandOf.length) wynik.kaufland_obs = { ofert: obsK.size, zmian: obsK.nowe || 0, ...(obsK.bledy ? { bledy: obsK.bledy } : {}) };
   if (empikOf.length) wynik.empik_obs = { ofert: obsP.size, zmian: obsP.nowe || 0 };
   if (allegroOf.length) wynik.allegro_obs = { ofert: obsL.size, zmian: obsL.nowe || 0 };
-  const obs = { get: (id) => obsA.get(id) || obsE.get(id) || obsP.get(id) || obsL.get(id) };
+  const obs = { get: (id) => obsA.get(id) || obsE.get(id) || obsP.get(id) || obsL.get(id) || obsK.get(id) };
   const allegroPoId = new Map(allegroSurowe.map((x) => [`${x._konto}|${x.id}`, x]));
   const kluczEmag = (kraj, sku) => `${kraj}|${String(sku || '').trim().toUpperCase()}`;
   const emagPoSku = new Map((emagSurowe || []).map((x) => [kluczEmag(x._kraj, x.part_number), x]));
+  const kauflandPoSku = new Map(kauflandSurowe.map((u) => [kluczEmag(u._rynek, u.id_offer), u]));
 
   const zapisz = db.prepare(`INSERT INTO decyzje (oferta_id, cena_przed, cena_nowa, min, max, kod, powod, wyslano, auto, zysk, marza, zysk_nowa, blad, marza_nowa, cena_cel, zysk_cel)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -254,6 +290,10 @@ async function przebieg({ pelny = false } = {}) {
           // Oferta z listy tego przebiegu (numer, format, reguła cenowa Allegro — zmianaCeny ją sprawdza).
           const s = allegroPoId.get(`${o.rynek}|${o.asin}`);
           w = s ? await allegro.ustawCene(s, d.cena) : { ok: false, blad: 'oferty nie ma na liście Allegro z tego przebiegu' };
+        } else if (o.platforma === 'kaufland') {
+          // Unit z listy pobranej na początku przebiegu: id_unit i minimum Smart Pricing.
+          const u = kauflandPoSku.get(kluczEmag(o.rynek, o.sku));
+          w = u ? await kaufland.ustawCene(u, d.cena) : { ok: false, blad: 'oferty nie ma na liście Kaufland z tego przebiegu' };
         } else w = { ok: false, blad: `zapis na ${o.platforma} nieobsługiwany` };
         if (w.ok) { wyslano = 1; wysylka.wyslane++; doPotwierdzenia.push(o); }
         else { blad = w.blad || `${o.platforma}: ${w.status}`; wysylka.odrzucone++; }
@@ -346,6 +386,8 @@ async function potwierdz(wszystkie) {
   if (emagOf.length) await potwierdzEmag(emagOf);
   if (empikOf.length) await potwierdzEmpik(empikOf);
   if (allegroOf.length) await potwierdzAllegro(allegroOf);
+  const kauflandOf = wszystkie.filter((o) => o.platforma === 'kaufland');
+  if (kauflandOf.length) await potwierdzKaufland(kauflandOf);
   if (!oferty.length) return;
   try {
     const obs = await obserwuj(oferty);
@@ -414,6 +456,23 @@ async function potwierdzAllegro(oferty) {
     }
   } catch (e) {
     console.error(new Date().toISOString(), '[pricing] błąd potwierdzenia Allegro:', e.message);
+  }
+}
+
+// Kaufland: unit wysłanej oferty po SKU (jedno zapytanie) + jej ranking Buy Boxa — ta sama droga co w przebiegu.
+// Sprawdzamy razem z Amazonem (PRICING_POTWIERDZENIE_MIN).
+async function potwierdzKaufland(oferty) {
+  try {
+    const surowe = [];
+    for (const o of oferty) surowe.push(...await kaufland.unitPoSku(o.sku, o.rynek));
+    const obs = await obserwujKaufland(oferty, surowe);
+    for (const o of oferty) {
+      const ob = obs.get(o.id);
+      console.log(new Date().toISOString(), `[pricing] potwierdzenie KAUFLAND_${o.rynek} ${o.sku}: na Kauflandzie ${ob ? ob.cena : '?'}`
+        + `, Buy Box ${ob ? (ob.bbNasz ? 'nasz' : ob.bbNasz === false ? 'INNY' : '?') : '?'}`);
+    }
+  } catch (e) {
+    console.error(new Date().toISOString(), '[pricing] błąd potwierdzenia Kaufland:', e.message);
   }
 }
 

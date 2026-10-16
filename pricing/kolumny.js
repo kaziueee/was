@@ -33,6 +33,8 @@ const KOLUMNY = [
   // zapisu (pricing/allegro-cena.js) i decyzji usera, jak go prowadzić bez danych o konkurencji.
   { klucz: 'ALLEGRO_EKAJTEK', platforma: 'allegro', rynek: 'EKAJTEK', nazwa: 'Allegro ekajtek', etykieta: 'ekajtek', waluta: 'zł', kalkulator: 'Allegro', tylkoOdczyt: true, bezKonkurencji: true },
   { klucz: 'ALLEGRO_NATROPIE', platforma: 'allegro', rynek: 'NATROPIE', nazwa: 'Allegro NaTropie', etykieta: 'NaTropie', waluta: 'zł', kalkulator: 'Allegro', tylkoOdczyt: true, bezKonkurencji: true },
+  // Kaufland DE: obserwacja od 2026-10-16; automat dopiero po ręcznym teście zapisu i decyzji usera.
+  { klucz: 'KAUFLAND_DE', platforma: 'kaufland', rynek: 'DE', nazwa: 'Kaufland DE', waluta: '€', kalkulator: 'Kaufland DE', tylkoOdczyt: true },
 ];
 
 const kluczKolumny = (platforma, rynek) => (platforma === 'amazon' ? rynek : `${String(platforma).toUpperCase()}_${rynek}`);

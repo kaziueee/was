@@ -84,9 +84,13 @@ function zapiszTokeny(konto, t, { login, uzytkownik } = {}) {
     .run(konto, login || null, uzytkownik || null, t.access_token, t.refresh_token, wygasa);
 }
 
+// /device: client_id w adresie (tak w dokumentacji Allegro); /token: parametry w treści (standard OAuth,
+// a authorization_code ma w dokumentacji Allegro body).
 async function postAuth(sciezka, params) {
-  const r = await fetch(`${AUTH}/${sciezka}?${new URLSearchParams(params)}`, {
+  const wAdresie = sciezka === 'device';
+  const r = await fetch(`${AUTH}/${sciezka}${wAdresie ? `?${new URLSearchParams(params)}` : ''}`, {
     method: 'POST', headers: { Authorization: basic(), 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': USER_AGENT() },
+    body: wAdresie ? undefined : new URLSearchParams(params).toString(),
     signal: AbortSignal.timeout(30_000),
   });
   const j = await r.json().catch(() => ({}));

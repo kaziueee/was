@@ -4473,7 +4473,7 @@ el('uzup-kanal').addEventListener('change', renderujUzupelnienia);
   window.addEventListener('wms-zalogowano', odswiez);
 })();
 
-// === CENY (repricer: Amazon + eMAG RO/HU/BG + Empik, Allegro i Kaufland DE — tylko odczyt) ===
+// === CENY (repricer: Amazon + eMAG RO/HU/BG + Empik; Allegro i Kaufland DE — tylko odczyt) ===
 // Dane liczy osobny proces (pricing/worker.js) do db/pricing.db; tu tylko odczyt + włącz/wyłącz
 // automat. Backend: routes/ceny.js (na czas testów tylko admin). Nigdy nie włączamy automatu na cały katalog —
 // tylko wskazane oferty (komórka) albo wszystkie rynki jednego towaru (przełącznik przy SKU).
@@ -4876,7 +4876,7 @@ async function odswiezCenyKarta() {
         <div class="ceny-karta-tyt"><h3>${cenyEsc(d.symbol)}</h3><div class="ceny-nazwa-pelna">${cenyEsc(d.nazwa)}</div><div class="ceny-fakty"><span>${cenyStanTekst(d.stan_gt)}</span>${fakty}</div></div>
         <label class="ceny-auto-wiersz duzy" id="ceny-karta-auto"></label>
       </div>
-      <p class="hint">Rynki od największego zysku na sztuce. Zielone tło = mamy Buy Box, szare = ręczny (automat wyłączony). Włączony automat zmienia ceny na platformie (Amazon, eMAG RO, HU i BG — każdy rynek z własnym minimum).</p>
+      <p class="hint">Rynki od największego zysku na sztuce. Zielone tło = mamy Buy Box, szare = ręczny (automat wyłączony). Włączony automat zmienia ceny na platformie (Amazon, eMAG RO, HU i BG, Empik — każdy rynek z własnym minimum).</p>
       <div class="ceny-rynki">${oferty.map(cenyKartaRynekHtml).join('')}</div>`;
     const lbl = el('ceny-karta-auto');
     if (zeStanem.length) {

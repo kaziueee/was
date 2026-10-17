@@ -337,16 +337,17 @@ async function przebieg({ pelny = false } = {}) {
   return { ...wynik, automat: kody };
 }
 
-// Empik: jeden import cen (PRI01) na przebieg. Ofertę z OF21 bierzemy z listy tego przebiegu albo
-// pojedynczo po SKU — bez niej nie wiemy, czy oferta ma promocję, którą import by skasował, więc nie
-// wysyłamy. Wynik trafia do wierszy decyzji (indeksy jak w `wiersz` w przebiegu: 7 = wyslano, 12 = blad).
+// Empik: jeden import cen (PRI01) na przebieg. Do sprawdzenia promocji (import by ją skasował) bierzemy
+// naszą ofertę z listy tego przebiegu (eksport), a zwykle z P11 tej samej obserwacji (ob.surowa); OF21 po
+// SKU tylko awaryjnie — Empik go dławi (~33 s na zapytanie). Bez oferty nie wiemy, czy jest promocja,
+// więc nie wysyłamy. Wynik trafia do wierszy decyzji (indeksy jak w `wiersz` w przebiegu: 7 = wyslano, 12 = blad).
 // `ok` znaczy „Empik przyjął plik”; czy cena weszła, pokaże potwierdzenie (PRI02 + P11).
 const W_WYSLANO = 7, W_BLAD = 12;
 async function wyslijEmpik(paczka, surowe, wysylka, doPotwierdzenia) {
   const poSku = new Map((surowe || []).map((x) => [String(x.shop_sku || '').trim().toUpperCase(), x]));
   const doWyslania = [];
   for (const x of paczka) {
-    let s = poSku.get(String(x.o.sku).trim().toUpperCase());
+    let s = poSku.get(String(x.o.sku).trim().toUpperCase()) || (x.ob?.surowa ? { ...x.ob.surowa, shop_sku: x.o.sku } : null);
     if (!s) {
       try { s = (await empik.ofertaPoSku(x.o.sku))[0]; } catch (e) { x.blad = `nie udało się pobrać oferty Empik: ${e.message}`; }
     }

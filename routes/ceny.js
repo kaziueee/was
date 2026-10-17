@@ -1,7 +1,7 @@
 'use strict';
 
 // Ekran „Ceny" (repricer) — odczyt bazy repricera `db/pricing.db` + włączanie/wyłączanie automatu.
-// Kanały (kolumny) z pricing/kolumny.js: Amazon DE…PL, eMAG RO/HU/BG i Empik (tylko odczyt). Kanał oznaczony
+// Kanały (kolumny) z pricing/kolumny.js: Amazon DE…PL, eMAG RO/HU/BG, Empik i inne. Kanał oznaczony
 // `tylkoOdczyt` — POST /automat odrzuca na nim włączenie automatu (zasada 5: blokada w backendzie).
 // Liczy i obserwuje osobny proces (pricing/worker.js, zadanie WMS-Pricing); WMS tylko czyta jego
 // wyniki i zapisuje decyzję człowieka: automat (auto = 1, ceny idą na platformę) albo ręczny (0). Montowane z

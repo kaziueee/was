@@ -23,10 +23,10 @@ const KOLUMNY = [
   // osobny automat i osobne minimum na każdy rynek, nie przeliczanie z RO)
   { klucz: 'EMAG_HU', platforma: 'emag', rynek: 'HU', nazwa: 'eMAG HU', waluta: 'Ft', kalkulator: 'eMAG HU', reguly: { krok: 1, progPodwyzki: 40 } },
   { klucz: 'EMAG_BG', platforma: 'emag', rynek: 'BG', nazwa: 'eMAG BG', waluta: '€', kalkulator: 'eMAG BG' },
-  // Empik (Mirakl, od 2026-10-16): sama obserwacja; minimum z kalkulatora (rynek „Empik”: prowizja i koszt
-  // wysyłki zmierzone, rekompensata Empik Premium). Automat dopiero po ręcznym teście zapisu ceny
-  // (pricing/empik-cena.js) i decyzji usera.
-  { klucz: 'EMPIK_PL', platforma: 'empik', rynek: 'PL', nazwa: 'Empik', waluta: 'zł', kalkulator: 'Empik', tylkoOdczyt: true },
+  // Empik (Mirakl): obserwacja od 2026-10-16, możliwość automatu od 2026-10-18 (decyzja usera). Minimum
+  // z kalkulatora (rynek „Empik”: prowizja per kategoria, wysyłka wg gabarytu, rekompensata Premium).
+  // Cena idzie importem PRI01, jednym plikiem na przebieg (pricing/empik.js).
+  { klucz: 'EMPIK_PL', platforma: 'empik', rynek: 'PL', nazwa: 'Empik', waluta: 'zł', kalkulator: 'Empik' },
   // Allegro (od 2026-10-16): dwa konta = dwie kolumny, rynek = konto (pricing/allegro.js KONTA). Sama
   // obserwacja: cen konkurencji API Allegro nie daje (pricing/allegro.js), więc repricer pilnuje tylko minimum
   // z kalkulatora (rynek „Allegro”: prowizja + Ads + dopłata Smart). Automat dopiero po ręcznym teście

@@ -65,6 +65,7 @@ test('Empik: kolejność liczymy sami (po cenie łącznej), remis zostawia kolej
 test('Empik: naszą ofertę rozpoznajemy po offer_id, shop_id albo nazwie sklepu', () => {
   const lista = [p11('Sklep B', 55, 9.99), p11('X', 59.99, 8.99, { shop_id: null, shop_name: null, offer_id: 5001 })];
   assert.strictEqual(empik.obserwacja(lista, { offerId: 5001, sklep: SKLEP }).cena, 59.99, 'po offer_id');
+  assert.strictEqual(empik.obserwacja(lista, { offerId: 5001, sklep: SKLEP }).surowa, lista[1], 'nasza oferta z P11 do sprawdzenia promocji');
   const poNazwie = [p11('Sklep B', 55, 9.99), p11(' poszukiwacze frajdy ', 59.99, 8.99, { shop_id: null })];
   assert.strictEqual(empik.obserwacja(poNazwie, { sklep: SKLEP }).cena, 59.99, 'po nazwie (bez wielkości liter i spacji)');
   assert.strictEqual(empik.obserwacja([p11('Sklep B', 55, 9.99)], { sklep: SKLEP }), null, 'nie ma nas wśród aktywnych ofert');
@@ -110,10 +111,10 @@ test('Empik: link do karty produktu po numerze (z „p” albo bez)', () => {
   assert.strictEqual(empik.linkiOferty('ABC-1'), null);
 });
 
-test('Empik: kolumna tylko do odczytu z minimum z kalkulatora (rynek „Empik”)', () => {
+test('Empik: kolumna z automatem i minimum z kalkulatora (rynek „Empik”)', () => {
   assert.strictEqual(kluczKolumny('empik', 'PL'), 'EMPIK_PL');
   const k = kolumna('empik', 'PL');
-  assert.strictEqual(k.tylkoOdczyt, true);
+  assert.ok(!k.tylkoOdczyt, 'od 2026-10-18 automat dozwolony (decyzja usera)');
   assert.strictEqual(k.kalkulator, 'Empik');
   const pas = pasyZWyceny({ koszt: 20, waga: 1, docinalny: false }).EMPIK_PL;
   assert.strictEqual(pas.min, 46.99);

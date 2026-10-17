@@ -224,7 +224,7 @@ function obserwacja(ofertyProduktu, { offerId = null, sklep: s = {} } = {}) {
   if (!ta) {
     if (!nasze.length) return null;
     // dwie nasze oferty, a P11 nie mówi, która jest która — bez Buy Boxa (model: brak_danych)
-    return { cena: null, wysylka: 0, bbNasz: null, bbInnaNasza: false, bbCena: null, bbFba: false, najtanszaInna: null, ofert: oferty.length };
+    return { cena: null, wysylka: 0, bbNasz: null, bbInnaNasza: false, bbCena: null, bbFba: false, najtanszaInna: null, ofert: oferty.length, surowa: null };
   }
   const posort = oferty.map((o, i) => ({ o, i, l: cenaLaczna(o) })).sort((a, b) => a.l - b.l || a.i - b.i);
   const pierwsza = posort[0].o;
@@ -238,6 +238,8 @@ function obserwacja(ofertyProduktu, { offerId = null, sklep: s = {} } = {}) {
     bbFba: false,
     najtanszaInna: inne.length ? inne[0].l : null,
     ofert: oferty.length,
+    // nasza oferta z P11 (ceny, rabat, ceny kanałowe) — wysyłka ceny sprawdza na niej promocję bez OF21
+    surowa: ta,
   };
 }
 

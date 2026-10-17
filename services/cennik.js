@@ -100,7 +100,13 @@ function wycenaZWiersza(row, nadpisz = {}) {
   const geniusZrodlo = typeof nadpisz.genius === 'boolean' ? 'api' : automat == null ? null : 'wymiary';
 
   // nadpisania preset (DOMYSLNE) z panelu
-  const over = { waga, docinanie: docinalny, docinanieOn, genius };
+  // Paczka do wyceny wysyłki wg gabarytu (Empik): towar w najmniejszym pasującym kartonie, a we własnym
+  // kartonie albo za duży na każdy karton — sam towar. null = brak wymiarów w GT.
+  const wymiary = rozbierzWymiary(row.wymiary);
+  let paczka = wymiary;
+  if (wymiary && !kartonWlasny) { try { paczka = kartony.dobierzKarton(wymiary) || wymiary; } catch { paczka = wymiary; } }
+
+  const over = { waga, docinanie: docinalny, docinanieOn, genius, paczka };
   if (nadpisz.tryb) over.tryb = nadpisz.tryb;
   if (nadpisz.bufor != null) over.bufor = +nadpisz.bufor;
   if (nadpisz.anchor && nadpisz.anchor.nazwa) over.anchor = nadpisz.anchor; // reczna cena na Allegro/Amazon DE
@@ -120,6 +126,7 @@ function wycenaZWiersza(row, nadpisz = {}) {
     docinanieOn,         // stan checkboxa
     docinanieAktywne,    // czy faktycznie obnizono prog DHL
     genius,              // eMAG: true/false/null (null = nie wiemy -> liczone jak Genius)
+    paczka,              // wymiary paczki (karton albo towar) — wysyłka wg gabarytu (Empik)
     geniusZrodlo,        // 'api' | 'wymiary' | null
     tryb: over.tryb || rynki.DOMYSLNE.tryb,
     bufor: over.bufor != null ? over.bufor : rynki.DOMYSLNE.bufor,

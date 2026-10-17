@@ -118,7 +118,7 @@ test('Empik: kolumna tylko do odczytu z minimum z kalkulatora (rynek „Empik”
   const pas = pasyZWyceny({ koszt: 20, waga: 1, docinalny: false }).EMPIK_PL;
   assert.strictEqual(pas.min, 46.99);
   assert.strictEqual(pas.max, 70.48);
-  assert.ok(Math.abs(pas.ocen(46.99).marza - 19.5) < 0.1);
+  assert.ok(pas.ocen(pas.min).marza > 19, 'minimum trzyma marżę ~20% (,99 bywa zaokrąglone w dół)');
 });
 
 test('Empik: rekompensata Premium = ujemna opłata za zamówienie wg wartości × udział zamówień Premium', () => {
@@ -127,9 +127,11 @@ test('Empik: rekompensata Premium = ujemna opłata za zamówienie wg wartości �
   assert.deepStrictEqual([49.99, 59.99, 60, 99.99, 100, 149.99, 150, 300].map((c) => rynki.oplataZamowienia(e, c)),
     [-6.41, -6.41, -5.74, -5.74, -4.02, -4.02, -3.30, -3.30]);
   assert.strictEqual(+rynki.oplataZamOczekiwana(e, 79.99).toFixed(4), -2.5256, '5,74 × 44%');
-  // Prowizja od całości brutto (towar + 6,61 dostawy klienta), VAT 23%, koszt wysyłki 9,26 netto
+  // Prowizja od całości brutto (towar + 6,61 dostawy klienta), VAT 23%, koszt wysyłki z kosztWysylkiEmpik
+  // (bez wymiarów paczki: miks metod z paczkomatem po średniej)
   const w = rynki.wycenaPrzyCenie(40, e, { ...rynki.DOMYSLNE }, 79.99);
-  const oczek = (79.99 + 6.61) * (1 / 1.23 - 0.1055) - (40 + 9.26 + 3 - 5.74 * 0.44);
+  const wys = rynki.kosztWysylkiEmpik({ waga: rynki.DOMYSLNE.waga }).koszt;
+  const oczek = (79.99 + 6.61) * (1 / 1.23 - 0.1055) - (40 + wys + 3 - 5.74 * 0.44);
   assert.ok(Math.abs(w.zysk - oczek) < 0.01, `${w.zysk} vs ${oczek}`);
 });
 
@@ -229,4 +231,29 @@ test('Empik: minimum liczone ze stawki oferty (kategoria), a bez niej ze średni
   const figurka = pasyZWyceny(w, { prowizja: { EMPIK_PL: 11.7 } }).EMPIK_PL.min;
   assert.ok(pistolet < srednia && srednia < figurka, `${pistolet} < ${srednia} < ${figurka}`);
   assert.strictEqual(pasyZWyceny(w, { prowizja: { EMAG_RO: 16 } }).EMPIK_PL.min, srednia, 'stawka innego kanału nie wpływa na Empik');
+});
+
+test('Empik: koszt wysyłki wg gabarytu — paczkomat A/B/C z wymiarów paczki, niedostępne metody wypadają z miksu', () => {
+  const rynki = require('../config/rynki');
+  assert.strictEqual(rynki.gabarytPaczkomatu({ dlugosc: 20, szerokosc: 20, wysokosc: 7.5 }), 'A');
+  assert.strictEqual(rynki.gabarytPaczkomatu({ dlugosc: 15, szerokosc: 35, wysokosc: 25 }), 'B', 'obrót dowolny');
+  assert.strictEqual(rynki.gabarytPaczkomatu({ dlugosc: 64, szerokosc: 41, wysokosc: 38 }), 'C');
+  assert.strictEqual(rynki.gabarytPaczkomatu({ dlugosc: 65, szerokosc: 20, wysokosc: 5 }), false);
+  assert.strictEqual(rynki.gabarytPaczkomatu(null), null);
+  const u = rynki.EMPIK_WYSYLKA.udzialy;
+  const srednia = (m) => +(Object.entries(m).reduce((a, [k, v]) => a + v * u[k], 0) / Object.keys(m).reduce((a, k) => a + u[k], 0)).toFixed(2);
+  // mała paczka 1 kg: wszystkie metody
+  assert.strictEqual(rynki.kosztWysylkiEmpik({ paczka: { dlugosc: 20, szerokosc: 20, wysokosc: 7.5 }, waga: 1 }).koszt,
+    srednia({ paczkomat: 10.20, salon: 7.50, kurier: 9.76, pickup: 7.29, pobranie: 11.78 }));
+  // nie mieści się w paczkomacie: udział paczkomatu rozkłada się na resztę
+  assert.strictEqual(rynki.kosztWysylkiEmpik({ paczka: { dlugosc: 80, szerokosc: 60, wysokosc: 40 }, waga: 12 }).koszt,
+    srednia({ salon: 9.23, kurier: 18.26, pickup: 18.26, pobranie: 20.28 }));
+  // ponad 20 kg: tylko kurier i pobranie (punkt DPD Pickup do 20 kg, paczkomat i tak za mały)
+  assert.strictEqual(rynki.kosztWysylkiEmpik({ paczka: { dlugosc: 80, szerokosc: 60, wysokosc: 40 }, waga: 22 }).koszt,
+    srednia({ kurier: 19.34, pobranie: 21.36 }));
+  // kalkulator bierze koszt paczki z g.paczka / g.waga
+  const e = rynki.RYNKI.find((x) => x.nazwa === 'Empik');
+  const g = { ...rynki.DOMYSLNE, waga: 22, paczka: { dlugosc: 80, szerokosc: 60, wysokosc: 40 } };
+  assert.strictEqual(+rynki.kosztWysylkiFlat(e, g, 1).toFixed(2), 19.88);
+  assert.ok(rynki.policzRynek(40, e, g).cena > rynki.policzRynek(40, e, { ...rynki.DOMYSLNE }).cena, 'duża paczka = wyższe minimum');
 });

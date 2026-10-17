@@ -101,15 +101,13 @@ const RYNKI = [
   //    138 166 zł) i rozliczenie Empik 30.09–15.10.2026 (2 565,87 zł przy 24 327,97 zł). Zależy od kategorii
   //    (od 20.07.2026: 6,7–11,7%, np. pistolety/naboje 8,6%, figurki/tory 11,7%) — repricer bierze stawkę
   //    kategorii oferty (pricing/empik-prowizje.js), 10,55% to średnia dla Cennika i ofert bez kategorii,
-  //  - nasz koszt wysyłki 9,26 zł netto = miks metod (ZK Empik od 04.2026: paczkomat 51%, salon Empik 36%,
-  //    kurier 7%, DPD Pickup 3%, pobranie 3%) × koszt paczki: InPost Paczkomat Standard 10,44 (faktura
-  //    07.2026, nasza umowa), salon 7,52 (DPD, cennik Empik–DPD bez paliwowej, płatnik 444368), kurier DPD 9,49,
-  //    DPD Pickup 7,29, pobranie +2,02 (specyfikacje DPD 09.2026),
+  //  - nasz koszt wysyłki wg GABARYTU paczki (decyzja usera 2026-10-18) — kosztWysylkiEmpik niżej; 9,26 zł
+  //    (średnia z miksu dla typowej paczki) zostaje tylko jako `wysylka` na wypadek braku tej funkcji,
   //  - klient płaci za dostawę średnio 6,61 zł brutto na zamówienie (OR11; zamówienia Empik Premium = 0),
   //  - Empik Premium: za darmową dostawę Empik oddaje stałą kwotę netto, odliczaną od prowizji, wg wartości
   //    zamówienia i metody — `oplataZam` UJEMNA (EMPIK_PREMIUM) × udział zamówień Premium 44%.
   { nazwa: 'Empik', kraj: 'PL', waluta: 'PLN', vat: 23, prowizja: 10.55, typ: 'flat',
-    wysylka: 9.26, wysKlient: 6.61, oplataZam: 'EMPIK_PREMIUM', oplataZamUdzial: 0.44 },
+    wysylka: 9.26, wysylkaWg: 'EMPIK', wysKlient: 6.61, oplataZam: 'EMPIK_PREMIUM', oplataZamUdzial: 0.44 },
 ];
 
 // DHL Parcel Connect - cena netto PLN po rabacie, wg wagi (umowa Okitrade 06.2026). NASZ koszt.
@@ -163,6 +161,55 @@ function profilRynku(r, g) {
   return { ...baza, ...(g && g.genius === false ? bezGenius : genius), profil: g && g.genius === false ? 'bezGenius' : 'genius' };
 }
 
+// Empik: NASZ koszt wysyłki dla konkretnej paczki (decyzja usera 2026-10-18: wg gabarytu, nie jedna średnia).
+// Średnia ważona po metodach dostawy z miksu zamówień Empik (ZK od 04.2026), każda wyceniona dla tej paczki:
+//   paczkomat InPost (nasza umowa, faktura 07.2026, netto): gabaryt wg wymiarów paczki (towar w dobranym
+//     kartonie) — A 8×38×64 · B 19×38×64 · C 41×38×64 cm, do 25 kg (inpost.pl) → 10,20 / 10,50 / 11,51,
+//   salon Empik (DPD, cennik Empik–DPD, płatnik 444368; specyfikacje 09.2026, z energetyczną): ≤2 kg 7,50 ·
+//     ≤5 8,29 · ≤20 9,23 (cennik 8,47 × 1,025 + 0,55); punkt DPD Pickup przyjmuje do 20 kg,
+//   kurier DPD (nasza umowa, 444363, z dopłatami drogową/paliwową/energetyczną): ≤2 9,76 · ≤5 9,86 ·
+//     ≤10 11,59 (cena bazowa 9,80) · ≤20 18,26 · powyżej 19,34 (dwie ostatnie z pojedynczych paczek),
+//   DPD Pickup (444363): ≤2 kg 7,29; ciężej jak kurier (brak pomiaru), do 20 kg,
+//   pobranie: kurier + 2,02 (opłaty COD na paczkę).
+// Metoda niedostępna dla paczki wypada, a jej udział rozkłada się proporcjonalnie na pozostałe. Brak wymiarów
+// = paczkomat po średniej ze specyfikacji (10,44) i dostępny. `waga` = waga rozliczeniowa z GT (kg).
+const EMPIK_WYSYLKA = {
+  udzialy: { paczkomat: 1242, salon: 864, kurier: 175, pickup: 73, pobranie: 64 },
+  paczkomat: [['A', [64, 38, 8], 10.20], ['B', [64, 38, 19], 10.50], ['C', [64, 41, 38], 11.51]],
+  paczkomatSrednio: 10.44, paczkomatMaxKg: 25,
+  salon: [[2, 7.50], [5, 8.29], [20, 9.23]],
+  kurier: [[2, 9.76], [5, 9.86], [10, 11.59], [20, 18.26], [Infinity, 19.34]],
+  pickup: [[2, 7.29]], pickupMaxKg: 20,
+  pobranieDoplata: 2.02,
+};
+const progTabeli = (tab, kg) => { for (const [gr, s] of tab) if (kg <= gr) return s; return null; };
+
+// Gabaryt paczkomatu: 'A' | 'B' | 'C', false = paczka się nie mieści, null = brak wymiarów.
+function gabarytPaczkomatu(paczka) {
+  const t = paczka ? [paczka.dlugosc, paczka.szerokosc, paczka.wysokosc].map(Number) : [];
+  if (t.length !== 3 || t.some((x) => !(x > 0))) return null;
+  t.sort((a, b) => b - a);
+  const g = EMPIK_WYSYLKA.paczkomat.find(([, boki]) => t.every((x, i) => x <= boki[i]));
+  return g ? g[0] : false;
+}
+
+function kosztWysylkiEmpik({ paczka = null, waga = 1 } = {}) {
+  const W = EMPIK_WYSYLKA, kg = +waga > 0 ? +waga : 1;
+  const gab = gabarytPaczkomatu(paczka);
+  const kurier = progTabeli(W.kurier, kg);
+  const metody = {
+    paczkomat: gab === false || kg > W.paczkomatMaxKg ? null
+      : gab ? W.paczkomat.find(([k]) => k === gab)[2] : W.paczkomatSrednio,
+    salon: progTabeli(W.salon, kg),
+    kurier,
+    pickup: kg > W.pickupMaxKg ? null : (progTabeli(W.pickup, kg) ?? kurier),
+    pobranie: kurier + W.pobranieDoplata,
+  };
+  let suma = 0, wagi = 0;
+  for (const [m, koszt] of Object.entries(metody)) if (koszt != null) { suma += koszt * W.udzialy[m]; wagi += W.udzialy[m]; }
+  return { koszt: +(suma / wagi).toFixed(2), gabaryt: gab, metody };
+}
+
 // --- helpery (czyste) ---
 const kursDla = (waluta, g) => (waluta === 'EUR' ? +g.eur || 0 : waluta === 'RON' ? +g.ron || 0 : waluta === 'HUF' ? +g.huf || 0 : 1);
 
@@ -199,6 +246,7 @@ function stawkaDHL(kraj, waga, obnizProg = 0) {
 // --- wycena jednego rynku -> { nazwa, kraj, waluta, cena, zysk, marza, status, detal } ---
 // NASZ koszt wysylki dla rynku 'flat' w walucie rynku (wysylkaEur przeliczana przez EUR).
 function kosztWysylkiFlat(r, g, kurs) {
+  if (r.wysylkaWg === 'EMPIK') return kosztWysylkiEmpik({ paczka: g.paczka, waga: g.waga }).koszt / kurs;   // PLN
   if (r.wysylkaEur != null) return (+r.wysylkaEur || 0) * (+g.eur || 0) / kurs;
   return +r.wysylka || 0;
 }
@@ -401,7 +449,8 @@ function policzWszystkie(kosztPLN, nadpisz = {}) {
 }
 
 module.exports = {
-  DOMYSLNE, RYNKI, DHL_STAWKI, ALLEGRO_PROGI, OPLATY_ZAM, SKRYTKA_AUTOMATU_CM,
+  DOMYSLNE, RYNKI, DHL_STAWKI, ALLEGRO_PROGI, OPLATY_ZAM, SKRYTKA_AUTOMATU_CM, EMPIK_WYSYLKA,
+  gabarytPaczkomatu, kosztWysylkiEmpik,
   do99, totalCelu, kursDla, doplataSmartAllegro, stawkaDHL, kosztWysylkiFlat, oplataZamowienia, oplataZamOczekiwana,
   prowizjaUlamek,
   miesciSieWAutomacie, profilRynku,

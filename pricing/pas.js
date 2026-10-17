@@ -29,7 +29,7 @@ function pasyZWyceny(w, { genius, prowizja } = {}) {
   // Docinanie kartonu ZAWSZE uwzględnione (decyzja usera 2026-10-14): towar oznaczony „Docinanie
   // kartonu: tak” jedzie w przyciętym kartonie, czyli w niższym progu DHL. Bez tego minimum było
   // wyższe niż w teście Automate Pricing z 06.10 (np. NERF7376 FR 47,99 zamiast 33,99 €).
-  const g = { ...rynki.DOMYSLNE, waga: w.waga, docinanie: w.docinalny, docinanieOn: true,
+  const g = { ...rynki.DOMYSLNE, waga: w.waga, paczka: w.paczka, docinanie: w.docinalny, docinanieOn: true,
     genius: typeof genius === 'boolean' ? genius : w.genius };      // obiekt per kolumna — niżej, w pętli
   const out = {};
   for (const k of KOLUMNY) {

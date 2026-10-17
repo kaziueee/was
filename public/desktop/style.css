@@ -1365,3 +1365,71 @@ main {
 .cp-form { display: inline-flex; gap: 0.3rem; }
 .cp-form input { font: inherit; font-size: 0.82rem; width: 9.5rem; padding: 0.2rem 0.4rem; border: 1px solid #ccc; border-radius: 5px; }
 .ceny-przel.niepewne { border-style: dashed; opacity: 0.6; }
+
+/* Ceny: Pulpit (public/desktop/ceny-pulpit.js) */
+/* Filtry macierzy nie dotyczą pulpitu. Osobna reguła, bo .ceny-filtry/.ceny-rzad (display:flex) wygrywają z .hidden. */
+#panel-ceny[data-widok="pulpit"] :is(#ceny-filtry, #ceny-kanaly, #ceny-sytuacje) { display: none; }
+.cp { transition: opacity 0.15s; }
+.cp.cp-laduje { opacity: 0.55; }
+.cp-zdrowie { margin-bottom: 0.6rem; }
+.cp-pills { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.cp-pill { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #333; background: #fff; border: 1px solid #dde1e6; border-radius: 999px; padding: 0.22rem 0.7rem; }
+.cp-pill i { width: 8px; height: 8px; border-radius: 50%; background: #9aa1a9; flex: none; }
+.cp-pill.ok i { background: #1f7a3d; }
+.cp-pill.warn i { background: #e0a800; }
+.cp-pill.warn { border-color: #e0a800; }
+.cp-pill.blad i { background: #b42318; }
+.cp-pill.blad { border-color: #b42318; color: #b42318; font-weight: 600; }
+.cp-pill.brak { color: #8a919a; border-style: dashed; }
+.cp-blad { font-size: 0.82rem; margin-top: 0.3rem; }
+.cp-sz { color: #777; }
+.cp-kpi { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.cp-kpi .kafel-wartosc small, .cp-duza small { font-size: 0.85rem; font-weight: 400; color: #777; }
+.cp-kpi .kafel-podpis { line-height: 1.45; }
+.cp-kanaly { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; }
+.cp-kanal { background: #fff; border: 1px solid #dde1e6; border-radius: 8px; padding: 0.65rem 0.8rem; display: grid; gap: 0.45rem; align-content: start; font-size: 0.84rem; }
+.cp-k-gora { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+.cp-k-nazwa, .cp-duza, .cp-k-linia { font: inherit; background: none; border: none; padding: 0; cursor: pointer; color: #1d3557; text-align: left; }
+.cp-k-nazwa { font-weight: 700; font-size: 0.98rem; }
+.cp-k-nazwa:hover, .cp-duza:hover, .cp-k-linia:hover { text-decoration: underline dotted; }
+.cp-k-bb { display: flex; justify-content: space-between; align-items: flex-end; gap: 0.5rem; }
+.cp-k-bb-l { display: grid; gap: 0.1rem; min-width: 0; }
+.cp-duza { font-size: 1.55rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.cp-k-zm { font-size: 0.8rem; }
+.cp-k-linia { font-size: 0.8rem; color: #444; }
+.cp-spark { flex: none; }
+.cp-spark polyline { fill: none; stroke: #2a78d6; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.cp-spark circle { fill: #2a78d6; stroke: #fff; stroke-width: 2; }
+.cp-k-akt { display: grid; gap: 0.15rem; border-top: 1px solid #eef0f3; padding-top: 0.4rem; font-variant-numeric: tabular-nums; }
+.cp-uwaga { color: #9a6a00; }
+.cp-k-syt { display: flex; flex-wrap: wrap; gap: 0.3rem; border-top: 1px solid #eef0f3; padding-top: 0.45rem; }
+.cp-chip { font-size: 0.74rem; padding: 0.15rem 0.55rem; }
+.cp-trend-pasek { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; justify-content: space-between; align-items: center; }
+.cp-miara-opis { margin: 0.4rem 0 0.2rem; padding: 0; }
+.cp-wykres-box { position: relative; background: #fff; border: 1px solid #dde1e6; border-radius: 8px; padding: 0.5rem 0.4rem 0.2rem; margin: 0.4rem 0 0.6rem; overflow: hidden; }
+.cp-wykres-tyt { font-size: 0.85rem; font-weight: 600; color: #1d3557; padding: 0 0.4rem; }
+.cp-wykres { display: block; }
+.cp-siatka { stroke: #eceef1; stroke-width: 1; }
+.cp-os { font-size: 11px; fill: #6b7280; font-variant-numeric: tabular-nums; }
+.cp-etyk { font-size: 12px; font-weight: 600; fill: #1d3557; }
+.cp-linia { fill: none; stroke: #2a78d6; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.cp-pkt { fill: #2a78d6; stroke: #fff; stroke-width: 2; }
+.cp-pkt.czesc { fill: #fff; stroke: #2a78d6; }
+.cp-slup { fill: #2a78d6; }
+.cp-krzyz { stroke: #9aa1a9; stroke-width: 1; }
+.cp-krzyz.hidden { display: none; }
+.cp-hit { fill: transparent; cursor: crosshair; }
+.cp-dymek { position: absolute; pointer-events: none; background: #fff; border: 1px solid #dde1e6; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.12); padding: 0.3rem 0.55rem; font-size: 0.8rem; max-width: 190px; }
+.cp-dymek b { font-size: 0.95rem; color: #111; }
+.cp-tabela-wrap { overflow-x: auto; }
+.cp-tabela td, .cp-tabela th { font-size: 0.8rem; padding: 0.3rem 0.45rem; white-space: nowrap; }
+.cp-tabela td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.cp-tabela th.cp-dz { text-align: right; font-weight: 600; line-height: 1.2; }
+.cp-tabela th.cp-dz.weekend { color: #9aa1a9; }
+.cp-tabela td.cp-dzis { background: #f4f7fb; }
+.cp-tabela tr.cp-tr { cursor: pointer; }
+.cp-tabela tr.cp-tr.razem td { font-weight: 600; }
+.cp-tabela tr.cp-tr.wybrany td { background: #e8f0fb; }
+.cp-tabela tr.cp-tr.wybrany td.cp-tr-nazwa { box-shadow: inset 3px 0 0 #2a78d6; }
+.cp-suma { font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .cp { transition: none; } }

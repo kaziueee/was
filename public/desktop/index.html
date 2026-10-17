@@ -786,7 +786,7 @@
 
     <!-- Panel Ceny (na czas testów tylko admin): repricer Amazona. Dane liczy osobny proces (pricing/worker.js,
          zadanie WMS-Pricing) do db/pricing.db; ten ekran tylko czyta i włącza/wyłącza automat. -->
-    <section id="panel-ceny" class="panel hidden">
+    <section id="panel-ceny" class="panel hidden" data-widok="pulpit">
       <div class="panel-naglowek">
         <h2>Ceny na rynkach — Amazon, eMAG, Empik, Allegro</h2>
         <div class="filtry">
@@ -797,7 +797,8 @@
       <p id="ceny-stan" class="hint"></p>
       <div class="ceny-pasek">
         <div class="ceny-widoki">
-          <button type="button" class="ceny-chip aktywny" data-ceny-widok="macierz">Macierz</button>
+          <button type="button" class="ceny-chip aktywny" data-ceny-widok="pulpit">Pulpit</button>
+          <button type="button" class="ceny-chip" data-ceny-widok="macierz">Macierz</button>
           <button type="button" class="ceny-chip" data-ceny-widok="karta">Karta SKU</button>
           <button type="button" class="ceny-chip" data-ceny-widok="log">Log decyzji</button>
           <button type="button" class="ceny-chip" data-ceny-widok="powiazania">Do powiązania <b id="ceny-l-powiazania"></b></button>
@@ -810,7 +811,20 @@
         <div class="ceny-rzad ceny-sytuacje" id="ceny-sytuacje" title="Sytuacja oferty — łączy się z zakresem i kanałem"></div>
         <div class="ceny-kanaly" id="ceny-kanaly" title="Kanał sprzedaży — zawęża kolumny i liczniki filtrów"></div>
       </div>
-      <div id="ceny-widok-macierz">
+      <!-- Pulpit: jak idzie automat (public/desktop/ceny-pulpit.js, GET /api/ceny/pulpit) -->
+      <div id="ceny-widok-pulpit">
+        <div id="ceny-pulpit" class="cp">
+          <div id="cp-zdrowie" class="cp-zdrowie"></div>
+          <div id="cp-kpi" class="pulpit-kafle cp-kpi"></div>
+          <h3 class="pulpit-tytul">Kanały <span class="hint">— liczby jak w macierzy; kliknij, żeby zobaczyć oferty</span></h3>
+          <div id="cp-kanaly" class="cp-kanaly"></div>
+          <p id="cp-niepodlaczone" class="hint"></p>
+          <h3 class="pulpit-tytul">Dzień po dniu</h3>
+          <div id="cp-trend"></div>
+          <p id="cp-stan" class="hint"></p>
+        </div>
+      </div>
+      <div id="ceny-widok-macierz" class="hidden">
         <div class="tabela-wrapper ceny-wrap">
           <table class="tabela ceny-tabela">
             <thead id="ceny-thead"></thead>
@@ -1049,6 +1063,7 @@
   </main>
 
   <script src="/shared/auth.js"></script>
+  <script src="ceny-pulpit.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -10,6 +10,8 @@
 //   GET  /api/ceny/macierz?q=&zakres=automat|reczne|wszystkie&sytuacja=…&kanal=&limit=   wiersze SKU × rynek
 //        (sytuacje: pricing/filtry-cen.js; stary `filtr=` nadal rozumiany)
 //        kanal = platforma (amazon, emag) albo klucz kolumny (DE, FR, …, EMAG_RO); puste = wszystkie
+//   GET  /api/ceny/pulpit?dni=7|14|30                                  pulpit: Buy Box per kanał teraz / 24 h / 7 dni, wysyłki,
+//        zdrowie workera, trend dzienny (BB, zysk/szt., FS z GT wg źródła) — pricing/pulpit-model.js
 //   GET  /api/ceny/towar/:tw_id                                        karta SKU: wszystkie rynki towaru + historia
 //   GET  /api/ceny/log?limit=                                          zmiany cen (auto) + działania ludzi
 //   POST /api/ceny/automat  { ids: [oferta_id...], auto: true|false }  — tylko podane oferty, nigdy hurtem
@@ -117,6 +119,24 @@ function chipyKanalow(towary, pasuje) {
   return chipy;
 }
 
+// Towary macierzy: tw_id → { symbol, nazwa, rynki: { kolumna: oferta } }. Ten sam towar bywa wystawiony dwa razy na
+// jednym rynku (SKU z dopiskiem -1) — w komórce pokazujemy ofertę z większym stanem, resztę liczymy, żeby ekran nie
+// ukrywał duplikatu. Wspólne dla macierzy i pulpitu (kafel liczy to samo, co macierz pokaże po kliknięciu).
+function towaryMacierzy() {
+  const towary = new Map();
+  for (const o of db.prepare(SQL_OFERTY).all()) {
+    let t = towary.get(o.tw_id);
+    if (!t) towary.set(o.tw_id, t = { tw_id: o.tw_id, symbol: o.symbol_gt, nazwa: o.nazwa, rynki: {} });
+    const kol = kluczKolumny(o.platforma, o.rynek);
+    const byla = t.rynki[kol];
+    if (!byla || (o.ilosc || 0) > (byla.ilosc || 0)) {
+      t.rynki[kol] = { ...zKanalem(o), inne_oferty: (byla ? byla.inne_oferty + 1 : 0) };
+    }
+    else byla.inne_oferty++;
+  }
+  return towary;
+}
+
 // Express 4 nie łapie odrzuconych obietnic — wyjątek w handlerze async wywróciłby cały WMS.
 const asyncH = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -129,20 +149,7 @@ router.get('/macierz', asyncH(async (req, res) => {
   const kanal = kolKanalu.length ? String(req.query.kanal) : '';
   const kolumnyW = kanal ? kolKanalu : KOLUMNY;
 
-  const oferty = db.prepare(SQL_OFERTY).all();
-  const towary = new Map();
-  for (const o of oferty) {
-    let t = towary.get(o.tw_id);
-    if (!t) towary.set(o.tw_id, t = { tw_id: o.tw_id, symbol: o.symbol_gt, nazwa: o.nazwa, rynki: {} });
-    // Ten sam towar bywa wystawiony dwa razy na jednym rynku (SKU z dopiskiem -1) — w komórce
-    // pokazujemy ofertę z większym stanem, resztę liczymy, żeby ekran nie ukrywał duplikatu.
-    const kol = kluczKolumny(o.platforma, o.rynek);
-    const byla = t.rynki[kol];
-    if (!byla || (o.ilosc || 0) > (byla.ilosc || 0)) {
-      t.rynki[kol] = { ...zKanalem(o), inne_oferty: (byla ? byla.inne_oferty + 1 : 0) };
-    }
-    else byla.inne_oferty++;
-  }
+  const towary = towaryMacierzy();
 
   const pasuje = (t) => {
     const of = Object.values(t.rynki);
@@ -189,6 +196,83 @@ router.get('/macierz', asyncH(async (req, res) => {
     ...filtry.chipy(wszystkie, zakres, sytuacja),     // { zakresy: [...], sytuacje: [...] } z licznikami
     razem: wiersze.length,
     wiersze: pokazane,
+  });
+}));
+
+// --- Pulpit: jak idzie automat --------------------------------------------------------------------------------
+// Liczby składa pricing/pulpit-model.js (czyste, testy), stany z historii czyta pricing/pulpit.js. „Teraz” liczymy
+// na ofertach z macierzy (towaryMacierzy), więc kafel kanału pokazuje to, co macierz po kliknięciu.
+const pulpit = require('../pricing/pulpit');
+const pm = require('../pricing/pulpit-model');
+const { sprzedazWgZrodla } = require('../services/gt-sprzedaz');
+const { interwalMsZMinut } = require('../services/interwal');
+const INTERWAL_MIN = interwalMsZMinut(process.env.PRICING_INTERWAL_MIN, 30, 'PRICING_INTERWAL_MIN') / 60000;
+
+// FS z GT najwyżej co 10 min — minione dni się nie zmieniają, a pulpit otwiera się często.
+const SPRZEDAZ_MS = 10 * 60_000;
+let sprzedazPamiec = null;
+async function sprzedazPulpitu(od) {
+  if (sprzedazPamiec && sprzedazPamiec.od <= od && Date.now() - sprzedazPamiec.czas < SPRZEDAZ_MS) return sprzedazPamiec.dane;
+  const dane = await sprzedazWgZrodla(od);
+  sprzedazPamiec = { od, czas: Date.now(), dane };
+  return dane;
+}
+
+router.get('/pulpit', asyncH(async (req, res) => {
+  const teraz = new Date();
+  const ileDni = pm.oknoTrendu(req.query.dni);
+  const dni = pm.dniOkna(ileDni, teraz);
+  const klucze = new Set(KOLUMNY.map((k) => k.klucz));
+  const pokazane = [...towaryMacierzy().values()].flatMap((t) => Object.values(t.rynki));
+  const kohorta = pulpit.kohortaAutomatu();
+  const { stan: stanTeraz, wiersze } = pulpit.stanTeraz(teraz, pokazane, kohorta.ids);
+  const wczesniej = (h) => { const T = new Date(teraz.getTime() - h * 3600e3); return pm.stanNaChwile(pulpit.wierszeNaChwile(T, kohorta.ids), T); };
+  const stan24 = wczesniej(24), stan7 = wczesniej(7 * 24);
+  const akt = pm.aktywnosc(pulpit.wysylki(teraz), teraz);
+  const czeka = pm.czekajace(pokazane, teraz);
+  const syt = pm.sytuacjeKanalow(pokazane);
+
+  let sprzedaz = null;
+  try {
+    const fs = await sprzedazPulpitu(dni[0].dzien);
+    sprzedaz = pm.sprzedazKanalami(fs.dokumenty, fs.pozycje, kohorta.twPoKanale, klucze);
+  } catch (e) { console.error('[ceny] pulpit — FS z GT:', e.message); }
+
+  const obserwacje = new Map();
+  for (const o of wiersze) if (!(obserwacje.get(o.platforma) >= o.w)) obserwacje.set(o.platforma, o.w);
+  const platformy = new Set(db.prepare('SELECT DISTINCT platforma FROM oferty').all().map((x) => x.platforma));
+
+  const poczatki = pulpit.poczatkiObserwacji();
+  const bilans = (k, grupa) => ({
+    h24: pm.bilansBb(stanTeraz.get(k)?.[grupa], stan24.get(k)?.[grupa]),
+    d7: pm.bilansBb(stanTeraz.get(k)?.[grupa], stan7.get(k)?.[grupa]),
+  });
+  const kanaly = KOLUMNY.map((k) => ({
+    klucz: k.klucz, nazwa: k.nazwa, etykieta: k.etykieta || k.rynek, platforma: k.platforma, waluta: k.waluta,
+    tylko_odczyt: !!k.tylkoOdczyt, bez_konkurencji: !!k.bezKonkurencji,
+    ofert: syt.get(k.klucz)?.wszystkie.wszystkie || 0,
+    automat: syt.get(k.klucz)?.automat.wszystkie || 0,
+    bb: { wszystkie: bilans(k.klucz, 'wszystkie'), automat: bilans(k.klucz, 'automat') },
+    sytuacje: syt.get(k.klucz)?.wszystkie || null,
+    sytuacje_auto: syt.get(k.klucz)?.automat || null,
+    aktywnosc: akt.get(k.klucz) || null,
+    czeka: czeka.get(k.klucz) || { n: 0, najdluzej_min: 0 },
+    obserwacja_od: poczatki.get(k.klucz) || null,
+  }));
+  const suma = (grupa, okno) => pm.zsumujBilanse(kanaly.map((k) => k.bb[grupa][okno]));
+  res.json({
+    teraz: pm.doBazy(teraz),
+    zdrowie: pm.zdrowie({ stan: pulpit.stanWorkera(), teraz, interwalMin: INTERWAL_MIN, zapis: process.env.PRICING_ZAPIS === '1', obserwacje, platformy }),
+    kanaly,
+    razem: {
+      ofert: kanaly.reduce((a, k) => a + k.ofert, 0), automat: kanaly.reduce((a, k) => a + k.automat, 0),
+      bb: { wszystkie: { h24: suma('wszystkie', 'h24'), d7: suma('wszystkie', 'd7') }, automat: { h24: suma('automat', 'h24'), d7: suma('automat', 'd7') } },
+      aktywnosc: akt.get('razem') || null,
+      czeka: czeka.get('razem') || { n: 0, najdluzej_min: 0 },
+    },
+    trend: { ...pm.zlozTrend(dni, pulpit.stanyDni(dni, teraz, kohorta.ids, stanTeraz), sprzedaz, klucze), gt_ok: !!sprzedaz },
+    sytuacje: filtry.SYTUACJE.map(({ klucz, nazwa, opis }) => ({ klucz, nazwa, opis: opis || '' })),
+    okno: ileDni, okna: pm.OKNA_TRENDU, tolerancja_h: pm.TOLERANCJA_H, czeka_min: pm.CZEKA_MIN,
   });
 }));
 

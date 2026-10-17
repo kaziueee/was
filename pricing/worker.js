@@ -73,6 +73,7 @@ const minelo = (klucz, ms) => {
 };
 
 async function przebieg({ pelny = false } = {}) {
+  const t0 = Date.now();
   const wynik = {};
   if (PLATFORMY.has('amazon') && minelo('sync_oferty', SYNC_MS)) {
     const s = await synchronizuj();
@@ -333,6 +334,7 @@ async function przebieg({ pelny = false } = {}) {
   if (wysylka.wyslane || wysylka.odrzucone) wynik.wysylka = wysylka;
   if (doPotwierdzenia.length) wynik.doPotwierdzenia = doPotwierdzenia;
   if (pelnyTeraz) stan.set('obserwacja_pelna', oferty.length);
+  wynik.sekundy = Math.round((Date.now() - t0) / 1000);   // pulpit na ekranie Ceny pokazuje, ile trwał przebieg
   stan.set('przebieg', JSON.stringify(wynik));
   return { ...wynik, automat: kody };
 }

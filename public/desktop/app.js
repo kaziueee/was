@@ -4496,7 +4496,7 @@ const CENY_AKCJE = {
 let cenyKanalWybor = (() => { try { return localStorage.getItem('wms-ceny-kanal') || ''; } catch { return ''; } })();
 let cenySort = (() => { try { return localStorage.getItem('wms-ceny-sort') || ''; } catch { return ''; } })();
 let cenyNrZapytania = 0;
-let cenyZakres = 'automat', cenySytuacja = 'wszystkie', cenyWidok = 'macierz', cenySzukajTimer = null, cenyDane = null, cenyKartaTw = null, cenyKartaRynek = null;
+let cenyZakres = 'automat', cenySytuacja = 'wszystkie', cenyWidok = 'pulpit', cenySzukajTimer = null, cenyDane = null, cenyKartaTw = null, cenyKartaRynek = null;
 
 // Waluta kanału przychodzi z backendu (pricing/kolumny.js); kod rynku tylko dla starych odpowiedzi/logu.
 const cenyWaluta = (o) => (o && typeof o === 'object' ? o.waluta || cenyWaluta(o.rynek) : o === 'PL' ? 'zł' : o === 'RO' ? 'RON' : '€');
@@ -4539,6 +4539,7 @@ const cenyLiczba = (v, d = 2) => (v == null ? '—' : Number(v).toLocaleString('
 const cenyEsc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 async function odswiezCeny() {
+  if (cenyWidok === 'pulpit') return odswiezCenyPulpit();   // public/desktop/ceny-pulpit.js
   if (cenyWidok === 'log') return odswiezCenyLog();
   if (cenyWidok === 'karta') return odswiezCenyKarta();
   if (cenyWidok === 'powiazania') return odswiezCenyPowiazania();
@@ -4829,8 +4830,9 @@ async function cenyUstawAutomat(oferty, auto) {
 
 function cenyPokazWidok(widok) {
   cenyWidok = widok;
+  el('panel-ceny').dataset.widok = widok;     // pulpit chowa filtry macierzy (style.css)
   document.querySelectorAll('[data-ceny-widok]').forEach((x) => x.classList.toggle('aktywny', x.dataset.cenyWidok === widok));
-  for (const v of ['macierz', 'karta', 'log', 'powiazania']) el(`ceny-widok-${v}`).classList.toggle('hidden', widok !== v);
+  for (const v of ['pulpit', 'macierz', 'karta', 'log', 'powiazania']) el(`ceny-widok-${v}`).classList.toggle('hidden', widok !== v);
   el('ceny-filtry').classList.toggle('hidden', widok !== 'macierz');
   el('ceny-kanaly').classList.toggle('hidden', widok !== 'macierz');
   el('ceny-sytuacje').classList.toggle('hidden', widok !== 'macierz');

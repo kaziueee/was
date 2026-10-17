@@ -41,6 +41,11 @@ const zaokr = (x) => Math.round(x * 100) / 100;
 const iso = (ms) => new Date(ms).toISOString();
 
 const skonfigurowany = () => !!(process.env.ALLEGRO_CLIENT_ID && process.env.ALLEGRO_CLIENT_SECRET);
+// Identyfikacja aplikacji — obowiązkowa od 07.2026 (Regulamin REST API pkt 3.4c, allegro/allegro-api#13126):
+// `NazwaAplikacji/Wersja (+URL dokumentacji)`, nazwa zgodna z zarejestrowaną („WMS Pricing”; myślnik zamiast
+// spacji przechodzi walidację), URL = „Link do dokumentacji” z formularza aplikacji. Allegro używa go do
+// białej listy — nie zmieniać bez zmiany w Developer Apps (sprawdzanie: apps.developer.allegro.pl/user-agent).
+const USER_AGENT = () => process.env.ALLEGRO_USER_AGENT || 'WMS-Pricing/1.0 (+https://github.com/kaziueee/was/blob/main/pricing/allegro.js)';
 const basic = () => 'Basic ' + Buffer.from(`${process.env.ALLEGRO_CLIENT_ID}:${process.env.ALLEGRO_CLIENT_SECRET}`).toString('base64');
 
 // Baza dopiero przy pierwszym użyciu tokenów — czyste funkcje (testy, ekran WMS) nie dotykają SQLite.
@@ -81,7 +86,7 @@ function zapiszTokeny(konto, t, { login, uzytkownik } = {}) {
 
 async function postAuth(sciezka, params) {
   const r = await fetch(`${AUTH}/${sciezka}?${new URLSearchParams(params)}`, {
-    method: 'POST', headers: { Authorization: basic(), 'Content-Type': 'application/x-www-form-urlencoded' },
+    method: 'POST', headers: { Authorization: basic(), 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': USER_AGENT() },
     signal: AbortSignal.timeout(30_000),
   });
   const j = await r.json().catch(() => ({}));
@@ -154,7 +159,8 @@ async function zapytanie(konto, sciezka, { metoda = 'GET', query = null, body, p
       // workera z blokadą „trwa” do restartu). Timeout = błąd sieci = ponowienie niżej.
       r = await fetch(`${API}${sciezka}${qs}`, {
         method: metoda,
-        headers: { Authorization: `Bearer ${token}`, Accept: MEDIA, 'Accept-Language': 'pl-PL', ...(body !== undefined ? { 'Content-Type': MEDIA } : {}) },
+        headers: { Authorization: `Bearer ${token}`, Accept: MEDIA, 'Accept-Language': 'pl-PL', 'User-Agent': USER_AGENT(),
+          ...(body !== undefined ? { 'Content-Type': MEDIA } : {}) },
         body: body !== undefined ? JSON.stringify(body) : undefined,
         redirect: 'manual',           // 303 z /operations = „gotowe” — chcemy go zobaczyć, nie iść za nim
         signal: AbortSignal.timeout(timeoutMs),
@@ -301,6 +307,6 @@ async function ustawCene(surowa, cena) {
 const linkiOferty = (id) => (id ? { produkt: `https://allegro.pl/oferta/${encodeURIComponent(id)}` } : null);
 
 module.exports = {
-  KONTA, skonfigurowany, kontaAutoryzowane, tokenDostepu, zapiszTokeny, postAuth, tokenWazny, czekajMs,
+  KONTA, USER_AGENT, skonfigurowany, kontaAutoryzowane, tokenDostepu, zapiszTokeny, postAuth, tokenWazny, czekajMs,
   api, zapytanie, wszystkieOferty, ofertaPoId, login, doOferty, kluczeOfert, skuGt, zOferty, zmianaCeny, ustawCene, linkiOferty,
 };

@@ -93,3 +93,7 @@ test('Allegro: dwie kolumny (konta) tylko do odczytu, minimum z kalkulatora rynk
 test('Allegro: „w pasie, konkurencji nie widać” liczy się do sytuacji „Brak danych”', () => {
   assert.strictEqual(filtry.ofertaPasuje({ kod: 'bez_konkurencji' }, 'wszystkie', 'brak_danych'), true);
 });
+
+test('Allegro: User-Agent w formacie Nazwa/Wersja (+URL dokumentacji) — wymóg Allegro od 07.2026', () => {
+  assert.match(allegro.USER_AGENT(), /^[A-Za-z][\w-]*\/[\w.]+ \(\+https:\/\/\S+\)$/);
+});

@@ -47,7 +47,8 @@ async function main(konto) {
 async function zapisz(konto, def, t) {
   // Login sprawdzamy, ZANIM cokolwiek zapiszemy — tym samym linkiem da się zalogować na dowolne konto.
   const r = await fetch('https://api.allegro.pl/me', {
-    headers: { Authorization: `Bearer ${t.access_token}`, Accept: 'application/vnd.allegro.public.v1+json' }, signal: AbortSignal.timeout(30_000),
+    headers: { Authorization: `Bearer ${t.access_token}`, Accept: 'application/vnd.allegro.public.v1+json', 'User-Agent': allegro.USER_AGENT() },
+    signal: AbortSignal.timeout(30_000),
   });
   const me = await r.json().catch(() => ({}));
   if (!r.ok || !me.login) throw new Error(`Nie udało się odczytać konta (/me HTTP ${r.status}) — nic nie zapisano.`);

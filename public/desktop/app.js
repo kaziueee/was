@@ -4922,6 +4922,7 @@ function cenyKartaRynekHtml(o) {
     <div class="ceny-k-rynek"><h4>${cenyEsc(cenyKanal(o))}</h4><div class="ceny-sku">${cenyEsc(o.sku)} · stan ${o.ilosc}</div>${cenyBlokadaHtml(o)}
       <div class="ceny-m">${stanBb}</div>
       ${o.genius == null ? '' : `<div class="ceny-m">${o.genius ? 'Genius aktywny — opłata Genius, dostawa do automatu' : 'bez Genius — kurier do domu, klient płaci 25 RON'}</div>`}
+      ${o.platforma === 'empik' ? `<div class="ceny-m" title="${cenyEsc(o.kategoria || '')}">kategoria Empik: ${o.kategoria_nazwa ? cenyEsc(o.kategoria_nazwa) : '—'} · prowizja ${o.prowizja ? cenyLiczba(o.prowizja, 1) + '%' : 'średnia 10,55%'}</div>` : ''}
       ${o.tylko_odczyt ? '<div class="hint">tylko odczyt — repricer nie zmienia tu cen</div>'
         : o.ilosc > 0 ? `<label class="ceny-auto-wiersz" data-ceny-auto="${o.id}"> automat</label>` : '<div class="hint">bez stanu — automat nie działa</div>'}
       <div class="ceny-linki">${linki}</div></div>

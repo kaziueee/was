@@ -43,6 +43,8 @@ async function obserwujEmpik(oferty, { surowe = null, sklep = null } = {}) {
   const ostatnia = db.prepare('SELECT * FROM obserwacje WHERE oferta_id = ? ORDER BY id DESC LIMIT 1');
   const stawki = stawkiZapisane();
   const ustawProwizje = db.prepare('UPDATE oferty SET prowizja = ?, prowizja_czas = CURRENT_TIMESTAMP WHERE id = ?');
+  const ustawKategorie = db.prepare(`UPDATE oferty SET kategoria = ?, kategoria_nazwa = ? WHERE id = ?
+                                       AND (kategoria IS NOT ? OR kategoria_nazwa IS NOT ?)`);
   const widziana = db.prepare('UPDATE obserwacje SET widziana = CURRENT_TIMESTAMP WHERE id = ?');
   const b = (v) => (v == null ? null : v ? 1 : 0);
   const wynik = new Map();
@@ -50,7 +52,9 @@ async function obserwujEmpik(oferty, { surowe = null, sklep = null } = {}) {
   db.exec('BEGIN');
   try {
     for (const o of oferty) {
-      const stawka = stawki[p11.kategorie?.get(String(o.asin))]?.stawka;
+      const kat = p11.kategorie?.get(String(o.asin));
+      if (kat) ustawKategorie.run(kat.kod, kat.nazwa, o.id, kat.kod, kat.nazwa);
+      const stawka = stawki[kat?.kod]?.stawka;
       if (stawka > 0 && Math.abs(stawka - (o.prowizja || 0)) > 0.001) ustawProwizje.run(stawka, o.id);
       const obs = empik.obserwacja(p11.get(String(o.asin)), { offerId: idPoSku.get(String(o.sku).trim().toUpperCase()) ?? null, sklep: s });
       if (!obs) continue;                       // naszej oferty nie ma wśród aktywnych ofert produktu

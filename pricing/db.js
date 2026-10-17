@@ -124,6 +124,9 @@ if (!kolOferty.includes('blokada')) db.exec('ALTER TABLE oferty ADD COLUMN bloka
 // Stawka prowizji platformy dla TEJ oferty (eMAG: commission/estimate, % od ceny bez VAT) i kiedy pobrana.
 if (!kolOferty.includes('prowizja')) db.exec('ALTER TABLE oferty ADD COLUMN prowizja REAL');
 if (!kolOferty.includes('prowizja_czas')) db.exec('ALTER TABLE oferty ADD COLUMN prowizja_czas TEXT');
+// Kategoria produktu na platformie (Empik: kod i nazwa z P11) — z niej stawka prowizji oferty.
+if (!kolOferty.includes('kategoria')) db.exec('ALTER TABLE oferty ADD COLUMN kategoria TEXT');
+if (!kolOferty.includes('kategoria_nazwa')) db.exec('ALTER TABLE oferty ADD COLUMN kategoria_nazwa TEXT');
 // Ręczne granice repricera dla TEJ oferty (kwota w walucie rynku); NULL = z kalkulatora (pricing/granice.js).
 // Tylko w WMS — zakresu min/max w panelu platformy nie dotykamy (decyzja usera 2026-10-16).
 if (!kolOferty.includes('min_reczne')) db.exec('ALTER TABLE oferty ADD COLUMN min_reczne REAL');

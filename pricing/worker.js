@@ -375,12 +375,15 @@ const POTWIERDZENIE_EMAG_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE
 const POTWIERDZENIE_EMPIK_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE_EMPIK_MIN, 10, 'PRICING_POTWIERDZENIE_EMPIK_MIN');
 // Allegro: PATCH 200 = „zmiany wdrożymy od razu” (dokumentacja), 202 = w toku — czas do zmierzenia testem zapisu.
 const POTWIERDZENIE_ALLEGRO_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE_ALLEGRO_MIN, 5, 'PRICING_POTWIERDZENIE_ALLEGRO_MIN');
+// Kaufland: cena widoczna w rankingu Buy Boxa po 1–2 min (test HASG1777-G1784, 16.10).
+const POTWIERDZENIE_KAUFLAND_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZENIE_KAUFLAND_MIN, 3, 'PRICING_POTWIERDZENIE_KAUFLAND_MIN');
 
 // Ręczne zmiany cen z ekranu (POST /api/ceny/cena) wysyła WMS, nie worker — worker tylko je potwierdza,
 // tą samą drogą co własne wysyłki. Sprawdzamy dwa razy: po czasie propagacji platformy i po trzykrotności
 // (Amazon 3–10 min, eMAG RO bywa wolniejszy), bo oferty bez automatu obserwujemy tylko co 6 h.
 // Zapamiętane w pamięci procesu — po restarcie korekta z ostatnich 2 h może być sprawdzona raz jeszcze.
-const PROPAGACJA_MS = { amazon: POTWIERDZENIE_MS, emag: POTWIERDZENIE_EMAG_MS, empik: POTWIERDZENIE_EMPIK_MS, allegro: POTWIERDZENIE_ALLEGRO_MS };
+const PROPAGACJA_MS = { amazon: POTWIERDZENIE_MS, emag: POTWIERDZENIE_EMAG_MS, empik: POTWIERDZENIE_EMPIK_MS, allegro: POTWIERDZENIE_ALLEGRO_MS,
+  kaufland: POTWIERDZENIE_KAUFLAND_MS };
 const sprawdzoneKorekty = new Map();   // id decyzji → ile razy sprawdzona
 function korektyDoPotwierdzenia() {
   const wiersze = db.prepare(`SELECT d.id AS dec_id, (julianday('now') - julianday(d.czas)) * 86400000 AS ms,
@@ -497,7 +500,7 @@ async function potwierdzAllegro(oferty) {
 }
 
 // Kaufland: unit wysłanej oferty po SKU (jedno zapytanie) + jej ranking Buy Boxa — ta sama droga co w przebiegu.
-// Sprawdzamy razem z Amazonem (PRICING_POTWIERDZENIE_MIN).
+// Sprawdzamy po PRICING_POTWIERDZENIE_KAUFLAND_MIN (domyślnie 3 min).
 async function potwierdzKaufland(oferty) {
   try {
     const surowe = [];
@@ -553,6 +556,7 @@ if (require.main === module) {
       potw(doPotwierdzenia.filter((o) => o.platforma === 'emag'), POTWIERDZENIE_EMAG_MS);
       potw(doPotwierdzenia.filter((o) => o.platforma === 'empik'), POTWIERDZENIE_EMPIK_MS);
       potw(doPotwierdzenia.filter((o) => o.platforma === 'allegro'), POTWIERDZENIE_ALLEGRO_MS);
+      potw(doPotwierdzenia.filter((o) => o.platforma === 'kaufland'), POTWIERDZENIE_KAUFLAND_MS);
     };
     tik();
     setInterval(tik, ms);

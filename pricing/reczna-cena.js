@@ -13,6 +13,7 @@
 
 const amazon = require('./amazon');
 const emag = require('./emag');
+const kaufland = require('./kaufland');
 
 const PLATFORMY = {
   amazon: {
@@ -30,6 +31,16 @@ const PLATFORMY = {
       return emag.ustawCene(lista[0], cena);
     },
     propagacja: 'eMAG pokazuje nową cenę po 4–10 min, RO bywa do ~50 min — nie ponawiaj od razu',
+  },
+  kaufland: {
+    // PATCH listing_price (+ minimum_price, gdy równe cenie) na unicie świeżo pobranym po SKU —
+    // kaufland.zmianaCeny odmawia, gdy na ofercie działa Smart Pricing Kauflandu.
+    wyslij: async (o, cena) => {
+      const lista = await kaufland.unitPoSku(o.sku, o.rynek);
+      if (lista.length !== 1) return { ok: false, blad: `Kaufland ${o.rynek}: ${lista.length} ofert z SKU ${o.sku} — oczekiwano jednej` };
+      return kaufland.ustawCene(lista[0], cena);
+    },
+    propagacja: 'Kaufland pokazuje nową cenę po 1–2 min',
   },
 };
 

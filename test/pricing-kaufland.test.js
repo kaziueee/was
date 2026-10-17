@@ -158,11 +158,12 @@ test('Kaufland: blokada ceny tylko dla price_check_needed; link do produktu po i
   assert.strictEqual(kaufland.linkiOferty(1, 'NL'), null, 'domeny nie zgadujemy');
 });
 
-test('Kaufland: kolumna KAUFLAND_DE tylko do odczytu, pas min/max z kalkulatora „Kaufland DE”', () => {
+test('Kaufland: kolumna KAUFLAND_DE z automatem (od 2026-10-18), pas min/max z kalkulatora „Kaufland DE”, ręczna cena z ekranu', () => {
   assert.strictEqual(kluczKolumny('kaufland', 'DE'), 'KAUFLAND_DE');
   const k = kolumna('kaufland', 'DE');
   assert.ok(k, 'kolumna istnieje');
-  assert.strictEqual(k.tylkoOdczyt, true);
+  assert.ok(!k.tylkoOdczyt, 'automat dostępny');
+  assert.strictEqual(require('../pricing/reczna-cena').obslugiwana('kaufland'), true);
   assert.strictEqual(k.kalkulator, 'Kaufland DE');
   const pasy = pasyZWyceny({ koszt: 40, waga: 1, docinalny: false });
   assert.ok(pasy.KAUFLAND_DE && pasy.KAUFLAND_DE.min > 0, 'minimum z kalkulatora');

@@ -83,9 +83,12 @@ test('Allegro: dwie kolumny (konta) tylko do odczytu, minimum z kalkulatora rynk
   }
   const pasy = pasyZWyceny({ koszt: 40, waga: 1, docinalny: false });
   const def = rynki.RYNKI.find((r) => r.nazwa === 'Allegro');
-  const oczek = rynki.policzRynek(40, def, { ...rynki.DOMYSLNE, waga: 1, docinanieOn: true }).cena;
+  const g = { ...rynki.DOMYSLNE, waga: 1, docinanieOn: true };
+  const oczek = rynki.policzRynek(40, def, g).cena;
   assert.strictEqual(pasy.ALLEGRO_EKAJTEK.min, oczek);
-  assert.strictEqual(pasy.ALLEGRO_NATROPIE.min, oczek);
+  // NaTropie bez Ads (rynekNadpisz) — minimum jak przy ads 0, czyli niższe niż ekajtek
+  assert.strictEqual(pasy.ALLEGRO_NATROPIE.min, rynki.policzRynek(40, { ...def, ads: 0 }, g).cena);
+  assert.ok(pasy.ALLEGRO_NATROPIE.min <= pasy.ALLEGRO_EKAJTEK.min);
   // ocen() przy cenie minimalnej = marża docelowa (20%) — ta sama matematyka co Cennik
   assert.ok(Math.abs(pasy.ALLEGRO_EKAJTEK.ocen(oczek).marza - 20) < 2);
 });
@@ -112,5 +115,17 @@ test('Allegro: ręczna zmiana ceny z ekranu obsługiwana (rejestr pricing/reczna
   const reczna = require('../pricing/reczna-cena');
   assert.strictEqual(reczna.obslugiwana('allegro'), true);
   assert.match(reczna.propagacja('allegro'), /od razu/);
+});
+
+test('Allegro w kalkulatorze: Ads z definicji rynku (1,32%), nie z DOMYSLNE (3%); progi dostawy z Rozliczeń', () => {
+  const def = rynki.RYNKI.find((r) => r.nazwa === 'Allegro');
+  assert.strictEqual(def.ads, 1.32);
+  const g = { ...rynki.DOMYSLNE };
+  // zysk przy cenie: prowizja + Ads liczone od ceny brutto, dopłata dostawy wg progu
+  const c = 80, w = rynki.wycenaPrzyCenie(40, def, g, c);
+  const oczek = c / 1.23 - c * (13.3 + 1.32) / 100 - 40 - rynki.doplataSmartAllegro(c) - g.obsluga;
+  assert.ok(Math.abs(w.zysk - oczek) < 1e-9);
+  assert.deepStrictEqual([44.99, 45, 64.99, 65, 99.99, 100, 149.99, 150, 199.99, 200, 499.99, 500].map(rynki.doplataSmartAllegro),
+    [0, 2.5, 2.5, 3.75, 3.75, 5.82, 5.82, 7.33, 7.33, 7.43, 7.43, 12.16]);
 });
 

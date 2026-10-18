@@ -7,6 +7,7 @@
 //   kalkulator  — nazwa rynku w config/rynki.js (brak = brak pasa min/max, repricer nie decyduje)
 //   tylkoOdczyt — automatu nie da się włączyć (backend odrzuca, ekran nie pokazuje przełącznika)
 //   bezKonkurencji — platforma nie podaje cen innych sprzedawców (Allegro) — ekran mówi to wprost zamiast „—”
+//   rynekNadpisz — pola definicji rynku z config/rynki.js nadpisane tylko dla tej kolumny (NaTropie: bez Ads)
 //   etykieta    — krótka nazwa kolumny w chipie kanału (domyślnie kod rynku: DE, RO…)
 //   reguly      — nadpisania pricing/model.js w walucie kanału (krok obniżki, próg podwyżki); forint
 //                 to ~0,012 zł, więc „0,01 pod konkurenta” nic by nie zmieniło na stronie
@@ -32,7 +33,8 @@ const KOLUMNY = [
   // z kalkulatora (rynek „Allegro”: prowizja + Ads + dopłata Smart). Automat dopiero po ręcznym teście
   // zapisu (pricing/allegro-cena.js) i decyzji usera, jak go prowadzić bez danych o konkurencji.
   { klucz: 'ALLEGRO_EKAJTEK', platforma: 'allegro', rynek: 'EKAJTEK', nazwa: 'Allegro ekajtek', etykieta: 'ekajtek', waluta: 'zł', kalkulator: 'Allegro', tylkoOdczyt: true, bezKonkurencji: true },
-  { klucz: 'ALLEGRO_NATROPIE', platforma: 'allegro', rynek: 'NATROPIE', nazwa: 'Allegro NaTropie', etykieta: 'NaTropie', waluta: 'zł', kalkulator: 'Allegro', tylkoOdczyt: true, bezKonkurencji: true },
+  { klucz: 'ALLEGRO_NATROPIE', platforma: 'allegro', rynek: 'NATROPIE', nazwa: 'Allegro NaTropie', etykieta: 'NaTropie', waluta: 'zł', kalkulator: 'Allegro', tylkoOdczyt: true, bezKonkurencji: true,
+    rynekNadpisz: { ads: 0 } },   // NaTropie nie prowadzi kampanii Ads (Rozliczenia III kw. 2026: 0 zł)
   // Kaufland DE: obserwacja od 2026-10-16, możliwość automatu od 2026-10-18 (decyzja usera po teście zapisu
   // 16.10: cena widoczna po 1–2 min, przez 1,5 doby nikt jej nie cofnął). Smart Pricing Kauflandu wyłączony
   // na wszystkich ofertach (pricing/kaufland-smart.js) — inaczej dwa automaty ciągnęłyby cenę.

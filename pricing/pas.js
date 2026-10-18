@@ -38,6 +38,7 @@ function pasyZWyceny(w, { genius, prowizja } = {}) {
     // zostało bez niego: 2026-10-14 automat podniósł przez to FR NERF7376 33,99 → 47,99 €.
     let def = k.kalkulator && rynki.RYNKI.find((x) => x.nazwa === k.kalkulator);
     if (!def) continue;
+    if (k.rynekNadpisz) def = { ...def, ...k.rynekNadpisz };     // np. Allegro NaTropie bez Ads
     let gk = g;
     if (k.platforma === 'emag' || k.platforma === 'empik') {
       const p = dlaKolumny(prowizja, k.klucz), gen = dlaKolumny(genius, k.klucz);

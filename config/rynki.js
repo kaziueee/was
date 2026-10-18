@@ -24,7 +24,7 @@ const DOMYSLNE = {
   huf: 0.0115,      // PLN za 1 HUF (ostrozny: NBP 15.10.2026 = 0,011998; ~4% ponizej)
   paliwowa: 14,     // doplata paliwowa DHL %
   vatProwizji: 23,  // prowizja Amazon to netto -> dolicz VAT (reverse-charge PL)
-  ads: 3,           // narzut Allegro Ads/promo %
+  ads: 3,           // narzut Allegro Ads/promo % — tylko gdy rynek nie ma własnego `ads` (Allegro ma, patrz RYNKI)
   waga: 1,          // waga rozliczeniowa (kg) - do stawki DHL
 };
 
@@ -33,7 +33,12 @@ const DOMYSLNE = {
 // przeliczany kursem g.eur/kurs rynku: kurier fakturuje w EUR, a sprzedajemy np. w RON); opcjonalnie
 // `oplataZam` = klucz OPLATY_ZAM — stala oplata za zamowienie wg progu ceny (np. Genius na eMAG).
 const RYNKI = [
-  { nazwa: 'Allegro',     kraj: 'PL', waluta: 'PLN', vat: 23, prowizja: 13.3, typ: 'allegro' },
+  // Allegro: prowizja i Ads jako % ceny brutto, tak jak pobiera je Allegro (kwoty z faktury z VAT). Sprawdzone na
+  // systemie Rozliczeń (C:\Rozliczenia, rozliczenia Allegro III kw. 2026, 13 592 zamówienia ekajtek): prowizja 13,35%
+  // obrotu (12,38% po rabatach Allegro Ceny / AlleObniżka — rabatów nie liczymy, nie każda oferta je ma), Ads 1,32%
+  // obrotu (było 3% — decyzja usera 2026-10-18: na rzeczywiste). NaTropie nie ma kampanii Ads — kolumna repricera
+  // nadpisuje `ads: 0` (pricing/kolumny.js `rynekNadpisz`); Cennik liczy jak ekajtek (88% obrotu Allegro).
+  { nazwa: 'Allegro',     kraj: 'PL', waluta: 'PLN', vat: 23, prowizja: 13.3, ads: 1.32, typ: 'allegro' },
   { nazwa: 'Amazon DE',   kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl' },
   // kotwica:true -> w trybie 'kotwica' celuja w zysk Amazon DE + bufor (zamiast wlasnej marzy) - drozsze zwroty
   { nazwa: 'Amazon FR',   kraj: 'FR', waluta: 'EUR', vat: 20, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
@@ -119,8 +124,12 @@ const DHL_STAWKI = {
   NL: [[1, 18.93], [3, 20.99], [5, 22.55], [10, 28.50], [20, 36.93], [31.5, 52.59]],
 };
 
-// Allegro: dopłata Smart NETTO (po rabacie) wg progu wartosci zamowienia. 0 ponizej 45 zl (nie-Smart).
-const ALLEGRO_PROGI = [[45, 0], [65, 2.1], [100, 3.2], [150, 5.5], [200, 7.6], [500, 7.5], [Infinity, 11]];
+// Allegro: opłata za dostawę (Smart / Allegro Delivery) NETTO wg progu wartości zamówienia; 0 poniżej 45 zł (poza Smart
+// dostawę opłaca kupujący). Średnia opłata na zamówienie w progu z systemu Rozliczeń (III kw. 2026, ekajtek; NaTropie
+// w granicach ±0,1 zł poza >500 zł) ÷ 1,23 — kwoty z rozliczeń Allegro to pieniądze faktycznie pobrane, czyli brutto
+// (suma opłat = „Pobranie opłat z wpływów”, 281 283 vs 281 284 zł). Średnia, nie mediana: ~10% zamówień nie ma opłaty.
+// Do 18.10.2026 było 2,1 / 3,2 / 5,5 / 7,6 / 7,5 / 11 (zaniżone w niższych progach o 0,3–0,6 zł).
+const ALLEGRO_PROGI = [[45, 0], [65, 2.5], [100, 3.75], [150, 5.82], [200, 7.33], [500, 7.43], [Infinity, 12.16]];
 
 // Stale oplaty za zamowienie (w walucie rynku, netto) wg progu wartosci zamowienia BRUTTO: [ponizej, oplata].
 // GENIUS_RO: prowizja Genius eMAG RO od 01.01.2026 (marketplace.emag.ro/infocenter, „How the Genius
@@ -229,8 +238,11 @@ function totalCelu(koszty, D, denomZysk, kurs, g) {
 
 function doplataSmartAllegro(cena) {
   for (const [gr, d] of ALLEGRO_PROGI) if (cena < gr) return d;
-  return 11;
+  return ALLEGRO_PROGI[ALLEGRO_PROGI.length - 1][1];
 }
+
+// Narzut Ads (% ceny): własny rynku (Allegro), inaczej wspólny z DOMYSLNE.
+const adsRynku = (r, g) => (r.ads != null ? +r.ads : +g.ads || 0);
 
 // obnizProg: docinanie kartonu (tylko FR) - bierzemy stawke o `obnizProg` progow nizej, bo doc
 // przyciety karton wpada w nizszy przedzial wagowy DHL. Clamp do najnizszego progu.
@@ -309,7 +321,7 @@ function policzFlat(kosztPLN, rynek, g) {
 
 function policzAllegro(kosztPLN, r, g) {
   const v = (+r.vat || 0) / 100, m = (+g.marza || 0) / 100;
-  const p = ((+r.prowizja || 0) + (+g.ads || 0)) / 100; // prowizja + Ads (% od ceny)
+  const p = ((+r.prowizja || 0) + adsRynku(r, g)) / 100; // prowizja + Ads (% od ceny)
   const obs = +g.obsluga || 0;
   const D = (1 - m) / (1 + v) - p, denomZysk = 1 / (1 + v) - p;
   if (D <= 0 || denomZysk <= 0) return wynik(r, { blad: 'reguły niespójne', status: 'bad' });
@@ -369,7 +381,7 @@ function wycenaPrzyCenie(kosztPLN, rynek, g, cena) {
   const pb = +cena || 0;
   if (pb <= 0) return wynik(r, { blad: 'podaj cenę', status: 'bad' });
   if (r.typ === 'allegro') {
-    const v = (+r.vat || 0) / 100, p = ((+r.prowizja || 0) + (+g.ads || 0)) / 100, obs = +g.obsluga || 0;
+    const v = (+r.vat || 0) / 100, p = ((+r.prowizja || 0) + adsRynku(r, g)) / 100, obs = +g.obsluga || 0;
     const denomZysk = 1 / (1 + v) - p;
     const dost = doplataSmartAllegro(pb);
     const pn = pb / (1 + v), zysk = pb * denomZysk - (kosztPLN + dost + obs);

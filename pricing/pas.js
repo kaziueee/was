@@ -16,6 +16,10 @@ const rynki = require('../config/rynki');
 const { KOLUMNY, kluczKolumny } = require('./kolumny');
 const { MNOZNIK_MAX, zGranicami } = require('./granice');
 
+// Platformy, na których stawka prowizji przychodzi z oferty (oferty.prowizja), a nie z config/rynki.js:
+// eMAG (commission/estimate), Empik (kategoria), Allegro (podgląd opłat). Jedna lista dla workera, karty i ręcznej ceny.
+const PROWIZJA_Z_OFERTY = new Set(['emag', 'empik', 'allegro']);
+
 // wycena (z wycenaHurtem) → { DE: {min, max, koszt, waga, ocen(cena) → {zysk, marza}}, …, EMAG_RO }
 // `ocen` liczy zysk (zł) i marżę (%) przy DOWOLNEJ cenie tą samą matematyką co Cennik
 // (rynki.wycenaPrzyCenie) — repricer zapisuje je przy każdej decyzji, ekran tylko czyta.
@@ -40,7 +44,7 @@ function pasyZWyceny(w, { genius, prowizja } = {}) {
     if (!def) continue;
     if (k.rynekNadpisz) def = { ...def, ...k.rynekNadpisz };     // np. Allegro NaTropie bez Ads
     let gk = g;
-    if (k.platforma === 'emag' || k.platforma === 'empik') {
+    if (PROWIZJA_Z_OFERTY.has(k.platforma)) {
       const p = dlaKolumny(prowizja, k.klucz), gen = dlaKolumny(genius, k.klucz);
       if (p > 0) def = { ...def, prowizja: p };
       if (typeof gen === 'boolean') gk = { ...g, genius: gen };
@@ -72,11 +76,12 @@ async function pasyHurtem(twIds, geniusPoTw = new Map(), prowizjaPoTw = new Map(
 // pasa) i pas z samego kalkulatora (null = rynek bez kalkulatora / brak wyceny).
 function pasOferty(w, o) {
   const klucz = kluczKolumny(o.platforma, o.rynek);
-  const opcje = o.platforma === 'emag'
-    ? { genius: o.genius != null ? { [klucz]: !!o.genius } : undefined, prowizja: o.prowizja > 0 ? { [klucz]: o.prowizja } : undefined }
-    : {};
+  const opcje = {
+    genius: o.platforma === 'emag' && o.genius != null ? { [klucz]: !!o.genius } : undefined,
+    prowizja: PROWIZJA_Z_OFERTY.has(o.platforma) && o.prowizja > 0 ? { [klucz]: o.prowizja } : undefined,
+  };
   const kalk = (w && pasyZWyceny(w, opcje)[klucz]) || null;
   return { pas: zGranicami(kalk, o), kalk };
 }
 
-module.exports = { pasyHurtem, pasyZWyceny, pasOferty, MNOZNIK_MAX };
+module.exports = { pasyHurtem, pasyZWyceny, pasOferty, MNOZNIK_MAX, PROWIZJA_Z_OFERTY };

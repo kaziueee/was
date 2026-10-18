@@ -43,7 +43,7 @@ const { synchronizujEmpik } = require('./sync-empik');
 const { obserwujEmpik } = require('./obserwuj-empik');
 const { odswiezStawki } = require('./empik-prowizje');
 const empik = require('./empik');
-const { synchronizujAllegro } = require('./sync-allegro');
+const { synchronizujAllegro, odswiezProwizje: odswiezProwizjeAllegro } = require('./sync-allegro');
 const { obserwujAllegro } = require('./obserwuj-allegro');
 const allegro = require('./allegro');
 const { synchronizujKaufland } = require('./sync-kaufland');
@@ -171,6 +171,11 @@ async function przebieg({ pelny = false } = {}) {
         podsum[konto] = await synchronizujAllegro(konto, lista);
         allegroSurowe.push(...lista);
         allegroKonta.add(konto);
+        // Stawki prowizji per oferta (podgląd opłat Allegro) — porcjami; błąd nie zatrzymuje przebiegu.
+        try {
+          const pr = await odswiezProwizjeAllegro(konto, lista, 400);
+          if (pr.sprawdzone) (wynik.allegro_prowizje ||= {})[konto] = pr;
+        } catch (e) { console.error(new Date().toISOString(), `[pricing] Allegro ${konto} prowizje:`, e.message); }
       } catch (e) {
         stan.set('blad_allegro', `${konto}: ${e.message}`);
         console.error(new Date().toISOString(), `[pricing] Allegro ${konto}:`, e.message);
@@ -209,8 +214,9 @@ async function przebieg({ pelny = false } = {}) {
     return m;
   };
   const geniusPoTw = poKolumnie(emagOf, 'genius', (v) => v != null, (v) => !!v);
-  // Stawka prowizji per oferta: eMAG z commission/estimate, Empik z kategorii (pricing/empik-prowizje.js).
-  const prowizjaPoTw = poKolumnie([...emagOf, ...empikOf], 'prowizja', (v) => v > 0, (v) => v);
+  // Stawka prowizji per oferta: eMAG z commission/estimate, Empik z kategorii (pricing/empik-prowizje.js),
+  // Allegro z podglądu opłat (pricing/sync-allegro.js odswiezProwizje).
+  const prowizjaPoTw = poKolumnie([...emagOf, ...empikOf, ...allegroOf], 'prowizja', (v) => v > 0, (v) => v);
   // Empik: błąd P11 (limit, awaria) = oferty bez obserwacji w tym przebiegu, reszta idzie dalej.
   const obsEmpik = empikOf.length ? obserwujEmpik(empikOf, { surowe: empikSurowe }).catch((e) => {
     stan.set('blad_empik', e.message);

@@ -4925,6 +4925,7 @@ function cenyKartaRynekHtml(o) {
       <div class="ceny-m">${stanBb}</div>
       ${o.genius == null ? '' : `<div class="ceny-m">${o.genius ? 'Genius aktywny — opłata Genius, dostawa do automatu' : 'bez Genius — kurier do domu, klient płaci 25 RON'}</div>`}
       ${o.platforma === 'empik' ? `<div class="ceny-m" title="${cenyEsc(o.kategoria || '')}">kategoria Empik: ${o.kategoria_nazwa ? cenyEsc(o.kategoria_nazwa) : '—'} · prowizja ${o.prowizja ? cenyLiczba(o.prowizja, 1) + '%' : 'średnia 10,55%'}</div>` : ''}
+      ${o.platforma === 'allegro' ? `<div class="ceny-m" title="kategoria Allegro ${cenyEsc(o.kategoria || '?')} — stawka z podglądu opłat Allegro dla tej oferty i ceny">prowizja Allegro ${o.prowizja ? cenyLiczba(o.prowizja, 2) + '%' : 'średnia 13,3% (stawka oferty jeszcze niepobrana)'} · koszt netto po odliczeniu VAT</div>` : ''}
       ${o.tylko_odczyt ? '<div class="hint">tylko odczyt — repricer nie zmienia tu cen</div>'
         : o.ilosc > 0 ? `<label class="ceny-auto-wiersz" data-ceny-auto="${o.id}"> automat</label>` : '<div class="hint">bez stanu — automat nie działa</div>'}
       <div class="ceny-linki">${linki}</div></div>

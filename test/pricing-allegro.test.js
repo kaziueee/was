@@ -130,3 +130,21 @@ test('Allegro w kalkulatorze: Ads z definicji rynku (1,32%), nie z DOMYSLNE (3%)
     [0, 2.5, 2.5, 3.75, 3.75, 5.82, 5.82, 7.33, 7.33, 7.43, 7.43, 12.16]);
 });
 
+test('Allegro: prowizja oferty z podglądu opłat — treść zapytania i stawka % ceny; minimum liczone ze stawki oferty', () => {
+  const s = surowa({ category: { id: '19474' }, sellingMode: { format: 'BUY_NOW', price: { amount: '35.99', currency: 'PLN' } } });
+  const b = allegro.zapytaniePodgladu(s);
+  assert.deepStrictEqual(b.offer.category, { id: '19474' });
+  assert.deepStrictEqual(b.offer.publication, { duration: null });
+  assert.deepStrictEqual(b.offer.parameters, []);
+  assert.strictEqual(b.marketplaceId, 'allegro-pl');
+  assert.strictEqual(allegro.zapytaniePodgladu(surowa({ category: null })), null);
+  // odpowiedź z 18.10 (HASG1435): 5,10 zł przy 35,99 zł = 14,17%
+  assert.strictEqual(allegro.stawkaZPodgladu({ commissions: [{ type: 'commissionFee', fee: { amount: '5.10', currency: 'PLN' } }] }, 35.99), 14.17);
+  assert.strictEqual(allegro.stawkaZPodgladu({ commissions: [] }, 35.99), null);
+  // pas: stawka oferty (11,07% — lalka kolekcjonerska) obniża minimum względem stawki rynku 13,3%
+  const zRynku = pasyZWyceny({ koszt: 173.63, waga: 1, docinalny: false });
+  const zOferty = pasyZWyceny({ koszt: 173.63, waga: 1, docinalny: false }, { prowizja: { ALLEGRO_EKAJTEK: 11.07 } });
+  assert.ok(zOferty.ALLEGRO_EKAJTEK.min < zRynku.ALLEGRO_EKAJTEK.min);
+  assert.strictEqual(zOferty.ALLEGRO_NATROPIE.min, zRynku.ALLEGRO_NATROPIE.min, 'stawka jednej kolumny nie rusza drugiej');
+});
+

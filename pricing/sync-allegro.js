@@ -25,12 +25,15 @@ async function synchronizujAllegro(konto, surowe = null) {
   const klucz = allegro.kluczeOfert(lista);
 
   const upsert = db.prepare(`
-    INSERT INTO oferty (platforma, rynek, sku, asin, tw_id, symbol_gt, dopasowanie, nazwa, cena, ilosc, kanal, aktywna, widziana)
-    VALUES ('allegro', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, CURRENT_TIMESTAMP)
+    INSERT INTO oferty (platforma, rynek, sku, asin, tw_id, symbol_gt, dopasowanie, nazwa, cena, ilosc, kanal, kategoria, aktywna, widziana)
+    VALUES ('allegro', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 1, CURRENT_TIMESTAMP)
     ON CONFLICT (platforma, rynek, sku) DO UPDATE SET
       auto = CASE WHEN oferty.asin IS NOT excluded.asin THEN 0 ELSE oferty.auto END,
       asin = excluded.asin, tw_id = excluded.tw_id, symbol_gt = excluded.symbol_gt, dopasowanie = excluded.dopasowanie, nazwa = excluded.nazwa,
-      cena = excluded.cena, ilosc = excluded.ilosc, aktywna = 1, widziana = CURRENT_TIMESTAMP`);
+      cena = excluded.cena, ilosc = excluded.ilosc, aktywna = 1, widziana = CURRENT_TIMESTAMP,
+      -- inna kategoria = inna prowizja: stara stawka do ponownego pobrania (odswiezProwizje)
+      prowizja_czas = CASE WHEN oferty.kategoria IS NOT excluded.kategoria THEN NULL ELSE oferty.prowizja_czas END,
+      kategoria = excluded.kategoria`);
   const wygas = db.prepare(`UPDATE oferty SET aktywna = 0 WHERE platforma = 'allegro' AND rynek = ? AND widziana < ?`);
 
   const start = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%S','now','-1 second') AS t").get().t;
@@ -47,7 +50,8 @@ async function synchronizujAllegro(konto, surowe = null) {
       // Ręczne powiązanie per klucz oferty (SKU/numer), potem po gołym SKU.
       const t = (reczne.has(k.toUpperCase()) ? przypisz(k, mapa, reczne) : null) || przypisz(o.sku, mapa, reczne);
       if (t) dopasowane++; else brak.push(o.sku);
-      upsert.run(konto, k, o.id, t ? t.tw_Id : null, t ? t.tw_Symbol : null, t ? t.dopasowanie : null, o.nazwa, o.cena, o.ilosc);
+      upsert.run(konto, k, o.id, t ? t.tw_Id : null, t ? t.tw_Symbol : null, t ? t.dopasowanie : null, o.nazwa, o.cena, o.ilosc,
+        surowa?.category?.id ? String(surowa.category.id) : null);
     }
     // Pusta lista = najpewniej awaria po stronie Allegro, nie „wszystko zniknęło" — nie wygaszamy.
     const wygasle = lista.length ? wygas.run(konto, start).changes : 0;
@@ -57,7 +61,34 @@ async function synchronizujAllegro(konto, surowe = null) {
   } catch (e) { db.exec('ROLLBACK'); throw e; }
 }
 
-module.exports = { synchronizujAllegro };
+// Stawki prowizji per oferta (POST /pricing/offer-fee-preview, jak eMAG commission/estimate) — porcjami: co
+// przebieg najwyżej `limit` ofert konta ze stanem, najpierw bez stawki, potem najstarsze; stawka żyje 7 dni
+// (prowizja zależy od kategorii, a w części kategorii także od progu ceny). Pełne pokrycie ~3000 ofert = kilka
+// przebiegów. Brak stawki = kalkulator bierze stawkę rynku (config/rynki.js, 13,3%).
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function odswiezProwizje(konto, surowe, limit = 400) {
+  const poId = new Map((surowe || []).map((o) => [String(o.id), o]));
+  const doPobrania = db.prepare(`SELECT id, asin FROM oferty WHERE platforma = 'allegro' AND rynek = ? AND aktywna = 1 AND ilosc > 0
+      AND (prowizja_czas IS NULL OR prowizja_czas < datetime('now', '-7 days'))
+    ORDER BY prowizja_czas IS NOT NULL, prowizja_czas LIMIT ?`).all(konto, limit);
+  const zapisz = db.prepare('UPDATE oferty SET prowizja = ?, prowizja_czas = CURRENT_TIMESTAMP WHERE id = ?');
+  let pobrane = 0;
+  for (const o of doPobrania) {
+    const s = poId.get(String(o.asin));
+    if (!s) continue;
+    let v;
+    try { v = await allegro.prowizjaOferty(s); } catch (e) {
+      if (/HTTP (429|401|403)/.test(e.message)) break;   // limit albo dostęp — dokończy następny przebieg
+      continue;                                           // chwilowy błąd jednej oferty — bez zapisu
+    }
+    zapisz.run(v, o.id);      // null (Allegro nie podało stawki) też z czasem — nie pytamy co przebieg
+    if (v != null) pobrane++;
+    await sleep(60);          // limit Allegro: 25 zapytań/s na użytkownika
+  }
+  return { sprawdzone: doPobrania.length, pobrane };
+}
+
+module.exports = { synchronizujAllegro, odswiezProwizje };
 
 if (require.main === module) {
   require('../config/env');

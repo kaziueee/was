@@ -28,6 +28,10 @@
 //                                                   stock.sold (30 dni), sellingMode.priceAutomation
 //   PATCH /sale/product-offers/{id}                 { sellingMode: { price } } — 200 = zmienione od razu,
 //                                                   202 = w toku (Location → /operations/{id}: 202 / 303)
+//   POST  /pricing/offer-fee-preview                prowizja dla oferty (kategoria + cena), limit 25 zapytań/s.
+//                                                   Wymaga publication, parameters i promotion (puste wystarczą —
+//                                                   sprawdzone 18.10). Kwota jak w rozliczeniach, czyli brutto:
+//                                                   14,17% na HASG1435 wobec mediany 14,15% z Rozliczeń.
 
 // `id` = numer użytkownika Allegro (pole `user_name` w tokenie). Po nim sprawdzamy, że zgodę dało właściwe
 // konto — aplikacja „WMS Price” nie ma uprawnienia profile:read, więc /me odpowiada 403 (sprawdzone 18.10).
@@ -316,9 +320,30 @@ async function ustawCene(surowa, cena) {
   }
 }
 
+// Podgląd opłat oferty — czyste funkcje: treść zapytania i stawka % ceny (prowizja brutto, jak pobiera Allegro).
+function zapytaniePodgladu(surowa) {
+  if (!surowa?.category?.id || !(cenaPln(surowa.sellingMode) > 0)) return null;
+  return { offer: { id: String(surowa.id), name: surowa.name || String(surowa.id), category: { id: String(surowa.category.id) },
+    sellingMode: { format: 'BUY_NOW', price: surowa.sellingMode.price }, publication: { duration: null }, parameters: [], promotion: {} },
+  marketplaceId: 'allegro-pl' };
+}
+function stawkaZPodgladu(odp, cena) {
+  const prow = ((odp && odp.commissions) || []).filter((c) => c.type === 'commissionFee' && c.fee?.currency === 'PLN');
+  if (!prow.length || !(cena > 0)) return null;
+  const s = prow.reduce((a, c) => a + (Number(c.fee.amount) || 0), 0) / cena * 100;
+  return s > 0 && s < 100 ? Math.round(s * 100) / 100 : null;
+}
+// Stawka prowizji oferty (% ceny brutto) albo null (Allegro nie podało — kalkulator bierze stawkę rynku).
+async function prowizjaOferty(surowa) {
+  const body = zapytaniePodgladu(surowa);
+  if (!body) return null;
+  const r = await zapytanie(surowa._konto, '/pricing/offer-fee-preview', { metoda: 'POST', body, proby: 2, timeoutMs: 30_000 });
+  return stawkaZPodgladu(r.j, cenaPln(surowa.sellingMode));
+}
+
 const linkiOferty = (id) => (id ? { produkt: `https://allegro.pl/oferta/${encodeURIComponent(id)}` } : null);
 
 module.exports = {
   KONTA, USER_AGENT, skonfigurowany, kontaAutoryzowane, tokenDostepu, zapiszTokeny, postAuth, tokenWazny, czekajMs,
-  api, zapytanie, wszystkieOferty, ofertaPoId, login, trescTokenu, doOferty, kluczeOfert, skuGt, zOferty, zmianaCeny, ustawCene, linkiOferty,
+  api, zapytanie, wszystkieOferty, ofertaPoId, login, trescTokenu, zapytaniePodgladu, stawkaZPodgladu, prowizjaOferty, doOferty, kluczeOfert, skuGt, zOferty, zmianaCeny, ustawCene, linkiOferty,
 };

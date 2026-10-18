@@ -13,7 +13,7 @@
 // NaTropieZabawek (~2100 ofert, ~700 szt./30 dni). ~1800 SKU jest na obu — konta konkurują ze sobą,
 // a API nie powie, które z nich ma „Top ofertę”.
 //
-// Autoryzacja: własna aplikacja „WMS Pricing” (ALLEGRO_CLIENT_ID / ALLEGRO_CLIENT_SECRET w .env, typ
+// Autoryzacja: własna aplikacja „WMS Price” (ALLEGRO_CLIENT_ID / ALLEGRO_CLIENT_SECRET w .env, typ
 // „bez dostępu do przeglądarki” = device flow) — NIE aplikacja systemu Rozliczenia (C:\Rozliczenia): ta ma
 // tylko odczyt, a refresh token Allegro jest JEDNORAZOWY (po odświeżeniu stary działa jeszcze 60 s), więc
 // dwa systemy na jednym tokenie wylogowywałyby się nawzajem. Tokeny kont trzymamy w pricing.db (tabela
@@ -42,10 +42,10 @@ const iso = (ms) => new Date(ms).toISOString();
 
 const skonfigurowany = () => !!(process.env.ALLEGRO_CLIENT_ID && process.env.ALLEGRO_CLIENT_SECRET);
 // Identyfikacja aplikacji — obowiązkowa od 07.2026 (Regulamin REST API pkt 3.4c, allegro/allegro-api#13126):
-// `NazwaAplikacji/Wersja (+URL dokumentacji)`, nazwa zgodna z zarejestrowaną („WMS Pricing”; myślnik zamiast
-// spacji przechodzi walidację), URL = „Link do dokumentacji” z formularza aplikacji. Allegro używa go do
-// białej listy — nie zmieniać bez zmiany w Developer Apps (sprawdzanie: apps.developer.allegro.pl/user-agent).
-const USER_AGENT = () => process.env.ALLEGRO_USER_AGENT || 'WMS-Pricing/1.0 (+https://github.com/kaziueee/was/blob/main/pricing/allegro.js)';
+// `NazwaAplikacji/Wersja (+URL dokumentacji)`. Wartość DOKŁADNIE z generatora apps.developer.allegro.pl/user-agent
+// dla naszej aplikacji (zarejestrowana jako „WMS Price”, 18.10.2026). Allegro używa jej do białej listy — nie
+// zmieniać bez ponownego wygenerowania w Developer Apps (tam też walidator).
+const USER_AGENT = () => process.env.ALLEGRO_USER_AGENT || 'WMS-Price/1.0 (+https://github.com/kaziueee/was/blob/main/pricing/allegro.js)';
 const basic = () => 'Basic ' + Buffer.from(`${process.env.ALLEGRO_CLIENT_ID}:${process.env.ALLEGRO_CLIENT_SECRET}`).toString('base64');
 
 // Baza dopiero przy pierwszym użyciu tokenów — czyste funkcje (testy, ekran WMS) nie dotykają SQLite.

@@ -29,7 +29,7 @@ async function main(argv) {
   const konto = String(argv.find((x) => !x.startsWith('--')) || '').toUpperCase();
   const def = allegro.KONTA[konto];
   if (!def) throw new Error(`Użycie: node pricing/allegro-autoryzuj.js <${Object.keys(allegro.KONTA).join('|')}> [--przegladarka]`);
-  if (!allegro.skonfigurowany()) throw new Error('Brak ALLEGRO_CLIENT_ID / ALLEGRO_CLIENT_SECRET w .env (aplikacja „WMS Pricing” z apps.developer.allegro.pl)');
+  if (!allegro.skonfigurowany()) throw new Error('Brak ALLEGRO_CLIENT_ID / ALLEGRO_CLIENT_SECRET w .env (aplikacja „WMS Price” z apps.developer.allegro.pl)');
   console.log(`\nKonto: ${def.nazwa} (login Allegro: ${def.login})`);
   console.log('1. Zaloguj się w przeglądarce na TO konto Allegro (inne konto = autoryzacja zostanie odrzucona).');
   const t = argv.includes('--przegladarka') ? await przezPrzegladarke() : await przezUrzadzenie();

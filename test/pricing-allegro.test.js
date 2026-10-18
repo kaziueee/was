@@ -96,4 +96,6 @@ test('Allegro: „w pasie, konkurencji nie widać” liczy się do sytuacji „B
 
 test('Allegro: User-Agent w formacie Nazwa/Wersja (+URL dokumentacji) — wymóg Allegro od 07.2026', () => {
   assert.match(allegro.USER_AGENT(), /^[A-Za-z][\w-]*\/[\w.]+ \(\+https:\/\/\S+\)$/);
+  // wartość z generatora Allegro dla aplikacji „WMS Price” (18.10.2026) — zmiana = ponowne wygenerowanie
+  assert.strictEqual(allegro.USER_AGENT(), 'WMS-Price/1.0 (+https://github.com/kaziueee/was/blob/main/pricing/allegro.js)');
 });

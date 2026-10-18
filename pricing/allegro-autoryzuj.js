@@ -106,20 +106,26 @@ function przezPrzegladarke() {
 }
 
 async function zapisz(konto, def, t) {
-  // Login sprawdzamy, ZANIM cokolwiek zapiszemy — tym samym linkiem da się zalogować na dowolne konto.
+  // Konto sprawdzamy, ZANIM cokolwiek zapiszemy — tym samym linkiem da się zalogować na dowolne konto.
+  // Rozstrzyga numer konta z tokenu (`user_name`); login z /me tylko, gdy aplikacja ma profile:read.
+  const p = allegro.trescTokenu(t.access_token) || {};
+  const uzytkownik = p.user_name ? String(p.user_name) : null;
+  const scope = t.scope || (Array.isArray(p.scope) ? p.scope.join(' ') : '');
+  if (!uzytkownik) throw new Error('Token bez numeru konta — nic nie zapisano.');
+  if (def.id && uzytkownik !== def.id) {
+    throw new Error(`Zgodę dało konto nr ${uzytkownik}, a to miało być ${def.login} (nr ${def.id}) — nic nie zapisano. Wyloguj się z Allegro, zaloguj na ${def.login} i uruchom skrypt ponownie.`);
+  }
+  let login = null;
   const r = await fetch('https://api.allegro.pl/me', {
     headers: { Authorization: `Bearer ${t.access_token}`, Accept: 'application/vnd.allegro.public.v1+json', 'User-Agent': allegro.USER_AGENT() },
     signal: AbortSignal.timeout(30_000),
-  });
-  const me = await r.json().catch(() => ({}));
-  if (!r.ok || !me.login) throw new Error(`Nie udało się odczytać konta (/me HTTP ${r.status}) — nic nie zapisano.`);
-  if (String(me.login).toLowerCase() !== def.login.toLowerCase()) {
-    throw new Error(`Zgodę dało konto „${me.login}”, a to miało być „${def.login}” — nic nie zapisano. Wyloguj się z Allegro, zaloguj na ${def.login} i uruchom skrypt ponownie.`);
+  }).catch(() => null);
+  if (r && r.ok) {
+    login = (await r.json().catch(() => ({}))).login || null;
+    if (login && login.toLowerCase() !== def.login.toLowerCase()) throw new Error(`Zgodę dało konto „${login}”, a to miało być „${def.login}” — nic nie zapisano.`);
   }
-  let scope = t.scope || '';
-  try { scope = scope || JSON.parse(Buffer.from(t.access_token.split('.')[1], 'base64url').toString()).scope.join(' '); } catch { /* bez scope w odpowiedzi */ }
-  allegro.zapiszTokeny(konto, t, { login: me.login, uzytkownik: me.id });
-  console.log(`Zapisano: ${def.nazwa} = ${me.login} (id ${me.id}).`);
+  allegro.zapiszTokeny(konto, t, { login: login || def.login, uzytkownik });
+  console.log(`Zapisano: ${def.nazwa} = konto nr ${uzytkownik}${login ? ` (${login})` : ` (${def.login} — sprawdzone po numerze konta)`}.`);
   console.log(`Uprawnienia: ${scope || '?'}`);
   if (!/sale:offers:write/.test(scope)) console.log('UWAGA: brak allegro:api:sale:offers:write — odczyt zadziała, zmiana ceny nie. Dodaj uprawnienie w aplikacji i podepnij konto ponownie.');
 }

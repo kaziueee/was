@@ -99,3 +99,12 @@ test('Allegro: User-Agent w formacie Nazwa/Wersja (+URL dokumentacji) — wymóg
   // wartość z generatora Allegro dla aplikacji „WMS Price” (18.10.2026) — zmiana = ponowne wygenerowanie
   assert.strictEqual(allegro.USER_AGENT(), 'WMS-Price/1.0 (+https://github.com/kaziueee/was/blob/main/pricing/allegro.js)');
 });
+
+test('Allegro: numer konta i uprawnienia z treści tokenu (bez /me — aplikacja nie ma profile:read)', () => {
+  const jwt = (o) => ['x', Buffer.from(JSON.stringify(o)).toString('base64url'), 'y'].join('.');
+  assert.deepStrictEqual(allegro.trescTokenu(jwt({ user_name: '21818279', scope: ['allegro:api:sale:offers:write'] })),
+    { user_name: '21818279', scope: ['allegro:api:sale:offers:write'] });
+  assert.strictEqual(allegro.trescTokenu('nie-jwt'), null);
+  for (const k of Object.values(allegro.KONTA)) assert.match(k.id, /^\d+$/, k.login);
+});
+

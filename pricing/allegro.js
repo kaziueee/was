@@ -29,9 +29,11 @@
 //   PATCH /sale/product-offers/{id}                 { sellingMode: { price } } — 200 = zmienione od razu,
 //                                                   202 = w toku (Location → /operations/{id}: 202 / 303)
 
+// `id` = numer użytkownika Allegro (pole `user_name` w tokenie). Po nim sprawdzamy, że zgodę dało właściwe
+// konto — aplikacja „WMS Price” nie ma uprawnienia profile:read, więc /me odpowiada 403 (sprawdzone 18.10).
 const KONTA = {
-  EKAJTEK: { login: 'ekajtek_pl', nazwa: 'Allegro ekajtek' },
-  NATROPIE: { login: 'NaTropieZabawek', nazwa: 'Allegro NaTropie' },
+  EKAJTEK: { login: 'ekajtek_pl', id: '21818279', nazwa: 'Allegro ekajtek' },
+  NATROPIE: { login: 'NaTropieZabawek', id: '40613543', nazwa: 'Allegro NaTropie' },
 };
 const API = 'https://api.allegro.pl';
 const AUTH = 'https://allegro.pl/auth/oauth';
@@ -216,6 +218,12 @@ async function ofertaPoId(konto, id) {
 
 async function login(konto) { return (await api(konto, '/me'))?.login || null; }
 
+// Treść tokenu (JWT): user_name = numer konta Allegro, scope = lista uprawnień. Bez weryfikacji podpisu —
+// token przyszedł prosto z allegro.pl/auth/oauth/token, czytamy go tylko po to, żeby nie pomylić kont.
+function trescTokenu(accessToken) {
+  try { return JSON.parse(Buffer.from(String(accessToken).split('.')[1], 'base64url').toString()); } catch { return null; }
+}
+
 // --- kształt danych (czyste funkcje, testy w test/pricing-allegro.test.js) ---------------------
 
 const cenaPln = (sm) => (sm && sm.price && sm.price.currency === 'PLN' && Number(sm.price.amount) > 0 ? zaokr(Number(sm.price.amount)) : null);
@@ -312,5 +320,5 @@ const linkiOferty = (id) => (id ? { produkt: `https://allegro.pl/oferta/${encode
 
 module.exports = {
   KONTA, USER_AGENT, skonfigurowany, kontaAutoryzowane, tokenDostepu, zapiszTokeny, postAuth, tokenWazny, czekajMs,
-  api, zapytanie, wszystkieOferty, ofertaPoId, login, doOferty, kluczeOfert, skuGt, zOferty, zmianaCeny, ustawCene, linkiOferty,
+  api, zapytanie, wszystkieOferty, ofertaPoId, login, trescTokenu, doOferty, kluczeOfert, skuGt, zOferty, zmianaCeny, ustawCene, linkiOferty,
 };

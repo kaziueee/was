@@ -108,3 +108,9 @@ test('Allegro: numer konta i uprawnienia z treści tokenu (bez /me — aplikacja
   for (const k of Object.values(allegro.KONTA)) assert.match(k.id, /^\d+$/, k.login);
 });
 
+test('Allegro: ręczna zmiana ceny z ekranu obsługiwana (rejestr pricing/reczna-cena.js)', () => {
+  const reczna = require('../pricing/reczna-cena');
+  assert.strictEqual(reczna.obslugiwana('allegro'), true);
+  assert.match(reczna.propagacja('allegro'), /od razu/);
+});
+

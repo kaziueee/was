@@ -14,6 +14,7 @@
 const amazon = require('./amazon');
 const emag = require('./emag');
 const kaufland = require('./kaufland');
+const allegro = require('./allegro');
 
 const PLATFORMY = {
   amazon: {
@@ -41,6 +42,17 @@ const PLATFORMY = {
       return kaufland.ustawCene(lista[0], cena);
     },
     propagacja: 'Kaufland pokazuje nową cenę po 1–2 min',
+  },
+  allegro: {
+    // PATCH /sale/product-offers/{id} na ofercie świeżo pobranej po numerze (`asin`) z konta (`rynek`) —
+    // allegro.zmianaCeny odmawia oferty pod regułą cenową Allegro i formatu innego niż Kup Teraz.
+    wyslij: async (o, cena) => {
+      const s = await allegro.ofertaPoId(o.rynek, o.asin);
+      if (!s) return { ok: false, blad: `Allegro ${o.rynek}: oferty ${o.asin} nie ma wśród aktywnych` };
+      return allegro.ustawCene(s, cena);
+    },
+    // Test 18.10 (HASG1435): PATCH 200 po 0,2 s, nowa cena w API po ~3 s; CZ/SK/HU idą za nią same (reguły kursowe).
+    propagacja: 'Allegro zmienia cenę od razu (kilka sekund); ceny CZ/SK/HU przeliczają się same',
   },
 };
 

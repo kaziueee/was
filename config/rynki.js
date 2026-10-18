@@ -100,9 +100,13 @@ const RYNKI = [
   { nazwa: 'eMAG BG',     kraj: 'BG', waluta: 'EUR', vat: 20, prowizja: 18, prowizjaOdNetto: true, typ: 'flat',
     genius:    { oplataZam: 'GENIUS_BG', oplataZamUdzial: 0.3, wysylkaEur: 2.37, wysKlient: 0.52 },
     bezGenius: { wysylkaEur: 7.65, wysKlient: 5 } },
-  // Kaufland DE: ta sama umowa DHL do Niemiec co Amazon DE (koszt po wadze). Prowizja 13% dla zabawek
-  // (kauflandglobalmarketplace.com/en/conditions) - od ceny BRUTTO wraz z wysylka, netto + VAT -> model amazon-dhl.
-  { nazwa: 'Kaufland DE', kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 13, wysKlient: 4.99, typ: 'amazon-dhl' },
+  // Kaufland DE: ta sama umowa DHL do Niemiec co Amazon DE (koszt po wadze). Prowizja 13% (zabawki) od ceny
+  // BRUTTO razem z wysyłką klienta — model amazon-dhl. Zmierzone 2026-10-18 na 181 księgowaniach (raport
+  // bookings, 01.09–17.10): fee = 13% × (cena + 4,99) co do centa, `fee_vat_% = 0` — Kaufland fakturuje
+  // prowizję bez VAT (odwrotne obciążenie, VAT odliczany), więc `vatProwizji: 0` (decyzja usera 2026-10-18;
+  // wcześniej kalkulator doliczał 23% jak przy Amazonie i minimum wychodziło o 1–4 € za wysokie).
+  // Abonament 39,95 €/mies. (~0,35 € na zamówienie) poza kalkulatorem.
+  { nazwa: 'Kaufland DE', kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 13, vatProwizji: 0, wysKlient: 4.99, typ: 'amazon-dhl' },
   // Empik (EmpikPlace, dodany 2026-10-16 pod repricer). Liczby zmierzone, nie z cennika:
   //  - prowizja 10,55% od CAŁOŚCI brutto (towar + dostawa): OR11 z 90 dni (1249 zam.: 14 576 zł netto przy
   //    138 166 zł) i rozliczenie Empik 30.09–15.10.2026 (2 565,87 zł przy 24 327,97 zł). Zależy od kategorii
@@ -345,6 +349,10 @@ function policzAllegro(kosztPLN, r, g) {
     status: floorBinds ? 'warn' : 'ok', detal: { dostawaSmart: dost, oplataPct: pb > 0 ? (pb * p + dost) / pb * 100 : 0 } });
 }
 
+// VAT doliczany do prowizji rynku amazon-dhl: z definicji rynku (Kaufland: 0 — prowizja bez VAT, zmierzone),
+// inaczej parametr wspólny (Amazon: 23%).
+const vatProwizji = (r, g) => +(r.vatProwizji ?? g.vatProwizji) || 0;
+
 function policzAmazonDHL(kosztPLN, r, g) {
   const kurs = kursDla('EUR', g);
   if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });
@@ -356,7 +364,7 @@ function policzAmazonDHL(kosztPLN, r, g) {
   const kosztDHL = stawka * (1 + (+g.paliwowa || 0) / 100) / kurs;
   const S = +r.wysKlient || 0;
   const v = (+r.vat || 0) / 100, m = (+g.marza || 0) / 100;
-  const p = ((+r.prowizja || 0) / 100) * (1 + (+g.vatProwizji || 0) / 100); // prowizja netto + VAT
+  const p = ((+r.prowizja || 0) / 100) * (1 + vatProwizji(r, g) / 100); // prowizja netto + VAT (gdy nieodliczany)
   const koszty = kosztPLN / kurs + kosztDHL + (+g.obsluga || 0) / kurs;
   const D = (1 - m) / (1 + v) - p, denomZysk = 1 / (1 + v) - p;
   if (D <= 0 || denomZysk <= 0) return wynik(r, { blad: 'reguły niespójne', status: 'bad' });
@@ -401,7 +409,7 @@ function wycenaPrzyCenie(kosztPLN, rynek, g, cena) {
     const stawka = stawkaDHL(r.kraj, +g.waga || 0, (g.docinanieOn && g.docinanie) ? 1 : 0);
     if (stawka == null) return wynik(r, { blad: 'waga > 31,5 kg', status: 'bad' });
     kosztWys = stawka * (1 + (+g.paliwowa || 0) / 100) / kurs;
-    p = ((+r.prowizja || 0) / 100) * (1 + (+g.vatProwizji || 0) / 100);
+    p = ((+r.prowizja || 0) / 100) * (1 + vatProwizji(r, g) / 100);
   } else {
     kurs = kursDla(r.waluta, g);
     if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });

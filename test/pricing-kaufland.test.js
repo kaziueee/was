@@ -183,3 +183,18 @@ test('Kaufland: wyłączenie Smart Pricing zamraża cenę, za którą oferta sto
   // po wyłączeniu zwykły zapis ceny już przechodzi
   assert.ok(!kaufland.zmianaCeny(unit({ listing_price: 1400, minimum_price: 1400, price: 1400 }), 14.5).blad);
 });
+
+test('Kaufland: kalkulator liczy prowizję 13% od ceny z wysyłką BEZ VAT (raport bookings: fee_vat_% = 0), Amazon dalej z VAT', () => {
+  const rynki = require('../config/rynki');
+  const kd = rynki.RYNKI.find((x) => x.nazwa === 'Kaufland DE');
+  const g = { ...rynki.DOMYSLNE, waga: 1 };
+  // zysk przy cenie 33,49: prowizja = 13% × (33,49 + 4,99) = 5,00 € — tak jak w księgowaniu MQSBLS5
+  const w = rynki.wycenaPrzyCenie(40, kd, g, 33.49);
+  const kosztWys = rynki.stawkaDHL('DE', 1) * (1 + g.paliwowa / 100) / g.eur;
+  const oczek = (33.49 + 4.99) / 1.19 - 0.13 * (33.49 + 4.99) - (40 / g.eur + kosztWys + g.obsluga / g.eur);
+  assert.ok(Math.abs(w.zysk - oczek * g.eur) < 0.01, `zysk ${w.zysk} vs ${oczek * g.eur}`);
+  // globalne 23% nie dotyczy Kauflandu, a Amazon DE nadal je dolicza
+  assert.strictEqual(rynki.policzRynek(30, kd, g).cena, rynki.policzRynek(30, kd, { ...g, vatProwizji: 0 }).cena);
+  const ade = rynki.RYNKI.find((x) => x.nazwa === 'Amazon DE');
+  assert.ok(rynki.policzRynek(30, ade, g).cena > rynki.policzRynek(30, ade, { ...g, vatProwizji: 0 }).cena);
+});

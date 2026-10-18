@@ -322,17 +322,22 @@ router.get('/log', (req, res) => {
   const kanal = kolKanalu.length ? String(req.query.kanal) : '';
   const kolumnyW = kanal ? kolKanalu : KOLUMNY;
   const decyzje = db.prepare(`
-    SELECT 'decyzja' AS typ, d.czas, o.rynek, o.sku, o.symbol_gt, d.cena_przed, d.cena_nowa, d.kod, d.powod,
+    SELECT 'decyzja' AS typ, d.czas, o.platforma, o.rynek, o.sku, o.symbol_gt, d.cena_przed, d.cena_nowa, d.kod, d.powod,
            d.wyslano, d.zysk, d.zysk_nowa, NULL AS kto
       FROM decyzje d JOIN oferty o ON o.id = d.oferta_id
      WHERE d.auto = 1 AND d.cena_nowa <> d.cena_przed
      ORDER BY d.id DESC LIMIT ?`).all(limit);
   const zmiany = db.prepare(`
-    SELECT 'zmiana' AS typ, z.czas, o.rynek, o.sku, o.symbol_gt, NULL AS cena_przed, NULL AS cena_nowa, z.akcja AS kod,
+    SELECT 'zmiana' AS typ, z.czas, o.platforma, o.rynek, o.sku, o.symbol_gt, NULL AS cena_przed, NULL AS cena_nowa, z.akcja AS kod,
            z.opis AS powod, NULL AS wyslano, NULL AS zysk, NULL AS zysk_nowa, z.kto
       FROM zmiany z LEFT JOIN oferty o ON o.id = z.oferta_id
      ORDER BY z.id DESC LIMIT ?`).all(limit);
-  res.json({ wpisy: [...decyzje, ...zmiany].sort((a, b) => (a.czas < b.czas ? 1 : -1)).slice(0, limit) });
+  // Nazwa kanału i waluta jak w macierzy — sam kod rynku nie odróżnia Amazon DE od Kaufland DE.
+  const zKanalemLogu = (x) => {
+    const k = kolumna(x.platforma, x.rynek);
+    return k ? { ...x, kanal_nazwa: k.nazwa, waluta: k.waluta } : x;
+  };
+  res.json({ wpisy: [...decyzje, ...zmiany].sort((a, b) => (a.czas < b.czas ? 1 : -1)).slice(0, limit).map(zKanalemLogu) });
 });
 
 router.post('/automat', (req, res) => {

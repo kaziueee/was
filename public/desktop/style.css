@@ -1224,7 +1224,14 @@ main {
 .ceny-chip { font: inherit; font-size: 0.85rem; border: 1px solid #ccd; background: #fff; color: #1d3557; border-radius: 999px; padding: 0.3rem 0.8rem; cursor: pointer; }
 .ceny-chip.aktywny { background: #1d3557; color: #fff; border-color: #1d3557; }
 .ceny-filtry input[type="search"] { padding: 0.35rem 0.6rem; border: 1px solid #ccc; border-radius: 6px; font-size: 0.9rem; width: 16rem; max-width: 70vw; }
-.ceny-wrap { overflow-x: auto; }
+/* Macierz przewija się we własnym okienku na wysokość ekranu: nagłówek kanałów i kolumna „Towar” zostają
+   na miejscu, a poziomy pasek jest zawsze widoczny (wcześniej leżał pod ostatnim z ~200 wierszy).
+   `.tabela` ma overflow:hidden (zaokrąglone rogi) — to wyłączało position:sticky, więc rogi i cień
+   przechodzą na okienko, a tabela dostaje overflow:visible. border-collapse:separate — przy collapse
+   linie między wierszami nie jadą razem z przypiętymi komórkami. */
+.ceny-wrap { overflow: auto; max-height: calc(100vh - 1rem); background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+.ceny-tabela { overflow: visible; border-radius: 0; box-shadow: none; border-collapse: separate; border-spacing: 0; }
+.ceny-tabela thead th { position: sticky; top: 0; z-index: 2; }
 .ceny-tabela td { vertical-align: top; }
 .ceny-tabela th { white-space: nowrap; }
 .ceny-towar { min-width: 11rem; }
@@ -1237,9 +1244,15 @@ main {
 .ceny-auto-wiersz { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.35rem; font-size: 0.78rem; color: #666; cursor: pointer; }
 .ceny-kom { min-width: 8.5rem; max-width: 11rem; }
 /* Opisy decyzji i Buy Boxa łamią się do 2 linii zamiast rozpychać kolumnę (7 rynków na jednym ekranie). */
-.ceny-kom .ceny-dec, .ceny-kom .ceny-bb, .ceny-kom .ceny-cel { white-space: normal; line-height: 1.25; }
+.ceny-kom .ceny-dec, .ceny-kom .ceny-bb, .ceny-kom .ceny-cel, .ceny-kom .ceny-krok { white-space: normal; line-height: 1.25; }
+/* Najbliższy schodek automatu — drobno pod ceną docelową, żeby nie czytać go jako ceny do ustawienia. */
+.ceny-krok { font-size: 0.72rem; color: #8a919a; }
+/* Kanał tylko do odczytu (Allegro): znaczek zamiast „· odczyt” — nagłówek był najszerszy w macierzy. */
+.ceny-odczyt { font-size: 0.75rem; opacity: 0.85; cursor: help; }
+/* Log decyzji: data z godziną i nazwa kanału w jednej linii (łamały się, gdy „Powód” zabierał szerokość). */
+.ceny-log td:nth-child(-n+2) { white-space: nowrap; }
 /* Kolumna „Towar” przypięta przy przewijaniu w bok. */
-.ceny-tabela thead th:first-child { position: sticky; left: 0; z-index: 2; }
+.ceny-tabela thead th:first-child { left: 0; z-index: 3; }
 .ceny-tabela td.ceny-towar { position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: 1px 0 0 #e3e6ee; }
 .ceny-tabela tbody tr:hover td.ceny-towar { background: #f8f9fa; }
 .ceny-kom.off { background: #eceef1; }
@@ -1367,8 +1380,9 @@ main {
 .ceny-przel.niepewne { border-style: dashed; opacity: 0.6; }
 
 /* Ceny: Pulpit (public/desktop/ceny-pulpit.js) */
-/* Filtry macierzy nie dotyczą pulpitu. Osobna reguła, bo .ceny-filtry/.ceny-rzad (display:flex) wygrywają z .hidden. */
-#panel-ceny[data-widok="pulpit"] :is(#ceny-filtry, #ceny-kanaly, #ceny-sytuacje) { display: none; }
+/* .ceny-filtry/.ceny-rzad/.ceny-kanaly (display:flex) wygrywały z .hidden — filtry macierzy wisiały nad
+   pulpitem, kartą SKU, logiem i „Do powiązania”, choć cenyPokazWidok je chowa. Tu .hidden wygrywa zawsze. */
+#panel-ceny .hidden { display: none; }
 .cp { transition: opacity 0.15s; }
 .cp.cp-laduje { opacity: 0.55; }
 .cp-zdrowie { margin-bottom: 0.6rem; }

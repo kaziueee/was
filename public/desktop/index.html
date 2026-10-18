@@ -836,13 +836,13 @@
         <p class="hint ceny-legenda">
           <span class="ceny-probka bb"></span> mamy Buy Box &nbsp;
           <span class="ceny-probka off"></span> ręczny (automat wyłączony) &nbsp;
-          W komórce: cena (bez wysyłki), marża i zysk na sztuce wg kalkulatora; pod spodem co robi automat (przy ręcznym: podpowiedź).
+          W komórce: cena (bez wysyłki), marża i zysk na sztuce wg kalkulatora; pod spodem cena, do której zmierza automat (przy ręcznym: podpowiedź), a gdy dochodzi do niej schodkami — drobno „1. krok”, czyli cena w najbliższym przebiegu. 👁 przy kanale = tylko odczyt (repricer obserwuje, cen nie zmienia).
           Przełącznik w komórce = jeden rynek, przy SKU = wszystkie rynki tego towaru. ↗ = oferta na platformie (Amazon, eMAG). Na eMAG nowa cena pojawia się po kilku minutach; ⚠ = eMAG wstrzymał ofertę przez cenę („Invalid price”).
           Kliknij komórkę albo SKU — karta SKU.
         </p>
       </div>
       <div id="ceny-widok-karta" class="hidden">
-        <div id="ceny-karta"><p class="hint">Wybierz towar w macierzy (kliknij SKU albo komórkę) albo wyszukaj go i naciśnij Enter.</p></div>
+        <div id="ceny-karta"><p class="hint">Wybierz towar w macierzy (kliknij SKU albo komórkę) albo wyszukaj go tam i naciśnij Enter.</p></div>
       </div>
       <div id="ceny-widok-powiazania" class="hidden">
         <p class="hint">Automat cen działa tylko na ofertach powiązanych z towarem GT na pewno: SKU równe symbolowi albo powiązanie potwierdzone tutaj.
@@ -856,8 +856,8 @@
       </div>
       <div id="ceny-widok-log" class="hidden">
         <div class="tabela-wrapper">
-          <table class="tabela">
-            <thead><tr><th>Czas</th><th>Rynek</th><th>SKU</th><th>Zmiana</th><th>Powód</th><th>Kto</th></tr></thead>
+          <table class="tabela ceny-log">
+            <thead><tr><th>Czas</th><th>Kanał</th><th>SKU</th><th>Zmiana</th><th>Powód</th><th>Kto</th></tr></thead>
             <tbody id="ceny-log-tbody"></tbody>
           </table>
         </div>

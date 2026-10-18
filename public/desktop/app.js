@@ -4502,9 +4502,18 @@ let cenyZakres = 'automat', cenySytuacja = 'wszystkie', cenyWidok = 'pulpit', ce
 const cenyWaluta = (o) => (o && typeof o === 'object' ? o.waluta || cenyWaluta(o.rynek) : o === 'PL' ? 'zł' : o === 'RO' ? 'RON' : '€');
 const cenyKanal = (o) => o.kanal_nazwa || `Amazon ${o.rynek}`;
 // Cena docelowa, gdy pierwszy krok jest krótszy (schodek −5% / +10% na przebieg).
+const cenyMaCel = (o) => o.cena_cel != null && Math.abs(o.cena_cel - o.cena_nowa) >= 0.005;
 function cenyCelHtml(o, w) {
-  if (o.cena_cel == null || Math.abs(o.cena_cel - o.cena_nowa) < 0.005) return '';
+  if (!cenyMaCel(o)) return '';
   return `<div class="ceny-cel" title="Dokąd automat zmierza schodkami">cel ${cenyLiczba(o.cena_cel)} ${w}${o.zysk_cel != null ? ` · zysk ${cenyLiczba(o.zysk_cel)} zł` : ''}</div>`;
+}
+// Niewysłana decyzja: na górze cena, do której automat dojdzie, pod nią drobno najbliższy schodek.
+// Było odwrotnie — schodek stał pierwszy z dopiskiem „podpowiedź:” i czytało się go jak cenę do
+// ustawienia (user 2026-10-18: „podpowiedź ▼ 37,04 €” przy celu 34,58 €).
+const cenyPropozycja = (o) => (cenyMaCel(o) ? { cena: o.cena_cel, zysk: o.zysk_cel, krok: true } : { cena: o.cena_nowa, zysk: o.zysk_nowa, krok: false });
+const cenyPropozycjaEtykieta = (o, p) => (o.auto ? (p.krok ? 'cel ' : '') : 'podpowiedź: ');
+function cenyKrokHtml(o, w) {
+  return `<div class="ceny-krok" title="Automat zmienia cenę schodkami (zwykle najwyżej −5% / +10% na przebieg) — to cena w najbliższym przebiegu">1. krok ${cenyLiczba(o.cena_nowa)} ${w}${o.zysk_nowa != null ? ` · zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}</div>`;
 }
 
 // Stan z GT pod nazwą towaru: Razem (K4+K4G+MAG+LS, bez BRK) i półka zbioru K4 z rezerwacją.
@@ -4574,7 +4583,7 @@ function renderujCeny(d) {
   const widoczne = zOfertami.length ? zOfertami : kolumny;
   const ukryte = kolumny.filter((k) => !widoczne.includes(k));
   el('ceny-ukryte').textContent = ukryte.length ? `Ukryte kolumny bez ofert w tym widoku: ${ukryte.map((k) => k.nazwa).join(', ')}` : '';
-  el('ceny-thead').innerHTML = `<tr><th>Towar</th>${widoczne.map((k) => `<th>${cenyEsc(k.nazwa)}${k.tylko_odczyt ? ' <span class="hint" title="Repricer tylko obserwuje — cen nie zmienia">· odczyt</span>' : ''}</th>`).join('')}</tr>`;
+  el('ceny-thead').innerHTML = `<tr><th>Towar</th>${widoczne.map((k) => `<th>${cenyEsc(k.nazwa)}${k.tylko_odczyt ? ' <span class="ceny-odczyt" title="Tylko odczyt — repricer obserwuje, cen nie zmienia" aria-label="tylko odczyt">👁</span>' : ''}</th>`).join('')}</tr>`;
   const tbody = el('ceny-tbody');
   tbody.innerHTML = '';
   const brak = el('ceny-brak');
@@ -4689,13 +4698,14 @@ function cenyKomorka(o, rynek) {
     pod = o.wyslano ? `<div class="ceny-dec" title="${cenyEsc(o.powod)}">ręcznie ${cenyLiczba(o.cena_nowa)} ${w} · ${cenyGodzina(o.dec_czas)}</div>`
       : `<div class="ceny-dec dol" title="${cenyEsc(o.dec_blad)}">✗ ręczna zmiana na ${cenyLiczba(o.cena_nowa)} ${w} odrzucona</div>`;
   } else if (CENY_ZMIANY.includes(o.kod)) {
-    const gora = o.cena_nowa > o.cena;
+    const p = cenyPropozycja(o);
+    const gora = p.cena > o.cena;
     // Wysłana decyzja ≠ propozycja: cena już poszła na Amazona, a obserwacja w komórce jest
     // sprzed wysłania — Amazon pokazuje zmianę po kilku minutach, my zobaczymy ją w następnym przebiegu.
     pod = o.wyslano
       ? `<div class="ceny-dec wyslano" title="${cenyEsc(o.powod)}">✓ wysłano ${cenyLiczba(o.cena_nowa)} ${w} · ${cenyGodzina(o.dec_czas)}</div>`
-      : `<div class="ceny-dec ${gora ? 'gora' : 'dol'}" title="${cenyEsc(o.powod)}">${o.auto ? '' : 'podpowiedź: '}${gora ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}`
-        + `${o.zysk_nowa != null ? ` · zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}</div>${cenyCelHtml(o, w)}`;
+      : `<div class="ceny-dec ${gora ? 'gora' : 'dol'}" title="${cenyEsc(o.powod)}">${cenyPropozycjaEtykieta(o, p)}${gora ? '▲' : '▼'} ${cenyLiczba(p.cena)} ${w}`
+        + `${p.zysk != null ? ` · zysk ${cenyLiczba(p.zysk)} zł` : ''}</div>${p.krok ? cenyKrokHtml(o, w) : ''}`;
     if (o.dec_blad) pod += `<div class="ceny-dec dol" title="${cenyEsc(o.dec_blad)}">✗ nie wysłano</div>`;
   } else if (o.kod) {
     pod = `<div class="ceny-dec" title="${cenyEsc(o.powod)}">${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</div>`;
@@ -4898,6 +4908,14 @@ async function odswiezCenyKarta() {
   }
 }
 
+// Karta SKU: ta sama kolejność co w komórce macierzy — cel pogrubiony, pod nim drobno pierwszy schodek.
+function cenyKartaPropozycjaHtml(o, w) {
+  const p = cenyPropozycja(o);
+  const gora = p.cena > o.cena;
+  return `<b class="${gora ? 'ceny-gora' : 'ceny-dol'}">${cenyPropozycjaEtykieta(o, p)}${gora ? '▲' : '▼'} ${cenyLiczba(p.cena)} ${w}</b>`
+    + `${p.zysk != null ? ` → zysk ${cenyLiczba(p.zysk)} zł` : ''}<br>${p.krok ? cenyKrokHtml(o, w) : ''}`;
+}
+
 function cenyKartaRynekHtml(o) {
   o = cenyPoWyslaniu(o);
   const w = cenyWaluta(o);
@@ -4910,7 +4928,9 @@ function cenyKartaRynekHtml(o) {
     : !o.kod ? '<span class="hint">brak decyzji</span>'
     : o.kod === 'korekta' ? (o.wyslano ? `<b>ręcznie ${cenyLiczba(o.cena_nowa)} ${w}</b><br><span class="hint">${cenyEsc(o.powod)} · ${cenyGodzina(o.dec_czas)} — automat liczy od nowa w najbliższym przebiegu</span>`
       : `<span class="ceny-blad">✗ ręczna zmiana na ${cenyLiczba(o.cena_nowa)} ${w} odrzucona: ${cenyEsc(o.dec_blad)}</span><br><span class="hint">${cenyEsc(o.powod)} · ${cenyGodzina(o.dec_czas)}</span>`)
-    : `${zmiana ? `<b class="${o.wyslano ? 'ceny-wyslano' : o.cena_nowa > o.cena ? 'ceny-gora' : 'ceny-dol'}">${o.wyslano ? '✓ wysłano' : o.auto ? '' : 'podpowiedź: '}${o.wyslano ? '' : o.cena_nowa > o.cena ? '▲' : '▼'} ${cenyLiczba(o.cena_nowa)} ${w}</b>${o.zysk_nowa != null ? ` → zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}<br>${cenyCelHtml(o, w)}` : `<b>${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</b><br>`}
+    : `${!zmiana ? `<b>${cenyEsc(CENY_KOD_OPIS[o.kod] || o.kod)}</b><br>`
+      : o.wyslano ? `<b class="ceny-wyslano">✓ wysłano ${cenyLiczba(o.cena_nowa)} ${w}</b>${o.zysk_nowa != null ? ` → zysk ${cenyLiczba(o.zysk_nowa)} zł` : ''}<br>${cenyCelHtml(o, w)}`
+      : cenyKartaPropozycjaHtml(o, w)}
        ${o.dec_blad ? `<span class="ceny-blad">✗ nie wysłano: ${cenyEsc(o.dec_blad)}</span><br>` : ''}
        <span class="hint">${cenyEsc(o.powod)} · decyzja ${cenyGodzina(o.dec_czas)}</span>`;
   const linki = o.linki ? `<a href="${cenyEsc(o.linki.produkt)}" target="_blank" rel="noopener">produkt ↗</a>${o.linki.oferty ? ` · <a href="${cenyEsc(o.linki.oferty)}" target="_blank" rel="noopener">wszystkie oferty ↗</a>` : ''}` : '';
@@ -5145,11 +5165,13 @@ async function odswiezCenyLog() {
     const d = await api('/api/ceny/log');
     const tbody = el('ceny-log-tbody');
     tbody.innerHTML = d.wpisy.length ? d.wpisy.map((x) => {
-      const w = cenyWaluta(x.rynek);
+      // Kanał i waluta z backendu (kolumny.js) — sam kod rynku nie odróżnia Amazon DE od Kaufland DE,
+      // a waluty HU/Allegro zgadywał jako €. Stary backend (bez pól) = kod rynku jak dawniej.
+      const w = cenyWaluta(x);
       const zmiana = x.typ === 'decyzja'
         ? `${cenyLiczba(x.cena_przed)} → <strong>${cenyLiczba(x.cena_nowa)}</strong> ${w}${x.wyslano ? ' ✓' : ' <span class="hint">(nie wysłano)</span>'}`
         : cenyEsc(CENY_AKCJE[x.kod] || x.kod);
-      return `<tr><td>${formatDatetime(x.czas)}</td><td>${cenyEsc(x.rynek)}</td><td>${cenyEsc(x.symbol_gt || x.sku)}</td><td>${zmiana}</td>
+      return `<tr><td>${formatDatetime(x.czas)}</td><td>${cenyEsc(x.kanal_nazwa || x.rynek || '')}</td><td>${cenyEsc(x.symbol_gt || x.sku)}</td><td>${zmiana}</td>
         <td>${x.typ === 'decyzja' || CENY_AKCJE_Z_OPISEM.includes(x.kod) ? cenyEsc(x.powod) : ''}</td><td>${cenyEsc(x.kto || (x.typ === 'decyzja' ? 'system:ceny' : ''))}</td></tr>`;
     }).join('') : '<tr><td colspan="6" class="hint">Brak wpisów.</td></tr>';
   } catch (err) { pokazKomunikat(err.message, 'blad'); }
@@ -5165,6 +5187,19 @@ el('ceny-szukaj').addEventListener('keydown', async (e) => {
   if (cenyDane && cenyDane.wiersze.length === 1) cenyOtworzKarte(cenyDane.wiersze[0].tw_id);
 });
 el('ceny-odswiez').addEventListener('click', () => odswiezCeny());
+// Macierz przewija się we własnym okienku na wysokość ekranu (style.css .ceny-wrap). Kółko w dół nad nią
+// najpierw dosuwa stronę, aż okienko wypełni ekran — inaczej przewijałyby się wiersze w okienku do połowy
+// schowanym pod dolną krawędzią, razem z poziomym paskiem. W górę: przeglądarka sama oddaje stronie.
+document.querySelector('#ceny-widok-macierz .ceny-wrap').addEventListener('wheel', (e) => {
+  const wrap = e.currentTarget;
+  const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? innerHeight : e.deltaY;
+  const top = wrap.getBoundingClientRect().top;
+  const stronaNaDole = scrollY + innerHeight >= document.documentElement.scrollHeight - 1;
+  if (dy <= 0 || e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) || top <= 1 || stronaNaDole
+    || wrap.scrollHeight <= wrap.clientHeight) return;
+  e.preventDefault();
+  window.scrollBy(0, Math.min(dy, top));
+}, { passive: false });
 
 // --- init ---
 

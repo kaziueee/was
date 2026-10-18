@@ -117,13 +117,14 @@ test('Allegro: ręczna zmiana ceny z ekranu obsługiwana (rejestr pricing/reczna
   assert.match(reczna.propagacja('allegro'), /od razu/);
 });
 
-test('Allegro w kalkulatorze: Ads z definicji rynku (1,32%), nie z DOMYSLNE (3%); progi dostawy z Rozliczeń', () => {
+test('Allegro w kalkulatorze: Ads z definicji rynku (1,32%), nie z DOMYSLNE (3%); opłaty netto; progi dostawy z Rozliczeń', () => {
   const def = rynki.RYNKI.find((r) => r.nazwa === 'Allegro');
   assert.strictEqual(def.ads, 1.32);
+  assert.strictEqual(def.vatOplat, 23);
   const g = { ...rynki.DOMYSLNE };
-  // zysk przy cenie: prowizja + Ads liczone od ceny brutto, dopłata dostawy wg progu
+  // zysk przy cenie: prowizja + Ads od ceny brutto, ale kosztem jest netto (VAT z faktury Allegro odliczamy)
   const c = 80, w = rynki.wycenaPrzyCenie(40, def, g, c);
-  const oczek = c / 1.23 - c * (13.3 + 1.32) / 100 - 40 - rynki.doplataSmartAllegro(c) - g.obsluga;
+  const oczek = c / 1.23 - c * (13.3 + 1.32) / 100 / 1.23 - 40 - rynki.doplataSmartAllegro(c) - g.obsluga;
   assert.ok(Math.abs(w.zysk - oczek) < 1e-9);
   assert.deepStrictEqual([44.99, 45, 64.99, 65, 99.99, 100, 149.99, 150, 199.99, 200, 499.99, 500].map(rynki.doplataSmartAllegro),
     [0, 2.5, 2.5, 3.75, 3.75, 5.82, 5.82, 7.33, 7.33, 7.43, 7.43, 12.16]);

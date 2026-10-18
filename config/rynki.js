@@ -38,7 +38,9 @@ const RYNKI = [
   // obrotu (12,38% po rabatach Allegro Ceny / AlleObniżka — rabatów nie liczymy, nie każda oferta je ma), Ads 1,32%
   // obrotu (było 3% — decyzja usera 2026-10-18: na rzeczywiste). NaTropie nie ma kampanii Ads — kolumna repricera
   // nadpisuje `ads: 0` (pricing/kolumny.js `rynekNadpisz`); Cennik liczy jak ekajtek (88% obrotu Allegro).
-  { nazwa: 'Allegro',     kraj: 'PL', waluta: 'PLN', vat: 23, prowizja: 13.3, ads: 1.32, typ: 'allegro' },
+  // `vatOplat`: prowizja i Ads to kwoty BRUTTO z faktury Allegro, a VAT od nich odliczamy (decyzja usera 2026-10-18) —
+  // kosztem jest netto, czyli stawka / 1,23 (13,3% → 10,81% ceny). Do 18.10 kalkulator liczył je w całości (brutto).
+  { nazwa: 'Allegro',     kraj: 'PL', waluta: 'PLN', vat: 23, prowizja: 13.3, ads: 1.32, vatOplat: 23, typ: 'allegro' },
   { nazwa: 'Amazon DE',   kraj: 'DE', waluta: 'EUR', vat: 19, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl' },
   // kotwica:true -> w trybie 'kotwica' celuja w zysk Amazon DE + bufor (zamiast wlasnej marzy) - drozsze zwroty
   { nazwa: 'Amazon FR',   kraj: 'FR', waluta: 'EUR', vat: 20, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
@@ -243,6 +245,8 @@ function doplataSmartAllegro(cena) {
 
 // Narzut Ads (% ceny): własny rynku (Allegro), inaczej wspólny z DOMYSLNE.
 const adsRynku = (r, g) => (r.ads != null ? +r.ads : +g.ads || 0);
+// Allegro: prowizja + Ads jako ułamek ceny brutto, po odjęciu odliczanego VAT z faktury Allegro (`vatOplat`).
+const oplatyAllegro = (r, g) => ((+r.prowizja || 0) + adsRynku(r, g)) / 100 / (1 + (+r.vatOplat || 0) / 100);
 
 // obnizProg: docinanie kartonu (tylko FR) - bierzemy stawke o `obnizProg` progow nizej, bo doc
 // przyciety karton wpada w nizszy przedzial wagowy DHL. Clamp do najnizszego progu.
@@ -321,7 +325,7 @@ function policzFlat(kosztPLN, rynek, g) {
 
 function policzAllegro(kosztPLN, r, g) {
   const v = (+r.vat || 0) / 100, m = (+g.marza || 0) / 100;
-  const p = ((+r.prowizja || 0) + adsRynku(r, g)) / 100; // prowizja + Ads (% od ceny)
+  const p = oplatyAllegro(r, g); // prowizja + Ads (% od ceny, netto po odliczeniu VAT)
   const obs = +g.obsluga || 0;
   const D = (1 - m) / (1 + v) - p, denomZysk = 1 / (1 + v) - p;
   if (D <= 0 || denomZysk <= 0) return wynik(r, { blad: 'reguły niespójne', status: 'bad' });
@@ -381,7 +385,7 @@ function wycenaPrzyCenie(kosztPLN, rynek, g, cena) {
   const pb = +cena || 0;
   if (pb <= 0) return wynik(r, { blad: 'podaj cenę', status: 'bad' });
   if (r.typ === 'allegro') {
-    const v = (+r.vat || 0) / 100, p = ((+r.prowizja || 0) + adsRynku(r, g)) / 100, obs = +g.obsluga || 0;
+    const v = (+r.vat || 0) / 100, p = oplatyAllegro(r, g), obs = +g.obsluga || 0;
     const denomZysk = 1 / (1 + v) - p;
     const dost = doplataSmartAllegro(pb);
     const pn = pb / (1 + v), zysk = pb * denomZysk - (kosztPLN + dost + obs);

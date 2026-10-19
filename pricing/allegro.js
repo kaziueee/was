@@ -1,13 +1,15 @@
 'use strict';
 
-// Adapter Allegro (REST API, allegro.pl): nasze oferty na dwóch kontach i zmiana ceny. Od 2026-10-16 TYLKO
-// ODCZYT (pricing/kolumny.js `tylkoOdczyt`) — automat dopiero po ręcznym teście zapisu i decyzji usera.
+// Adapter Allegro (REST API, allegro.pl): nasze oferty na dwóch kontach i zmiana ceny. Od 2026-10-16 tylko odczyt;
+// od 2026-10-19 automat da się włączyć, ale wysyłka cen czeka na decyzję usera (pricing/kolumny.js `wysylkaPoZgodzie`).
 //
 // KONKURENCJI NIE WIDZIMY. `GET /offers/listing` (oferty innych sprzedawców) oddaje 403 AccessDenied
 // aplikacjom niezweryfikowanym przez Allegro — sprawdzone 2026-10-16 tokenem aplikacji (client_credentials)
 // i tokenem konta. Odpowiednik Buy Boxa („Top oferta” na stronie produktu) zna tylko automat cen samego
 // Allegro (reguły FOLLOW_BY_TOP_OFFER_PRICE / FOLLOW_BY_ALLEGRO_MIN_PRICE z zakresem min/max na ofertę).
-// Obserwacja ma więc tylko naszą cenę (`konkurencjaNiedostepna`), a decyzja pilnuje wyłącznie minimum.
+// Sama lista ofert daje więc tylko naszą cenę (`konkurencjaNiedostepna`, decyzja pilnuje wyłącznie minimum).
+// Konkurencję dokładają: raport „Czynniki Top oferty” (pricing/allegro-top.js) i Niezbędnik dla ofert
+// z automatem (pricing/konkurencja-allegro.js) — pricing/obserwuj-allegro.js bierze nowszy z nich.
 //
 // Dwa konta (decyzja usera 2026-10-16: oba w repricerze): ekajtek_pl (~3100 ofert, ~6400 szt./30 dni) i
 // NaTropieZabawek (~2100 ofert, ~700 szt./30 dni). ~1800 SKU jest na obu — konta konkurują ze sobą,

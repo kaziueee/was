@@ -4491,6 +4491,7 @@ const CENY_AKCJE = {
   powiazanie: 'powiązał z innym towarem GT', powiazanie_potw: 'potwierdził powiązanie z GT', powiazanie_usun: 'usunął powiązanie z GT',
   wysylanie_wl: 'włączył WYSYŁANIE cen na Amazona', wysylanie_wyl: 'wyłączył wysyłanie cen',
   korekta_ceny: 'zmienił cenę ręcznie', granice: 'zmienił granice automatu',
+  konkurencja: 'zmienił sprawdzanie konkurencji', raport_top_allegro: 'wgrał raport Top ofert Allegro',
 };
 // Wybrany kanał (marketplace) pamiętamy w przeglądarce — wygoda jednego stanowiska, nie stan systemu.
 let cenyKanalWybor = (() => { try { return localStorage.getItem('wms-ceny-kanal') || ''; } catch { return ''; } })();
@@ -4563,6 +4564,15 @@ async function odswiezCeny() {
   } catch (err) { if (nr === cenyNrZapytania) pokazKomunikat(err.message, 'blad'); }
 }
 
+// Niezbędnik (ceny konkurencji Allegro dla ofert z automatem): pakiet, ostatni raport, błąd nowszy od raportu.
+function cenyNiezbednikTekst(n) {
+  if (!n || (!n.pakiet && !n.ostatni && !n.blad)) return '';
+  const pak = n.pakiet ? `zostało ${cenyLiczba(n.pakiet.remaining, 0)} sprawdzeń${n.pakiet.valid_until ? ` do ${new Date(n.pakiet.valid_until).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', timeZone: 'UTC' })}` : ''}` : '';
+  const ost = n.trwa ? 'raport w toku' : n.ostatni ? `raport ${cenyGodzina(n.ostatni.czas)} (${n.ostatni.eanow} EAN)` : '';
+  const bl = n.blad && (!n.ostatni || n.blad.czas > n.ostatni.czas) ? ` <span class="ceny-blad">${cenyEsc(n.blad.wartosc)}</span>` : '';
+  return ` · <span title="Ceny konkurencji Allegro z Niezbędnika — tylko oferty z automatem, w godzinach ${n.okno ? n.okno.join('–') : '7–23'}">Niezbędnik ${[pak, ost].filter(Boolean).join(' · ')}</span>${bl}`;
+}
+
 function renderujCeny(d) {
   const przebieg = d.przebieg ? `ostatni przebieg ${formatDatetime(d.przebieg.czas)}` : 'repricer jeszcze nie ruszył';
   const pelna = d.obserwacja_pelna ? ` · pełna obserwacja katalogu ${formatDatetime(d.obserwacja_pelna.czas)}` : '';
@@ -4570,7 +4580,8 @@ function renderujCeny(d) {
   // Platformy z własną synchronizacją listy: godzina ostatniej albo błąd, jeśli przyszedł po niej.
   const platforma = (nazwa, x = {}) => (x.blad && (!x.sync || x.blad.czas > x.sync.czas) ? ` · <span class="ceny-blad">${nazwa}: ${cenyEsc(x.blad.wartosc)}</span>`
     : x.sync ? ` · ${nazwa} ${cenyGodzina(x.sync.czas)}` : '');
-  el('ceny-stan').innerHTML = przebieg + pelna + blad + platforma('eMAG', d.emag) + platforma('Empik', d.empik) + platforma('Allegro', d.allegro) + platforma('Kaufland', d.kaufland);
+  el('ceny-stan').innerHTML = przebieg + pelna + blad + platforma('eMAG', d.emag) + platforma('Empik', d.empik) + platforma('Allegro', d.allegro) + platforma('Kaufland', d.kaufland)
+    + cenyNiezbednikTekst(d.niezbednik);
   cenyRenderujFiltry(d);
   cenyRenderujSort(d);
   el('ceny-hamulec').classList.toggle('hidden', d.wysylanie !== false);
@@ -4583,7 +4594,7 @@ function renderujCeny(d) {
   const widoczne = zOfertami.length ? zOfertami : kolumny;
   const ukryte = kolumny.filter((k) => !widoczne.includes(k));
   el('ceny-ukryte').textContent = ukryte.length ? `Ukryte kolumny bez ofert w tym widoku: ${ukryte.map((k) => k.nazwa).join(', ')}` : '';
-  el('ceny-thead').innerHTML = `<tr><th>Towar</th>${widoczne.map((k) => `<th>${cenyEsc(k.nazwa)}${k.tylko_odczyt ? ' <span class="ceny-odczyt" title="Tylko odczyt — repricer obserwuje, cen nie zmienia" aria-label="tylko odczyt">👁</span>' : ''}</th>`).join('')}</tr>`;
+  el('ceny-thead').innerHTML = `<tr><th>Towar</th>${widoczne.map((k) => `<th>${cenyEsc(k.nazwa)}${k.tylko_odczyt ? ' <span class="ceny-odczyt" title="Tylko odczyt — repricer obserwuje, cen nie zmienia" aria-label="tylko odczyt">👁</span>' : ''}${k.wysylka_wstrzymana ? ' <span class="ceny-odczyt" title="Automat da się włączyć i liczy ceny, ale wysyłka cen na ten kanał jest wstrzymana do decyzji" aria-label="wysyłka wstrzymana">⏸</span>' : ''}</th>`).join('')}</tr>`;
   const tbody = el('ceny-tbody');
   tbody.innerHTML = '';
   const brak = el('ceny-brak');
@@ -4715,6 +4726,61 @@ function cenyTopKartaHtml(o, w) {
       <span class="hint">z raportu Allegro Analytics — przez API Allegro cen innych sprzedawców nie podaje</span>`;
 }
 
+// Allegro + Niezbędnik: najtańszy konkurent po filtrach (Smart, nowe, firmy, stan ≥ 3, ze sprzedażą; bez naszych kont).
+function cenyKonkKomorka(o, w) {
+  const k = o.konkurencja.wynik;
+  const naj = k.lista[0];
+  const tyt = `Niezbędnik ${formatDatetime(k.czas)}: ${k.konkurentow} konkurentów po filtrach z ${k.wszystkich ?? '?'} ofert${k.aktualny ? '' : ' — wynik nieaktualny, repricer go nie używa'}`;
+  if (!naj) return `<div class="ceny-m${k.aktualny ? '' : ' ceny-nieaktualne'}" title="${cenyEsc(tyt)}">konkurencji brak · ${cenyGodzina(k.czas)}</div>`;
+  const r = o.cena > 0 ? o.cena - naj.cena : null;
+  return `<div class="ceny-bb${k.aktualny ? '' : ' ceny-nieaktualne'}" title="${cenyEsc(tyt)}">konk. ${cenyLiczba(naj.cena)} ${w}${r != null && r > 0.005 ? ` (−${cenyLiczba(r)})` : ''} · ${cenyGodzina(k.czas)}</div>`;
+}
+const cenyPrzebicieTekst = (p) => (p === 0 ? 'remis' : p === 0.01 ? '1 gr' : `${cenyLiczba(p)} zł`);
+function cenyKonkKartaHtml(o, w) {
+  const k = o.konkurencja?.wynik;
+  if (!k || !k.czas) {
+    return k?.zlecono ? `<span class="hint">sprawdzenie w Niezbędniku zlecone ${cenyGodzina(k.zlecono)} — wynik w najbliższym przebiegu</span>` : '';
+  }
+  const pom = Object.entries({ nasze: 'nasze', stan: 'stan < 3', sprzedaz: 'bez sprzedaży', prywatne: 'prywatne' })
+    .filter(([x]) => k.pomin[x]).map(([x, n]) => `${n}: ${k.pomin[x]}`).join(', ');
+  const wiersze = k.lista.map((c) => `<tr><td>${cenyEsc(c.login || '?')}${c.ss ? ' <span class="hint" title="Super Sprzedawca">SS</span>' : ''}</td><td><b>${cenyLiczba(c.cena)}</b></td><td>${c.stan ?? '—'}</td><td>${c.popularnosc ?? '—'}</td></tr>`).join('');
+  const nasza = k.nasze.find((x) => String(x.oferta) === String(o.asin));
+  return `<span class="ceny-m${k.aktualny ? '' : ' ceny-blad'}">Niezbędnik ${cenyGodzina(k.czas)}${k.aktualny ? '' : ' — nieaktualne, repricer tego nie używa'} · ${k.konkurentow} konkurentów z ${k.wszystkich ?? '?'} ofert${pom ? ` (pominięte: ${pom})` : ''}</span>
+      ${k.blad ? `<span class="ceny-m ceny-blad">ostatnie sprawdzenie nieudane: ${cenyEsc(k.blad)}</span>` : ''}
+      ${wiersze ? `<table class="tabela ceny-tab-konk"><thead><tr><th>Sprzedawca</th><th>Cena ${w}</th><th>Stan</th><th title="Popularność w wynikach Allegro (kupione ostatnio)">Sprz.</th></tr></thead><tbody>${wiersze}</tbody></table>` : '<span class="hint">nikt inny nie sprzedaje tego EAN-u (po filtrach)</span>'}
+      <span class="hint">${nasza ? `nasza oferta w wynikach: ${cenyLiczba(nasza.cena)} ${w}` : 'naszej oferty nie ma w wynikach — EAN może wskazywać inny produkt'}</span>`;
+}
+function cenyKonkUstawieniaHtml(o) {
+  const k = o.konkurencja;
+  if (!k) return '';
+  const kw = ![0, 0.01].includes(k.przebicie);
+  return `<form class="ceny-konk-ust" data-ceny-konk="${o.id}" novalidate><span class="ceny-et">Konkurencja (Niezbędnik)</span>
+      <div class="ceny-reczne-wiersz">sprawdzaj co <select name="co_h" aria-label="Jak często sprawdzać konkurencję">${[1, 2, 3, 4].map((h) => `<option value="${h}"${h === k.co_h ? ' selected' : ''}>${h} h${h === 4 ? ' (domyślnie)' : ''}</option>`).join('')}</select>
+        przebicie <select name="tryb" aria-label="O ile przebijać konkurenta"><option value="0"${k.przebicie === 0 ? ' selected' : ''}>remis</option><option value="0.01"${k.przebicie === 0.01 ? ' selected' : ''}>1 gr (domyślnie)</option><option value="kwota"${kw ? ' selected' : ''}>kwota…</option></select>
+        <input type="text" inputmode="decimal" name="kwota" autocomplete="off" class="${kw ? '' : 'hidden'}" value="${kw ? cenyLiczba(k.przebicie) : ''}" placeholder="0,50" aria-label="Kwota przebicia"> <span class="${kw ? '' : 'hidden'}" data-zl>zł</span>
+        <button class="btn btn-small">Zapisz</button></div>
+      <span class="ceny-m">${o.auto ? `sprawdzamy w godzinach ${k.okno.join('–')}` : 'sprawdzamy tylko oferty z włączonym automatem'}${k.ean ? ` · EAN ${cenyEsc(k.ean)}` : o.auto ? ' · brak EAN w GT — Niezbędnik nie sprawdzi' : ''}</span></form>`;
+}
+function cenyPodepnijKonk(f, o) {
+  if (!f || !o) return;
+  const tryb = f.querySelector('[name=tryb]'), pole = f.querySelector('[name=kwota]'), zl = f.querySelector('[data-zl]');
+  tryb.addEventListener('change', () => { const kw = tryb.value === 'kwota'; pole.classList.toggle('hidden', !kw); zl.classList.toggle('hidden', !kw); if (kw) pole.focus(); });
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = f.querySelector('button');
+    btn.disabled = true;
+    try {
+      const przebicie = tryb.value === 'kwota' ? pole.value.trim() : tryb.value;
+      if (tryb.value === 'kwota' && !przebicie) throw new Error('Wpisz kwotę przebicia');
+      const co = Number(f.querySelector('[name=co_h]').value);
+      const r = await cenyPost('/api/ceny/konkurencja', { oferta_id: o.id, co_h: co === 4 ? null : co, przebicie: przebicie === '0.01' ? null : przebicie });
+      pokazKomunikat(`${cenyKanal(o)} ${o.sku}: konkurencja co ${r.co_h} h, przebicie ${cenyPrzebicieTekst(r.przebicie)}. Repricer użyje tego w najbliższym przebiegu.`, 'ok');
+      odswiezCenyKarta();
+    } catch (err) { pokazKomunikat(err.message, 'blad'); }
+    finally { btn.disabled = false; }
+  });
+}
+
 function cenyKomorka(o, rynek) {
   const td = document.createElement('td');
   if (!o) { td.innerHTML = '<span class="hint">—</span>'; return td; }
@@ -4742,9 +4808,12 @@ function cenyKomorka(o, rynek) {
   }
   // obs_widziana = ostatni przebieg, który widział ten sam stan (eMAG nie dopisuje wiersza bez zmian).
   const wys = (o.obs_czas ? `<div class="ceny-czas" title="Ceny w komórce to stan z ostatniej obserwacji">stan z ${cenyGodzina(o.obs_widziana || o.obs_czas)}</div>` : '');
-  const topT = o.platforma === 'allegro' && o.top ? cenyTopTekst(o, w) : null;
+  const konkW = o.platforma === 'allegro' ? o.konkurencja?.wynik : null;
+  const konkNowsza = konkW?.czas && (!o.top || dataZBazy(konkW.czas) > dataZBazy(o.top.czas));
+  const topT = o.platforma === 'allegro' && o.top && !konkNowsza ? cenyTopTekst(o, w) : null;
   const bb = o.platforma === 'allegro'
-    ? (topT ? `<div class="${topT.cel ? 'ceny-bb' : 'ceny-m'}${o.top.aktualny ? '' : ' ceny-nieaktualne'}" title="${cenyEsc(cenyTopTytul(o, w))}">${cenyEsc(topT.tekst)}</div>` : '')
+    ? (konkNowsza ? cenyKonkKomorka(o, w)
+      : topT ? `<div class="${topT.cel ? 'ceny-bb' : 'ceny-m'}${o.top.aktualny ? '' : ' ceny-nieaktualne'}" title="${cenyEsc(cenyTopTytul(o, w))}">${cenyEsc(topT.tekst)}</div>` : '')
     : !o.bb_nasz && o.bb_cena != null ? `<div class="ceny-bb">BB ${cenyLiczba(o.bb_cena)} ${w}${o.bb_fba ? ' (FBA)' : ''}${o.platforma === 'emag' ? '' : ' z wys.'}</div>` : '';
   // eMAG: Genius zmienia koszt (opłata za zamówienie, tańsza wysyłka) — pokazujemy, który profil liczy kalkulator.
   const gen = o.genius == null ? '' : `<div class="ceny-m" title="${o.genius ? 'Genius aktywny: opłata Genius 3–8 RON, dostawa do automatu' : 'Bez Genius: kurier do domu, klient płaci 25 RON za dostawę'}">${o.genius ? 'Genius' : 'bez Genius'}</div>`;
@@ -4808,8 +4877,10 @@ function cenyPotwierdzWlaczenie(oferty) {
   const nPod = oferty.filter(podMin).length;
   el('mca-tytul').textContent = `Włączyć automat dla ${oferty.length} ${oferty.length === 1 ? 'oferty' : 'ofert'}?`;
   const ostrz = el('mca-ostrzezenie');
-  ostrz.classList.toggle('hidden', !nPod);
-  ostrz.textContent = nPod ? `⚠ ${nPod} z ${oferty.length} poniżej minimum (marża 20%) — automat podniesie je OD RAZU do minimum. Utrata Buy Boxa tego nie cofnie.` : '';
+  const nWstrz = oferty.filter((o) => o.wysylka_wstrzymana).length;
+  ostrz.classList.toggle('hidden', !nPod && !nWstrz);
+  ostrz.textContent = [nPod ? `⚠ ${nPod} z ${oferty.length} poniżej minimum (marża 20%) — automat podniesie je OD RAZU do minimum. Utrata Buy Boxa tego nie cofnie.` : '',
+    nWstrz ? `⏸ ${nWstrz} z ${oferty.length} na kanale z wstrzymaną wysyłką (Allegro): automat sprawdzi konkurencję i policzy ceny, ale ich nie wyśle.` : ''].filter(Boolean).join(' ');
   el('mca-tbody').innerHTML = posort.map((o) => {
     const w = cenyWaluta(o);
     const zm = CENY_ZMIANY.includes(o.kod);
@@ -4934,6 +5005,7 @@ async function odswiezCenyKarta() {
       slot.prepend(cenyPrzelacznikOferty(o, o.rynek));
     });
     box.querySelectorAll('[data-ceny-reczne]').forEach((sek) => cenyPodepnijReczne(sek, oferty.find((x) => String(x.id) === sek.dataset.cenyReczne)));
+    box.querySelectorAll('[data-ceny-konk]').forEach((f) => cenyPodepnijKonk(f, oferty.find((x) => String(x.id) === f.dataset.cenyKonk)));
     el('ceny-karta-wroc').addEventListener('click', () => { cenyPokazWidok('macierz'); odswiezCeny(); });
     if (cenyKartaRynek) box.querySelector(`[data-ceny-rynek="${cenyKartaRynek}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   } catch (err) {
@@ -4956,7 +5028,10 @@ function cenyKartaRynekHtml(o) {
   const stanBb = !obs ? (o.obs_czas == null ? 'jeszcze nie obserwowana' : `${cenyKanal(o)} nie zwrócił naszej oferty`)
     : o.bb_nasz ? 'mamy Buy Box' : o.bb_nasza_inna ? 'Buy Box ma nasza INNA oferta tego produktu' : o.bb_cena != null ? `Buy Box ma ${o.bb_fba ? 'oferta FBA' : 'inny sprzedawca'}`
     : o.bez_konkurencji ? 'kto ma najlepszą ofertę — nie wiadomo (API tego nie podaje)' : 'brak Buy Boxa';
-  const stan = o.platforma === 'allegro' && o.top && obs
+  const kw = o.konkurencja?.wynik;
+  const stan = o.platforma === 'allegro' && kw?.czas && kw.aktualny && obs && (!o.top || dataZBazy(kw.czas) > dataZBazy(o.top.czas))
+    ? (kw.lista.length ? (o.cena <= kw.lista[0].cena + 0.005 ? 'najtańsi wśród konkurentów (Niezbędnik)' : `najtańszy konkurent ${cenyEsc(kw.lista[0].login || '?')}`) : 'bez konkurencji po filtrach (Niezbędnik)')
+    : o.platforma === 'allegro' && o.top && obs
     ? (!o.top.aktualny ? 'raport Top ofert nieaktualny' : o.top.cena != null ? 'Top ofertę ma inny sprzedawca (raport)' : 'cena OK w raporcie Top ofert')
     : stanBb;
   const zmiana = CENY_ZMIANY.includes(o.kod);
@@ -4984,12 +5059,13 @@ function cenyKartaRynekHtml(o) {
       ${o.platforma === 'allegro' ? `<div class="ceny-m" title="kategoria Allegro ${cenyEsc(o.kategoria || '?')} — stawka z podglądu opłat Allegro dla tej oferty i ceny">prowizja Allegro ${o.prowizja ? cenyLiczba(o.prowizja, 2) + '%' : 'średnia 13,3% (stawka oferty jeszcze niepobrana)'} · koszt netto po odliczeniu VAT</div>` : ''}
       ${o.tylko_odczyt ? '<div class="hint">tylko odczyt — repricer nie zmienia tu cen</div>'
         : o.ilosc > 0 ? `<label class="ceny-auto-wiersz" data-ceny-auto="${o.id}"> automat</label>` : '<div class="hint">bez stanu — automat nie działa</div>'}
+      ${o.wysylka_wstrzymana ? '<div class="hint">⏸ automat liczy ceny, ale wysyłka na ten kanał jest wstrzymana do decyzji</div>' : ''}
       <div class="ceny-linki">${linki}</div></div>
     <div class="ceny-k-cena"><span class="ceny-et">${o.czeka ? `Cena · wysłana ${cenyGodzina(o.dec_czas)}` : `Cena · stan z ${cenyGodzina(o.obs_czas)}`}</span>${obs ? `<b class="ceny-duza">${cenyLiczba(o.cena)} ${w}</b>
       <span class="ceny-m">${o.platforma === 'emag' ? (o.genius ? 'dostawę do automatu opłaca klient w eMAG' : 'kurier do domu: klient płaci 25 RON') : o.platforma === 'allegro' ? 'dostawa wg cennika oferty (kalkulator: dopłata Smart)' : o.wysylka ? `+ wysyłka ${cenyLiczba(o.wysylka)} ${w}` : 'wysyłka gratis'}</span>
       <span class="ceny-m">marża ${o.marza != null ? cenyLiczba(o.marza, 1) + '%' : '—'}</span><span class="ceny-m">zysk ${o.zysk != null ? cenyLiczba(o.zysk) + ' zł' : '—'}</span>` : '<span class="hint">—</span>'}</div>
     <div class="ceny-k-konk"><span class="ceny-et">Konkurencja (${o.platforma === 'emag' || o.platforma === 'allegro' ? 'cena towaru' : 'z wysyłką'})</span>
-      ${o.platforma === 'allegro' && o.top ? cenyTopKartaHtml(o, w)
+      ${o.platforma === 'allegro' && (o.top || o.konkurencja?.wynik) ? `${cenyKonkKartaHtml(o, w)}${o.top ? cenyTopKartaHtml(o, w) : ''}`
         : o.bez_konkurencji ? `<span class="hint">${cenyEsc(cenyKanal(o))} nie podaje przez API cen innych sprzedawców — repricer pilnuje tylko minimum</span>`
         : `<span>Buy Box: <b>${o.bb_cena != null ? `${cenyLiczba(o.bb_cena)} ${w}` : '—'}</b>${o.bb_cena != null ? (o.bb_nasz ? ' (my)' : o.bb_fba ? ' (FBA)' : '') : ''}</span>
       <span class="ceny-m">najtańsza inna: ${o.najtansza_inna != null ? `${cenyLiczba(o.najtansza_inna)} ${w}` : '—'}</span>
@@ -4998,6 +5074,7 @@ function cenyKartaRynekHtml(o) {
     <div class="ceny-k-auto"><span class="ceny-et">Co zrobiłby automat</span>${dec}</div>
     <div class="ceny-k-wykres">${cenyWykres(o.obserwacje)}</div>
     ${cenyReczneHtml(o)}
+    ${cenyKonkUstawieniaHtml(o)}
     <details class="ceny-k-hist"><summary>Historia decyzji (${o.decyzje.length})</summary>${zmiany}${histDec}</details>
   </section>`;
 }

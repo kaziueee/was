@@ -1,22 +1,30 @@
 'use strict';
 
 // Obserwacja ofert Allegro: nasza cena z tej samej listy /sale/offers, którą czyta synchronizacja (jedno
-// pobranie na konto i przebieg, ~4 zapytania). Konkurencji API nie podaje (pricing/allegro.js); gdy dla oferty
-// jest świeży raport „Czynniki Top oferty” wgrany z ekranu (pricing/allegro-top.js), obserwacja dostaje z niego
-// cenę Top oferty jak Buy Box. Niezmieniony stan podbija tylko `widziana` w ostatnim wierszu
-// (pricing/bez-zmian.js), zamiast dopisywać ~5000 wierszy co pół godziny.
+// pobranie na konto i przebieg, ~4 zapytania). Konkurencji API nie podaje (pricing/allegro.js); dają ją dwa
+// źródła i bierzemy NOWSZE z nich:
+//   - raport „Czynniki Top oferty” wgrany z ekranu (pricing/allegro-top.js) — cena Top oferty jak Buy Box,
+//   - sprawdzenie w Niezbędniku dla ofert z automatem (pricing/konkurencja-allegro.js) — ceny konkurentów; cel
+//     pod minimum wybiera worker (doModelu), bo pas min/max liczy się równolegle z obserwacją.
+// Bez żadnego z nich — tylko nasza cena (model pilnuje minimum). Niezmieniony stan podbija tylko `widziana`
+// w ostatnim wierszu (pricing/bez-zmian.js), zamiast dopisywać ~5000 wierszy co pół godziny.
 
 const allegro = require('./allegro');
 const { db } = require('./db');
 const { takaSamaObserwacja } = require('./bez-zmian');
 const { raportyTop, zRaportu } = require('./allegro-top');
+const konkurencja = require('./konkurencja-allegro');
 
-// oferty: [{ id, sku, rynek, asin }] — `asin` = numer oferty Allegro, `rynek` = konto.
+const zBazy = (s) => (s ? Date.parse(String(s).replace(' ', 'T') + 'Z') : 0);
+
+// oferty: [{ id, sku, rynek, asin, ean }] — `asin` = numer oferty Allegro, `rynek` = konto, `ean` z GT (Niezbędnik).
 // surowe: oferty z allegro.wszystkieOferty(konto), z polem `_konto` (może być kilka kont naraz).
 const klucz = (konto, id) => `${konto}|${id}`;
 async function obserwujAllegro(oferty, surowe) {
   const poId = new Map((surowe || []).map((o) => [klucz(o._konto, o.id), o]));
   const top = raportyTop();
+  const konk = konkurencja.wyniki();
+  const nasze = konkurencja.naszeKonta();
   const teraz = Date.now();
   const zapisz = db.prepare(`INSERT INTO obserwacje (oferta_id, cena, wysylka, bb_nasz, bb_cena, bb_fba, najtansza_inna, ofert, bb_nasza_inna)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -30,7 +38,11 @@ async function obserwujAllegro(oferty, surowe) {
     for (const o of oferty) {
       const surowa = poId.get(klucz(o.rynek, o.asin));
       if (!surowa) continue;
-      const obs = zRaportu(top.get(klucz(o.rynek, o.asin)), allegro.doOferty(surowa).cena, teraz) || allegro.zOferty(surowa);
+      const cena = allegro.doOferty(surowa).cena;
+      const wTop = top.get(klucz(o.rynek, o.asin));
+      const zTop = zRaportu(wTop, cena, teraz);
+      const zNsp = o.ean ? konkurencja.zNiezbednika(konk.get(o.ean), cena, nasze, teraz) : null;
+      const obs = (zTop && zNsp ? (zBazy(wTop.raport_czas) > zBazy(zNsp.czas) ? zTop : zNsp) : zTop || zNsp) || allegro.zOferty(surowa);
       wynik.set(o.id, obs);
       const w = { cena: obs.cena, wysylka: obs.wysylka, bb_nasz: b(obs.bbNasz), bb_cena: obs.bbCena, bb_fba: b(obs.bbFba),
         najtansza_inna: obs.najtanszaInna, ofert: obs.ofert, bb_nasza_inna: b(obs.bbInnaNasza) };

@@ -6,6 +6,8 @@
 //   klucz       — klucz komórki/pasa: Amazon = kod rynku (jak dotąd), inne platformy = PLATFORMA_RYNEK
 //   kalkulator  — nazwa rynku w config/rynki.js (brak = brak pasa min/max, repricer nie decyduje)
 //   tylkoOdczyt — automatu nie da się włączyć (backend odrzuca, ekran nie pokazuje przełącznika)
+//   wysylkaPoZgodzie — automat da się włączyć i liczy decyzje, ale cen nie wysyła, dopóki w .env nie ma
+//                 tej zmiennej = 1 (Allegro od 2026-10-19: „automat, ale bez wysyłki”, decyzja usera)
 //   bezKonkurencji — platforma nie podaje cen innych sprzedawców (Allegro) — ekran mówi to wprost zamiast „—”
 //   rynekNadpisz — pola definicji rynku z config/rynki.js nadpisane tylko dla tej kolumny (NaTropie: bez Ads)
 //   etykieta    — krótka nazwa kolumny w chipie kanału (domyślnie kod rynku: DE, RO…)
@@ -28,12 +30,15 @@ const KOLUMNY = [
   // z kalkulatora (rynek „Empik”: prowizja per kategoria, wysyłka wg gabarytu, rekompensata Premium).
   // Cena idzie importem PRI01, jednym plikiem na przebieg (pricing/empik.js).
   { klucz: 'EMPIK_PL', platforma: 'empik', rynek: 'PL', nazwa: 'Empik', waluta: 'zł', kalkulator: 'Empik' },
-  // Allegro (od 2026-10-16): dwa konta = dwie kolumny, rynek = konto (pricing/allegro.js KONTA). Sama
-  // obserwacja: cen konkurencji API Allegro nie daje (pricing/allegro.js), więc repricer pilnuje tylko minimum
-  // z kalkulatora (rynek „Allegro”: prowizja + Ads + dopłata Smart). Automat dopiero po ręcznym teście
-  // zapisu (pricing/allegro-cena.js) i decyzji usera, jak go prowadzić bez danych o konkurencji.
-  { klucz: 'ALLEGRO_EKAJTEK', platforma: 'allegro', rynek: 'EKAJTEK', nazwa: 'Allegro ekajtek', etykieta: 'ekajtek', waluta: 'zł', kalkulator: 'Allegro', tylkoOdczyt: true, bezKonkurencji: true },
-  { klucz: 'ALLEGRO_NATROPIE', platforma: 'allegro', rynek: 'NATROPIE', nazwa: 'Allegro NaTropie', etykieta: 'NaTropie', waluta: 'zł', kalkulator: 'Allegro', tylkoOdczyt: true, bezKonkurencji: true,
+  // Allegro (od 2026-10-16): dwa konta = dwie kolumny, rynek = konto (pricing/allegro.js KONTA). Cen
+  // konkurencji API Allegro nie daje (pricing/allegro.js) — dają je raport „Czynniki Top oferty” wgrywany
+  // z ekranu (pricing/allegro-top.js) i Niezbędnik dla ofert z automatem (pricing/konkurencja-allegro.js).
+  // Minimum z kalkulatora (rynek „Allegro”: prowizja per oferta + Ads + dopłata Smart). Od 2026-10-19 automat
+  // da się włączyć, ale wysyłka cen czeka na osobną decyzję usera (PRICING_ALLEGRO_WYSYLKA=1).
+  { klucz: 'ALLEGRO_EKAJTEK', platforma: 'allegro', rynek: 'EKAJTEK', nazwa: 'Allegro ekajtek', etykieta: 'ekajtek', waluta: 'zł', kalkulator: 'Allegro',
+    wysylkaPoZgodzie: 'PRICING_ALLEGRO_WYSYLKA', bezKonkurencji: true },
+  { klucz: 'ALLEGRO_NATROPIE', platforma: 'allegro', rynek: 'NATROPIE', nazwa: 'Allegro NaTropie', etykieta: 'NaTropie', waluta: 'zł', kalkulator: 'Allegro',
+    wysylkaPoZgodzie: 'PRICING_ALLEGRO_WYSYLKA', bezKonkurencji: true,
     rynekNadpisz: { ads: 0 } },   // NaTropie nie prowadzi kampanii Ads (Rozliczenia III kw. 2026: 0 zł)
   // Kaufland DE: obserwacja od 2026-10-16, możliwość automatu od 2026-10-18 (decyzja usera po teście zapisu
   // 16.10: cena widoczna po 1–2 min, przez 1,5 doby nikt jej nie cofnął). Smart Pricing Kauflandu wyłączony
@@ -43,5 +48,7 @@ const KOLUMNY = [
 
 const kluczKolumny = (platforma, rynek) => (platforma === 'amazon' ? rynek : `${String(platforma).toUpperCase()}_${rynek}`);
 const kolumna = (platforma, rynek) => KOLUMNY.find((k) => k.klucz === kluczKolumny(platforma, rynek)) || null;
+// Czytane przy każdym wywołaniu, nie przy ładowaniu modułu — zdjęcie blokady to zmiana .env i restart procesu.
+const wysylkaWstrzymana = (k) => !!k?.wysylkaPoZgodzie && process.env[k.wysylkaPoZgodzie] !== '1';
 
-module.exports = { KOLUMNY, kluczKolumny, kolumna };
+module.exports = { KOLUMNY, kluczKolumny, kolumna, wysylkaWstrzymana };

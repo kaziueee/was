@@ -1,7 +1,7 @@
 'use strict';
 
-// Ręczna zmiana ceny jednej oferty Allegro — do testu zapisu i do korekt (automat na Allegro jest wyłączony:
-// kanał `tylkoOdczyt`). Bez --zapisz tylko pokazuje, co by wysłał. Cena BRUTTO w PLN.
+// Ręczna zmiana ceny jednej oferty Allegro — do testu zapisu i do korekt (automat Allegro cen nie wysyła, dopóki
+// user nie zdejmie blokady `PRICING_ALLEGRO_WYSYLKA`). Bez --zapisz tylko pokazuje, co by wysłał. Cena BRUTTO w PLN.
 //   node pricing/allegro-cena.js <KONTO> <SKU albo numer oferty> <cena>             — podgląd
 //   node pricing/allegro-cena.js <KONTO> <SKU albo numer oferty> <cena> --zapisz    — wysyła i czyta ofertę ponownie
 //

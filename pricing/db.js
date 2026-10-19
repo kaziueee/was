@@ -131,6 +131,11 @@ if (!kolOferty.includes('kategoria_nazwa')) db.exec('ALTER TABLE oferty ADD COLU
 // Tylko w WMS — zakresu min/max w panelu platformy nie dotykamy (decyzja usera 2026-10-16).
 if (!kolOferty.includes('min_reczne')) db.exec('ALTER TABLE oferty ADD COLUMN min_reczne REAL');
 if (!kolOferty.includes('max_reczne')) db.exec('ALTER TABLE oferty ADD COLUMN max_reczne REAL');
+// Allegro + Niezbędnik (pricing/konkurencja-allegro.js): EAN towaru z GT (klucz sprawdzenia konkurencji), jak często
+// sprawdzać (godziny, NULL = domyślnie 4) i o ile przebijać konkurenta (zł, NULL = 1 gr) — ustawiane przy ofercie.
+if (!kolOferty.includes('ean')) db.exec('ALTER TABLE oferty ADD COLUMN ean TEXT');
+if (!kolOferty.includes('konk_co_h')) db.exec('ALTER TABLE oferty ADD COLUMN konk_co_h INTEGER');
+if (!kolOferty.includes('konk_przebicie')) db.exec('ALTER TABLE oferty ADD COLUMN konk_przebicie REAL');
 // `oferty.zapis` (osobny przełącznik wysyłania, tryb Próba) zlikwidowany 2026-10-13 — w starszych
 // bazach kolumna zostaje, nic jej nie czyta: automat = wysyła, ręczny = nie.
 const kolObs = db.prepare('PRAGMA table_info(obserwacje)').all().map((k) => k.name);
@@ -155,6 +160,18 @@ db.exec(`CREATE TABLE IF NOT EXISTS allegro_top (
   raport_czas  TEXT NOT NULL,              -- kiedy wgrano raport (UTC)
   kto          TEXT,
   PRIMARY KEY (konto, oferta)
+)`);
+
+// Allegro: ostatnie sprawdzenie konkurencji w Niezbędniku per EAN (pricing/konkurencja-allegro.js). Jeden EAN
+// obsługuje obie nasze oferty tego towaru (ekajtek i NaTropie). Nieudane sprawdzenie zostawia poprzedni wynik.
+db.exec(`CREATE TABLE IF NOT EXISTS allegro_konkurencja (
+  ean          TEXT PRIMARY KEY,
+  czas         TEXT,                       -- kiedy Niezbędnik sprawdził (UTC); NULL = zlecone, jeszcze bez wyniku
+  oferty       TEXT,                       -- JSON: oferty z wyniku (pricing/konkurencja-allegro.js zWyniku), ≤60
+  wszystkich   INTEGER,                    -- ile ofert Allegro znalazło (wynik ma najwyżej 60)
+  blad         TEXT,                       -- błąd ostatniego sprawdzenia (poprzedni wynik zostaje)
+  raport       TEXT,                       -- id raportu Niezbędnika
+  zlecono      TEXT                        -- kiedy ostatnio zlecone (harmonogram liczy od tego, gdy brak wyniku)
 )`);
 
 const stan = {

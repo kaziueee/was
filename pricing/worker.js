@@ -46,10 +46,12 @@ const empik = require('./empik');
 const { synchronizujAllegro, odswiezProwizje: odswiezProwizjeAllegro } = require('./sync-allegro');
 const { obserwujAllegro } = require('./obserwuj-allegro');
 const allegro = require('./allegro');
+const niezbednik = require('./niezbednik');
+const konkurencja = require('./konkurencja-allegro');
 const { synchronizujKaufland } = require('./sync-kaufland');
 const { obserwujKaufland } = require('./obserwuj-kaufland');
 const kaufland = require('./kaufland');
-const { kluczKolumny, kolumna } = require('./kolumny');
+const { kluczKolumny, kolumna, wysylkaWstrzymana } = require('./kolumny');
 const { takaSamaDecyzja } = require('./bez-zmian');
 const { ustawCene } = require('./amazon');
 const { pewneDopasowanie } = require('./powiazania');
@@ -75,6 +77,24 @@ const minelo = (klucz, ms) => {
 async function przebieg({ pelny = false } = {}) {
   const t0 = Date.now();
   const wynik = {};
+  // Niezbędnik (ceny konkurencji Allegro, pricing/konkurencja-allegro.js): zlecenie na samym początku — raport
+  // liczy się w czasie synchronizacji pozostałych platform, a odbieramy go tuż przed obserwacją Allegro.
+  // Tylko oferty z automatem, w oknie dnia; błąd nie zatrzymuje przebiegu.
+  if (PLATFORMY.has('allegro') && niezbednik.skonfigurowany()) {
+    try {
+      await konkurencja.odbierz();
+      const zAuto = db.prepare(`SELECT id, tw_id, ean, konk_co_h FROM oferty WHERE platforma = 'allegro' AND auto = 1
+          AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all();
+      if (zAuto.length) {
+        await konkurencja.odswiezEan(zAuto);
+        const z = await konkurencja.zlec(zAuto);
+        if (z.eanow) wynik.niezbednik = z;
+      }
+    } catch (e) {
+      stan.set('blad_niezbednik', e.message);
+      console.error(new Date().toISOString(), '[pricing] Niezbędnik:', e.message);
+    }
+  }
   if (PLATFORMY.has('amazon') && minelo('sync_oferty', SYNC_MS)) {
     const s = await synchronizuj();
     stan.set('sync_oferty', JSON.stringify(s.map((x) => [x.rynek, x.ofert])));
@@ -190,7 +210,7 @@ async function przebieg({ pelny = false } = {}) {
   // Amazon i Empik: oferty z automatem co przebieg, cały katalog w pełnej obserwacji (limity API).
   // eMAG, Allegro i Kaufland: zawsze cały katalog — obserwacja czyta listę pobraną wyżej (Kaufland dokłada
   // ranking Buy Boxa per produkt).
-  const oferty = db.prepare(`SELECT id, platforma, rynek, sku, asin, tw_id, auto, genius, dopasowanie, prowizja, min_reczne, max_reczne FROM oferty
+  const oferty = db.prepare(`SELECT id, platforma, rynek, sku, asin, tw_id, auto, genius, dopasowanie, prowizja, min_reczne, max_reczne, ean, konk_przebicie FROM oferty
      WHERE ((platforma = 'amazon' AND ? AND (auto = 1 OR ?)) OR (platforma = 'emag' AND ?) OR (platforma = 'empik' AND ? AND (auto = 1 OR ?))
             OR (platforma = 'allegro' AND ?) OR (platforma = 'kaufland' AND ?))
        AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all(PLATFORMY.has('amazon') ? 1 : 0, pelnyTeraz ? 1 : 0, emagKraje.size ? 1 : 0,
@@ -217,6 +237,16 @@ async function przebieg({ pelny = false } = {}) {
   // Stawka prowizji per oferta: eMAG z commission/estimate, Empik z kategorii (pricing/empik-prowizje.js),
   // Allegro z podglądu opłat (pricing/sync-allegro.js odswiezProwizje).
   const prowizjaPoTw = poKolumnie([...emagOf, ...empikOf, ...allegroOf], 'prowizja', (v) => v > 0, (v) => v);
+  // Raport Niezbędnika zlecony na początku przebiegu — zwykle już gotowy; jeśli nie, chwilę czekamy.
+  if (allegroOf.length && stan.get('nsp_raport')?.wartosc) {
+    try {
+      const r = await konkurencja.odbierz({ czekajMs: 90_000 });
+      if (r?.gotowy) wynik.niezbednik = { ...(wynik.niezbednik || {}), odebrane: r.ok, bledy: r.bledy };
+    } catch (e) {
+      stan.set('blad_niezbednik', e.message);
+      console.error(new Date().toISOString(), '[pricing] Niezbędnik odbiór:', e.message);
+    }
+  }
   // Empik: błąd P11 (limit, awaria) = oferty bez obserwacji w tym przebiegu, reszta idzie dalej.
   const obsEmpik = empikOf.length ? obserwujEmpik(empikOf, { surowe: empikSurowe }).catch((e) => {
     stan.set('blad_empik', e.message);
@@ -280,12 +310,18 @@ async function przebieg({ pelny = false } = {}) {
     const ob = obs.get(o.id);
     if (!ob) { kody.brak_odpowiedzi = (kody.brak_odpowiedzi || 0) + 1; continue; }
     const pas = zGranicami((pasy.get(o.tw_id) || {})[kluczKolumny(o.platforma, o.rynek)] || null, o);
-    const d = decyzja(ob, pas || {}, kolumna(o.platforma, o.rynek)?.reguly || {}, {
+    // Allegro: przebicie ustawiane przy ofercie (remis / 1 gr / kwota); z listą konkurentów z Niezbędnika cel
+    // wybiera doModelu — najtańszy konkurent, którego da się przebić nad minimum (pricing/konkurencja-allegro.js).
+    const reguly = o.platforma === 'allegro' ? { ...(kolumna(o.platforma, o.rynek)?.reguly || {}), krok: konkurencja.przebicie(o.konk_przebicie) }
+      : kolumna(o.platforma, o.rynek)?.reguly || {};
+    const obM = ob.konkurenci ? konkurencja.doModelu(ob, pas?.min, reguly.krok) : ob;
+    const d = decyzja(obM, pas || {}, reguly, {
       ostatniaPodwyzka: ostPodwyzka.get(o.id, okno) || null,
       blokadaPodwyzek: !!cofniecie.get(o.id, okno),
       obnizkiBezBb: obnizkiBezBb.get(o.id, o.id) || null,
     });
     if (pas?.blad && d.kod === 'brak_pasa') d.powod = pas.blad;   // sprzeczne ręczne granice — powiedz które
+    if (obM.podMin > 0 && obM.podMin < ob.konkurenci.length) d.powod += `; tańszych pod naszym minimum: ${obM.podMin} — przebijamy najtańszego nad minimum`;
     if (o.auto && d.zmiana && autoTeraz.get(o.id)?.auto !== 1) o.auto = 0;
     const teraz = pas && ob.cena ? pas.ocen(ob.cena) : null;
     const potem = pas && d.zmiana ? pas.ocen(d.cena) : teraz;
@@ -294,7 +330,8 @@ async function przebieg({ pelny = false } = {}) {
     // Druga linia obrony obok POST /automat: bez pewnego dopasowania do GT nie wysyłamy, nawet gdy
     // auto = 1 (np. włączone przed wprowadzeniem zasady albo przez bezpośredni zapis w bazie). Kanał
     // `tylkoOdczyt` (pricing/kolumny.js) nie wysyła nigdy — także tu, nie tylko w routes/ceny.js.
-    const kanalZapis = !kolumna(o.platforma, o.rynek)?.tylkoOdczyt;
+    // `wysylkaPoZgodzie` (Allegro od 2026-10-19): automat liczy, ale wysyła dopiero po decyzji usera (.env).
+    const kanalZapis = !kolumna(o.platforma, o.rynek)?.tylkoOdczyt && !wysylkaWstrzymana(kolumna(o.platforma, o.rynek));
     if (zapisWlaczony && o.auto && d.zmiana && pas && kanalZapis && pewneDopasowanie(o.dopasowanie) && o.platforma === 'empik') {
       empikPaczka.push({ o, ob, d });
       wPaczce = true;

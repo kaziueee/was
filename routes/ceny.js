@@ -3,6 +3,7 @@
 // Ekran „Ceny" (repricer) — odczyt bazy repricera `db/pricing.db` + włączanie/wyłączanie automatu.
 // Kanały (kolumny) z pricing/kolumny.js: Amazon DE…PL, eMAG RO/HU/BG, Empik i inne. Kanał oznaczony
 // `tylkoOdczyt` — POST /automat odrzuca na nim włączenie automatu (zasada 5: blokada w backendzie).
+// `wysylkaPoZgodzie` (Allegro) — automat da się włączyć, ale worker nie wysyła cen bez zgody w .env.
 // Liczy i obserwuje osobny proces (pricing/worker.js, zadanie WMS-Pricing); WMS tylko czyta jego
 // wyniki i zapisuje decyzję człowieka: automat (auto = 1, ceny idą na platformę) albo ręczny (0). Montowane z
 // auth.wymagajRoli('admin', 'biuro') — w testach tylko administrator (2026-10-13), biuro od 2026-10-16 (decyzja usera).
@@ -24,6 +25,8 @@
 //   POST /api/ceny/powiaz/potwierdz { sku }                            potwierdź obecne dopasowanie jako ręczne
 //   POST /api/ceny/powiaz/usun   { sku }                               usuń ręczne powiązanie
 //   POST /api/ceny/allegro-top   (plik xlsx w treści)                  raport Allegro „Czynniki Top oferty” → allegro_top
+//   POST /api/ceny/konkurencja { oferta_id, co_h, przebicie }         Allegro: jak często Niezbędnik sprawdza konkurencję
+//        (1–4 h, null = 4 h) i o ile przebijamy (zł, 0 = remis, null = 1 gr) — pricing/konkurencja-allegro.js
 
 const express = require('express');
 const router = express.Router();
@@ -33,7 +36,7 @@ const emag = require('../pricing/emag');
 const empik = require('../pricing/empik');
 const allegro = require('../pricing/allegro');
 const kaufland = require('../pricing/kaufland');
-const { KOLUMNY, kluczKolumny, kolumna } = require('../pricing/kolumny');
+const { KOLUMNY, kluczKolumny, kolumna, wysylkaWstrzymana } = require('../pricing/kolumny');
 const { wycenaHurtem } = require('../services/cennik');
 const { pobierzStanyGt, sumaRazem } = require('../services/gt-produkty');
 const { doZlozeniaMapa } = require('../services/gt-zestawy');
@@ -41,6 +44,7 @@ const { pewneDopasowanie, znajdzTowar, powiaz, usunPowiazanie } = require('../pr
 const filtry = require('../pricing/filtry-cen');
 const { czytajXlsx } = require('../services/xlsx-czytnik');
 const allegroTop = require('../pricing/allegro-top');
+const konkurencja = require('../pricing/konkurencja-allegro');
 const { pasOferty } = require('../pricing/pas');
 const granice = require('../pricing/granice');
 const reczna = require('../pricing/reczna-cena');
@@ -72,6 +76,16 @@ const linki = (o) => (o.platforma === 'emag' ? emag.linkiOferty(o.asin, o.rynek)
   : o.platforma === 'empik' ? empik.linkiOferty(o.asin) : o.platforma === 'allegro' ? allegro.linkiOferty(o.asin)
   : o.platforma === 'kaufland' ? kaufland.linkiOferty(o.asin, o.rynek)
   : linkiOferty(o.rynek, o.asin));
+// Nasze konta Allegro (numer + login) — raz na żądanie wystarczy, KONTA się nie zmieniają.
+let naszeKontaCache = null;
+const naszeKonta = () => (naszeKontaCache ||= konkurencja.naszeKonta());
+// Niezbędnik w nagłówku ekranu: pakiet sprawdzeń, ostatni raport, trwający raport, błąd.
+const zJson = (s) => { try { return s?.wartosc ? JSON.parse(s.wartosc) : null; } catch { return null; } };
+const stanNiezbednika = () => ({
+  pakiet: zJson(stan.get('nsp_pakiet')), ostatni: stan.get('nsp_ostatni') ? { ...zJson(stan.get('nsp_ostatni')), czas: stan.get('nsp_ostatni').czas } : null,
+  trwa: !!stan.get('nsp_raport')?.wartosc, dzis: zJson(stan.get('nsp_dzis')), blad: stan.get('blad_niezbednik'), okno: konkurencja.okno(),
+});
+
 // Pola kanału doklejane do każdej oferty — ekran nie zgaduje waluty ani nazwy z kodu rynku.
 const zKanalem = (o) => {
   const k = kolumna(o.platforma, o.rynek) || {};
@@ -83,7 +97,14 @@ const zKanalem = (o) => {
   }
   return { ...o, kolumna: kluczKolumny(o.platforma, o.rynek), kanal_nazwa: k.nazwa || `${o.platforma} ${o.rynek}`,
     waluta: k.waluta || '', tylko_odczyt: !!k.tylkoOdczyt, bez_konkurencji: !!k.bezKonkurencji, linki: linki(o),
-    reczna_cena: reczna.obslugiwana(o.platforma),
+    reczna_cena: reczna.obslugiwana(o.platforma), wysylka_wstrzymana: wysylkaWstrzymana(k),
+    // Allegro: ustawienia sprawdzania konkurencji (Niezbędnik) i ostatni wynik dla EAN-u towaru.
+    ...(o.platforma === 'allegro' ? { konkurencja: {
+      co_h: konkurencja.coH(o.konk_co_h), przebicie: konkurencja.przebicie(o.konk_przebicie), wlasne: o.konk_co_h != null || o.konk_przebicie != null,
+      ean: o.ean || null, okno: konkurencja.okno(),
+      wynik: o.konk_czas || o.konk_zlecono ? konkurencja.podsumowanie({ czas: o.konk_czas, oferty: o.konk_oferty, wszystkich: o.konk_wszystkich,
+        blad: o.konk_blad, zlecono: o.konk_zlecono }, naszeKonta()) : null } } : {}),
+    konk_oferty: undefined,   // surowy JSON z Niezbędnika (do 60 ofert) — ekran dostaje podsumowanie wyżej
     // Allegro: raport „Czynniki Top oferty” (pricing/allegro-top.js) — cena Top oferty i co jeszcze blokuje.
     top: o.top_czas ? { ocena: o.top_ocena, cena: o.top_cena, roznica: o.top_roznica, cena_nasza: o.top_cena_nasza,
       czas: o.top_czas, aktualny: allegroTop.aktualny({ raport_czas: o.top_czas }), waznosc_h: allegroTop.WAZNOSC_H,
@@ -95,16 +116,18 @@ const zKanalem = (o) => {
 // Ostatnia obserwacja i ostatnia decyzja każdej oferty — jedno zapytanie, korelowane po max(id).
 const SQL_OFERTY = `
   SELECT o.id, o.platforma, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.dopasowanie, o.genius, o.blokada,
-         o.prowizja, o.min_reczne, o.max_reczne, o.kategoria, o.kategoria_nazwa,
+         o.prowizja, o.min_reczne, o.max_reczne, o.kategoria, o.kategoria_nazwa, o.ean, o.konk_co_h, o.konk_przebicie,
          b.czas AS obs_czas, COALESCE(b.widziana, b.czas) AS obs_widziana, b.cena, b.wysylka, b.bb_nasz, b.bb_cena, b.bb_fba, b.najtansza_inna, b.ofert, b.bb_nasza_inna,
          d.kod, d.cena_nowa, d.powod, d.min, d.max, d.zysk, d.marza, d.zysk_nowa,
          d.czas AS dec_czas, d.wyslano, d.blad AS dec_blad, d.marza_nowa, d.cena_cel, d.zysk_cel,
          t.cena_ocena AS top_ocena, t.cena_top AS top_cena, t.roznica AS top_roznica, t.cena_nasza AS top_cena_nasza,
-         t.czynniki AS top_czynniki, t.raport_czas AS top_czas
+         t.czynniki AS top_czynniki, t.raport_czas AS top_czas,
+         k.czas AS konk_czas, k.oferty AS konk_oferty, k.wszystkich AS konk_wszystkich, k.blad AS konk_blad, k.zlecono AS konk_zlecono
     FROM oferty o
     LEFT JOIN obserwacje b ON b.id = (SELECT MAX(id) FROM obserwacje WHERE oferta_id = o.id)
     LEFT JOIN decyzje d    ON d.id = (SELECT MAX(id) FROM decyzje WHERE oferta_id = o.id)
     LEFT JOIN allegro_top t ON o.platforma = 'allegro' AND t.konto = o.rynek AND t.oferta = o.asin
+    LEFT JOIN allegro_konkurencja k ON o.platforma = 'allegro' AND k.ean = o.ean
    WHERE o.aktywna = 1 AND o.tw_id IS NOT NULL AND o.ilosc > 0`;
 
 // Filtr kanału (marketplace): platforma = wszystkie jej kolumny, klucz = jedna kolumna. Wybór zawęża
@@ -187,12 +210,13 @@ router.get('/macierz', asyncH(async (req, res) => {
 
   res.json({
     rynki: kolumnyW.map((k) => k.klucz),
-    kolumny: kolumnyW.map(({ klucz, nazwa, waluta, tylkoOdczyt }) => ({ klucz, nazwa, waluta, tylko_odczyt: !!tylkoOdczyt })),
+    kolumny: kolumnyW.map((k) => ({ klucz: k.klucz, nazwa: k.nazwa, waluta: k.waluta, tylko_odczyt: !!k.tylkoOdczyt, wysylka_wstrzymana: wysylkaWstrzymana(k) })),
     kanal,
     kanaly: chipyKanalow(kazdy, pasuje),
     emag: { sync: stan.get('sync_emag'), blad: stan.get('blad_emag') },
     empik: { sync: stan.get('sync_empik'), blad: stan.get('blad_empik') },
     allegro: { sync: stan.get('sync_allegro'), blad: stan.get('blad_allegro') },
+    niezbednik: stanNiezbednika(),
     kaufland: { sync: stan.get('sync_kaufland'), blad: stan.get('blad_kaufland') },
     wysylanie: process.env.PRICING_ZAPIS === '1',    // globalny hamulec workera (ten sam .env)
     gt_ok: !!stanGt,
@@ -259,7 +283,7 @@ router.get('/pulpit', asyncH(async (req, res) => {
   });
   const kanaly = KOLUMNY.map((k) => ({
     klucz: k.klucz, nazwa: k.nazwa, etykieta: k.etykieta || k.rynek, platforma: k.platforma, waluta: k.waluta,
-    tylko_odczyt: !!k.tylkoOdczyt, bez_konkurencji: !!k.bezKonkurencji,
+    tylko_odczyt: !!k.tylkoOdczyt, bez_konkurencji: !!k.bezKonkurencji, wysylka_wstrzymana: wysylkaWstrzymana(k),
     ofert: syt.get(k.klucz)?.wszystkie.wszystkie || 0,
     automat: syt.get(k.klucz)?.automat.wszystkie || 0,
     bb: { wszystkie: bilans(k.klucz, 'wszystkie'), automat: bilans(k.klucz, 'automat') },
@@ -452,6 +476,26 @@ router.post('/allegro-top', (req, res, next) => { req.kto = req.body?.operator |
     try { raport = allegroTop.raportTopOferty(czytajXlsx(req.body)); } catch (e) { return res.status(400).json({ blad: e.message }); }
     try { res.json({ ok: true, ...allegroTop.zapiszRaport(raport, req.kto) }); } catch (e) { res.status(400).json({ blad: e.message }); }
   });
+
+// Allegro: ustawienia sprawdzania konkurencji przy ofercie (pricing/konkurencja-allegro.js). null = domyślne.
+router.post('/konkurencja', (req, res) => {
+  const o = ofertaPoId(req.body?.oferta_id);
+  if (!o) return res.status(404).json({ blad: 'Nie ma takiej oferty' });
+  if (o.platforma !== 'allegro') return res.status(400).json({ blad: 'Ustawienia konkurencji są na razie tylko dla Allegro' });
+  const coH = req.body?.co_h == null || req.body.co_h === '' ? null : Number(req.body.co_h);
+  if (coH != null && !konkurencja.CO_H.includes(coH)) return res.status(400).json({ blad: `Sprawdzanie co ${konkurencja.CO_H.join(', ')} h` });
+  const p = req.body?.przebicie == null || req.body.przebicie === '' ? null : granice.liczba(req.body.przebicie);
+  if (p !== null && !(p >= 0 && p <= konkurencja.PRZEBICIE_MAX)) {
+    return res.status(400).json({ blad: `Przebicie od 0 (remis) do ${konkurencja.PRZEBICIE_MAX} zł` });
+  }
+  const przeb = p == null ? null : Math.round(p * 100) / 100;
+  db.prepare('UPDATE oferty SET konk_co_h = ?, konk_przebicie = ? WHERE id = ?').run(coH, przeb, o.id);
+  const opis = (x, dom, f) => (x == null ? `${f(dom)} (domyślnie)` : f(x));
+  const zl = (x) => (x === 0 ? 'remis' : `${granice.pl(x)} zł`);
+  db.prepare("INSERT INTO zmiany (kto, oferta_id, akcja, opis) VALUES (?, ?, 'konkurencja', ?)")
+    .run(req.body.operator || null, o.id, `${kluczKolumny(o.platforma, o.rynek)} ${o.sku}: sprawdzanie co ${opis(coH, konkurencja.DOMYSLNE.co_h, (h) => `${h} h`)}, przebicie ${opis(przeb, konkurencja.DOMYSLNE.przebicie, zl)}`);
+  res.json({ ok: true, co_h: konkurencja.coH(coH), przebicie: konkurencja.przebicie(przeb) });
+});
 
 router.post('/cena', asyncH(async (req, res) => {
   const o = ofertaPoId(req.body?.oferta_id);

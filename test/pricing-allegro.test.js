@@ -72,12 +72,13 @@ test('Allegro: token ważny z zapasem 5 min; Retry-After w sekundach, za długi 
   assert.strictEqual(allegro.czekajMs('3600', 1), null);
 });
 
-test('Allegro: dwie kolumny (konta) tylko do odczytu, minimum z kalkulatora rynku „Allegro”', () => {
+test('Allegro: dwie kolumny (konta), automat bez wysyłki do zgody usera, minimum z kalkulatora rynku „Allegro”', () => {
   assert.strictEqual(kluczKolumny('allegro', 'EKAJTEK'), 'ALLEGRO_EKAJTEK');
   for (const konto of Object.keys(allegro.KONTA)) {
     const k = kolumna('allegro', konto);
     assert.ok(k, konto);
-    assert.strictEqual(k.tylkoOdczyt, true);
+    assert.ok(!k.tylkoOdczyt);                                   // od 2026-10-19 automat da się włączyć…
+    assert.strictEqual(k.wysylkaPoZgodzie, 'PRICING_ALLEGRO_WYSYLKA');   // …ale cen nie wysyła bez zgody w .env
     assert.strictEqual(k.bezKonkurencji, true);
     assert.strictEqual(k.kalkulator, 'Allegro');
   }

@@ -4665,12 +4665,13 @@ function cenyWiersz(t, rynki) {
   const td0 = document.createElement('td');
   td0.className = 'ceny-towar';
   // Miniatura z tego samego źródła co Zebra (/api/produkty/:tw_Id/zdjecie — Sellasist po SKU, cache na
-  // dysku). To podgląd: brak zdjęcia albo błąd = ramka znika, wiersz wygląda jak dawniej. Klik = duże.
-  td0.innerHTML = `<div class="ceny-towar-flex"><a class="ceny-miniatura" href="/api/produkty/${Number(t.tw_id)}/zdjecie?rozmiar=duze" target="_blank" rel="noopener" title="Zdjęcie — otwórz duże">`
-    + `<img src="/api/produkty/${Number(t.tw_id)}/zdjecie?rozmiar=mini" alt="" loading="lazy" onerror="this.parentElement.remove()"></a>`
+  // dysku). To podgląd: brak zdjęcia albo błąd = ramka znika, wiersz wygląda jak dawniej. Klik = karta SKU
+  // (decyzja usera 2026-10-19; wcześniej otwierał duże zdjęcie w nowej karcie przeglądarki).
+  td0.innerHTML = `<div class="ceny-towar-flex"><button type="button" class="ceny-miniatura" title="Karta SKU">`
+    + `<img src="/api/produkty/${Number(t.tw_id)}/zdjecie?rozmiar=mini" alt="" loading="lazy" onerror="this.parentElement.remove()"></button>`
     + `<div class="ceny-towar-tresc"><button type="button" class="ceny-symbol ceny-link-karta" title="Karta SKU">${cenyEsc(t.symbol)}</button><div class="ceny-nazwa" title="${cenyEsc(t.nazwa)}">${cenyEsc(t.nazwa)}</div></div></div>`;
   const tresc = td0.querySelector('.ceny-towar-tresc');
-  td0.querySelector('.ceny-link-karta').addEventListener('click', () => cenyOtworzKarte(t.tw_id));
+  td0.querySelectorAll('.ceny-link-karta, .ceny-miniatura').forEach((b) => b.addEventListener('click', () => cenyOtworzKarte(t.tw_id)));
   tresc.insertAdjacentHTML('beforeend', `<div class="ceny-stan" title="Razem = K4 + K4G + MAG + LS (bez BRK)">${cenyStanTekst(t.stan_gt, { tylkoRazem: true })}</div>`);
   if (oferty.length) {
     const lbl = document.createElement('label');

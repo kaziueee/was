@@ -136,6 +136,9 @@ if (!kolOferty.includes('max_reczne')) db.exec('ALTER TABLE oferty ADD COLUMN ma
 if (!kolOferty.includes('ean')) db.exec('ALTER TABLE oferty ADD COLUMN ean TEXT');
 if (!kolOferty.includes('konk_co_h')) db.exec('ALTER TABLE oferty ADD COLUMN konk_co_h INTEGER');
 if (!kolOferty.includes('konk_przebicie')) db.exec('ALTER TABLE oferty ADD COLUMN konk_przebicie REAL');
+// Skąd EAN (allegro = produkt z katalogu Allegro, gt = Subiekt) i kiedy sprawdzony — odświeżany raz na dobę.
+if (!kolOferty.includes('ean_zrodlo')) db.exec('ALTER TABLE oferty ADD COLUMN ean_zrodlo TEXT');
+if (!kolOferty.includes('ean_czas')) db.exec('ALTER TABLE oferty ADD COLUMN ean_czas TEXT');
 // `oferty.zapis` (osobny przełącznik wysyłania, tryb Próba) zlikwidowany 2026-10-13 — w starszych
 // bazach kolumna zostaje, nic jej nie czyta: automat = wysyła, ręczny = nie.
 const kolObs = db.prepare('PRAGMA table_info(obserwacje)').all().map((k) => k.name);

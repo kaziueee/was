@@ -226,3 +226,37 @@ test('zlecenie i odbiór: EAN-y z harmonogramu, limit dzienny, wynik w allegro_k
     delete process.env.PRICING_NSP_DZIENNIE;
   }
 });
+
+// --- EAN z katalogu Allegro (oferta → produkt → EAN) ---
+
+test('EAN z produktu Allegro: parametr „EAN (GTIN)”, pierwsza poprawna wartość (XSH36786: 12 cyfr i z zerem)', () => {
+  assert.strictEqual(k.eanZProduktu({ parameters: [{ name: 'Marka', values: ['X-Shot'] }, { name: 'EAN (GTIN)', values: ['193052070883', '0193052070883'] }] }), '193052070883');
+  assert.strictEqual(k.eanZProduktu({ parameters: [{ name: 'EAN (GTIN)', values: ['abc'] }] }), null);
+  assert.strictEqual(k.eanZProduktu(null), null);
+});
+
+test('odświeżenie EAN: katalog Allegro wygrywa z GT; świeży (doba) nie odpytuje; błąd Allegro zostawia stary EAN', async () => {
+  const allegro = require('../pricing/allegro');
+  const stare = allegro.api;
+  const wolania = [];
+  allegro.api = async (konto, sciezka) => {
+    wolania.push(sciezka);
+    if (sciezka === '/sale/product-offers/18681598333') return { productSet: [{ product: { id: 'd4febc6c' } }] };
+    if (sciezka === '/sale/products/d4febc6c') return { parameters: [{ name: 'EAN (GTIN)', values: ['5010993842094'] }] };
+    throw new Error('Allegro 503');
+  };
+  const t = Date.parse('2026-10-19T12:30:00Z');
+  const ins = db.prepare("INSERT INTO oferty (platforma, rynek, sku, asin, tw_id, ean, ean_czas) VALUES ('allegro', 'EKAJTEK', ?, ?, ?, ?, ?)");
+  const a = Number(ins.run('NERF0319', '18681598333', 1, '195166115597', null).lastInsertRowid);           // EAN z GT, nigdy nie z Allegro
+  const b = Number(ins.run('SWIEZY', '111', 2, '5900000000001', '2026-10-19 10:00:00').lastInsertRowid);  // sprawdzony 2,5 h temu
+  const c = Number(ins.run('BLAD', '222', 3, '5900000000002', null).lastInsertRowid);                     // Allegro odpowiada błędem
+  try {
+    const of = db.prepare('SELECT id, rynek, asin, tw_id, ean, ean_czas FROM oferty WHERE id IN (?, ?, ?)').all(a, b, c);
+    await k.odswiezEan(of, t);
+    const po = (id) => db.prepare('SELECT ean, ean_zrodlo FROM oferty WHERE id = ?').get(id);
+    assert.deepStrictEqual({ ...po(a) }, { ean: '5010993842094', ean_zrodlo: 'allegro' });
+    assert.deepStrictEqual({ ...po(b) }, { ean: '5900000000001', ean_zrodlo: null });
+    assert.deepStrictEqual({ ...po(c) }, { ean: '5900000000002', ean_zrodlo: null });
+    assert.ok(!wolania.some((w) => w.includes('/111')));                                                    // świeży — bez zapytania
+  } finally { allegro.api = stare; }
+});

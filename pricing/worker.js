@@ -87,7 +87,7 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
   if (platformy.has('allegro') && niezbednik.skonfigurowany()) {
     try {
       await konkurencja.odbierz();
-      const zAuto = db.prepare(`SELECT id, tw_id, ean, konk_co_h FROM oferty WHERE platforma = 'allegro' AND auto = 1
+      const zAuto = db.prepare(`SELECT id, rynek, asin, tw_id, ean, ean_czas, konk_co_h FROM oferty WHERE platforma = 'allegro' AND auto = 1
           AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all();
       if (zAuto.length) {
         await konkurencja.odswiezEan(zAuto);

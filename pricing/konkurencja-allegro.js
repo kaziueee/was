@@ -16,6 +16,9 @@
 //   - konkurent pod naszym minimum: przebijamy najtańszego, którego DA SIĘ przebić nad minimum (wariant C);
 //     gdy pod minimum są wszyscy — stoimy na minimum (model, reguła 7)
 // Jedno sprawdzenie na EAN obsługuje obie nasze oferty (ekajtek i NaTropie mają często ten sam towar).
+// EAN bierzemy z KATALOGU ALLEGRO (oferta → produkt → jego EAN), a z GT tylko awaryjnie: Allegro grupuje oferty
+// i wybiera Top po produkcie z katalogu. 19.10 trzy oferty z automatem (NERF0319, XSH36786, NERCHIL2S) miały w GT
+// inny EAN niż ich produkt w Allegro i Niezbędnik nie znajdował po nim nic — nawet nas (pomysł usera: „po ID oferty”).
 // Czyste funkcje na górze (testy w test/pricing-konkurencja-allegro.test.js), baza i API niżej.
 
 const FILTRY = { has_smart: true, condition: 'new' };
@@ -121,6 +124,16 @@ function podsumowanie(wpis, nasze, teraz = Date.now()) {
     nasze: k.nasze.map((c) => ({ oferta: c.oferta, login: c.login, cena: c.cena })) };
 }
 
+// EAN produktu z katalogu Allegro (GET /sale/products/{id}) — parametr „EAN (GTIN)”, pierwsza poprawna wartość.
+function eanZProduktu(prod) {
+  for (const par of prod?.parameters || []) {
+    if (!/EAN|GTIN/i.test(par.name || '')) continue;
+    for (const v of par.values || []) { const e = String(v).trim(); if (dobryEan(e)) return e; }
+  }
+  return null;
+}
+const EAN_WAZNOSC_MS = 24 * 3_600_000;   // podpięcie oferty do produktu zmienia się rzadko — raz na dobę wystarczy
+
 // --- baza i API -------------------------------------------------------------------------------------
 
 const naszeKonta = () => {
@@ -133,21 +146,46 @@ function wyniki() {
   return new Map(db.prepare('SELECT * FROM allegro_konkurencja').all().map((r) => [r.ean, r]));
 }
 
-// EAN-y towarów z automatem na Allegro — z GT (tw_PodstKodKresk), do kolumny oferty.ean.
-async function odswiezEan(oferty) {
-  const { db } = require('./db');
-  const { query } = require('../services/gt-sql');
-  const tw = [...new Set(oferty.map((o) => o.tw_id).filter(Boolean))];
-  const ean = new Map();
-  for (let i = 0; i < tw.length; i += 500) {
-    const r = await query(`SELECT tw_Id, tw_PodstKodKresk FROM tw__Towar WHERE tw_Id IN (${tw.slice(i, i + 500).map(Number).join(',')})`);
-    for (const x of r.recordset) ean.set(x.tw_Id, String(x.tw_PodstKodKresk || '').trim() || null);
+// EAN oferty z katalogu Allegro: oferta → productSet → produkt → jego EAN. null = oferta bez produktu albo bez EAN.
+async function eanZAllegro(konto, ofertaId) {
+  const allegro = require('./allegro');
+  const s = await allegro.api(konto, `/sale/product-offers/${encodeURIComponent(ofertaId)}`);
+  for (const p of s?.productSet || []) {
+    const id = p.product?.id;
+    if (!id) continue;
+    const ean = eanZProduktu(await allegro.api(konto, `/sale/products/${encodeURIComponent(id)}`));
+    if (ean) return ean;
   }
-  const zapisz = db.prepare('UPDATE oferty SET ean = ? WHERE id = ?');
+  return null;
+}
+
+// EAN-y ofert z automatem (kolumny oferty.ean / ean_zrodlo / ean_czas): z katalogu Allegro raz na dobę, z GT
+// (tw_PodstKodKresk), gdy Allegro produktu nie zna. oferty: [{ id, rynek, asin, tw_id, ean, ean_czas }].
+// Błąd Allegro przy ofercie, która ma już EAN — zostaje stary, spróbujemy w następnym przebiegu.
+async function odswiezEan(oferty, teraz = Date.now()) {
+  const { db } = require('./db');
+  const zapisz = db.prepare('UPDATE oferty SET ean = ?, ean_zrodlo = ?, ean_czas = ? WHERE id = ?');
+  const zGt = [];
   for (const o of oferty) {
-    if (!ean.has(o.tw_id)) continue;
-    const e = ean.get(o.tw_id);
-    if (e !== o.ean) { zapisz.run(e, o.id); o.ean = e; }
+    if (o.ean && teraz - zBazy(o.ean_czas) < EAN_WAZNOSC_MS) continue;
+    let ean;
+    try { ean = await eanZAllegro(o.rynek, o.asin); } catch { if (o.ean) continue; ean = null; }
+    if (ean) { zapisz.run(ean, 'allegro', doBazy(teraz), o.id); o.ean = ean; continue; }
+    zGt.push(o);
+  }
+  if (zGt.length) {
+    const { query } = require('../services/gt-sql');
+    const tw = [...new Set(zGt.map((o) => o.tw_id).filter(Boolean))];
+    const ean = new Map();
+    for (let i = 0; i < tw.length; i += 500) {
+      const r = await query(`SELECT tw_Id, tw_PodstKodKresk FROM tw__Towar WHERE tw_Id IN (${tw.slice(i, i + 500).map(Number).join(',')})`);
+      for (const x of r.recordset) ean.set(x.tw_Id, String(x.tw_PodstKodKresk || '').trim() || null);
+    }
+    for (const o of zGt) {
+      if (!ean.has(o.tw_id)) continue;
+      zapisz.run(ean.get(o.tw_id), 'gt', doBazy(teraz), o.id);
+      o.ean = ean.get(o.tw_id);
+    }
   }
   return oferty;
 }
@@ -219,5 +257,5 @@ async function zlec(oferty, teraz = Date.now()) {
   return { id: z.id, eanow: eans.length, dzis: dzis + eans.length };
 }
 
-module.exports = { FILTRY, CO_H, DOMYSLNE, PRZEBICIE_MAX, okno, waznoscH, dobryEan, coH, przebicie, godzinaPL, wOknie, zWyniku,
+module.exports = { FILTRY, CO_H, DOMYSLNE, PRZEBICIE_MAX, okno, waznoscH, dobryEan, coH, przebicie, godzinaPL, wOknie, zWyniku, eanZProduktu, eanZAllegro,
   konkurenci, zNiezbednika, doModelu, doSprawdzenia, podsumowanie, naszeKonta, wyniki, odswiezEan, odbierz, zlec };

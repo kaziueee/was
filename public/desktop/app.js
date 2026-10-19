@@ -4764,7 +4764,7 @@ function cenyKonkUstawieniaHtml(o) {
         przebicie <select name="tryb" aria-label="O ile przebijać konkurenta"><option value="0"${k.przebicie === 0 ? ' selected' : ''}>remis</option><option value="0.01"${k.przebicie === 0.01 ? ' selected' : ''}>1 gr (domyślnie)</option><option value="kwota"${kw ? ' selected' : ''}>kwota…</option></select>
         <input type="text" inputmode="decimal" name="kwota" autocomplete="off" class="${kw ? '' : 'hidden'}" value="${kw ? cenyLiczba(k.przebicie) : ''}" placeholder="0,50" aria-label="Kwota przebicia"> <span class="${kw ? '' : 'hidden'}" data-zl>zł</span>
         <button class="btn btn-small">Zapisz</button></div>
-      <span class="ceny-m">${o.auto ? `sprawdzamy w godzinach ${k.okno.join('–')}` : 'sprawdzamy tylko oferty z włączonym automatem'}${k.ean ? ` · EAN ${cenyEsc(k.ean)}` : o.auto ? ' · brak EAN w GT — Niezbędnik nie sprawdzi' : ''}</span></form>`;
+      <span class="ceny-m">${o.auto ? `sprawdzamy w godzinach ${k.okno.join('–')}` : 'sprawdzamy tylko oferty z włączonym automatem'}${k.ean ? ` · EAN ${cenyEsc(k.ean)}${k.ean_zrodlo === 'allegro' ? ' (produkt w katalogu Allegro)' : k.ean_zrodlo === 'gt' ? ' (z Subiekta — oferta bez produktu w katalogu Allegro)' : ''}` : o.auto ? ' · brak EAN (ani w katalogu Allegro, ani w Subiekcie) — Niezbędnik nie sprawdzi' : ''}</span></form>`;
 }
 function cenyPodepnijKonk(f, o) {
   if (!f || !o) return;

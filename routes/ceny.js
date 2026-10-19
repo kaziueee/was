@@ -101,7 +101,7 @@ const zKanalem = (o) => {
     // Allegro: ustawienia sprawdzania konkurencji (Niezbędnik) i ostatni wynik dla EAN-u towaru.
     ...(o.platforma === 'allegro' ? { konkurencja: {
       co_h: konkurencja.coH(o.konk_co_h), przebicie: konkurencja.przebicie(o.konk_przebicie), wlasne: o.konk_co_h != null || o.konk_przebicie != null,
-      ean: o.ean || null, okno: konkurencja.okno(),
+      ean: o.ean || null, ean_zrodlo: o.ean_zrodlo || null, okno: konkurencja.okno(),
       wynik: o.konk_czas || o.konk_zlecono ? konkurencja.podsumowanie({ czas: o.konk_czas, oferty: o.konk_oferty, wszystkich: o.konk_wszystkich,
         blad: o.konk_blad, zlecono: o.konk_zlecono }, naszeKonta()) : null } } : {}),
     konk_oferty: undefined,   // surowy JSON z Niezbędnika (do 60 ofert) — ekran dostaje podsumowanie wyżej
@@ -116,7 +116,7 @@ const zKanalem = (o) => {
 // Ostatnia obserwacja i ostatnia decyzja każdej oferty — jedno zapytanie, korelowane po max(id).
 const SQL_OFERTY = `
   SELECT o.id, o.platforma, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.dopasowanie, o.genius, o.blokada,
-         o.prowizja, o.min_reczne, o.max_reczne, o.kategoria, o.kategoria_nazwa, o.ean, o.konk_co_h, o.konk_przebicie,
+         o.prowizja, o.min_reczne, o.max_reczne, o.kategoria, o.kategoria_nazwa, o.ean, o.ean_zrodlo, o.konk_co_h, o.konk_przebicie,
          b.czas AS obs_czas, COALESCE(b.widziana, b.czas) AS obs_widziana, b.cena, b.wysylka, b.bb_nasz, b.bb_cena, b.bb_fba, b.najtansza_inna, b.ofert, b.bb_nasza_inna,
          d.kod, d.cena_nowa, d.powod, d.min, d.max, d.zysk, d.marza, d.zysk_nowa,
          d.czas AS dec_czas, d.wyslano, d.blad AS dec_blad, d.marza_nowa, d.cena_cel, d.zysk_cel,

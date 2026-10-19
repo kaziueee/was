@@ -30,6 +30,12 @@ const SYTUACJE = [
   { klucz: 'jedyna', nazwa: 'Jedyna oferta', opis: 'Nikt inny nie sprzedaje tego produktu na tym rynku', oferta: zKodem('top_bez_konkurencji') },
   { klucz: 'szansa', nazwa: 'Szansa na Buy Box', opis: 'Nie mamy Buy Boxa, a zwycięzca stoi nad naszym minimum — automat zejdzie pod niego',
     oferta: zKodem('obnizka', 'obnizka_limit'), wartosc: (o) => o.zysk_cel ?? o.zysk_nowa ?? -Infinity },
+  // Amazon daje FBA przewagę przy Buy Boxie poza ceną — przy zwycięzcy wysyłającym sam o BB decyduje
+  // częściej sama cena (decyzja usera 2026-10-19). Tylko Amazon: gdzie indziej FBA nie istnieje, więc
+  // filtr powtarzałby „Szansę”. Patrzymy na zwycięzcę BB (bb_fba); innych ofert FBA na liście nie znamy.
+  { klucz: 'szansa_bez_fba', nazwa: 'Szansa bez FBA', opis: 'Amazon: szansa na Buy Box, a zwycięzca wysyła sam (nie FBA) — tu częściej wygrywa cena',
+    oferta: (o) => o.platforma === 'amazon' && o.bb_fba === 0 && zKodem('obnizka', 'obnizka_limit')(o),
+    wartosc: (o) => o.zysk_cel ?? o.zysk_nowa ?? -Infinity },
   { klucz: 'bb_pod_min', nazwa: 'Buy Box poniżej minimum', opis: 'Zwycięzca sprzedaje taniej niż nasze minimum — schodzimy na minimum albo już na nim stoimy',
     oferta: zKodem('na_min', 'na_min_limit', 'pod_podloga') },
   { klucz: 'remis', nazwa: 'Remis / tańsi bez BB', opis: 'Ta sama cena co zwycięzca FBA albo jesteśmy tańsi i dalej bez Buy Boxa — przegrywamy nie ceną',

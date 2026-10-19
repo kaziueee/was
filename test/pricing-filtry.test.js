@@ -22,6 +22,12 @@ test('filtry: każda sytuacja z kodów decyzji i obserwacji', () => {
   assert.ok(p({ kod: 'sonda' }, 'podwyzka') && p({ kod: 'podwyzka_limit' }, 'podwyzka'));
   assert.ok(p({ kod: 'top_bez_konkurencji' }, 'jedyna'));
   assert.ok(p({ kod: 'obnizka_limit' }, 'szansa'));
+  // szansa bez FBA: tylko Amazon i tylko gdy BB trzyma oferta wysyłana przez sprzedawcę
+  assert.ok(p({ kod: 'obnizka', platforma: 'amazon', bb_fba: 0 }, 'szansa_bez_fba'));
+  assert.ok(!p({ kod: 'obnizka', platforma: 'amazon', bb_fba: 1 }, 'szansa_bez_fba'));
+  assert.ok(!p({ kod: 'obnizka', platforma: 'amazon', bb_fba: null }, 'szansa_bez_fba'), 'nieznany zwycięzca = nie zgadujemy');
+  assert.ok(!p({ kod: 'obnizka', platforma: 'emag', bb_fba: 0 }, 'szansa_bez_fba'), 'poza Amazonem FBA nie istnieje');
+  assert.ok(!p({ kod: 'na_min', platforma: 'amazon', bb_fba: 0 }, 'szansa_bez_fba'));
   assert.ok(p({ kod: 'na_min' }, 'bb_pod_min') && p({ kod: 'na_min_limit' }, 'bb_pod_min') && p({ kod: 'pod_podloga' }, 'bb_pod_min'));
   assert.ok(p({ kod: 'remis_fba' }, 'remis') && p({ kod: 'przegrana_nie_cena' }, 'remis'));
   assert.ok(p({ kod: 'wojna_cenowa' }, 'wojna'));

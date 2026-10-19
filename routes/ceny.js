@@ -8,7 +8,8 @@
 // wyniki i zapisuje decyzję człowieka: automat (auto = 1, ceny idą na platformę) albo ręczny (0). Montowane z
 // auth.wymagajRoli('admin', 'biuro') — w testach tylko administrator (2026-10-13), biuro od 2026-10-16 (decyzja usera).
 //
-//   GET  /api/ceny/macierz?q=&zakres=automat|reczne|wszystkie&sytuacja=…&kanal=&limit=   wiersze SKU × rynek
+//   GET  /api/ceny/macierz?q=&zakres=automat|reczne|wszystkie&sytuacja=…&kanal=&limit=&strona=   wiersze SKU × rynek
+//        (strona od 1, po `limit` towarów — domyślnie 200; poza zakresem = ostatnia)
 //        (sytuacje: pricing/filtry-cen.js; stary `filtr=` nadal rozumiany)
 //        kanal = platforma (amazon, emag) albo klucz kolumny (DE, FR, …, EMAG_RO); puste = wszystkie
 //   GET  /api/ceny/pulpit?dni=7|14|30                                  pulpit: Buy Box per kanał teraz / 24 h / 7 dni, wysyłki,
@@ -200,7 +201,11 @@ router.get('/macierz', asyncH(async (req, res) => {
   let stanGt = sort === 'stan' ? await stanyGt(wiersze.map((t) => t.tw_id)) : undefined;
   if (sort === 'stan' && stanGt) wiersze.sort(filtry.poStanie((t) => stanGt(t.tw_id)?.razem));
 
-  const pokazane = wiersze.slice(0, limit);
+  // Strony (decyzja usera 2026-10-19 — wcześniej było tylko „Pokazano 200 z N, zawęź wyszukiwaniem”).
+  // Strona spoza zakresu (filtr zawęził wynik po przejściu dalej) = ostatnia, a nie pusta macierz.
+  const stron = Math.max(1, Math.ceil(wiersze.length / limit));
+  const strona = Math.min(Math.max(Math.floor(Number(req.query.strona)) || 1, 1), stron);
+  const pokazane = wiersze.slice((strona - 1) * limit, strona * limit);
   // Która komórka spełnia wybraną sytuację — ekran ją obrysowuje (w wierszu bywa kilka rynków).
   if (sytuacja !== 'wszystkie' && !q) {
     for (const t of pokazane) for (const o of Object.values(t.rynki)) o.trafienie = filtry.ofertaPasuje(o, zakres, sytuacja);
@@ -229,6 +234,9 @@ router.get('/macierz', asyncH(async (req, res) => {
     sorty: filtry.SORTY,
     ...filtry.chipy(wszystkie, zakres, sytuacja),     // { zakresy: [...], sytuacje: [...] } z licznikami
     razem: wiersze.length,
+    strona,
+    stron,
+    na_strone: limit,
     wiersze: pokazane,
   });
 }));

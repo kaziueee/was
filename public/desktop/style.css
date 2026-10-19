@@ -1228,8 +1228,10 @@ main {
    na miejscu, a poziomy pasek jest zawsze widoczny (wcześniej leżał pod ostatnim z ~200 wierszy).
    `.tabela` ma overflow:hidden (zaokrąglone rogi) — to wyłączało position:sticky, więc rogi i cień
    przechodzą na okienko, a tabela dostaje overflow:visible. border-collapse:separate — przy collapse
-   linie między wierszami nie jadą razem z przypiętymi komórkami. */
-.ceny-wrap { overflow: auto; max-height: calc(100vh - 1rem); background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+   linie między wierszami nie jadą razem z przypiętymi komórkami. Wysokość = ekran minus pasek stron:
+   z paskiem stron na górze ekranu widać cały poziomy pasek przewijania, a przy tabeli dosuniętej do góry
+   widać dolne „Następna →”. */
+.ceny-wrap { overflow: auto; max-height: calc(100vh - 3rem); background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
 .ceny-tabela { overflow: visible; border-radius: 0; box-shadow: none; border-collapse: separate; border-spacing: 0; }
 .ceny-tabela thead th { position: sticky; top: 0; z-index: 2; }
 .ceny-tabela td { vertical-align: top; }
@@ -1252,6 +1254,12 @@ main {
 .ceny-odczyt { font-size: 0.75rem; opacity: 0.85; cursor: help; }
 /* Log decyzji: data z godziną i nazwa kanału w jednej linii (łamały się, gdy „Powód” zabierał szerokość). */
 .ceny-log td:nth-child(-n+2) { white-space: nowrap; }
+/* Strony macierzy: górny pasek tuż nad tabelą (.paginacja ma odstęp od góry, nie od dołu). */
+#ceny-strony-gora { margin: 0 0 0.5rem; }
+.ceny-strony span { font-size: 0.85rem; color: #555; }
+/* Karta SKU: opisy (np. eMAG „Genius aktywny — opłata Genius, dostawa do automatu”) łamią się w swojej
+   kolumnie — globalne nowrap z macierzy wypychało je na cenę, marżę i konkurencję obok. */
+.ceny-rynek :is(.ceny-m, .ceny-bb, .ceny-dec) { white-space: normal; }
 /* Kolumna „Towar” przypięta przy przewijaniu w bok. */
 .ceny-tabela thead th:first-child { left: 0; z-index: 3; }
 .ceny-tabela td.ceny-towar { position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: 1px 0 0 #e3e6ee; }

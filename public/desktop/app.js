@@ -4497,6 +4497,7 @@ const CENY_AKCJE = {
 let cenyKanalWybor = (() => { try { return localStorage.getItem('wms-ceny-kanal') || ''; } catch { return ''; } })();
 let cenySort = (() => { try { return localStorage.getItem('wms-ceny-sort') || ''; } catch { return ''; } })();
 let cenyNrZapytania = 0;
+let cenyStrona = 1, cenyKluczFiltrow = '';
 let cenyZakres = 'automat', cenySytuacja = 'wszystkie', cenyWidok = 'pulpit', cenySzukajTimer = null, cenyDane = null, cenyKartaTw = null, cenyKartaRynek = null;
 
 // Waluta kanału przychodzi z backendu (pricing/kolumny.js); kod rynku tylko dla starych odpowiedzi/logu.
@@ -4554,14 +4555,34 @@ async function odswiezCeny() {
   if (cenyWidok === 'karta') return odswiezCenyKarta();
   if (cenyWidok === 'powiazania') return odswiezCenyPowiazania();
   const q = el('ceny-szukaj').value.trim();
-  const qs = new URLSearchParams({ zakres: cenyZakres, sytuacja: cenySytuacja, ...(q ? { q } : {}), ...(cenyKanalWybor ? { kanal: cenyKanalWybor } : {}), ...(cenySort ? { sort: cenySort } : {}) });
+  // Strona macierzy: zmiana zakresu, sytuacji, kanału, sortu albo wyszukiwania wraca na pierwszą;
+  // „Odśwież” i powrót z karty SKU zostają na tej, na której się było.
+  const klucz = JSON.stringify([cenyZakres, cenySytuacja, q, cenyKanalWybor, cenySort]);
+  if (klucz !== cenyKluczFiltrow) { cenyKluczFiltrow = klucz; cenyStrona = 1; }
+  const qs = new URLSearchParams({ zakres: cenyZakres, sytuacja: cenySytuacja, ...(q ? { q } : {}), ...(cenyKanalWybor ? { kanal: cenyKanalWybor } : {}), ...(cenySort ? { sort: cenySort } : {}), ...(cenyStrona > 1 ? { strona: cenyStrona } : {}) });
   // Szybkie klikanie chipów: spóźniona odpowiedź starszego zapytania nie nadpisuje nowszego widoku.
   const nr = ++cenyNrZapytania;
   try {
     const d = await api(`/api/ceny/macierz?${qs}`);
     if (nr !== cenyNrZapytania) return;
+    if (d.strona) cenyStrona = d.strona;   // backend przycina stronę spoza zakresu do ostatniej
     cenyDane = d; renderujCeny(d);
   } catch (err) { if (nr === cenyNrZapytania) pokazKomunikat(err.message, 'blad'); }
+}
+
+// Strony macierzy — układ jak w Produktach (← Poprzednia · zakres · Następna →), nad tabelą i pod nią.
+// Stary backend (bez `stron`) — pasków nie ma, zostaje wiersz „Pokazano X z Y” w tabeli.
+function cenyRenderujStrony(d) {
+  const jest = d.stron > 1;
+  const od = ((d.strona || 1) - 1) * (d.na_strone || 0) + 1;
+  for (const id of ['ceny-strony-gora', 'ceny-strony-dol']) {
+    const box = el(id);
+    box.classList.toggle('hidden', !jest);
+    box.innerHTML = !jest ? ''
+      : `<button type="button" class="btn btn-small" data-ceny-strona="${d.strona - 1}"${d.strona <= 1 ? ' disabled' : ''}>← Poprzednia</button>`
+      + `<span>towary ${od}–${od + d.wiersze.length - 1} z ${d.razem} · strona ${d.strona} z ${d.stron}</span>`
+      + `<button type="button" class="btn btn-small" data-ceny-strona="${d.strona + 1}"${d.strona >= d.stron ? ' disabled' : ''}>Następna →</button>`;
+  }
 }
 
 // Niezbędnik (ceny konkurencji Allegro dla ofert z automatem): pakiet, ostatni raport, błąd nowszy od raportu.
@@ -4606,7 +4627,8 @@ function renderujCeny(d) {
   for (const t of d.wiersze) tbody.appendChild(cenyWiersz(t, widoczne.map((k) => k.klucz)));
   // licznik zakładki „Do powiązania" — widoczny od razu, nie dopiero po wejściu w nią
   api('/api/ceny/powiazania').then((p) => { el('ceny-l-powiazania').textContent = p.bez.length + p.do_potwierdzenia.length || ''; }).catch(() => {});
-  if (d.razem > d.wiersze.length) {
+  cenyRenderujStrony(d);
+  if (d.razem > d.wiersze.length && !d.stron) {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td colspan="${widoczne.length + 1}" class="hint">Pokazano ${d.wiersze.length} z ${d.razem} — zawęź wyszukiwaniem.</td>`;
     tbody.appendChild(tr);
@@ -5308,6 +5330,16 @@ el('ceny-szukaj').addEventListener('keydown', async (e) => {
   if (cenyDane && cenyDane.wiersze.length === 1) cenyOtworzKarte(cenyDane.wiersze[0].tw_id);
 });
 el('ceny-odswiez').addEventListener('click', () => odswiezCeny());
+// Zmiana strony: nowa strona od pierwszego wiersza, a pasek nad tabelą na ekranie (klik w dolny pasek
+// zostawiałby widok na końcu strony, której już nie ma).
+for (const id of ['ceny-strony-gora', 'ceny-strony-dol']) el(id).addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-ceny-strona]');
+  if (!b || b.disabled) return;
+  cenyStrona = Number(b.dataset.cenyStrona);
+  await odswiezCeny();
+  document.querySelector('#ceny-widok-macierz .ceny-wrap').scrollTop = 0;
+  el('ceny-strony-gora').scrollIntoView({ block: 'nearest' });
+});
 // Raport Allegro Analytics „Czynniki Top oferty” (xlsx) — surowy plik w treści, backend rozpoznaje konto z raportu.
 el('ceny-allegro-top').addEventListener('click', () => el('ceny-allegro-top-plik').click());
 el('ceny-allegro-top-plik').addEventListener('change', async (e) => {

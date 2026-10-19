@@ -56,6 +56,7 @@ const { takaSamaDecyzja } = require('./bez-zmian');
 const { ustawCene } = require('./amazon');
 const { pewneDopasowanie } = require('./powiazania');
 const { interwalMsZMinut } = require('../services/interwal');
+const { utworzKolejke } = require('./kolejka-workera');
 
 const PELNY_MS = interwalMsZMinut(process.env.PRICING_PELNY_MIN, 360, 'PRICING_PELNY_MIN');
 // Które platformy obsługuje ten proces (domyślnie wszystkie). Do testów na drugiej maszynie:
@@ -605,37 +606,27 @@ if (require.main === module) {
     const ms = interwalMsZMinut(process.env.PRICING_INTERWAL_MIN, 30, 'PRICING_INTERWAL_MIN');
     console.log(`[pricing] worker startuje, przebieg co ${ms / 60000} min, `
       + (process.env.PRICING_ZAPIS === '1' ? 'oferty z automatem zmieniają ceny na Amazonie' : 'HAMULEC: PRICING_ZAPIS ≠ 1, żadna cena nie idzie na Amazona'));
-    let trwa = false, korekty = false;
-    const tik = async () => {
-      // Przebieg trafił na potwierdzanie ręcznej korekty (kilka sekund) — czekamy, zamiast tracić 30 min.
-      if (trwa) { if (korekty) setTimeout(tik, 15_000); return; }
-      trwa = true;
-      const doPotwierdzenia = await przebiegBezpieczny();
-      trwa = false;
-      const potw = (lista, ms) => lista.length && setTimeout(async () => { if (trwa) return; trwa = true; await potwierdz(lista); trwa = false; }, ms);
-      potw(doPotwierdzenia.filter((o) => o.platforma === 'amazon'), POTWIERDZENIE_MS);
-      potw(doPotwierdzenia.filter((o) => o.platforma === 'emag'), POTWIERDZENIE_EMAG_MS);
-      potw(doPotwierdzenia.filter((o) => o.platforma === 'empik'), POTWIERDZENIE_EMPIK_MS);
-      potw(doPotwierdzenia.filter((o) => o.platforma === 'allegro'), POTWIERDZENIE_ALLEGRO_MS);
-      potw(doPotwierdzenia.filter((o) => o.platforma === 'kaufland'), POTWIERDZENIE_KAUFLAND_MS);
-    };
+    // Jedna rzecz naraz (pricing/kolejka-workera.js): pełny przebieg czeka na krótkie zadania, potwierdzenia
+    // czekają na swoją kolej zamiast przepadać.
+    const kolejka = utworzKolejke();
+    const potw = (lista, opoznienie, platforma) => lista.length
+      && kolejka.potwierdzenie(() => potwierdz(lista), opoznienie, `potwierdzenie ${platforma} (${lista.length})`);
+    const tik = () => kolejka.przebieg(() => przebiegBezpieczny(), (doPotwierdzenia = []) => {
+      potw(doPotwierdzenia.filter((o) => o.platforma === 'amazon'), POTWIERDZENIE_MS, 'Amazon');
+      potw(doPotwierdzenia.filter((o) => o.platforma === 'emag'), POTWIERDZENIE_EMAG_MS, 'eMAG');
+      potw(doPotwierdzenia.filter((o) => o.platforma === 'empik'), POTWIERDZENIE_EMPIK_MS, 'Empik');
+      potw(doPotwierdzenia.filter((o) => o.platforma === 'allegro'), POTWIERDZENIE_ALLEGRO_MS, 'Allegro');
+      potw(doPotwierdzenia.filter((o) => o.platforma === 'kaufland'), POTWIERDZENIE_KAUFLAND_MS, 'Kaufland');
+    });
     tik();
     setInterval(tik, ms);
-    // Ręczne korekty z ekranu i nowy raport Top ofert Allegro — co minutę, gdy nic innego nie trwa
-    // (przebieg i potwierdzenia dzielą `trwa`).
-    setInterval(async () => {
-      if (trwa) return;
-      let lista;
-      try { lista = korektyDoPotwierdzenia(); } catch (e) { console.error(new Date().toISOString(), '[pricing] korekty:', e.message); return; }
-      if (lista.length) {
-        trwa = korekty = true;
-        try { await potwierdz(lista); } finally { trwa = korekty = false; }
-      }
+    // Ręczne korekty z ekranu i nowy raport Top ofert Allegro — co minutę, gdy kolejka wolna.
+    setInterval(() => kolejka.jesliWolne(async () => {
+      let lista = [];
+      try { lista = korektyDoPotwierdzenia(); } catch (e) { console.error(new Date().toISOString(), '[pricing] korekty:', e.message); }
+      if (lista.length) await potwierdz(lista);
       // Nowy raport Top ofert Allegro z ekranu — przeliczamy samo Allegro (decyzje widać w filtrach od razu).
-      if (!trwa && PLATFORMY.has('allegro') && nowyRaportTop()) {
-        trwa = true;
-        try { await przebiegBezpieczny({ platformy: new Set(['allegro']) }); } finally { trwa = false; }
-      }
-    }, 60_000);
+      if (PLATFORMY.has('allegro') && nowyRaportTop()) await przebiegBezpieczny({ platformy: new Set(['allegro']) });
+    }, 'korekty / raport Top'), 60_000);
   }
 }

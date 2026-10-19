@@ -17,7 +17,7 @@ const konkurencja = require('./konkurencja-allegro');
 
 const zBazy = (s) => (s ? Date.parse(String(s).replace(' ', 'T') + 'Z') : 0);
 
-// oferty: [{ id, sku, rynek, asin, ean }] — `asin` = numer oferty Allegro, `rynek` = konto, `ean` z GT (Niezbędnik).
+// oferty: [{ id, sku, rynek, asin, tw_id, ean }] — `asin` = numer oferty Allegro, `rynek` = konto, `ean` z GT (Niezbędnik).
 // surowe: oferty z allegro.wszystkieOferty(konto), z polem `_konto` (może być kilka kont naraz).
 const klucz = (konto, id) => `${konto}|${id}`;
 async function obserwujAllegro(oferty, surowe) {
@@ -31,6 +31,15 @@ async function obserwujAllegro(oferty, surowe) {
   const ostatnia = db.prepare('SELECT * FROM obserwacje WHERE oferta_id = ? ORDER BY id DESC LIMIT 1');
   const widziana = db.prepare('UPDATE obserwacje SET widziana = CURRENT_TIMESTAMP WHERE id = ?');
   const b = (v) => (v == null ? null : v ? 1 : 0);
+  // Nasze oferty tego samego towaru (drugie konto, duplikaty SKU) — raport Top nie mówi, kto ma Top; równa cena = my.
+  const cenaOferty = new Map(), poTw = new Map();
+  for (const o of oferty) {
+    const s = poId.get(klucz(o.rynek, o.asin));
+    if (!s) continue;
+    const c = allegro.doOferty(s).cena;
+    cenaOferty.set(o.id, c);
+    if (o.tw_id != null && c > 0) (poTw.get(o.tw_id) || poTw.set(o.tw_id, []).get(o.tw_id)).push({ id: o.id, c });
+  }
   const wynik = new Map();
   let nowe = 0;
   db.exec('BEGIN');
@@ -38,9 +47,10 @@ async function obserwujAllegro(oferty, surowe) {
     for (const o of oferty) {
       const surowa = poId.get(klucz(o.rynek, o.asin));
       if (!surowa) continue;
-      const cena = allegro.doOferty(surowa).cena;
+      const cena = cenaOferty.get(o.id);
       const wTop = top.get(klucz(o.rynek, o.asin));
-      const zTop = zRaportu(wTop, cena, teraz);
+      const inne = (poTw.get(o.tw_id) || []).filter((x) => x.id !== o.id).map((x) => x.c);
+      const zTop = zRaportu(wTop, cena, teraz, undefined, inne);
       const zNsp = o.ean ? konkurencja.zNiezbednika(konk.get(o.ean), cena, nasze, teraz) : null;
       const obs = (zTop && zNsp ? (zBazy(wTop.raport_czas) > zBazy(zNsp.czas) ? zTop : zNsp) : zTop || zNsp) || allegro.zOferty(surowa);
       wynik.set(o.id, obs);

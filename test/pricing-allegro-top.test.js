@@ -6,6 +6,7 @@ const assert = require('node:assert');
 process.env.PRICING_DB = ':memory:';
 const top = require('../pricing/allegro-top');
 const { db } = require('../pricing/db');
+const { decyzja } = require('../pricing/model');
 
 // Kształt arkuszy z services/xlsx-czytnik — kolumny jak w raporcie ekajtek z 19.10.2026.
 const NAGL = ['ID oferty', 'ID produktu', 'Nazwa oferty', 'Promowanie', 'Jakość sprzedaży', 'Stan produktu', 'Jakość zdjęć',
@@ -64,6 +65,16 @@ test('obserwacja z raportu: „odpowiednia” → my, ale tylko przy niezmienion
   assert.strictEqual(ok.bbNasz, true);
   assert.strictEqual(ok.konkurencjaNiedostepna, true);
   assert.strictEqual(top.zRaportu(wpis({ cena_ocena: 'odpowiednia', cena_top: null }), 79.99, teraz), null);
+});
+
+test('obserwacja z raportu: cena Top = cena naszej drugiej oferty tego towaru → Top ma nasze konto, nie schodzimy', () => {
+  const obs = top.zRaportu(wpis(), 77.89, teraz, 24, [69.9]);   // NaTropie stoi za 69,90
+  assert.strictEqual(obs.bbInnaNasza, true);
+  assert.strictEqual(decyzja(obs, { min: 50, max: 120 }).kod, 'bb_nasza_inna');
+  // inna nasza cena ≠ cena Top → Top ma obcy, cel jak zwykle
+  const obce = top.zRaportu(wpis(), 77.89, teraz, 24, [72.5]);
+  assert.strictEqual(obce.bbInnaNasza, false);
+  assert.strictEqual(decyzja(obce, { min: 50, max: 120 }, { krok: 0.01 }).cel, 69.89);
 });
 
 test('obserwacja z raportu: raport starszy niż ważność albo brak wiersza → null (jak bez raportu)', () => {

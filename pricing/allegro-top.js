@@ -68,11 +68,17 @@ const doPoprawy = (czynniki) => Object.entries(czynniki || {}).filter(([, v]) =>
 //   za wysoka   → Top oferta jest inna, jej cena = cel (bbNasz false, bbCena = cena Top)
 //   odpowiednia → Top oferta to my, ale tylko gdy nasza cena się od raportu nie zmieniła; wyżej konkurencji nie
 //                 znamy (konkurencjaNiedostepna — model pilnuje tylko minimum, podwyżki da Niezbędnik)
+//   cena Top = cena naszej INNEJ oferty tego towaru (drugie konto albo duplikat SKU) → Top ma najpewniej ona;
+//                 bbInnaNasza — model nie konkuruje sam ze sobą (pricing/model.js, `bb_nasza_inna`). Raport nie mówi,
+//                 kto ma Top ofertę; równa cena co do grosza to nasz najlepszy dowód (decyzja usera 2026-10-19:
+//                 „nie bić się z drugim kontem”). Przypadkowy remis z obcym = stoimy zamiast schodzić — bezpieczna strona.
 // Raport nieświeży albo bez wiersza dla oferty → null (obserwacja jak bez raportu).
-function zRaportu(top, cena, teraz = Date.now(), waznoscH = WAZNOSC_H) {
+// inne — ceny naszych pozostałych ofert tego samego towaru (oba konta) z tego przebiegu.
+function zRaportu(top, cena, teraz = Date.now(), waznoscH = WAZNOSC_H, inne = []) {
   if (!top || !(cena > 0) || !aktualny(top, teraz, waznoscH)) return null;
   if (top.cena_top > 0) {
-    return { cena, wysylka: 0, bbNasz: false, bbInnaNasza: false, bbCena: top.cena_top, bbFba: false, najtanszaInna: top.cena_top,
+    const nasza = inne.some((c) => Math.abs(c - top.cena_top) < 0.015);
+    return { cena, wysylka: 0, bbNasz: false, bbInnaNasza: nasza, bbCena: top.cena_top, bbFba: false, najtanszaInna: nasza ? null : top.cena_top,
       konkurencjaNiedostepna: false, ofert: null };
   }
   if (/odpowiedni/i.test(top.cena_ocena || '') && Math.abs((top.cena_nasza ?? -1) - cena) < 0.005) {

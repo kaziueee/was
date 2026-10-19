@@ -4700,6 +4700,8 @@ const cenyBlokadaHtml = (o) => (o.blokada ? `<div class="ceny-dec dol" title="${
 // Różnicę liczymy od naszej ceny TERAZ: cena Top to cena konkurenta, nasza mogła się od raportu zmienić.
 function cenyTopTekst(o, w) {
   const t = o.top;
+  // Cena Top = cena naszej drugiej oferty tego towaru → Top ma nasze konto (worker: bb_nasza_inna), nie schodzimy.
+  if (t.cena != null && o.bb_nasza_inna) return { cel: false, tekst: `Top ${cenyLiczba(t.cena)} ${w} — nasza druga oferta` };
   if (t.cena != null) {
     const r = o.cena > 0 ? o.cena - t.cena : null;
     return { cel: true, tekst: `Top ${cenyLiczba(t.cena)} ${w}${r == null ? '' : r > 0.005 ? ` (−${cenyLiczba(r)})` : ' (my już nie drożej)'}` };
@@ -4718,8 +4720,8 @@ function cenyTopTytul(o, w) {
 }
 function cenyTopKartaHtml(o, w) {
   const t = o.top, tt = cenyTopTekst(o, w);
-  const r = t.cena != null && o.cena > 0 ? o.cena - t.cena : null;
-  return `<span>${t.cena != null ? `Top oferta: <b>${cenyLiczba(t.cena)} ${w}</b>` : `<b>${cenyEsc(tt.tekst)}</b>`}</span>
+  const r = t.cena != null && o.cena > 0 && !o.bb_nasza_inna ? o.cena - t.cena : null;
+  return `<span>${t.cena != null ? `Top oferta: <b>${cenyLiczba(t.cena)} ${w}</b>${o.bb_nasza_inna ? ' — ta sama cena co nasza druga oferta: Top ma najpewniej ona, nie schodzimy' : ''}` : `<b>${cenyEsc(tt.tekst)}</b>`}</span>
       ${r != null ? `<span class="ceny-m">do Top: ${r > 0.005 ? `−${cenyLiczba(r)} ${w}` : 'nasza cena już nie wyżej'}</span>` : ''}
       <span class="ceny-m${t.aktualny ? '' : ' ceny-blad'}">raport z ${cenyGodzina(t.czas)}${t.aktualny ? '' : ` — nieaktualny (ponad ${t.waznosc_h} h), repricer go nie używa`}</span>
       ${t.do_poprawy.length ? `<span class="ceny-m">poza ceną do poprawy: ${cenyEsc(t.do_poprawy.join(', '))}</span>` : ''}
@@ -4745,10 +4747,12 @@ function cenyKonkKartaHtml(o, w) {
     .filter(([x]) => k.pomin[x]).map(([x, n]) => `${n}: ${k.pomin[x]}`).join(', ');
   const wiersze = k.lista.map((c) => `<tr><td>${cenyEsc(c.login || '?')}${c.ss ? ' <span class="hint" title="Super Sprzedawca">SS</span>' : ''}</td><td><b>${cenyLiczba(c.cena)}</b></td><td>${c.stan ?? '—'}</td><td>${c.popularnosc ?? '—'}</td></tr>`).join('');
   const nasza = k.nasze.find((x) => String(x.oferta) === String(o.asin));
+  const inneNasze = k.nasze.filter((x) => String(x.oferta) !== String(o.asin));
   return `<span class="ceny-m${k.aktualny ? '' : ' ceny-blad'}">Niezbędnik ${cenyGodzina(k.czas)}${k.aktualny ? '' : ' — nieaktualne, repricer tego nie używa'} · ${k.konkurentow} konkurentów z ${k.wszystkich ?? '?'} ofert${pom ? ` (pominięte: ${pom})` : ''}</span>
       ${k.blad ? `<span class="ceny-m ceny-blad">ostatnie sprawdzenie nieudane: ${cenyEsc(k.blad)}</span>` : ''}
       ${wiersze ? `<table class="tabela ceny-tab-konk"><thead><tr><th>Sprzedawca</th><th>Cena ${w}</th><th>Stan</th><th title="Popularność w wynikach Allegro (kupione ostatnio)">Sprz.</th></tr></thead><tbody>${wiersze}</tbody></table>` : '<span class="hint">nikt inny nie sprzedaje tego EAN-u (po filtrach)</span>'}
-      <span class="hint">${nasza ? `nasza oferta w wynikach: ${cenyLiczba(nasza.cena)} ${w}` : 'naszej oferty nie ma w wynikach — EAN może wskazywać inny produkt'}</span>`;
+      <span class="hint">${nasza ? `nasza oferta w wynikach: ${cenyLiczba(nasza.cena)} ${w}` : 'naszej oferty nie ma w wynikach — EAN może wskazywać inny produkt'}</span>
+      ${inneNasze.length ? `<span class="ceny-m" title="Nasze konta nie są konkurencją — repricer ich nie przebija">nasze inne oferty: ${inneNasze.map((x) => `${cenyEsc(x.login || '?')} ${cenyLiczba(x.cena)} ${w}`).join(', ')} — nie konkurujemy</span>` : ''}`;
 }
 function cenyKonkUstawieniaHtml(o) {
   const k = o.konkurencja;
@@ -5029,7 +5033,8 @@ function cenyKartaRynekHtml(o) {
     : o.bb_nasz ? 'mamy Buy Box' : o.bb_nasza_inna ? 'Buy Box ma nasza INNA oferta tego produktu' : o.bb_cena != null ? `Buy Box ma ${o.bb_fba ? 'oferta FBA' : 'inny sprzedawca'}`
     : o.bez_konkurencji ? 'kto ma najlepszą ofertę — nie wiadomo (API tego nie podaje)' : 'brak Buy Boxa';
   const kw = o.konkurencja?.wynik;
-  const stan = o.platforma === 'allegro' && kw?.czas && kw.aktualny && obs && (!o.top || dataZBazy(kw.czas) > dataZBazy(o.top.czas))
+  const stan = o.platforma === 'allegro' && o.bb_nasza_inna && obs ? 'Top ma nasza druga oferta tego towaru — nie konkurujemy'
+    : o.platforma === 'allegro' && kw?.czas && kw.aktualny && obs && (!o.top || dataZBazy(kw.czas) > dataZBazy(o.top.czas))
     ? (kw.lista.length ? (o.cena <= kw.lista[0].cena + 0.005 ? 'najtańsi wśród konkurentów (Niezbędnik)' : `najtańszy konkurent ${cenyEsc(kw.lista[0].login || '?')}`) : 'bez konkurencji po filtrach (Niezbędnik)')
     : o.platforma === 'allegro' && o.top && obs
     ? (!o.top.aktualny ? 'raport Top ofert nieaktualny' : o.top.cena != null ? 'Top ofertę ma inny sprzedawca (raport)' : 'cena OK w raporcie Top ofert')

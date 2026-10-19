@@ -14,14 +14,15 @@ const { db, stan } = require('../pricing/db');
 const NASZE = new Set(['21818279', 'ekajtek_pl', '40613543', 'natropiezabawek']);
 const kon = (login, cena, o = {}) => ({ oferta: `o-${login}`, sprzedawca: `id-${login}`, login, cena, dostawa: 0, stan: 10, popularnosc: 5, firma: true, ss: false, ...o });
 
-test('konkurenci: bez naszych kont (numer albo login, wielkość liter), stanu < 3, bez sprzedaży, prywatnych; rosnąco', () => {
+test('konkurenci: bez naszych kont (numer albo login, wielkość liter), stanu < 3, prywatnych; popularność 0 zostaje; rosnąco', () => {
   const r = k.konkurenci([
     kon('drogi', 99), kon('ekajtek_pl', 50, { sprzedawca: '21818279' }), kon('NaTropieZabawek', 51, { sprzedawca: 'x' }),
     kon('malo', 40, { stan: 2 }), kon('martwy', 41, { popularnosc: 0 }), kon('osoba', 42, { firma: false }),
     kon('tani', 60), kon('nieznany', 70, { stan: null, popularnosc: null, firma: null }),
   ], NASZE);
-  assert.deepStrictEqual(r.lista.map((c) => c.login), ['tani', 'nieznany', 'drogi']);   // brak danych ≠ powód do pominięcia
-  assert.deepStrictEqual(r.pomin, { nasze: 2, stan: 1, sprzedaz: 1, prywatne: 1 });
+  // brak danych ≠ powód do pominięcia; popularność 0 też nie (NERG0730: tak stała faktyczna Top oferta)
+  assert.deepStrictEqual(r.lista.map((c) => c.login), ['martwy', 'tani', 'nieznany', 'drogi']);
+  assert.deepStrictEqual(r.pomin, { nasze: 2, stan: 1, prywatne: 1 });
   assert.deepStrictEqual(r.nasze.map((c) => c.cena), [50, 51]);
 });
 
@@ -46,7 +47,8 @@ test('obserwacja z Niezbędnika: najtańszy po filtrach, czy jesteśmy najtańsi
   assert.strictEqual(k.zNiezbednika(w, 69.9, NASZE, teraz).bbNasz, true);      // remis = nie drożej
   assert.strictEqual(k.zNiezbednika(w, 77.89, NASZE, teraz + 11 * 3_600_000, 12), null);
   assert.strictEqual(k.zNiezbednika({ ...w, blad: 'report_item_failed' }, 77.89, NASZE, teraz), null);
-  assert.strictEqual(k.zNiezbednika(wpis([]), 50, NASZE, teraz).bbNasz, true);   // nikogo nie ma
+  // tylko nasza oferta — produkt znaleziony, konkurentów brak
+  assert.strictEqual(k.zNiezbednika(wpis([kon('ekajtek_pl', 50, { sprzedawca: '21818279' })]), 50, NASZE, teraz).bbNasz, true);
 });
 
 // Pas jak z kalkulatora; reguły modelu z przebiciem oferty.
@@ -55,6 +57,14 @@ const decyzjaAllegro = (cena, konkurenci, min, krok = 0.01) => {
   const ob = { cena, wysylka: 0, konkurenci };
   return decyzja(k.doModelu(ob, min, krok), pas(min), { krok });
 };
+
+test('wynik bez żadnej naszej oferty = brak danych (wyszukiwanie po EAN nie znalazło produktu), nie „brak konkurencji”', () => {
+  assert.strictEqual(k.zNiezbednika(wpis([]), 169.99, NASZE, teraz), null);                        // NERF0319: 0 ofert
+  assert.strictEqual(k.zNiezbednika(wpis([kon('obcy', 99)]), 169.99, NASZE, teraz), null);         // inny produkt po frazie
+  assert.strictEqual(k.podsumowanie(wpis([]), NASZE, teraz).uzyteczny, false);
+  // drugie nasze konto w wynikach wystarczy — produkt jest ten sam
+  assert.ok(k.zNiezbednika(wpis([kon('NaTropieZabawek', 60, { sprzedawca: '40613543' }), kon('obcy', 55)]), 59, NASZE, teraz));
+});
 
 test('wariant C: konkurent nad minimum → schodzimy o przebicie pod niego', () => {
   const d = decyzjaAllegro(77.89, [69.9, 74.5], 60);

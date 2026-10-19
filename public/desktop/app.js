@@ -4744,7 +4744,7 @@ function cenyKonkKartaHtml(o, w) {
   if (!k || !k.czas) {
     return k?.zlecono ? `<span class="hint">sprawdzenie w Niezbędniku zlecone ${cenyGodzina(k.zlecono)} — wynik w najbliższym przebiegu</span>` : '';
   }
-  const pom = Object.entries({ nasze: 'nasze', stan: 'stan < 3', sprzedaz: 'bez sprzedaży', prywatne: 'prywatne' })
+  const pom = Object.entries({ nasze: 'nasze', stan: 'stan < 3', prywatne: 'prywatne' })
     .filter(([x]) => k.pomin[x]).map(([x, n]) => `${n}: ${k.pomin[x]}`).join(', ');
   const wiersze = k.lista.map((c) => `<tr><td>${cenyEsc(c.login || '?')}${c.ss ? ' <span class="hint" title="Super Sprzedawca">SS</span>' : ''}</td><td><b>${cenyLiczba(c.cena)}</b></td><td>${c.stan ?? '—'}</td><td>${c.popularnosc ?? '—'}</td></tr>`).join('');
   const nasza = k.nasze.find((x) => String(x.oferta) === String(o.asin));
@@ -4752,7 +4752,7 @@ function cenyKonkKartaHtml(o, w) {
   return `<span class="ceny-m${k.aktualny ? '' : ' ceny-blad'}">Niezbędnik ${cenyGodzina(k.czas)}${k.aktualny ? '' : ' — nieaktualne, repricer tego nie używa'} · ${k.konkurentow} konkurentów z ${k.wszystkich ?? '?'} ofert${pom ? ` (pominięte: ${pom})` : ''}</span>
       ${k.blad ? `<span class="ceny-m ceny-blad">ostatnie sprawdzenie nieudane: ${cenyEsc(k.blad)}</span>` : ''}
       ${wiersze ? `<table class="tabela ceny-tab-konk"><thead><tr><th>Sprzedawca</th><th>Cena ${w}</th><th>Stan</th><th title="Popularność w wynikach Allegro (kupione ostatnio)">Sprz.</th></tr></thead><tbody>${wiersze}</tbody></table>` : '<span class="hint">nikt inny nie sprzedaje tego EAN-u (po filtrach)</span>'}
-      <span class="hint">${nasza ? `nasza oferta w wynikach: ${cenyLiczba(nasza.cena)} ${w}` : 'naszej oferty nie ma w wynikach — EAN może wskazywać inny produkt'}</span>
+      <span class="${k.nasze.length ? 'hint' : 'ceny-m ceny-blad'}">${nasza ? `nasza oferta w wynikach: ${cenyLiczba(nasza.cena)} ${w}` : k.nasze.length ? 'tej oferty nie ma w wynikach (jest inna nasza)' : 'wyszukiwanie po EAN nie znalazło żadnej naszej oferty — repricer pomija ten wynik (brak danych)'}</span>
       ${inneNasze.length ? `<span class="ceny-m" title="Nasze konta nie są konkurencją — repricer ich nie przebija">nasze inne oferty: ${inneNasze.map((x) => `${cenyEsc(x.login || '?')} ${cenyLiczba(x.cena)} ${w}`).join(', ')} — nie konkurujemy</span>` : ''}`;
 }
 function cenyKonkUstawieniaHtml(o) {
@@ -4814,7 +4814,8 @@ function cenyKomorka(o, rynek) {
   // obs_widziana = ostatni przebieg, który widział ten sam stan (eMAG nie dopisuje wiersza bez zmian).
   const wys = (o.obs_czas ? `<div class="ceny-czas" title="Ceny w komórce to stan z ostatniej obserwacji">stan z ${cenyGodzina(o.obs_widziana || o.obs_czas)}</div>` : '');
   const konkW = o.platforma === 'allegro' ? o.konkurencja?.wynik : null;
-  const konkNowsza = konkW?.czas && (!o.top || dataZBazy(konkW.czas) > dataZBazy(o.top.czas));
+  // Wynik Niezbędnika bez naszej oferty = wyszukiwanie nie znalazło produktu — repricer go nie używa (brak danych).
+  const konkNowsza = konkW?.czas && konkW.nasze?.length > 0 && (!o.top || dataZBazy(konkW.czas) > dataZBazy(o.top.czas));
   const topT = o.platforma === 'allegro' && o.top && !konkNowsza ? cenyTopTekst(o, w) : null;
   const bb = o.platforma === 'allegro'
     ? (konkNowsza ? cenyKonkKomorka(o, w)
@@ -5035,7 +5036,7 @@ function cenyKartaRynekHtml(o) {
     : o.bez_konkurencji ? 'kto ma najlepszą ofertę — nie wiadomo (API tego nie podaje)' : 'brak Buy Boxa';
   const kw = o.konkurencja?.wynik;
   const stan = o.platforma === 'allegro' && o.bb_nasza_inna && obs ? 'Top ma nasza druga oferta tego towaru — nie konkurujemy'
-    : o.platforma === 'allegro' && kw?.czas && kw.aktualny && obs && (!o.top || dataZBazy(kw.czas) > dataZBazy(o.top.czas))
+    : o.platforma === 'allegro' && kw?.czas && kw.aktualny && kw.nasze?.length > 0 && obs && (!o.top || dataZBazy(kw.czas) > dataZBazy(o.top.czas))
     ? (kw.lista.length ? (o.cena <= kw.lista[0].cena + 0.005 ? 'najtańsi wśród konkurentów (Niezbędnik)' : `najtańszy konkurent ${cenyEsc(kw.lista[0].login || '?')}`) : 'bez konkurencji po filtrach (Niezbędnik)')
     : o.platforma === 'allegro' && o.top && obs
     ? (!o.top.aktualny ? 'raport Top ofert nieaktualny' : o.top.cena != null ? 'Top ofertę ma inny sprzedawca (raport)' : 'cena OK w raporcie Top ofert')

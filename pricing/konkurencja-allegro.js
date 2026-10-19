@@ -7,7 +7,12 @@
 //     domyślnie 1 gr) — kolumny oferty `konk_co_h`, `konk_przebicie`
 //   - sprawdzamy tylko w oknie dnia (PRICING_NSP_OKNO, domyślnie 7–23 czasu polskiego) — w nocy bez sensu
 //   - z kim konkurujemy: tylko oferty Smart i nowe (filtr wyszukiwania w Niezbędniku), bez naszych kont, bez
-//     stanu < 3, bez sprzedaży (popularność 0) i bez kont prywatnych; wysyłka z PL — nie sprawdzamy
+//     stanu < 3 i bez kont prywatnych; wysyłka z PL — nie sprawdzamy. Filtr „bez sprzedaży” (popularność 0)
+//     wyłączony 2026-10-19 (decyzja usera): wycinał faktyczną Top ofertę (NERG0730: Mienta30 99,99, popularność 0),
+//     a popularność 0 ma w wynikach prawie każdy, także my
+//   - wynik BEZ żadnej naszej oferty = brak danych, nie „brak konkurencji”: wyszukiwanie po EAN nie znalazło
+//     produktu (NERF0319, XSH36786 19.10: 0 ofert, a raport Top pokazywał konkurenta) — wtedy obserwacja
+//     bierze raport Top albo zostaje bez konkurencji
 //   - konkurent pod naszym minimum: przebijamy najtańszego, którego DA SIĘ przebić nad minimum (wariant C);
 //     gdy pod minimum są wszyscy — stoimy na minimum (model, reguła 7)
 // Jedno sprawdzenie na EAN obsługuje obie nasze oferty (ekajtek i NaTropie mają często ten sam towar).
@@ -44,13 +49,12 @@ const zWyniku = (x) => ({ oferta: x.offer_id, sprzedawca: x.seller_id, login: x.
 
 // Konkurenci po filtrach, rosnąco po cenie towaru. `nasze` — konta z pricing/allegro.js KONTA (numer i login).
 function konkurenci(oferty, nasze, { minStan = DOMYSLNE.minStan } = {}) {
-  const pomin = { nasze: 0, stan: 0, sprzedaz: 0, prywatne: 0 };
+  const pomin = { nasze: 0, stan: 0, prywatne: 0 };
   const lista = [], naszeOferty = [];
   for (const c of oferty || []) {
     if (!(c.cena > 0)) continue;
     if (nasze.has(String(c.sprzedawca)) || nasze.has(String(c.login || '').toLowerCase())) { pomin.nasze++; naszeOferty.push(c); continue; }
     if (c.stan != null && c.stan < minStan) { pomin.stan++; continue; }
-    if (c.popularnosc === 0) { pomin.sprzedaz++; continue; }
     if (c.firma === false) { pomin.prywatne++; continue; }
     lista.push(c);
   }
@@ -66,6 +70,7 @@ function zNiezbednika(wpis, cena, nasze, teraz = Date.now(), wazH = waznoscH()) 
   let oferty;
   try { oferty = JSON.parse(wpis.oferty || '[]'); } catch { return null; }
   const k = konkurenci(oferty, nasze);
+  if (!k.nasze.length) return null;   // wyszukiwanie nie znalazło naszego produktu — wynik nic nie mówi o konkurencji
   const ceny = k.lista.map((c) => c.cena);
   const naj = ceny.length ? ceny[0] : null;
   const nasz = naj == null || cena <= naj + 0.005;
@@ -112,6 +117,7 @@ function podsumowanie(wpis, nasze, teraz = Date.now()) {
   const k = konkurenci(oferty, nasze);
   return { czas: wpis.czas, zlecono: wpis.zlecono || null, blad: wpis.blad || null, aktualny: teraz - zBazy(wpis.czas) <= waznoscH() * 3_600_000,
     wszystkich: wpis.wszystkich ?? oferty.length, lista: k.lista.slice(0, 8), konkurentow: k.lista.length, pomin: k.pomin,
+    uzyteczny: k.nasze.length > 0,
     nasze: k.nasze.map((c) => ({ oferta: c.oferta, login: c.login, cena: c.cena })) };
 }
 

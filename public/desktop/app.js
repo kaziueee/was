@@ -5318,7 +5318,7 @@ el('ceny-allegro-top-plik').addEventListener('change', async (e) => {
     const d = await api('/api/ceny/allegro-top', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: plik });
     pokazKomunikat(`Raport Top ofert ${d.konto}${d.kategoria ? ` (${d.kategoria})` : ''}: ${d.wierszy} ofert, rozpoznanych ${d.dopasowane}. `
       + `Cena za wysoka: ${d.za_wysoka} (Top nad naszym minimum: ${d.szanse}, pod minimum: ${d.ponizej_min}), cena OK: ${d.odpowiednia}. `
-      + 'Repricer policzy szanse w najbliższym przebiegu (do 30 min) — filtr „Szansa na Buy Box”.', 'ok');
+      + 'Repricer przelicza Allegro w ciągu ok. 1–2 min (gdy akurat trwa pełny przebieg — zaraz po nim); potem „Odśwież” i filtr „Szansa na Buy Box”.', 'ok');
     odswiezCeny();
   } catch (err) { pokazKomunikat(err.message, 'blad'); } finally { btn.disabled = false; }
 });

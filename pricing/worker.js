@@ -74,13 +74,17 @@ const minelo = (klucz, ms) => {
   return !s || Date.now() - new Date(s.czas.replace(' ', 'T') + 'Z').getTime() >= ms;
 };
 
-async function przebieg({ pelny = false } = {}) {
+// platformy — podzbiór PLATFORMY dla przebiegu częściowego (np. samo Allegro po wgraniu raportu Top ofert):
+// bez pełnej obserwacji Amazona/Empiku i z osobnym wpisem w `stan`, żeby nie udawał pełnego przebiegu na pulpicie.
+async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
   const t0 = Date.now();
   const wynik = {};
+  const czesciowy = [...PLATFORMY].some((p) => !platformy.has(p));
+  if (czesciowy) wynik.czesciowy = [...platformy];
   // Niezbędnik (ceny konkurencji Allegro, pricing/konkurencja-allegro.js): zlecenie na samym początku — raport
   // liczy się w czasie synchronizacji pozostałych platform, a odbieramy go tuż przed obserwacją Allegro.
   // Tylko oferty z automatem, w oknie dnia; błąd nie zatrzymuje przebiegu.
-  if (PLATFORMY.has('allegro') && niezbednik.skonfigurowany()) {
+  if (platformy.has('allegro') && niezbednik.skonfigurowany()) {
     try {
       await konkurencja.odbierz();
       const zAuto = db.prepare(`SELECT id, tw_id, ean, konk_co_h FROM oferty WHERE platforma = 'allegro' AND auto = 1
@@ -95,7 +99,7 @@ async function przebieg({ pelny = false } = {}) {
       console.error(new Date().toISOString(), '[pricing] Niezbędnik:', e.message);
     }
   }
-  if (PLATFORMY.has('amazon') && minelo('sync_oferty', SYNC_MS)) {
+  if (platformy.has('amazon') && minelo('sync_oferty', SYNC_MS)) {
     const s = await synchronizuj();
     stan.set('sync_oferty', JSON.stringify(s.map((x) => [x.rynek, x.ofert])));
     wynik.sync = s.reduce((a, x) => a + x.ofert, 0);
@@ -105,7 +109,7 @@ async function przebieg({ pelny = false } = {}) {
   // to samo konto i dane logowania). Błąd jednego rynku tylko odnotowujemy, reszta idzie dalej.
   let emagSurowe = null;
   const emagKraje = new Set();
-  if (PLATFORMY.has('emag') && emag.skonfigurowany()) {
+  if (platformy.has('emag') && emag.skonfigurowany()) {
     emagSurowe = [];
     const podsum = {};
     for (const kraj of EMAG_KRAJE) {
@@ -135,7 +139,7 @@ async function przebieg({ pelny = false } = {}) {
   // storefront. Bez kluczy w .env pomijany; błąd nie zatrzymuje Amazona ani eMAG.
   const kauflandSurowe = [];
   const kauflandRynki = new Set();
-  if (PLATFORMY.has('kaufland') && kaufland.skonfigurowany()) {
+  if (platformy.has('kaufland') && kaufland.skonfigurowany()) {
     const podsum = {};
     for (const rynek of KAUFLAND_RYNKI) {
       try {
@@ -154,14 +158,14 @@ async function przebieg({ pelny = false } = {}) {
     }
   }
 
-  const pelnyTeraz = pelny || minelo('obserwacja_pelna', PELNY_MS);
+  const pelnyTeraz = !czesciowy && (pelny || minelo('obserwacja_pelna', PELNY_MS));
   const zapisWlaczony = process.env.PRICING_ZAPIS === '1';
 
   // Empik: lista ofert raz na dobę (eksport OF52 — pełny wolno raz na dobę; OF21 strona po stronie Empik
   // dławi i przebieg stał przez to 17 min). Naszą cenę i Buy Box daje obserwacja (P11), więc między
   // synchronizacjami lista nie jest potrzebna. Błąd Empiku nie zatrzymuje reszty przebiegu.
   let empikSurowe = null, empikOk = false;
-  if (PLATFORMY.has('empik') && empik.skonfigurowany()) {
+  if (platformy.has('empik') && empik.skonfigurowany()) {
     try {
       if (minelo('sync_empik', SYNC_MS)) {
         empikSurowe = await empik.wszystkieOferty();
@@ -182,7 +186,7 @@ async function przebieg({ pelny = false } = {}) {
   // Konto bez tokenu pomijamy po cichu (jeszcze niepodpięte); błąd jednego konta nie zatrzymuje reszty.
   const allegroSurowe = [];
   const allegroKonta = new Set();
-  if (PLATFORMY.has('allegro') && allegro.skonfigurowany()) {
+  if (platformy.has('allegro') && allegro.skonfigurowany()) {
     const podsum = {};
     const podpiete = allegro.kontaAutoryzowane();
     for (const konto of ALLEGRO_KONTA.filter((k) => podpiete.includes(k))) {
@@ -213,7 +217,7 @@ async function przebieg({ pelny = false } = {}) {
   const oferty = db.prepare(`SELECT id, platforma, rynek, sku, asin, tw_id, auto, genius, dopasowanie, prowizja, min_reczne, max_reczne, ean, konk_przebicie FROM oferty
      WHERE ((platforma = 'amazon' AND ? AND (auto = 1 OR ?)) OR (platforma = 'emag' AND ?) OR (platforma = 'empik' AND ? AND (auto = 1 OR ?))
             OR (platforma = 'allegro' AND ?) OR (platforma = 'kaufland' AND ?))
-       AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all(PLATFORMY.has('amazon') ? 1 : 0, pelnyTeraz ? 1 : 0, emagKraje.size ? 1 : 0,
+       AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all(platformy.has('amazon') ? 1 : 0, pelnyTeraz ? 1 : 0, emagKraje.size ? 1 : 0,
     empikOk ? 1 : 0, pelnyTeraz ? 1 : 0, allegroKonta.size ? 1 : 0, kauflandRynki.size ? 1 : 0)
     .filter((o) => o.platforma !== 'emag' || emagKraje.has(o.rynek))       // rynek eMAG z błędem pobrania — bez decyzji
     .filter((o) => o.platforma !== 'allegro' || allegroKonta.has(o.rynek))  // konto Allegro z błędem pobrania — też
@@ -237,6 +241,8 @@ async function przebieg({ pelny = false } = {}) {
   // Stawka prowizji per oferta: eMAG z commission/estimate, Empik z kategorii (pricing/empik-prowizje.js),
   // Allegro z podglądu opłat (pricing/sync-allegro.js odswiezProwizje).
   const prowizjaPoTw = poKolumnie([...emagOf, ...empikOf, ...allegroOf], 'prowizja', (v) => v > 0, (v) => v);
+  // Najnowszy raport Top ofert, który ta obserwacja Allegro widzi — po przebiegu nie trzeba go przeliczać osobno.
+  const raportTop = allegroOf.length ? ostatniRaportTop() : null;
   // Raport Niezbędnika zlecony na początku przebiegu — zwykle już gotowy; jeśli nie, chwilę czekamy.
   if (allegroOf.length && stan.get('nsp_raport')?.wartosc) {
     try {
@@ -377,8 +383,9 @@ async function przebieg({ pelny = false } = {}) {
   if (wysylka.wyslane || wysylka.odrzucone) wynik.wysylka = wysylka;
   if (doPotwierdzenia.length) wynik.doPotwierdzenia = doPotwierdzenia;
   if (pelnyTeraz) stan.set('obserwacja_pelna', oferty.length);
+  if (raportTop) stan.set('top_przeliczony', raportTop);
   wynik.sekundy = Math.round((Date.now() - t0) / 1000);   // pulpit na ekranie Ceny pokazuje, ile trwał przebieg
-  stan.set('przebieg', JSON.stringify(wynik));
+  stan.set(czesciowy ? 'przebieg_czesciowy' : 'przebieg', JSON.stringify(wynik));
   return { ...wynik, automat: kody };
 }
 
@@ -445,6 +452,15 @@ function korektyDoPotwierdzenia() {
   }
   for (const id of sprawdzoneKorekty.keys()) if (!wiersze.some((w) => w.dec_id === id)) sprawdzoneKorekty.delete(id);
   return lista;
+}
+
+// Raport „Czynniki Top oferty” wgrany z ekranu (pricing/allegro-top.js): czas najnowszego i czy repricer już go
+// przeliczył. Nowy raport = przebieg samego Allegro od razu (koszty, min/max i raport już mamy, nasze ceny
+// z listy Allegro to ~4 zapytania, kilka sekund) — zamiast czekać do 30 min na pełny przebieg.
+const ostatniRaportTop = () => db.prepare('SELECT MAX(raport_czas) AS c FROM allegro_top').get()?.c || null;
+function nowyRaportTop() {
+  const r = ostatniRaportTop();
+  return r && r > (stan.get('top_przeliczony')?.wartosc || '') ? r : null;
 }
 
 async function przebiegBezpieczny(opcje) {
@@ -561,7 +577,7 @@ async function potwierdzKaufland(oferty) {
   }
 }
 
-module.exports = { przebieg, korektyDoPotwierdzenia };
+module.exports = { przebieg, korektyDoPotwierdzenia, nowyRaportTop };
 
 // Log do pliku pisze SAM worker (logs/pricing.log), a zadanie harmonogramu uruchamia node.exe
 // bezpośrednio. Wcześniej log szedł przez `cmd /c ... >> plik` — Stop-ScheduledTask zabijał wtedy
@@ -605,14 +621,21 @@ if (require.main === module) {
     };
     tik();
     setInterval(tik, ms);
-    // Ręczne korekty z ekranu — co minutę, gdy nic innego nie trwa (przebieg i potwierdzenia dzielą `trwa`).
+    // Ręczne korekty z ekranu i nowy raport Top ofert Allegro — co minutę, gdy nic innego nie trwa
+    // (przebieg i potwierdzenia dzielą `trwa`).
     setInterval(async () => {
       if (trwa) return;
       let lista;
       try { lista = korektyDoPotwierdzenia(); } catch (e) { console.error(new Date().toISOString(), '[pricing] korekty:', e.message); return; }
-      if (!lista.length) return;
-      trwa = korekty = true;
-      try { await potwierdz(lista); } finally { trwa = korekty = false; }
+      if (lista.length) {
+        trwa = korekty = true;
+        try { await potwierdz(lista); } finally { trwa = korekty = false; }
+      }
+      // Nowy raport Top ofert Allegro z ekranu — przeliczamy samo Allegro (decyzje widać w filtrach od razu).
+      if (!trwa && PLATFORMY.has('allegro') && nowyRaportTop()) {
+        trwa = true;
+        try { await przebiegBezpieczny({ platformy: new Set(['allegro']) }); } finally { trwa = false; }
+      }
     }, 60_000);
   }
 }

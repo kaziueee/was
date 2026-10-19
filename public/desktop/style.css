@@ -1462,3 +1462,37 @@ main {
 .cp-tabela tr.cp-tr.wybrany td.cp-tr-nazwa { box-shadow: inset 3px 0 0 #2a78d6; }
 .cp-suma { font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { .cp { transition: none; } }
+
+/* Ceny: Strategie (public/desktop/ceny-strategie.js) */
+.cs-wstep { padding-left: 0; padding-right: 0; }
+.cs-sz { color: #777; font-size: 0.8rem; }
+.cs-tabela td, .cs-tabela th { font-size: 0.85rem; vertical-align: top; }
+.cs-tabela tr.wybrany td { background: #e8f0fb; }
+.cs-tabela tr.cs-domyslna td { background: #f6f7f9; }
+.cs-akcje { white-space: nowrap; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.cs-status { display: inline-block; font-size: 0.72rem; font-weight: 600; border-radius: 999px; padding: 0.1rem 0.55rem; border: 1px solid; white-space: nowrap; }
+.cs-status.aktywna { color: #1f7a3d; border-color: #1f7a3d; background: #e3f3e8; }
+.cs-status.podglad { color: #9a6a00; border-color: #e0a800; background: #fff8e1; }
+.cs-formularz { background: #fff; border: 1px solid #dde1e6; border-radius: 8px; padding: 0.4rem 0.9rem 0.8rem; margin-top: 1rem; max-width: 980px; }
+.cs-form-gora, .cs-pola { display: flex; flex-wrap: wrap; gap: 0.6rem 1.2rem; align-items: flex-start; }
+.cs-pole { display: grid; gap: 0.15rem; font-size: 0.85rem; min-width: 12rem; max-width: 18rem; }
+.cs-pole > span:first-child { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #888; }
+.cs-pole input[type="text"], .cs-pole select, .cs-pole input[type="date"], .cs-pole textarea { font: inherit; padding: 0.3rem 0.45rem; border: 1px solid #c4cad1; border-radius: 5px; }
+.cs-pole input[name="nazwa"] { width: 17rem; }
+.cs-wartosc { display: flex; align-items: center; gap: 0.3rem; }
+.cs-wartosc input { width: 6rem; font-variant-numeric: tabular-nums; }
+.cs-form-akcje { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; margin-top: 0.7rem; }
+.cs-przypisz { display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: flex-end; margin-bottom: 0.6rem; }
+.cs-kody { min-width: 24rem; max-width: 40rem; flex: 1; }
+.cs-kody textarea { width: 100%; resize: vertical; }
+.cs-podglad-tab td, .cs-podglad-tab th { font-size: 0.8rem; padding: 0.28rem 0.5rem; white-space: nowrap; }
+.cs-podglad-tab td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.cs-podglad-tab td.num small { color: #888; }
+.cs-podglad-tab tbody.cs-towar tr.cs-towar-gl td { background: #f4f6f9; border-top: 2px solid #dde1e6; white-space: normal; }
+.cs-podglad-tab tr.cs-reczna td { color: #777; }
+.cs-zdejmij { float: right; }
+.cs-skutek { white-space: normal !important; min-width: 16rem; }
+.cs-skutek.gora { color: #1f7a3d; font-weight: 600; }
+.cs-skutek.dol { color: #b42318; font-weight: 600; }
+.cs-odst { font-size: 0.7rem; font-weight: 600; color: #1d3557; border: 1px dashed #1d3557; border-radius: 4px; padding: 0 0.25rem; }
+.cs-bb { font-size: 0.68rem; font-weight: 700; color: #1f7a3d; }

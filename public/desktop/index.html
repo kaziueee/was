@@ -802,6 +802,7 @@
           <button type="button" class="ceny-chip aktywny" data-ceny-widok="pulpit">Pulpit</button>
           <button type="button" class="ceny-chip" data-ceny-widok="macierz">Macierz</button>
           <button type="button" class="ceny-chip" data-ceny-widok="karta">Karta SKU</button>
+          <button type="button" class="ceny-chip" data-ceny-widok="strategie">Strategie</button>
           <button type="button" class="ceny-chip" data-ceny-widok="log">Log decyzji</button>
           <button type="button" class="ceny-chip" data-ceny-widok="powiazania">Do powiązania <b id="ceny-l-powiazania"></b></button>
         </div>
@@ -857,6 +858,15 @@
         <div class="tabela-wrapper"><table class="tabela"><thead><tr><th>SKU oferty</th><th>Rynki</th><th>Nazwa na Amazonie</th><th>Stan</th><th>Dopasowany towar</th><th>Akcja</th></tr></thead><tbody id="cp-potw"></tbody></table></div>
         <h3 class="ceny-h3">Powiązane ręcznie <b id="cp-l-reczne"></b></h3>
         <div class="tabela-wrapper"><table class="tabela"><thead><tr><th>SKU oferty</th><th>Rynki</th><th>Towar GT</th><th>Kto / kiedy</th><th></th></tr></thead><tbody id="cp-reczne"></tbody></table></div>
+      </div>
+      <!-- Strategie cenowe per towar (public/desktop/ceny-strategie.js, /api/ceny/strategie) -->
+      <div id="ceny-widok-strategie" class="hidden">
+        <p class="hint cs-wstep">Strategia zmienia tylko granice automatu (min = cena przy jej marży albo zysku, max = min × mnożnik) — reguły Buy Boxa zostają.
+          Działa na towarach, którym ją przypiszesz; reszta jedzie na „All marża 20”. Nowa strategia startuje jako <b>podgląd</b>: widać, co by zrobiła,
+          ale ceny zmienia dopiero po „Aktywuj”. Ręczne granice oferty z karty SKU wygrywają ze strategią.</p>
+        <div id="cs-lista"></div>
+        <div id="cs-podglad"></div>
+        <div id="cs-formularz" class="cs-formularz"></div>
       </div>
       <div id="ceny-widok-log" class="hidden">
         <div class="tabela-wrapper">
@@ -1068,6 +1078,7 @@
 
   <script src="/shared/auth.js"></script>
   <script src="ceny-pulpit.js"></script>
+  <script src="ceny-strategie.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

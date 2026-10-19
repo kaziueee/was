@@ -33,6 +33,7 @@
 const { db, stan } = require('./db');
 const { obserwuj } = require('./obserwuj');
 const { pasyHurtem } = require('./pas');
+const strategieDane = require('./strategie-dane');
 const { zGranicami } = require('./granice');
 const { decyzja, DOMYSLNE_REGULY } = require('./model');
 const { synchronizuj } = require('./sync-oferty');
@@ -260,12 +261,22 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
     console.error(new Date().toISOString(), '[pricing] Empik obserwacja:', e.message);
     return new Map();
   }) : new Map();
+  // Strategie towarów (pricing/strategie.js): automat używa tylko AKTYWNYCH — strategia w podglądzie zmienia
+  // wyłącznie to, co pokazuje ekran (wdrożenie kontrolowane, decyzja usera 2026-10-19). Błąd = przebieg jak dziś.
+  let strategie = { poTw: new Map(), zakonczone: [] };
+  try {
+    strategie = await strategieDane.strategieDlaPasow([...new Set(oferty.map((o) => o.tw_id))]);
+    if (strategie.poTw.size) wynik.strategie = strategie.poTw.size;
+  } catch (e) {
+    stan.set('blad_strategie', e.message);
+    console.error(new Date().toISOString(), '[pricing] strategie:', e.message);
+  }
   const [obsA, obsE, obsP, obsL, pasy, obsK] = await Promise.all([
     amazon.length ? obserwuj(amazon) : new Map(),
     emagOf.length ? obserwujEmag(emagOf, emagSurowe) : new Map(),
     obsEmpik,
     allegroOf.length ? obserwujAllegro(allegroOf, allegroSurowe) : new Map(),
-    pasyHurtem(oferty.map((o) => o.tw_id), geniusPoTw, prowizjaPoTw),
+    pasyHurtem(oferty.map((o) => o.tw_id), geniusPoTw, prowizjaPoTw, strategie.poTw),
     kauflandOf.length ? obserwujKaufland(kauflandOf, kauflandSurowe) : new Map(),
   ]);
   if (obsA.bledyPaczek) wynik.bledy_paczek = obsA.bledyPaczek;
@@ -328,6 +339,7 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
       obnizkiBezBb: obnizkiBezBb.get(o.id, o.id) || null,
     });
     if (pas?.blad && d.kod === 'brak_pasa') d.powod = pas.blad;   // sprzeczne ręczne granice — powiedz które
+    if (pas?.strategia) d.powod += ` · strategia „${pas.strategia.nazwa}”${pas.zrodlo_min === 'reczne' || pas.zrodlo_max === 'reczne' ? ' z odstępstwem (ręczne granice oferty)' : ''}`;
     if (obM.podMin > 0 && obM.podMin < ob.konkurenci.length) d.powod += `; tańszych pod naszym minimum: ${obM.podMin} — przebijamy najtańszego nad minimum`;
     if (o.auto && d.zmiana && autoTeraz.get(o.id)?.auto !== 1) o.auto = 0;
     const teraz = pas && ob.cena ? pas.ocen(ob.cena) : null;
@@ -381,6 +393,11 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
     for (const w of wiersze) zapisz.run(...w);
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
+  // Przypisania, którym minęła data końca albo wyprzedaż się skończyła (stan GT) — towar wraca na domyślną.
+  if (strategie.zakonczone.length) {
+    const powody = new Map(strategie.zakonczone.map((z) => [z.tw_id, z.powod]));
+    wynik.strategie_koniec = strategieDane.zdejmij([...powody.keys()], 'system:strategie', { akcja: 'strategia_koniec', powod: (tw) => powody.get(tw) });
+  }
   if (wysylka.wyslane || wysylka.odrzucone) wynik.wysylka = wysylka;
   if (doPotwierdzenia.length) wynik.doPotwierdzenia = doPotwierdzenia;
   if (pelnyTeraz) stan.set('obserwacja_pelna', oferty.length);

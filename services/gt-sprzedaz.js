@@ -55,4 +55,28 @@ async function sprzedazWgZrodla(od) {
   return { dokumenty: dok.recordset, pozycje: poz.recordset };
 }
 
-module.exports = { sprzedazDziennaFs, sprzedazWgZrodla };
+// Strategia "za rynkiem" (pricing/strategie.js): po ile i ile sztuk sprzedalo sie per towar i zrodlo od `od`.
+// Cena = ob_CenaWaluta pozycji, czyli cena brutto towaru w walucie dokumentu, bez wysylki (TRANSPORT to osobna
+// pozycja) - sprawdzone 2026-10-19 na OKITRADE: HWHJBD90 Amazon DE na FS 60,92 EUR = cena oferty 60,92.
+// Zwraca [{ tw_id, zrodlo, waluta, cena, szt }].
+async function sprzedazTowarowZCena(twIds, od) {
+  const idy = [...new Set(twIds.map(Number))].filter(Number.isInteger);
+  if (!idy.length) return [];
+  const wynik = [];
+  for (let i = 0; i < idy.length; i += 1000) {
+    // idy to liczby calkowite (filtr wyzej), wiec wklejenie do IN jest bezpieczne
+    const r = await query(`
+      SELECT p.ob_TowId AS tw_id, LTRIM(RTRIM(ISNULL(z.pwd_Tekst04, ''))) AS zrodlo, d.dok_Waluta AS waluta,
+             p.ob_CenaWaluta AS cena, SUM(p.ob_Ilosc) AS szt
+        FROM dok__Dokument d
+        JOIN dok_Pozycja p ON p.ob_DokHanId = d.dok_Id
+        LEFT JOIN pw_Dane z ON z.pwd_IdObiektu = d.dok_Id AND z.pwd_TypObiektu = -2
+       WHERE d.dok_Typ = 2 AND d.dok_Status = 1 AND d.dok_MagId = @mag AND d.dok_DataWyst >= @od
+         AND p.ob_TowId IN (${idy.slice(i, i + 1000).join(',')})
+       GROUP BY p.ob_TowId, LTRIM(RTRIM(ISNULL(z.pwd_Tekst04, ''))), d.dok_Waluta, p.ob_CenaWaluta`, { od, mag: MAGAZYN_GT_ID.K4 });
+    wynik.push(...r.recordset.map((x) => ({ ...x, cena: Number(x.cena), szt: Number(x.szt) || 0 })));
+  }
+  return wynik;
+}
+
+module.exports = { sprzedazDziennaFs, sprzedazWgZrodla, sprzedazTowarowZCena };

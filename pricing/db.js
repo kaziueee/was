@@ -177,6 +177,30 @@ db.exec(`CREATE TABLE IF NOT EXISTS allegro_konkurencja (
   zlecono      TEXT                        -- kiedy ostatnio zlecone (harmonogram liczy od tego, gdy brak wyniku)
 )`);
 
+// Strategie cenowe per towar (pricing/strategie.js, zakładka Ceny → Strategie). Domyślna „All marża 20” nie ma
+// wiersza: towar bez przypisania = dzisiejszy kalkulator. aktywna = 0 to PODGLĄD (pas liczony i pokazywany,
+// automat go nie używa), 1 = automat używa (decyzja usera 2026-10-19: wdrożenie kontrolowane).
+db.exec(`CREATE TABLE IF NOT EXISTS strategie (
+  id           INTEGER PRIMARY KEY,
+  nazwa        TEXT NOT NULL UNIQUE,
+  typ          TEXT NOT NULL,              -- 'marza' | 'wyprzedaz' | 'za_rynkiem'
+  parametry    TEXT NOT NULL,              -- JSON, komplet po walidacji (pricing/strategie.js walidujStrategie)
+  aktywna      INTEGER NOT NULL DEFAULT 0, -- 0 = podgląd, 1 = automat używa
+  kto          TEXT,
+  czas         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  zmieniona    TEXT
+)`);
+// Jeden towar = najwyżej jedna strategia. `do` = ostatni dzień (lokalnie, włącznie); po nim worker zdejmuje
+// przypisanie i zapisuje to w `zmiany` (strategia_koniec). Historia przypisań też w `zmiany`.
+db.exec(`CREATE TABLE IF NOT EXISTS strategie_towarow (
+  tw_id        INTEGER PRIMARY KEY,
+  strategia_id INTEGER NOT NULL REFERENCES strategie(id),
+  symbol_gt    TEXT,
+  do           TEXT,
+  kto          TEXT,
+  czas         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`);
+
 const stan = {
   get: (k) => db.prepare('SELECT wartosc, czas FROM stan WHERE klucz = ?').get(k) || null,
   set: (k, v) => db.prepare(`INSERT INTO stan (klucz, wartosc, czas) VALUES (?, ?, CURRENT_TIMESTAMP)

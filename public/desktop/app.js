@@ -4488,6 +4488,9 @@ const CENY_KOD_OPIS = {
 };
 const CENY_AKCJE = {
   automat_wl: 'włączył automat', automat_wyl: 'wyłączył automat',
+  strategia_nowa: 'utworzył strategię (podgląd)', strategia_zmiana: 'zmienił strategię', strategia_aktywna: 'AKTYWOWAŁ strategię',
+  strategia_podglad: 'przełączył strategię na podgląd', strategia_usun: 'usunął strategię', strategia_przypisz: 'przypisał strategię',
+  strategia_zdejmij: 'zdjął strategię', strategia_koniec: 'koniec strategii',
   powiazanie: 'powiązał z innym towarem GT', powiazanie_potw: 'potwierdził powiązanie z GT', powiazanie_usun: 'usunął powiązanie z GT',
   wysylanie_wl: 'włączył WYSYŁANIE cen na Amazona', wysylanie_wyl: 'wyłączył wysyłanie cen',
   korekta_ceny: 'zmienił cenę ręcznie', granice: 'zmienił granice automatu',
@@ -4551,6 +4554,7 @@ const cenyEsc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;'
 
 async function odswiezCeny() {
   if (cenyWidok === 'pulpit') return odswiezCenyPulpit();   // public/desktop/ceny-pulpit.js
+  if (cenyWidok === 'strategie') return odswiezCenyStrategie();   // public/desktop/ceny-strategie.js
   if (cenyWidok === 'log') return odswiezCenyLog();
   if (cenyWidok === 'karta') return odswiezCenyKarta();
   if (cenyWidok === 'powiazania') return odswiezCenyPowiazania();
@@ -4974,7 +4978,7 @@ function cenyPokazWidok(widok) {
   cenyWidok = widok;
   el('panel-ceny').dataset.widok = widok;     // pulpit chowa filtry macierzy (style.css)
   document.querySelectorAll('[data-ceny-widok]').forEach((x) => x.classList.toggle('aktywny', x.dataset.cenyWidok === widok));
-  for (const v of ['pulpit', 'macierz', 'karta', 'log', 'powiazania']) el(`ceny-widok-${v}`).classList.toggle('hidden', widok !== v);
+  for (const v of ['pulpit', 'macierz', 'karta', 'strategie', 'log', 'powiazania']) el(`ceny-widok-${v}`).classList.toggle('hidden', widok !== v);
   el('ceny-filtry').classList.toggle('hidden', widok !== 'macierz');
   el('ceny-kanaly').classList.toggle('hidden', widok !== 'macierz');
   el('ceny-sytuacje').classList.toggle('hidden', widok !== 'macierz');
@@ -4985,6 +4989,15 @@ function cenyOtworzKarte(twId, rynek = null) {
   cenyKartaRynek = rynek;
   cenyPokazWidok('karta');
   odswiezCenyKarta();
+}
+
+// Strategia towaru na karcie SKU (routes/ceny.js /towar → pricing/strategie-dane.js). Starszy backend bez pola = nic.
+function cenyStrategiaKartyHtml(d) {
+  if (d.strategia === undefined) return '';
+  const s = d.strategia;
+  if (!s) return '<span>Strategia <b>All marża 20</b> <span class="hint-inline">(domyślna)</span></span>';
+  const stan = s.dziala ? 'aktywna' : s.aktywna ? 'zakończona' : 'podgląd — granic jeszcze nie zmienia';
+  return `<span title="${cenyEsc(s.opis)}">Strategia <b>${cenyEsc(s.nazwa)}</b> <span class="cs-status ${s.dziala ? 'aktywna' : 'podglad'}">${cenyEsc(stan)}</span>${s.do ? ` do ${cenyEsc(s.do)}` : ''}</span>`;
 }
 
 // Wykres 'my vs Buy Box' z obserwacji (ceny z wysyłką). Prosty SVG, bez biblioteki.
@@ -5017,7 +5030,7 @@ async function odswiezCenyKarta() {
       : '<span class="ceny-blad">Subiekt nie odpowiada — bez kosztu i wagi</span>';
     box.innerHTML = `<div class="ceny-karta-gora">
         <div><button type="button" class="btn btn-small" id="ceny-karta-wroc">← Macierz</button></div>
-        <div class="ceny-karta-tyt"><h3>${cenyEsc(d.symbol)}</h3><div class="ceny-nazwa-pelna">${cenyEsc(d.nazwa)}</div><div class="ceny-fakty"><span>${cenyStanTekst(d.stan_gt)}</span>${fakty}</div></div>
+        <div class="ceny-karta-tyt"><h3>${cenyEsc(d.symbol)}</h3><div class="ceny-nazwa-pelna">${cenyEsc(d.nazwa)}</div><div class="ceny-fakty"><span>${cenyStanTekst(d.stan_gt)}</span>${fakty}${cenyStrategiaKartyHtml(d)}</div></div>
         <label class="ceny-auto-wiersz duzy" id="ceny-karta-auto"></label>
       </div>
       <p class="hint">Rynki od największego zysku na sztuce. Zielone tło = mamy Buy Box, szare = ręczny (automat wyłączony). Włączony automat zmienia ceny na platformie (Amazon, eMAG RO, HU i BG, Empik, Kaufland DE — każdy rynek z własnym minimum).</p>
@@ -5111,8 +5124,9 @@ function cenyKartaRynekHtml(o) {
 // --- Ręczna cena i ręczne granice (karta SKU) ---------------------------------------------------
 // Backend (routes/ceny.js + pricing/granice.js) liczy zysk, pilnuje granic i odrzuca cenę z ostrzeżeniami
 // bez potwierdzenia — tu tylko podgląd i okno. Ręczna cena wyłącza automat na ofercie (decyzja usera 2026-10-16).
-const CENY_AKCJE_Z_OPISEM = ['korekta_ceny', 'granice', 'automat_wyl'];   // automat_wyl: „ręczna zmiana ceny”
-const cenyZrodlo = (z) => (z === 'reczne' ? 'ręczne' : z === 'z_min' ? 'ręczne min × 1,5' : 'kalkulator');
+const CENY_AKCJE_Z_OPISEM = ['korekta_ceny', 'granice', 'automat_wyl',   // automat_wyl: „ręczna zmiana ceny”
+  'strategia_nowa', 'strategia_zmiana', 'strategia_aktywna', 'strategia_podglad', 'strategia_usun', 'strategia_przypisz', 'strategia_zdejmij', 'strategia_koniec'];
+const cenyZrodlo = (z) => (z === 'reczne' ? 'ręczne' : z === 'z_min' ? 'ręczne min × 1,5' : z === 'strategia' ? 'strategia' : 'kalkulator');
 const cenyDoPola = (v) => (v == null ? '' : String(v).replace('.', ','));
 
 // Pas na teraz (koszt z GT + ręczne granice); bez danych z trasy /towar — z ostatniej decyzji.
@@ -5120,7 +5134,7 @@ function cenyPasTekst(o) {
   const g = o.granice;
   if (!g) return o.min != null ? `${cenyLiczba(o.min)} – ${cenyLiczba(o.max)} ${cenyWaluta(o)}` : 'brak (kalkulator nie zna rynku)';
   if (g.min == null) return g.gt_ok === false ? 'nieznany — Subiekt nie odpowiada' : 'brak (kalkulator nie zna rynku — ustaw ręczne minimum)';
-  const tekst = `${cenyLiczba(g.min)}${g.zrodlo_min === 'reczne' ? ' <b>(ręczne)</b>' : ''} – ${cenyLiczba(g.max)}${g.zrodlo_max !== 'kalkulator' ? ` <b>(${cenyZrodlo(g.zrodlo_max)})</b>` : ''} ${cenyWaluta(o)}`;
+  const tekst = `${cenyLiczba(g.min)}${g.zrodlo_min !== 'kalkulator' ? ` <b>(${cenyZrodlo(g.zrodlo_min)})</b>` : ''} – ${cenyLiczba(g.max)}${g.zrodlo_max !== 'kalkulator' ? ` <b>(${cenyZrodlo(g.zrodlo_max)})</b>` : ''} ${cenyWaluta(o)}`;
   return g.blad ? `${tekst} <span class="ceny-blad">${cenyEsc(g.blad)}</span>` : tekst;
 }
 
@@ -5128,7 +5142,9 @@ function cenyReczneHtml(o) {
   const w = cenyWaluta(o);
   const g = o.granice || {};
   const reczne = g.min_reczne != null || g.max_reczne != null;
-  const kalk = g.kalk_min != null ? `kalkulator ${cenyLiczba(g.kalk_min)} – ${cenyLiczba(g.kalk_max)} ${w}` : g.gt_ok === false ? 'kalkulator: Subiekt nie odpowiada' : 'kalkulator nie zna tego rynku';
+  // Aktywna strategia towaru: puste pola = granice strategii; ręczne granice to odstępstwo od niej.
+  const kalk = g.strategia && g.kalk_min != null ? `strategia „${cenyEsc(g.strategia.nazwa)}” ${cenyLiczba(g.kalk_min)} – ${cenyLiczba(g.kalk_max)} ${w}${g.bazowy ? ` (bez strategii ${cenyLiczba(g.bazowy.min)} – ${cenyLiczba(g.bazowy.max)})` : ''}${reczne ? ' · <b>odstępstwo od strategii</b>' : ''}`
+    : g.kalk_min != null ? `kalkulator ${cenyLiczba(g.kalk_min)} – ${cenyLiczba(g.kalk_max)} ${w}` : g.gt_ok === false ? 'kalkulator: Subiekt nie odpowiada' : 'kalkulator nie zna tego rynku';
   const cena = o.reczna_cena
     ? `<form class="ceny-reczna-cena" novalidate><span class="ceny-et">Ręczna cena</span>
         <div class="ceny-reczne-wiersz"><input type="text" inputmode="decimal" name="cena" autocomplete="off" placeholder="${o.cena != null ? cenyLiczba(o.cena) : ''}" aria-label="Nowa cena ${cenyEsc(cenyKanal(o))}"> ${w}

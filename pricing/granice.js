@@ -69,10 +69,13 @@ function zGranicami(pas, reczne = {}) {
   if (!(min > 0)) return null;
   const maxZMin = rMin != null ? Math.max(kalk?.max ?? 0, zaokr(rMin * MNOZNIK_MAX)) : null;
   const max = rMax ?? maxZMin ?? kalk.max;
+  // Pas wejściowy bywa pasem strategii towaru (pricing/pas.js) — wtedy źródło to „strategia”, a ręczne granice
+  // oferty są odstępstwem od niej (decyzja usera 2026-10-19: najbardziej szczegółowe wygrywa).
+  const zr = kalk?.zrodlo || 'kalkulator';
   const wynik = {
     ...(kalk || {}), min, max, ocen: kalk?.ocen || (() => null),
-    zrodlo_min: rMin != null ? 'reczne' : 'kalkulator',
-    zrodlo_max: rMax != null ? 'reczne' : rMin != null && max !== kalk?.max ? 'z_min' : 'kalkulator',
+    zrodlo_min: rMin != null ? 'reczne' : zr,
+    zrodlo_max: rMax != null ? 'reczne' : rMin != null && max !== kalk?.max ? 'z_min' : zr,
     kalk_min: kalk?.min ?? null, kalk_max: kalk?.max ?? null,
   };
   if (max < min) wynik.blad = `ręczne maksimum ${pl(max)} poniżej minimum ${pl(min)}${rMin == null ? ' z kalkulatora' : ''} — popraw granice`;
@@ -91,7 +94,8 @@ function ocenCene(cena, { teraz = null, pas = null, gtOk = true, niepewneDopasow
   if (!gtOk) dodaj('brak_gt', 'Subiekt nie odpowiada — bez kosztu zakupu nie policzymy zysku ani minimum');
   else if (!pas) dodaj('brak_pasa', 'brak minimum dla tego rynku — nie wiadomo, czy ta cena się opłaca');
   else if (!oc) dodaj('brak_wyceny', 'kalkulator nie policzył zysku przy tej cenie (rynek bez kalkulatora albo brak kosztu)');
-  if (pas && cena < pas.min - 0.005) dodaj('pod_min', `poniżej minimum ${pl(pas.min)} (${pas.zrodlo_min === 'reczne' ? 'ręczne' : 'kalkulator, marża 20%'})`);
+  const skad = pas?.zrodlo_min === 'reczne' ? 'ręczne' : pas?.zrodlo_min === 'strategia' ? `strategia „${pas.strategia?.nazwa}”` : 'kalkulator, marża 20%';
+  if (pas && cena < pas.min - 0.005) dodaj('pod_min', `poniżej minimum ${pl(pas.min)} (${skad})`);
   if (oc && oc.zysk < 0) dodaj('strata', `sprzedaż ze stratą ${pl(-oc.zysk)} zł na sztuce`);
   if (pas && cena > pas.max + 0.005) dodaj('nad_max', `powyżej maksimum ${pl(pas.max)}`);
   if (teraz > 0 && Math.abs(cena - teraz) / teraz > PROG_SKOKU) {

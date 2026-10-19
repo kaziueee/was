@@ -15,6 +15,7 @@
 //   GET  /api/ceny/pulpit?dni=7|14|30                                  pulpit: Buy Box per kanał teraz / 24 h / 7 dni, wysyłki,
 //        zdrowie workera, trend dzienny (BB, zysk/szt., FS z GT wg źródła) — pricing/pulpit-model.js
 //   GET  /api/ceny/towar/:tw_id                                        karta SKU: wszystkie rynki towaru + historia
+//   /api/ceny/strategie/…                                              strategie cenowe per towar — routes/ceny-strategie.js
 //   GET  /api/ceny/log?limit=                                          zmiany cen (auto) + działania ludzi
 //   POST /api/ceny/automat  { ids: [oferta_id...], auto: true|false }  — tylko podane oferty, nigdy hurtem
 //   GET  /api/ceny/cena/podglad?oferta_id=&cena=                      zysk/marża przy wpisanej cenie + ostrzeżenia
@@ -49,6 +50,8 @@ const konkurencja = require('../pricing/konkurencja-allegro');
 const { pasOferty } = require('../pricing/pas');
 const granice = require('../pricing/granice');
 const reczna = require('../pricing/reczna-cena');
+const strategieDane = require('../pricing/strategie-dane');
+const { opisParametrow: opisStrategii } = require('../pricing/strategie');
 
 // Stan z GT (master stanów) dla pokazanych towarów: Razem (bez BRK) i K4. GT padnięte = null,
 // ekran pokazuje wtedy „—", a nie zero (zero to pewna informacja, której nie mamy).
@@ -336,9 +339,15 @@ router.get('/towar/:tw_id', asyncH(async (req, res) => {
     waga: w.waga, wagaZnana: w.wagaZnana, docinalny: w.docinalny };
 
   const stanGt = await stanyGt([twId]);
+  // Strategia towaru: przypisanie do pokazania (także w podglądzie), granice tylko z aktywnej.
+  const strat = await strategieDane.strategiaTowaru(twId);
+  const opcjeStrat = strat.aktywna ? { strategia: strat.aktywna, oferty } : {};
   res.json({
     tw_id: twId,
     stan_gt: stanGt ? stanGt(twId) : null,
+    strategia: strat.przypisanie ? { id: strat.przypisanie.strategia.id, nazwa: strat.przypisanie.strategia.nazwa, typ: strat.przypisanie.strategia.typ,
+      opis: opisStrategii(strat.przypisanie.strategia), aktywna: strat.przypisanie.strategia.aktywna, dziala: !!strat.aktywna,
+      do: strat.przypisanie.do, kto: strat.przypisanie.kto, czas: strat.przypisanie.czas } : null,
     symbol: oferty[0].symbol_gt,
     nazwa: oferty[0].nazwa,
     gt_ok: !!gt,
@@ -348,7 +357,7 @@ router.get('/towar/:tw_id', asyncH(async (req, res) => {
       ...zKanalem(o),
       // Pas na TERAZ (koszt z GT, ręczne granice), nie z ostatniej decyzji — po zmianie granic ekran
       // pokazuje nowe od razu, a automat użyje ich w najbliższym przebiegu.
-      granice: { min_reczne: o.min_reczne, max_reczne: o.max_reczne, ...opisPasa(pasOferty(w, o)), gt_ok: gtOk },
+      granice: { min_reczne: o.min_reczne, max_reczne: o.max_reczne, ...opisPasa(pasOferty(w, o, opcjeStrat)), gt_ok: gtOk },
       propagacja: reczna.propagacja(o.platforma),
       decyzje: decyzje.all(o.id),
       obserwacje: obserwacje.all(o.id).reverse(),
@@ -440,6 +449,8 @@ async function wycenaTowaru(twId, { swieza = false } = {}) {
 const opisPasa = ({ pas, kalk }) => ({
   min: pas?.min ?? null, max: pas?.max ?? null, zrodlo_min: pas?.zrodlo_min ?? null, zrodlo_max: pas?.zrodlo_max ?? null,
   kalk_min: kalk?.min ?? null, kalk_max: kalk?.max ?? null, blad: pas?.blad ?? null,
+  // strategia towaru (aktywna) — `kalk` jest wtedy jej pasem, `bazowy` to pas bez strategii (kalkulator 20%)
+  strategia: kalk?.strategia ?? null, bazowy: kalk?.bazowy ?? null, referencja: kalk?.referencja ?? null,
 });
 
 const ofertaPoId = (id) => (Number.isInteger(Number(id))
@@ -449,11 +460,22 @@ const ofertaPoId = (id) => (Number.isInteger(Number(id))
 // (tak samo liczy ekran — cenyPoWyslaniu w public/desktop/app.js).
 const cenaTeraz = (o) => (o.wyslano && o.dec_czas && !(o.obs_czas && o.obs_czas > o.dec_czas) ? o.cena_nowa : o.cena) ?? null;
 
+// Pas oferty tak, jak liczy go worker: kalkulator → AKTYWNA strategia towaru → ręczne granice oferty (odstępstwo).
+// Strategia w podglądzie nie zmienia granic (wdrożenie kontrolowane). Genius i prowizja ze wszystkich ofert towaru.
+const ofertyTowaru = (twId) => db.prepare('SELECT platforma, rynek, genius, prowizja FROM oferty WHERE tw_id = ? AND aktywna = 1').all(twId);
+async function pasZeStrategia(w, o) {
+  const { aktywna } = await strategieDane.strategiaTowaru(o.tw_id);
+  return aktywna ? pasOferty(w, o, { strategia: aktywna, oferty: ofertyTowaru(o.tw_id) }) : pasOferty(w, o);
+}
+
+// Strategie cenowe per towar: biblioteka, przypisania, podgląd (routes/ceny-strategie.js).
+router.use('/strategie', require('./ceny-strategie')({ SQL_OFERTY, zKanalem, cenaTeraz, asyncH }));
+
 async function ocenaRecznejCeny(o, cenaWe) {
   const c = granice.walidujCene(cenaWe);
   if (c.blad) return { blad: c.blad };
   const { w, gtOk } = await wycenaTowaru(o.tw_id);
-  const p = pasOferty(w, o);
+  const p = await pasZeStrategia(w, o);
   const teraz = cenaTeraz(o);
   const ocena = granice.ocenCene(c.cena, { teraz, pas: p.pas, gtOk, niepewneDopasowanie: !pewneDopasowanie(o.dopasowanie) });
   const przed = teraz != null && p.pas?.ocen ? p.pas.ocen(teraz) : null;
@@ -547,7 +569,7 @@ router.post('/granice', asyncH(async (req, res) => {
   const o = ofertaPoId(req.body?.oferta_id);
   if (!o) return res.status(404).json({ blad: 'Nie ma takiej oferty' });
   const { w, gtOk } = await wycenaTowaru(o.tw_id, { swieza: true });
-  const { kalk } = pasOferty(w, o);
+  const { kalk } = await pasZeStrategia(w, o);
   const g = granice.walidujGranice(req.body?.min, req.body?.max, kalk);
   if (g.blad) return res.status(400).json({ blad: g.blad });
   const ostrzezenia = granice.ocenGranice(g, kalk, { gtOk });
@@ -562,7 +584,7 @@ router.post('/granice', asyncH(async (req, res) => {
     db.prepare("INSERT INTO zmiany (kto, oferta_id, akcja, opis) VALUES (?, ?, 'granice', ?)")
       .run(req.body.operator || null, o.id, `${kol} ${o.sku}: min ${t(o.min_reczne)} → ${t(g.min)}, max ${t(o.max_reczne)} → ${t(g.max)}`);
   }
-  res.json({ ok: true, granice: { min_reczne: g.min, max_reczne: g.max, ...opisPasa(pasOferty(w, nowe)), gt_ok: gtOk } });
+  res.json({ ok: true, granice: { min_reczne: g.min, max_reczne: g.max, ...opisPasa(await pasZeStrategia(w, nowe)), gt_ok: gtOk } });
 }));
 
 // --- Do powiązania ---------------------------------------------------------------------------

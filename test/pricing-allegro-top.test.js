@@ -67,6 +67,16 @@ test('obserwacja z raportu: „odpowiednia” → my, ale tylko przy niezmienion
   assert.strictEqual(top.zRaportu(wpis({ cena_ocena: 'odpowiednia', cena_top: null }), 79.99, teraz), null);
 });
 
+test('raport „cena OK” → kod top_raport (mamy Top, wyżej nie znamy), nie „brak danych”; pod minimum dalej na minimum', () => {
+  const filtry = require('../pricing/filtry-cen');
+  const ok = top.zRaportu(wpis({ cena_ocena: 'odpowiednia', cena_top: null }), 77.89, teraz);
+  const d = decyzja(ok, { min: 50, max: 120 });
+  assert.strictEqual(d.kod, 'top_raport');
+  assert.strictEqual(d.zmiana, false);
+  assert.strictEqual(filtry.ofertaPasuje({ kod: d.kod }, 'wszystkie', 'brak_danych'), false);
+  assert.strictEqual(decyzja(ok, { min: 80, max: 120 }).kod, 'pod_min');
+});
+
 test('obserwacja z raportu: cena Top = cena naszej drugiej oferty tego towaru → Top ma nasze konto, nie schodzimy', () => {
   const obs = top.zRaportu(wpis(), 77.89, teraz, 24, [69.9]);   // NaTropie stoi za 69,90
   assert.strictEqual(obs.bbInnaNasza, true);

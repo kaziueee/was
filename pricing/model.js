@@ -37,7 +37,10 @@
 //     ceny z BB i wstrzymuje podwyżki na `blokadaPodwyzekH` — cena staje tuż pod konkurentem.
 //     Jedyna oferta na produkcie (brak sygnału stopu) — bez zmian, nie podnosimy.
 // 10. Platforma w ogóle nie podaje cen konkurencji (`konkurencjaNiedostepna`, Allegro od 2026-10-16) —
-//     pilnujemy tylko podłogi: cena pod minimum idzie na minimum (reguła 7), poza tym bez zmian.
+//     pilnujemy tylko podłogi: cena pod minimum idzie na minimum (reguła 7), poza tym bez zmian. Gdy przy tym
+//     wiadomo, że Top oferta jest nasza (raport „Czynniki Top oferty”: cena „odpowiednia”), kod `top_raport` —
+//     to nie brak danych, tylko brak ceny NASTĘPNEGO konkurenta do podwyżki (19.10: 823 oferty ekajtek
+//     liczyły się w „Brak danych” i w „Mamy Buy Box” naraz).
 
 const DOMYSLNE_REGULY = {
   krok: 0.01,          // o ile schodzimy pod konkurenta
@@ -122,7 +125,11 @@ function decyzja(obs, pas, reguly = {}, kontekst = {}) {
   // Cena poza pasem (np. ktoś zmienił ją ręcznie, albo zmienił się koszt) — wracamy do pasa schodkami.
   if (cena < min - 0.005) return ustaw(min, 'pod_min', `cena ${cena} poniżej minimum ${min} — od razu na minimum`);
 
-  if (obs.konkurencjaNiedostepna) return zostaw('bez_konkurencji', 'platforma nie podaje cen konkurencji — pilnujemy tylko minimum');
+  if (obs.konkurencjaNiedostepna) {
+    return obs.bbNasz === true
+      ? zostaw('top_raport', 'Top oferta jest nasza (raport Top ofert) — ceny następnego konkurenta nie znamy, więc nie podnosimy')
+      : zostaw('bez_konkurencji', 'platforma nie podaje cen konkurencji — pilnujemy tylko minimum');
+  }
 
   if (obs.bbNasz === true) {
     const nast = obs.najtanszaInna;

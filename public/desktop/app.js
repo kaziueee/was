@@ -4685,6 +4685,36 @@ function cenyPoWyslaniu(o) {
 // Platforma wstrzymała ofertę przez cenę (eMAG „Invalid price”) — oferta aktywna, ale się nie sprzedaje.
 const cenyBlokadaHtml = (o) => (o.blokada ? `<div class="ceny-dec dol" title="${cenyEsc(o.blokada)}">⚠ ${o.platforma === 'emag' ? 'eMAG' : o.platforma === 'kaufland' ? 'Kaufland' : 'platforma'} wstrzymał ofertę: ${/too low/i.test(o.blokada) ? 'cena zbyt niska' : /price_check_needed/.test(o.blokada) ? 'cena do sprawdzenia' : 'cena odrzucona'}</div>` : '');
 
+// Allegro: cena Top oferty z raportu „Czynniki Top oferty” (wgrywany z ekranu, pricing/allegro-top.js).
+// Różnicę liczymy od naszej ceny TERAZ: cena Top to cena konkurenta, nasza mogła się od raportu zmienić.
+function cenyTopTekst(o, w) {
+  const t = o.top;
+  if (t.cena != null) {
+    const r = o.cena > 0 ? o.cena - t.cena : null;
+    return { cel: true, tekst: `Top ${cenyLiczba(t.cena)} ${w}${r == null ? '' : r > 0.005 ? ` (−${cenyLiczba(r)})` : ' (my już nie drożej)'}` };
+  }
+  if (/odpowiedni/i.test(t.ocena || '')) {
+    const inna = o.cena > 0 && t.cena_nasza != null && Math.abs(o.cena - t.cena_nasza) >= 0.005;
+    return { cel: false, tekst: inna ? `Top: cena OK przy ${cenyLiczba(t.cena_nasza)} ${w}` : 'Top: cena OK' };
+  }
+  return { cel: false, tekst: `Top: ${t.ocena || 'brak oceny ceny'}` };
+}
+function cenyTopTytul(o, w) {
+  const t = o.top;
+  return `Raport „Czynniki Top oferty” z ${formatDatetime(t.czas)}${t.aktualny ? '' : ` — starszy niż ${t.waznosc_h} h, repricer go już nie używa`}`
+    + `; nasza cena wtedy ${t.cena_nasza != null ? `${cenyLiczba(t.cena_nasza)} ${w}` : '—'}, różnica w cenie ${t.roznica != null ? cenyLiczba(t.roznica) : '—'}`
+    + (t.do_poprawy.length ? `; poza ceną do poprawy: ${t.do_poprawy.join(', ')}` : '');
+}
+function cenyTopKartaHtml(o, w) {
+  const t = o.top, tt = cenyTopTekst(o, w);
+  const r = t.cena != null && o.cena > 0 ? o.cena - t.cena : null;
+  return `<span>${t.cena != null ? `Top oferta: <b>${cenyLiczba(t.cena)} ${w}</b>` : `<b>${cenyEsc(tt.tekst)}</b>`}</span>
+      ${r != null ? `<span class="ceny-m">do Top: ${r > 0.005 ? `−${cenyLiczba(r)} ${w}` : 'nasza cena już nie wyżej'}</span>` : ''}
+      <span class="ceny-m${t.aktualny ? '' : ' ceny-blad'}">raport z ${cenyGodzina(t.czas)}${t.aktualny ? '' : ` — nieaktualny (ponad ${t.waznosc_h} h), repricer go nie używa`}</span>
+      ${t.do_poprawy.length ? `<span class="ceny-m">poza ceną do poprawy: ${cenyEsc(t.do_poprawy.join(', '))}</span>` : ''}
+      <span class="hint">z raportu Allegro Analytics — przez API Allegro cen innych sprzedawców nie podaje</span>`;
+}
+
 function cenyKomorka(o, rynek) {
   const td = document.createElement('td');
   if (!o) { td.innerHTML = '<span class="hint">—</span>'; return td; }
@@ -4712,7 +4742,10 @@ function cenyKomorka(o, rynek) {
   }
   // obs_widziana = ostatni przebieg, który widział ten sam stan (eMAG nie dopisuje wiersza bez zmian).
   const wys = (o.obs_czas ? `<div class="ceny-czas" title="Ceny w komórce to stan z ostatniej obserwacji">stan z ${cenyGodzina(o.obs_widziana || o.obs_czas)}</div>` : '');
-  const bb = !o.bb_nasz && o.bb_cena != null ? `<div class="ceny-bb">BB ${cenyLiczba(o.bb_cena)} ${w}${o.bb_fba ? ' (FBA)' : ''}${o.platforma === 'emag' ? '' : ' z wys.'}</div>` : '';
+  const topT = o.platforma === 'allegro' && o.top ? cenyTopTekst(o, w) : null;
+  const bb = o.platforma === 'allegro'
+    ? (topT ? `<div class="${topT.cel ? 'ceny-bb' : 'ceny-m'}${o.top.aktualny ? '' : ' ceny-nieaktualne'}" title="${cenyEsc(cenyTopTytul(o, w))}">${cenyEsc(topT.tekst)}</div>` : '')
+    : !o.bb_nasz && o.bb_cena != null ? `<div class="ceny-bb">BB ${cenyLiczba(o.bb_cena)} ${w}${o.bb_fba ? ' (FBA)' : ''}${o.platforma === 'emag' ? '' : ' z wys.'}</div>` : '';
   // eMAG: Genius zmienia koszt (opłata za zamówienie, tańsza wysyłka) — pokazujemy, który profil liczy kalkulator.
   const gen = o.genius == null ? '' : `<div class="ceny-m" title="${o.genius ? 'Genius aktywny: opłata Genius 3–8 RON, dostawa do automatu' : 'Bez Genius: kurier do domu, klient płaci 25 RON za dostawę'}">${o.genius ? 'Genius' : 'bez Genius'}</div>`;
   const div = document.createElement('div');
@@ -4923,6 +4956,9 @@ function cenyKartaRynekHtml(o) {
   const stanBb = !obs ? (o.obs_czas == null ? 'jeszcze nie obserwowana' : `${cenyKanal(o)} nie zwrócił naszej oferty`)
     : o.bb_nasz ? 'mamy Buy Box' : o.bb_nasza_inna ? 'Buy Box ma nasza INNA oferta tego produktu' : o.bb_cena != null ? `Buy Box ma ${o.bb_fba ? 'oferta FBA' : 'inny sprzedawca'}`
     : o.bez_konkurencji ? 'kto ma najlepszą ofertę — nie wiadomo (API tego nie podaje)' : 'brak Buy Boxa';
+  const stan = o.platforma === 'allegro' && o.top && obs
+    ? (!o.top.aktualny ? 'raport Top ofert nieaktualny' : o.top.cena != null ? 'Top ofertę ma inny sprzedawca (raport)' : 'cena OK w raporcie Top ofert')
+    : stanBb;
   const zmiana = CENY_ZMIANY.includes(o.kod);
   const dec = o.czeka ? `<b class="ceny-wyslano">✓ ${o.kod_dec === 'korekta' ? 'ręcznie ' : ''}wysłano ${cenyLiczba(o.cena_nowa)} ${w} o ${cenyGodzina(o.dec_czas)}</b><br><span class="hint">${cenyEsc(cenyKanal(o))} przyjął zmianę; potwierdzimy ją kilka minut po wysłaniu${o.propagacja ? ` (${cenyEsc(o.propagacja)})` : ''}. ${cenyEsc(o.powod)}</span>`
     : !o.kod ? '<span class="hint">brak decyzji</span>'
@@ -4942,7 +4978,7 @@ function cenyKartaRynekHtml(o) {
   const zmiany = o.zmiany.length ? `<p class="hint">${o.zmiany.map((z) => `${formatDatetime(z.czas)} ${cenyEsc(z.kto || '?')}: ${cenyEsc(CENY_AKCJE[z.akcja] || z.akcja)}`).join(' · ')}</p>` : '';
   return `<section class="ceny-rynek${o.bb_nasz ? ' bb' : ''}${o.auto ? '' : ' off'}" data-ceny-rynek="${o.kolumna || o.rynek}">
     <div class="ceny-k-rynek"><h4>${cenyEsc(cenyKanal(o))}</h4><div class="ceny-sku">${cenyEsc(o.sku)} · stan ${o.ilosc}</div>${cenyBlokadaHtml(o)}
-      <div class="ceny-m">${stanBb}</div>
+      <div class="ceny-m">${stan}</div>
       ${o.genius == null ? '' : `<div class="ceny-m">${o.genius ? 'Genius aktywny — opłata Genius, dostawa do automatu' : 'bez Genius — kurier do domu, klient płaci 25 RON'}</div>`}
       ${o.platforma === 'empik' ? `<div class="ceny-m" title="${cenyEsc(o.kategoria || '')}">kategoria Empik: ${o.kategoria_nazwa ? cenyEsc(o.kategoria_nazwa) : '—'} · prowizja ${o.prowizja ? cenyLiczba(o.prowizja, 1) + '%' : 'średnia 10,55%'}</div>` : ''}
       ${o.platforma === 'allegro' ? `<div class="ceny-m" title="kategoria Allegro ${cenyEsc(o.kategoria || '?')} — stawka z podglądu opłat Allegro dla tej oferty i ceny">prowizja Allegro ${o.prowizja ? cenyLiczba(o.prowizja, 2) + '%' : 'średnia 13,3% (stawka oferty jeszcze niepobrana)'} · koszt netto po odliczeniu VAT</div>` : ''}
@@ -4952,8 +4988,9 @@ function cenyKartaRynekHtml(o) {
     <div class="ceny-k-cena"><span class="ceny-et">${o.czeka ? `Cena · wysłana ${cenyGodzina(o.dec_czas)}` : `Cena · stan z ${cenyGodzina(o.obs_czas)}`}</span>${obs ? `<b class="ceny-duza">${cenyLiczba(o.cena)} ${w}</b>
       <span class="ceny-m">${o.platforma === 'emag' ? (o.genius ? 'dostawę do automatu opłaca klient w eMAG' : 'kurier do domu: klient płaci 25 RON') : o.platforma === 'allegro' ? 'dostawa wg cennika oferty (kalkulator: dopłata Smart)' : o.wysylka ? `+ wysyłka ${cenyLiczba(o.wysylka)} ${w}` : 'wysyłka gratis'}</span>
       <span class="ceny-m">marża ${o.marza != null ? cenyLiczba(o.marza, 1) + '%' : '—'}</span><span class="ceny-m">zysk ${o.zysk != null ? cenyLiczba(o.zysk) + ' zł' : '—'}</span>` : '<span class="hint">—</span>'}</div>
-    <div class="ceny-k-konk"><span class="ceny-et">Konkurencja (${o.platforma === 'emag' ? 'cena towaru' : 'z wysyłką'})</span>
-      ${o.bez_konkurencji ? `<span class="hint">${cenyEsc(cenyKanal(o))} nie podaje przez API cen innych sprzedawców — repricer pilnuje tylko minimum</span>`
+    <div class="ceny-k-konk"><span class="ceny-et">Konkurencja (${o.platforma === 'emag' || o.platforma === 'allegro' ? 'cena towaru' : 'z wysyłką'})</span>
+      ${o.platforma === 'allegro' && o.top ? cenyTopKartaHtml(o, w)
+        : o.bez_konkurencji ? `<span class="hint">${cenyEsc(cenyKanal(o))} nie podaje przez API cen innych sprzedawców — repricer pilnuje tylko minimum</span>`
         : `<span>Buy Box: <b>${o.bb_cena != null ? `${cenyLiczba(o.bb_cena)} ${w}` : '—'}</b>${o.bb_cena != null ? (o.bb_nasz ? ' (my)' : o.bb_fba ? ' (FBA)' : '') : ''}</span>
       <span class="ceny-m">najtańsza inna: ${o.najtansza_inna != null ? `${cenyLiczba(o.najtansza_inna)} ${w}` : '—'}</span>
       <span class="ceny-m">ofert: ${o.ofert ?? '—'}</span>`}
@@ -5187,6 +5224,22 @@ el('ceny-szukaj').addEventListener('keydown', async (e) => {
   if (cenyDane && cenyDane.wiersze.length === 1) cenyOtworzKarte(cenyDane.wiersze[0].tw_id);
 });
 el('ceny-odswiez').addEventListener('click', () => odswiezCeny());
+// Raport Allegro Analytics „Czynniki Top oferty” (xlsx) — surowy plik w treści, backend rozpoznaje konto z raportu.
+el('ceny-allegro-top').addEventListener('click', () => el('ceny-allegro-top-plik').click());
+el('ceny-allegro-top-plik').addEventListener('change', async (e) => {
+  const plik = e.target.files[0];
+  e.target.value = '';
+  if (!plik) return;
+  const btn = el('ceny-allegro-top');
+  btn.disabled = true;
+  try {
+    const d = await api('/api/ceny/allegro-top', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: plik });
+    pokazKomunikat(`Raport Top ofert ${d.konto}${d.kategoria ? ` (${d.kategoria})` : ''}: ${d.wierszy} ofert, rozpoznanych ${d.dopasowane}. `
+      + `Cena za wysoka: ${d.za_wysoka} (Top nad naszym minimum: ${d.szanse}, pod minimum: ${d.ponizej_min}), cena OK: ${d.odpowiednia}. `
+      + 'Repricer policzy szanse w najbliższym przebiegu (do 30 min) — filtr „Szansa na Buy Box”.', 'ok');
+    odswiezCeny();
+  } catch (err) { pokazKomunikat(err.message, 'blad'); } finally { btn.disabled = false; }
+});
 // Macierz przewija się we własnym okienku na wysokość ekranu (style.css .ceny-wrap). Kółko w dół nad nią
 // najpierw dosuwa stronę, aż okienko wypełni ekran — inaczej przewijałyby się wiersze w okienku do połowy
 // schowanym pod dolną krawędzią, razem z poziomym paskiem. W górę: przeglądarka sama oddaje stronie.

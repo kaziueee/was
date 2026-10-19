@@ -1266,6 +1266,7 @@ main {
 .ceny-cena small { font-weight: 400; color: #777; font-size: 0.75rem; }
 .ceny-m, .ceny-bb, .ceny-dec { font-size: 0.76rem; color: #5f6670; white-space: nowrap; }
 .ceny-bb { color: #9a6a00; }
+.ceny-nieaktualne { opacity: 0.55; }
 .ceny-dec.gora { color: #1f7a3d; font-weight: 600; }
 .ceny-dec.dol { color: #b42318; font-weight: 600; }
 .ceny-przel { flex: none; width: 22px; height: 12px; border-radius: 999px; border: 1px solid #b8bec6; background: #fff; padding: 0; cursor: pointer; position: relative; margin-top: 3px; }

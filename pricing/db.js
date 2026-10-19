@@ -141,6 +141,22 @@ for (const [k, typ] of [['auto', 'INTEGER'], ['zysk', 'REAL'], ['marza', 'REAL']
   if (!kolDecyzje.includes(k)) db.exec(`ALTER TABLE decyzje ADD COLUMN ${k} ${typ}`);
 }
 
+// Allegro: raport „Czynniki wpływające na wybór Top oferty” wgrany z ekranu Ceny (pricing/allegro-top.js).
+// Jeden wiersz na ofertę (konto, numer oferty), nowszy raport nadpisuje. cena_top = cena Top oferty kwotowo.
+db.exec(`CREATE TABLE IF NOT EXISTS allegro_top (
+  konto        TEXT NOT NULL,              -- EKAJTEK | NATROPIE (pricing/allegro.js KONTA)
+  oferta       TEXT NOT NULL,              -- numer oferty Allegro (= oferty.asin)
+  produkt      TEXT,                       -- ID produktu w katalogu Allegro
+  cena_ocena   TEXT,                       -- 'za wysoka' | 'odpowiednia'
+  roznica      REAL,                       -- o ile nasza cena przewyższa Top ofertę (zł)
+  cena_nasza   REAL,                       -- nasza cena w chwili importu
+  cena_top     REAL,                       -- cena Top oferty (nasza − różnica), NULL gdy to my
+  czynniki     TEXT,                       -- JSON: promowanie, jakosc, stan, zdjecia, gnc, dostawa
+  raport_czas  TEXT NOT NULL,              -- kiedy wgrano raport (UTC)
+  kto          TEXT,
+  PRIMARY KEY (konto, oferta)
+)`);
+
 const stan = {
   get: (k) => db.prepare('SELECT wartosc, czas FROM stan WHERE klucz = ?').get(k) || null,
   set: (k, v) => db.prepare(`INSERT INTO stan (klucz, wartosc, czas) VALUES (?, ?, CURRENT_TIMESTAMP)

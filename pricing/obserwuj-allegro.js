@@ -1,19 +1,23 @@
 'use strict';
 
 // Obserwacja ofert Allegro: nasza cena z tej samej listy /sale/offers, którą czyta synchronizacja (jedno
-// pobranie na konto i przebieg, ~4 zapytania). Konkurencji API nie podaje (pricing/allegro.js), więc
-// obserwacja to sama cena — i prawie zawsze ta sama: niezmieniony stan podbija tylko `widziana`
-// w ostatnim wierszu (pricing/bez-zmian.js), zamiast dopisywać ~5000 wierszy co pół godziny.
+// pobranie na konto i przebieg, ~4 zapytania). Konkurencji API nie podaje (pricing/allegro.js); gdy dla oferty
+// jest świeży raport „Czynniki Top oferty” wgrany z ekranu (pricing/allegro-top.js), obserwacja dostaje z niego
+// cenę Top oferty jak Buy Box. Niezmieniony stan podbija tylko `widziana` w ostatnim wierszu
+// (pricing/bez-zmian.js), zamiast dopisywać ~5000 wierszy co pół godziny.
 
 const allegro = require('./allegro');
 const { db } = require('./db');
 const { takaSamaObserwacja } = require('./bez-zmian');
+const { raportyTop, zRaportu } = require('./allegro-top');
 
 // oferty: [{ id, sku, rynek, asin }] — `asin` = numer oferty Allegro, `rynek` = konto.
 // surowe: oferty z allegro.wszystkieOferty(konto), z polem `_konto` (może być kilka kont naraz).
 const klucz = (konto, id) => `${konto}|${id}`;
 async function obserwujAllegro(oferty, surowe) {
   const poId = new Map((surowe || []).map((o) => [klucz(o._konto, o.id), o]));
+  const top = raportyTop();
+  const teraz = Date.now();
   const zapisz = db.prepare(`INSERT INTO obserwacje (oferta_id, cena, wysylka, bb_nasz, bb_cena, bb_fba, najtansza_inna, ofert, bb_nasza_inna)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const ostatnia = db.prepare('SELECT * FROM obserwacje WHERE oferta_id = ? ORDER BY id DESC LIMIT 1');
@@ -26,7 +30,7 @@ async function obserwujAllegro(oferty, surowe) {
     for (const o of oferty) {
       const surowa = poId.get(klucz(o.rynek, o.asin));
       if (!surowa) continue;
-      const obs = allegro.zOferty(surowa);
+      const obs = zRaportu(top.get(klucz(o.rynek, o.asin)), allegro.doOferty(surowa).cena, teraz) || allegro.zOferty(surowa);
       wynik.set(o.id, obs);
       const w = { cena: obs.cena, wysylka: obs.wysylka, bb_nasz: b(obs.bbNasz), bb_cena: obs.bbCena, bb_fba: b(obs.bbFba),
         najtansza_inna: obs.najtanszaInna, ofert: obs.ofert, bb_nasza_inna: b(obs.bbInnaNasza) };

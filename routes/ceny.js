@@ -23,6 +23,7 @@
 //   POST /api/ceny/powiaz        { sku, kod }                          powiąż SKU z towarem GT (symbol/EAN)
 //   POST /api/ceny/powiaz/potwierdz { sku }                            potwierdź obecne dopasowanie jako ręczne
 //   POST /api/ceny/powiaz/usun   { sku }                               usuń ręczne powiązanie
+//   POST /api/ceny/allegro-top   (plik xlsx w treści)                  raport Allegro „Czynniki Top oferty” → allegro_top
 
 const express = require('express');
 const router = express.Router();
@@ -38,6 +39,8 @@ const { pobierzStanyGt, sumaRazem } = require('../services/gt-produkty');
 const { doZlozeniaMapa } = require('../services/gt-zestawy');
 const { pewneDopasowanie, znajdzTowar, powiaz, usunPowiazanie } = require('../pricing/powiazania');
 const filtry = require('../pricing/filtry-cen');
+const { czytajXlsx } = require('../services/xlsx-czytnik');
+const allegroTop = require('../pricing/allegro-top');
 const { pasOferty } = require('../pricing/pas');
 const granice = require('../pricing/granice');
 const reczna = require('../pricing/reczna-cena');
@@ -80,7 +83,11 @@ const zKanalem = (o) => {
   }
   return { ...o, kolumna: kluczKolumny(o.platforma, o.rynek), kanal_nazwa: k.nazwa || `${o.platforma} ${o.rynek}`,
     waluta: k.waluta || '', tylko_odczyt: !!k.tylkoOdczyt, bez_konkurencji: !!k.bezKonkurencji, linki: linki(o),
-    reczna_cena: reczna.obslugiwana(o.platforma) };
+    reczna_cena: reczna.obslugiwana(o.platforma),
+    // Allegro: raport „Czynniki Top oferty” (pricing/allegro-top.js) — cena Top oferty i co jeszcze blokuje.
+    top: o.top_czas ? { ocena: o.top_ocena, cena: o.top_cena, roznica: o.top_roznica, cena_nasza: o.top_cena_nasza,
+      czas: o.top_czas, aktualny: allegroTop.aktualny({ raport_czas: o.top_czas }), waznosc_h: allegroTop.WAZNOSC_H,
+      do_poprawy: allegroTop.doPoprawy(JSON.parse(o.top_czynniki || '{}')) } : null };
 };
 
 // Filtry macierzy: zakres × sytuacja — pricing/filtry-cen.js (czyste, z testami).
@@ -91,10 +98,13 @@ const SQL_OFERTY = `
          o.prowizja, o.min_reczne, o.max_reczne, o.kategoria, o.kategoria_nazwa,
          b.czas AS obs_czas, COALESCE(b.widziana, b.czas) AS obs_widziana, b.cena, b.wysylka, b.bb_nasz, b.bb_cena, b.bb_fba, b.najtansza_inna, b.ofert, b.bb_nasza_inna,
          d.kod, d.cena_nowa, d.powod, d.min, d.max, d.zysk, d.marza, d.zysk_nowa,
-         d.czas AS dec_czas, d.wyslano, d.blad AS dec_blad, d.marza_nowa, d.cena_cel, d.zysk_cel
+         d.czas AS dec_czas, d.wyslano, d.blad AS dec_blad, d.marza_nowa, d.cena_cel, d.zysk_cel,
+         t.cena_ocena AS top_ocena, t.cena_top AS top_cena, t.roznica AS top_roznica, t.cena_nasza AS top_cena_nasza,
+         t.czynniki AS top_czynniki, t.raport_czas AS top_czas
     FROM oferty o
     LEFT JOIN obserwacje b ON b.id = (SELECT MAX(id) FROM obserwacje WHERE oferta_id = o.id)
     LEFT JOIN decyzje d    ON d.id = (SELECT MAX(id) FROM decyzje WHERE oferta_id = o.id)
+    LEFT JOIN allegro_top t ON o.platforma = 'allegro' AND t.konto = o.rynek AND t.oferta = o.asin
    WHERE o.aktywna = 1 AND o.tw_id IS NOT NULL AND o.ilosc > 0`;
 
 // Filtr kanału (marketplace): platforma = wszystkie jej kolumny, klucz = jedna kolumna. Wybór zawęża
@@ -431,6 +441,17 @@ router.get('/cena/podglad', asyncH(async (req, res) => {
     granice: opisPasa(r.p), gt_ok: r.gtOk, obslugiwana: reczna.obslugiwana(o.platforma), propagacja: reczna.propagacja(o.platforma),
   });
 }));
+
+// Raport Allegro Analytics „Czynniki wpływające na wybór Top oferty” — plik xlsx w surowej treści żądania
+// (globalny parser JSON przyjmuje 100 kB, raport ma ~0,5 MB). Operatora wstrzykuje logowanie do req.body,
+// zanim parser surowej treści go podmieni — stąd zapamiętanie przed parserem.
+router.post('/allegro-top', (req, res, next) => { req.kto = req.body?.operator || null; next(); },
+  express.raw({ type: () => true, limit: '40mb' }), (req, res) => {
+    if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ blad: 'Wyślij plik xlsx raportu' });
+    let raport;
+    try { raport = allegroTop.raportTopOferty(czytajXlsx(req.body)); } catch (e) { return res.status(400).json({ blad: e.message }); }
+    try { res.json({ ok: true, ...allegroTop.zapiszRaport(raport, req.kto) }); } catch (e) { res.status(400).json({ blad: e.message }); }
+  });
 
 router.post('/cena', asyncH(async (req, res) => {
   const o = ofertaPoId(req.body?.oferta_id);

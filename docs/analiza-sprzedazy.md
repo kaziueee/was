@@ -398,10 +398,15 @@ zysk handlowy jako przybliżenie zysku po kosztach kanału):
 2. ~~Sprawdzenie reguły kraju przed 26.08~~ — potwierdzone 2026-10-20 na 31 997 FS z rozliczeniami Amazona: 99,8% (sekcja „Wdrożenie etapu 1”).
 3. Koszty kanału dla Allegro CZ/SK/HU.
 4. Historia kosztu przed startem zdjęć: dzisiejszy koszt (domyślnie) czy ostatnia cena z PZ przed sprzedażą.
-   **Pomiar 2026-10-21:** z 2616 towarów sprzedanych w 30 dni 460 ma koszt w kartotece (`tc_CenaNetto0`) różny o
-   > 15% od ceny ostatniej PZ — 12% obrotu; zysk zawyżony o ~16 tys. zł (kartoteka niżej, 327 towarów) i zaniżony
-   o ~11 tys. zł (wyżej, 133). Przykład: NERE6192-E6218 — kartoteka 23,94 zł z FZ 2022, ostatnia PZ 05.10.2026 po
-   13,73 zł; „strata” 235 zł na sprzedaży 200 szt. po 22,76 zł do K4ENERGY jest w rzeczywistości zyskiem ~1,8 tys. zł.
+   **Pomiar 2026-10-21 — średnia ważona dostaw na stanie, nie ostatnia PZ** (uwaga usera: 100 szt. po 10 zł i jedna
+   nowa po 20 zł to koszt ~10, nie 20). Warstwy dostaw: `dok_MagRuch` z `mr_MagId` (przychód: PZ, MM-przyjęcie,
+   zwrot), `mr_Pozostalo` = ile tej dostawy leży na magazynie, cena = ostatnia `dok_MagWart.mw_Cena` serii (124 z
+   21 446 warstw po korekcie ceny). Suma warstw = `st_Stan` dla 15 560 z 15 560 par (towar, magazyn). Na K4+K4G+MAG+LS
+   (12 572 towary): wartość stanu wg kartoteki 8,46 mln zł, wg dostaw 8,37 mln zł. Rozjazd > 15% i ≥ 0,50 zł: 563
+   towary (139 sprzedawanych w 30 dni); kartoteka wyżej — 391 (zysk w module zaniżony o ~12,1 tys. zł w 30 dni),
+   niżej — 172 (zawyżony o ~3,1 tys. zł); 59 ma koszt 0 w kartotece. Lista: `~/Documents/rozjazdy-kosztu-2026-10-21.csv`.
+   Przykład: NERE6192-E6218 — kartoteka 23,94 zł (FZ 2022), cały stan to dostawa z 05.10.2026 po 13,73 zł; „strata”
+   235 zł na 200 szt. po 22,76 zł do K4ENERGY to zysk ~1,8 tys. zł.
    Ten sam koszt bierze repricer (podłogi) — decyzja usera, nie poprawka modułu.
 5. Push na telefon i alert „kanał milczy”.
 6. Konsumenci później: pulpit repricera (`sprzedazWgZrodla`), strategia „za rynkiem” (`sprzedazTowarowZCena`),

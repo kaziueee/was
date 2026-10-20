@@ -1,10 +1,11 @@
 'use strict';
 
 // Job modułu analiz sprzedaży (docs/analiza-sprzedazy.md) — dosypuje sprzedaż z GT do db/sprzedaz.db.
-//   bieżący (co ANALIZA_INTERWAL_MIN, domyślnie 15 min): FS z ostatnich 4 dni (faktura bywa do 3 dni po zamówieniu)
-//     i ZK jeszcze bez FS — tak dzisiejsze zamówienia są na ekranie od razu; plus stany sprzedawanych towarów,
-//   nocny (raz na dobę, pierwszy przebieg po 2:00): ostatnie 14 dni na nowo (korekty, późne FS), kartoteka
-//     sprzedawanych i trzymanych towarów, zdjęcie stanów wszystkich towarów ze stanem.
+//   bieżący (co ANALIZA_INTERWAL_MIN, domyślnie 15 min): wczoraj i dziś — FS (faktura dostaje datę wystawienia, więc
+//     FS do zamówienia sprzed 3 dni wpada w dzisiejsze okno i zastępuje jego wiersz) i ZK jeszcze bez FS, plus stany
+//     sprzedawanych towarów. Zmierzone 2026-10-20: ~0,6 s zapytań do GT (okno 4 dni: 1,8 s),
+//   nocny (raz na dobę, pierwszy przebieg po 2:00): ostatnie 14 dni na nowo (korekty, FS z cofniętą datą, ZK, które
+//     zniknęły), kartoteka towarów aktywnych i nowych, zdjęcie stanów wszystkich towarów ze stanem.
 // Historię sprzed startu wczytuje raz scripts/analiza-wczytaj.js. Tylko SELECT-y do GT.
 // ANALIZA_WYLACZ=1 wyłącza job (np. lokalny WMS na kopii Z_KAJTEK, żeby nie mieszał danych w bazie modułu).
 
@@ -22,7 +23,7 @@ let trwa = false;
 
 async function biezacy() {
   const dzis = dzisLokalnie();
-  const w = await dane.wczytajOkno(dodajDni(dzis, -3), dodajDni(dzis, 1));
+  const w = await dane.wczytajOkno(dodajDni(dzis, -1), dodajDni(dzis, 1));
   const tw = [...new Set(w.pozycje.map((p) => p.tw_id))];
   if (tw.length) await dane.zdjecieStanow(dzis, tw);
   // tempo przeliczamy najwyżej raz na godzinę: zapytanie trwa ~0,7 s i blokuje WMS-Node (skany z Zebry), a dni
@@ -36,10 +37,13 @@ async function biezacy() {
 async function nocny() {
   const dzis = dzisLokalnie();
   const w = await dane.wczytajOkno(dodajDni(dzis, -14), dodajDni(dzis, 1));
-  const tw = db.prepare(`SELECT DISTINCT p.tw_id FROM pozycje p JOIN zamowienia z ON z.id = p.zam_id WHERE z.data_zam >= ?
-    UNION SELECT tw_id FROM stany WHERE dzien >= ?`).all(dodajDni(dzis, -400), dodajDni(dzis, -7)).map((x) => x.tw_id);
-  await dane.odswiezTowary(tw);
+  // kartoteka: tylko towary sprzedane w 14 dniach (symbol / nazwa / grupa mogły się zmienić) i te, których jeszcze nie
+  // znamy. Całość (18,7 tys.) to ~8 s na GT co noc, a data pierwszego przyjęcia raz ustalona się nie zmienia.
   const stany = await dane.zdjecieStanow(dzis);
+  const tw = db.prepare(`SELECT DISTINCT p.tw_id FROM pozycje p JOIN zamowienia z ON z.id = p.zam_id WHERE z.data_zam >= ?
+    UNION SELECT s.tw_id FROM stany s WHERE s.dzien = ? AND s.tw_id NOT IN (SELECT tw_id FROM towary)
+    UNION SELECT p.tw_id FROM pozycje p WHERE p.tw_id NOT IN (SELECT tw_id FROM towary)`).all(dodajDni(dzis, -14), dzis).map((x) => x.tw_id);
+  await dane.odswiezTowary(tw);
   dane.przeliczTempa(dzis);
   meta.set('tempa', dzis);
   meta.set('nocny', dzis);

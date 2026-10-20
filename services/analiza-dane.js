@@ -243,19 +243,23 @@ async function wczytajOkno(od, doDnia, { zapiszDoBazy = true } = {}) {
 }
 
 // --- kartoteka i stany ---------------------------------------------------------------------------------------
+// Kartoteka towarów. Datę pierwszego przyjęcia (MIN po PZ/PW — najdroższa część) liczymy tylko dla towarów, które jej
+// jeszcze nie mają: raz ustalona się nie zmienia.
 async function odswiezTowary(twIds) {
   const idy = [...new Set(twIds.map(Number))].filter(Number.isInteger);
+  const znane = new Map(db.prepare('SELECT tw_id, pierwsze_przyjecie FROM towary WHERE pierwsze_przyjecie IS NOT NULL').all().map((x) => [x.tw_id, x.pierwsze_przyjecie]));
   const ins = db.prepare(`INSERT INTO towary (tw_id, symbol, nazwa, grupa, rodzaj, pierwsze_przyjecie, odswiezono) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(tw_id) DO UPDATE SET symbol = excluded.symbol, nazwa = excluded.nazwa, grupa = excluded.grupa, rodzaj = excluded.rodzaj,
       pierwsze_przyjecie = excluded.pierwsze_przyjecie, odswiezono = excluded.odswiezono`);
   for (let i = 0; i < idy.length; i += 1000) {
     const lista = idy.slice(i, i + 1000).join(',');   // liczby całkowite — bezpieczne w IN
+    const bezDaty = idy.slice(i, i + 1000).filter((id) => !znane.has(id));
     const r = await query(`SELECT t.tw_Id tw_id, t.tw_Symbol symbol, t.tw_Nazwa nazwa, ISNULL(g.grt_Nazwa, '') grupa, t.tw_Rodzaj rodzaj,
-        (SELECT CONVERT(char(10), MIN(m.dok_DataWyst), 23) FROM dok_Pozycja p JOIN dok__Dokument m ON m.dok_Id = p.ob_DokMagId
-          WHERE p.ob_TowId = t.tw_Id AND m.dok_Typ IN (10, 12) AND m.dok_Status = 1) pierwsze
+        ${bezDaty.length ? `CASE WHEN t.tw_Id IN (${bezDaty.join(',')}) THEN (SELECT CONVERT(char(10), MIN(m.dok_DataWyst), 23) FROM dok_Pozycja p
+          JOIN dok__Dokument m ON m.dok_Id = p.ob_DokMagId WHERE p.ob_TowId = t.tw_Id AND m.dok_Typ IN (10, 12) AND m.dok_Status = 1) END` : 'NULL'} pierwsze
       FROM tw__Towar t LEFT JOIN sl_GrupaTw g ON g.grt_Id = t.tw_IdGrupa WHERE t.tw_Id IN (${lista})`);
     db.exec('BEGIN');
-    try { for (const x of r.recordset) ins.run(x.tw_id, x.symbol, x.nazwa, x.grupa, x.rodzaj, x.pierwsze); db.exec('COMMIT'); }
+    try { for (const x of r.recordset) ins.run(x.tw_id, x.symbol, x.nazwa, x.grupa, x.rodzaj, x.pierwsze ?? znane.get(x.tw_id) ?? null); db.exec('COMMIT'); }
     catch (e) { db.exec('ROLLBACK'); throw e; }
   }
   return idy.length;

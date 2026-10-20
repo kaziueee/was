@@ -60,3 +60,13 @@ test('zwrot z pozycji KFS: zmniejszenie ilości i obniżka ceny jako dodatnie wa
   assert.deepStrictEqual(m.zwrotZPozycji({ znak: 1, ilosc: 0, netto: -11.12 }), { szt: -0, netto: 11.12 });
   assert.deepStrictEqual(m.zwrotZPozycji({ znak: 1, ilosc: 0, netto: 0 }), { szt: -0, netto: -0 });
 });
+
+test('dni nietypowe: przestój integracji (weekend bez ZK, poniedziałek z zaległościami)', () => {
+  const liczby = new Map();
+  for (let i = 0; i < 40; i++) liczby.set(m.dodajDni('2025-09-10', i), 430);
+  liczby.set('2025-10-18', 2); liczby.set('2025-10-19', 0); liczby.set('2025-10-20', 1047);
+  const w = m.dniNietypowe(liczby, m.dniZakresu(['2025-10-14', '2025-10-20']));
+  assert.deepStrictEqual(w.map((x) => x.dzien), ['2025-10-18', '2025-10-19', '2025-10-20']);
+  assert.strictEqual(w[2].mediana, 430);
+  assert.deepStrictEqual(m.dniNietypowe(new Map([['2025-10-20', 5]]), ['2025-10-20']), []);   // brak historii — nic nie twierdzimy
+});

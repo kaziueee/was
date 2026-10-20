@@ -282,4 +282,24 @@ async function zdjecieStanow(dzien, twIds = null) {
   return m.size;
 }
 
-module.exports = { wczytajOkno, zlozZamowienia, policzZysk, rynekKanalu, odswiezTowary, zdjecieStanow, pobierzOkno, meta };
+// Tempo sprzedaży na towar (do dni zapasu i flag): FS z K4 (bez paragonów Sklepu — K4 obsługuje internet) plus
+// zużycie składników w sprzedanych zestawach, bo to też schodzi z półki. Jedno zapytanie po indeksie dat FS
+// zamiast liczenia przy każdym otwarciu ekranu (tam to było ~1 s na 360 towarów).
+function przeliczTempa(dzis) {
+  const od = (d) => am.dodajDni(dzis, -d);
+  const czesc = (tab) => `SELECT x.tw_id, CASE WHEN z.data_fs > @d30 THEN x.szt ELSE 0 END a,
+      CASE WHEN z.data_fs > @d180 THEN x.szt ELSE 0 END b, x.szt c
+    FROM ${tab} x JOIN zamowienia z ON z.id = x.zam_id
+    WHERE z.status = 'zafakturowane' AND z.data_fs > @d365 AND z.data_fs <= @dzis`;
+  db.exec('BEGIN');
+  try {
+    db.exec('DELETE FROM tempa');
+    db.prepare(`INSERT INTO tempa (tw_id, szt30, szt180, szt365, dzien)
+      SELECT tw_id, SUM(a), SUM(b), SUM(c), @dzis FROM (${czesc('pozycje')} UNION ALL ${czesc('skladniki')}) GROUP BY tw_id`)
+      .run({ d30: od(30), d180: od(180), d365: od(365), dzis });
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+  return db.prepare('SELECT COUNT(*) n FROM tempa').get().n;
+}
+
+module.exports = { przeliczTempa, wczytajOkno, zlozZamowienia, policzZysk, rynekKanalu, odswiezTowary, zdjecieStanow, pobierzOkno, meta };

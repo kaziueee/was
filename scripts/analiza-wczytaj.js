@@ -52,6 +52,7 @@ const zl = (x) => Math.round(x).toLocaleString('pl-PL');
   if (ZAPISZ) {
     console.log(`Kartoteka: ${await dane.odswiezTowary([...tw])} towarów`);
     console.log(`Stany dziś: ${await dane.zdjecieStanow(dzisLokalnie())} towarów`);
+    console.log(`Tempa sprzedaży: ${dane.przeliczTempa(dzisLokalnie())} towarów`);
     const stare = dane.meta.get('historia_od');
     if (!stare || OD < stare.wartosc) dane.meta.set('historia_od', OD);
     dane.meta.set('historia_wczytana', new Date().toISOString());

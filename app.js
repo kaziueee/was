@@ -21,6 +21,7 @@ const uzytkownicyRouter = require('./routes/uzytkownicy');
 const kartonyRouter = require('./routes/kartony');
 const cennikRouter = require('./routes/cennik');
 const sprzedazRouter = require('./routes/sprzedaz');
+const analizaRouter = require('./routes/analiza');
 const cenyRouter = require('./routes/ceny');
 const blokadyRouter = require('./routes/blokady');
 const blokady = require('./services/blokady');
@@ -32,6 +33,7 @@ const strefyWGtJob = require('./services/strefy-w-gt-job');
 const rozmontowaniaJob = require('./services/rozmontowania');
 const kartotekaJob = require('./services/kartoteka');
 const backupJob = require('./services/backup');
+const analizaJob = require('./services/analiza-job');
 const reconciliacjaMM = require('./services/reconciliacja-mm');
 const pulpitSnapshot = require('./services/pulpit-snapshot');
 const awarie = require('./services/awarie');
@@ -87,6 +89,7 @@ app.use('/api/do-sprawdzenia', doSprawdzeniaRouter);  // czysty odczyt (GT + kop
 // Ceny i sprzedaz tylko dla admin/biuro - takze odczyt (koszt zakupu nie jest dla hali).
 app.use('/api/cennik', auth.wymagajRoli('admin', 'biuro'), cennikRouter);  // odczyt z GT - koszt zakupu (tc_CenaNetto0) + ceny per rynek
 app.use('/api/sprzedaz', auth.wymagajRoli('admin', 'biuro'), sprzedazRouter);  // zadanie sprzedazowe (FS z GT)
+app.use('/api/analiza', auth.wymagajRoli('admin', 'biuro'), analizaRouter);  // analiza sprzedazy: czyta tylko db/sprzedaz.db (docs/analiza-sprzedazy.md)
 app.use('/api/ceny', auth.wymagajRoli('admin', 'biuro'), cenyRouter);  // repricer: odczyt db/pricing.db (liczy osobny proces pricing/worker.js); admin + biuro od 2026-10-16 (decyzja usera), także przełączanie automatu
 app.use('/api/magazyny', magazynyRouter);
 app.use('/api/status', statusRouter); // publiczny - pasek stanu na ekranie logowania
@@ -111,5 +114,6 @@ strefyWGtJob.start();
 rozmontowaniaJob.start();
 kartotekaJob.start();   // odswiezanie kopii kartoteki GT (symbol/nazwa/EAN) w stany_lokalizacji
 backupJob.start();
+analizaJob.start();   // analiza sprzedazy: FS/ZK z GT do db/sprzedaz.db co 15 min + nocny przebieg
 reconciliacjaMM.start();
 pulpitSnapshot.start();

@@ -12,6 +12,7 @@
 //   zwroty     — pozycje korekt FS (KFS) z kanałem faktury pierwotnej; osobna kolumna, nie odejmujemy
 //   towary     — kopia kartoteki: symbol, nazwa, grupa GT, rodzaj, pierwsze przyjęcie
 //   stany      — zdjęcie stanów GT (K4, K4G, MAG, LS, rezerwacja K4) z danego dnia
+//   tempa      — sprzedaż 30/180/365 dni na towar (FS + zużycie w zestawach), przeliczana przez job — ekran tylko czyta
 //   meta       — znaczniki jobów i wczytań
 
 const path = require('path');
@@ -104,6 +105,14 @@ CREATE TABLE IF NOT EXISTS stany (
   razem     REAL,                         -- K4+K4G+MAG+LS (bez BRK i K4R, jak MAGAZYNY_RAZEM)
   czas      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (tw_id, dzien)
+);
+
+CREATE TABLE IF NOT EXISTS tempa (
+  tw_id     INTEGER PRIMARY KEY,
+  szt30     REAL NOT NULL DEFAULT 0,
+  szt180    REAL NOT NULL DEFAULT 0,
+  szt365    REAL NOT NULL DEFAULT 0,
+  dzien     TEXT NOT NULL                 -- dzień, na który policzone
 );
 
 CREATE TABLE IF NOT EXISTS meta (

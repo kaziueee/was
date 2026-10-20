@@ -89,7 +89,27 @@ function zwrotZPozycji({ znak, ilosc, netto }) {
   return { szt: -(z * (+ilosc || 0)), netto: -(z * (+netto || 0)) };
 }
 
+// Dni nietypowe w zakresie porównania: liczba zamówień poniżej 40% albo powyżej 180% mediany z 28 dni przed tym
+// dniem. Tak wygląda przestój integracji (18–19.10.2025: 2 i 0 ZK, poniedziałek 20.10: 1047 zamiast ~430) — porównanie
+// dzień do dnia jest wtedy mylące i ekran ma to powiedzieć wprost (×2,4 mediany — stąd górny próg 1,8; Black Friday
+// też wyjdzie jako nietypowy i to jest prawda). liczby: Map dzień → liczba zamówień.
+function dniNietypowe(liczby, dni) {
+  const wynik = [];
+  for (const d of dni) {
+    const okno = [];
+    for (let i = 1; i <= 28; i++) { const x = liczby.get(dodajDni(d, -i)); if (x != null) okno.push(x); }
+    if (okno.length < 14) continue;                        // za mało historii, żeby cokolwiek twierdzić
+    okno.sort((a, b) => a - b);
+    const med = okno[Math.floor(okno.length / 2)];
+    const n = liczby.get(d) || 0;
+    if (med > 0 && (n < 0.4 * med || n > 1.8 * med)) wynik.push({ dzien: d, zamowien: n, mediana: med });
+  }
+  return wynik;
+}
+const dniZakresu = ([od, doDnia]) => { const w = []; for (let d = od; d <= doDnia; d = dodajDni(d, 1)) w.push(d); return w; };
+
 module.exports = {
+  dniNietypowe, dniZakresu,
   ROK_TEMU_DNI, ZAKRESY, PROGI, dodajDni, rokTemu, zakres, kursDokumentu, czasZUuidV1, dzienICzasPl, dataZamowienia,
   flagiTowaru, dniZapasu, zwrotZPozycji,
 };

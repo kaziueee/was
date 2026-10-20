@@ -60,6 +60,15 @@ przypadków, następnego w 48%, po 2 dniach w 9%, po 3 w 5%, a w weekend wcale (
 faktury dzień bieżący jest zawsze niepełny, a porównanie dnia z dniem rok temu miesza weekendy. Wg zamówienia
 dzisiejsza sprzedaż jest widoczna od razu (z ZK), a po wystawieniu FS liczby się potwierdzają.
 
+**Data ZK nie ma godziny i przy przestoju integracji dostaje datę wczytania.** W weekend 18–19.10.2025 do GT
+weszły 2 ZK (sobota) i 0 (niedziela), a poniedziałek 20.10 zebrał 1047 ZK zamiast ~430 — porównanie „dzień do
+dnia” z tym poniedziałkiem jest mylące (makieta: −64% za dzień przy −4% za 7 dni). Ratunek dla Allegro (~75%
+sprzedaży): **ZK ma w `pwd_Tekst05` identyfikator zamówienia Allegro w formacie UUID v1, z zaszytą datą i godziną
+złożenia** — ZK z 20.10.2025 naprawdę złożono 18.10 między 00:09 a 05:42. Projekt Rozliczenia używa tego samego
+(decyzja usera tam: data zamówienia wyłącznie z dokumentów operatora, nigdy z `date_add` BaseLinkera). Dla
+Amazona — raport transakcji, Kauflandu — Wareneingang. Etap 1: dla Allegro data i godzina z UUID, dla reszty data
+ZK; dni z anomalią liczby ZK oznaczać na ekranie.
+
 Jedno zamówienie = jeden zestaw wierszy: dopóki nie ma FS, liczby pochodzą z ZK (status „zamówione”), po FS
 z faktury (status „zafakturowane”). Zadanie sprzedażowe zostaje przy dacie faktury, czyli przy dzisiejszym
 znaczeniu.
@@ -79,7 +88,12 @@ mógł powiedzieć, ile sprzedaży ma kanał z reguły zastępczej:
    (13–15), `Empik` (22), `Amazon_PL` (20), `Erli` (23), `Allegro` (24), `InPost_Buy` (21).
 3. **Kategoria ZK** — na ZK kanał bywa w kategorii, gdy na FS go nie ma: w tygodniu 6–13.10 ZK miały
    `Internet` (2172), `Amazon_DE` (391), `Empik` (142), `Emag_RO` (83), `Amazon_FR`, `Amazon_PL`, `Kaufland`,
-   `Emag_BG/HU`. Że `Internet` = Allegro — **do sprawdzenia** przy implementacji.
+   `Emag_BG/HU`. **`Internet` = Allegro — potwierdzone** (15–20.10.2026: 1527 ZK z `Internet`, wszystkie ze
+   „Źródłem” `Allegro - ekajtek_pl` / `Allegro - NaTropieZabawek`). ZK ma też własne „Źródło” (`pwd_TypObiektu=-8`,
+   `Tekst01`) w tej samej pisowni co FS, poza Amazon PL (`Amazon.de` + kategoria `Amazon_PL`) i eMAG (puste).
+   **„Źródło” `amazon` w EUR** (BaseLinker, 2025 — wtedy tędy szedł Amazon EU) → rynek z kraju płatnika (reguła 4);
+   `amazon` w PLN = Amazon PL. Bez tego Amazon DE rok temu wychodził zerowy (makieta 2026-10-20: 106 tys. zł w
+   październiku 2025 siedziało w osobnym kubełku).
 4. **Kraj płatnika + waluta** (`adr__Ewid`, `adr_IdObiektu = dok_PlatnikId`, `adr_TypAdresu = 1` →
    `sl_Panstwo`): Niemcy/Austria + EUR → Amazon DE, Francja → Amazon FR, Włochy → Amazon IT, Rumunia/RON →
    eMAG RO, Bułgaria → eMAG BG. Czechy/Słowacja/Węgry przy Allegro to rynek zagraniczny Allegro.
@@ -113,6 +127,13 @@ warunkiem wczytania historii, a nie formalnością.
 
 Konto Allegro i kraj zapisujemy osobno: kanał = konto (`Allegro ekajtek`, `Allegro NaTropie`), rynek = kraj
 (PL / CZ / SK / HU), na ekranie rozwijane.
+
+**Małe kanały** (nazwy wg projektu Rozliczenia, `scripts/attribution.py`): `tergpl` = Media Expert, `personal` =
+sklep własny Fenom + Kup na Ceneo (oraz zamówienia osobiste/telefoniczne), `inpsa` = InPost Pay (sklep „Von
+Halsky”), `erli_connector` = Erli, `pigu` = Pigu (LT/LV/EE/FI). Razem z FS bez żadnego źródła to ~2% obrotu
+(19.09–20.10: Pigu 3,9 tys., tergpl 5,4 tys., personal 5,7 tys., bez źródła 19,6 tys. zł). Na ekranach jako
+rozwijane „Inne kanały”. **B2B do oddzielenia**: Paperie s.r.o. (WDT 0% w EUR, Czechy — to te FS po ~3 tys. zł
+z sezonu), żeby hurt nie mieszał się z marżą marketplace'ów.
 
 ### Grupy towarów
 
@@ -158,6 +179,17 @@ dnia**. Nie jest już pilne przed sezonem — wchodzi w etapie 1.
   prawie połowy sprzedaży. Na zamówienie: przychód z pozycji towarowych + pozycja TRANSPORT (57 tys. zł netto w
   90 dni), nasza wysyłka raz na paczkę (wg największego towaru, jak w analizie kartonów), prowizja wg reguł
   kanału; potem rozkład zysku na pozycje proporcjonalnie do wartości.
+- **Rzeczywiste koszty kanałów istnieją w projekcie Rozliczenia** (`C:\Rozliczenia\data\rozliczenia.db` na SRV,
+  SQLite WAL, zasilana nocą 03:00–04:00, kopia o 05:00; odczyt tylko `mode=ro` lokalnie na SRV albo z kopii, nigdy
+  przez udział sieciowy). Per zamówienie: **Allegro PL** (`allegro_billing` z API od 01.01.2025, zgodne z panelem
+  co do grosza; opłaty jednego zamówienia domykają się przez kilka dni, czasem ~30), **Amazon** (prowizja z
+  settlement reportu — **brutto**, 15% × 1,23; I–IX.2026), **Kaufland DE**, **Media Expert**, **PayU**; Empik z
+  pliku Mirakla. **Brak per zamówienie:** Allegro CZ/HU/SK, eMAG (tylko zbiorcze faktury), Erli (częściowo),
+  Ceneo, a kosztów przewozu per paczka nie zbiera nikt (InPost tylko za 2 miesiące). Wniosek do decyzji (Otwarte
+  pkt 7): zysk z kalkulatora jako podstawa, „zysk rzeczywisty” z `rozliczenia.db` tam, gdzie jest, z widocznym
+  źródłem i opóźnieniem.
+- Waluty: `dok_WartBrutto`/`ob_WartNetto` są w PLN; wartość w walucie = PLN / `dok_WalutaKurs` (HUF × 100) albo
+  `ob_CenaWaluta` pozycji. Kurs NBP z dnia przed wystawieniem; KFS kursem faktury pierwotnej.
 - Kanały z regułami w kalkulatorze: Allegro, Amazon DE/FR/IT/ES/NL, eMAG RO/HU/BG, Kaufland DE, Empik. Bez reguł
   (Amazon PL, Erli, InPost, Sklep, „personal”, „tergpl”) → marża handlowa (przychód − koszt zakupu) z dopiskiem
   „bez kosztów kanału”. Allegro CZ/SK/HU: czy reguły Allegro PL pasują — **do sprawdzenia**.
@@ -272,8 +304,11 @@ czyste funkcje z testami, bez SQLite i GT.
 |---|---|---|
 | **Nowość** | pierwsze przyjęcie (PZ/PW) < 30 dni temu | 93 towary (84 ze stanem) |
 | **Zalega** | stan K4+K4G > 0, zero FS w 180 dni, nie nowość | 625 towarów, 16 642 szt. (390 z nich bez FS także przez rok) |
-| **Nadmiar** | zapas > 730 dni przy tempie z roku | 1055 towarów, 362 524 szt. = **79% sztuk na K4+K4G** (460 077) |
+| **Nadmiar** | zapas > 730 dni **przy szybszym z temp** (30 dni / rok) | 1055 towarów, 362 524 szt. = **79% sztuk na K4+K4G** (460 077) — policzone przy tempie z roku, po zmianie mniej |
 | **Kończy się** | zapas < 30 dni (zawsze, jest na karcie) | 223 towary |
+
+Zmiana definicji nadmiaru z makiety 2026-10-20: przy samym tempie z roku HWHJBD90 (69 szt. w 30 dni, zapas 262
+dni) wypadał jako nadmiar, bo rok temu sprzedawał się słabo. Szybko rotujący towar to nie nadmiar.
 
 Nadmiar jest zdominowany drobnicą w ogromnych ilościach (strzałki, akcesoria). Sortować po wartości zapasu,
 nie po liczbie sztuk. Dla porównania base analytics: „1439 produktów bez sprzedaży od ponad 60 dni”.
@@ -313,13 +348,30 @@ zysk handlowy jako przybliżenie zysku po kosztach kanału):
 - **Tożsamość:** klucz `tw_Id`, symbol i nazwa z kopii kartoteki odświeżanej nocą.
 - **Zestaw:** stan kompletu w GT obejmuje PW/RW kompletacji — odtworzenie stanów liczy `tw_Rodzaj` 8 tak jak 1.
 - **Ujemny odtworzony stan** (22 pary na K4) — obcinany do 0 i logowany, nie przerywa wczytania.
+- **KFS nie ma pól własnych** — kanał i klucz bierzemy z faktury pierwotnej (`KFS.dok_DoDokId` → FS). Częsty wzorzec
+  częściowego zwrotu: FS + pełna KFS + nowa FS na resztę (wg projektu Rozliczenia) — liczba „zwrotów” w sztukach
+  zawyża wtedy prawdziwe zwroty.
+- **Zysk rok temu** liczony dzisiejszym kosztem i dzisiejszymi stawkami: makieta pokazała 7 dni −4% przychodu, ale
+  −19% zysku (marża 29,7% wobec 35,3%) — część różnicy to metoda, nie rynek. Ekran mówi to wprost do czasu, aż
+  zbierze się historia kosztów.
 
 ## Otwarte
 
 1. Tier i to, co z niego weźmie repricer (etap 3) — dane wyżej.
-2. Sprawdzenie reguły kraju przed 26.08 i znaczenia kategorii ZK „Internet”.
+2. Sprawdzenie reguły kraju przed 26.08 (`Internet` = Allegro już potwierdzone).
 3. Koszty kanału dla Allegro CZ/SK/HU.
 4. Historia kosztu przed startem zdjęć: dzisiejszy koszt (domyślnie) czy ostatnia cena z PZ przed sprzedażą.
 5. Push na telefon i alert „kanał milczy”.
 6. Konsumenci później: pulpit repricera (`sprzedazWgZrodla`), strategia „za rynkiem” (`sprzedazTowarowZCena`),
    zakupy / domawianie.
+7. **Zysk rzeczywisty z `rozliczenia.db`** (Allegro PL, Amazon, Kaufland, Media Expert, PayU) obok szacunku z
+   kalkulatora — czy i od kiedy. WMS-Node stoi na tym samym SRV, więc odczyt `mode=ro` jest lokalny.
+
+## Makieta (2026-10-20)
+
+`~/Documents/makieta-analizy-sprzedazy.html` — etap 1 na prawdziwych danych (zamówienia pon. 19.10.2026 vs pon.
+20.10.2025, tylko odczyt OKITRADE + `pricing.db` z SRV): desktop „Sprzedaż → Dzień” (kafle, kanały z
+rozwijaniem, produkty dnia) i telefon (podsumowanie, swipe 361 kart: zdjęcie, per kanał szt / marża / zysk, stan
+i zapas, repricer). Liczby: dzień wg zamówienia 41 101 zł / zysk 13 142 zł / marża 32,0%; wg faktury 88 235 zł
+(−12% r/r); 7 dni 255 tys. zł (−4%). Uproszczenia makiety: zysk od sztuki (nie na zamówienie), „rok” bez zysku,
+zdjęcia tylko 40 kart.

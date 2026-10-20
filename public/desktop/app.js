@@ -4684,9 +4684,12 @@ function cenyRenderujKanaly(d) {
   }));
 }
 
+// Wszystkie oferty towaru, także z wierszy dodatkowych (druga oferta tego samego SKU na rynku).
+const cenyOfertyTowaru = (t) => [t.rynki, ...(t.dodatkowe || [])].flatMap(Object.values);
+
 function cenyWiersz(t, rynki) {
   const tr = document.createElement('tr');
-  const oferty = Object.values(t.rynki).filter((o) => !o.tylko_odczyt);   // automat tylko tam, gdzie wolno
+  const oferty = cenyOfertyTowaru(t).filter((o) => !o.tylko_odczyt);   // automat tylko tam, gdzie wolno
   const wl = oferty.filter((o) => o.auto).length;
   const td0 = document.createElement('td');
   td0.className = 'ceny-towar';
@@ -4709,7 +4712,26 @@ function cenyWiersz(t, rynki) {
   }
   tr.appendChild(td0);
   for (const r of rynki) tr.appendChild(cenyKomorka(t.rynki[r], r));
-  return tr;
+  if (!t.dodatkowe?.length) return tr;
+  // Druga i kolejna oferta tego towaru na tym samym rynku — osobny wiersz pod towarem (decyzja usera 2026-10-20),
+  // inaczej jej cena, decyzja i automat nie byłyby nigdzie w macierzy widoczne.
+  const fr = document.createDocumentFragment();
+  fr.appendChild(tr);
+  t.dodatkowe.forEach((rzad, i) => {
+    const wiersze = rynki.filter((r) => rzad[r]);
+    if (!wiersze.length) return;
+    const d = document.createElement('tr');
+    d.className = 'ceny-dodatkowy';
+    const td = document.createElement('td');
+    td.className = 'ceny-towar';
+    const sku = [...new Set(wiersze.map((r) => rzad[r].sku))];
+    td.innerHTML = `<div class="ceny-dodatkowa-et">↳ ${i ? `${i + 2}. oferta` : 'druga oferta'} ${cenyEsc(t.symbol)}</div>`
+      + `<div class="hint" title="${cenyEsc(sku.join(', '))}">${cenyEsc(sku.join(', '))}</div>`;
+    d.appendChild(td);
+    for (const r of rynki) d.appendChild(cenyKomorka(rzad[r], r));
+    fr.appendChild(d);
+  });
+  return fr;
 }
 
 // Wysłana decyzja nowsza niż obserwacja = Amazon przyjął cenę, ale jeszcze jej nie widzieliśmy.
@@ -4851,7 +4873,7 @@ function cenyKomorka(o, rynek) {
   const gen = o.genius == null ? '' : `<div class="ceny-m" title="${o.genius ? 'Genius aktywny: opłata Genius 3–8 RON, dostawa do automatu' : 'Bez Genius: kurier do domu, klient płaci 25 RON za dostawę'}">${o.genius ? 'Genius' : 'bez Genius'}</div>`;
   const div = document.createElement('div');
   div.className = 'ceny-tresc';
-  div.title = `${o.sku}${o.inne_oferty ? ` (+${o.inne_oferty} inna oferta tego towaru)` : ''} · stan ${o.ilosc} · obserwacja ${formatDatetime(o.obs_widziana || o.obs_czas)}`;
+  div.title = `${o.sku}${o.inne_oferty ? ` (ten towar ma tu ${o.inne_oferty + 1} oferty — każda w osobnym wierszu)` : ''} · stan ${o.ilosc} · obserwacja ${formatDatetime(o.obs_widziana || o.obs_czas)}`;
   div.innerHTML = o.obs_czas == null || o.cena == null
     ? `<div class="ceny-m ceny-zawijaj">${o.obs_czas == null ? 'jeszcze nie obserwowana' : 'brak naszej oferty w odpowiedzi'}</div><div class="ceny-m">stan ${o.ilosc}</div>`
     : `<div class="ceny-cena">${cenyLiczba(o.cena)} ${w}${o.wysylka ? ` <small>+${cenyLiczba(o.wysylka)}</small>` : ''}</div>`

@@ -61,15 +61,43 @@ function parametry({ zakres: z, sytuacja: s, filtr } = {}) {
   return { zakres: zakres(z).klucz, sytuacja: sytuacja(s).klucz };
 }
 
+// Wiersze macierzy: oferty → Map(tw_id → { tw_id, symbol, nazwa, rynki: { kolumna: oferta }, dodatkowe: [{ kolumna: oferta }] }).
+// Ten sam towar bywa wystawiony kilka razy na jednym rynku (Allegro: dwie oferty jednego SKU na dwóch produktach
+// katalogu — XSH36786; Amazon: SKU z dopiskiem -1). Pierwsza oferta kolumny (największy stan) idzie do `rynki`,
+// kolejne do wierszy `dodatkowe` — ekran pokazuje je pod towarem jako osobne wiersze (decyzja usera 2026-10-20:
+// wcześniej druga oferta była tylko licznikiem w podpowiedzi, czyli osierocona: bez ceny, decyzji i automatu).
+function grupujTowary(oferty, kluczKolumny) {
+  const towary = new Map();
+  const poKolumnie = new Map();
+  for (const o of oferty) {
+    if (!towary.has(o.tw_id)) towary.set(o.tw_id, { tw_id: o.tw_id, symbol: o.symbol_gt, nazwa: o.nazwa, rynki: {}, dodatkowe: [] });
+    const k = `${o.tw_id}|${kluczKolumny(o)}`;
+    (poKolumnie.get(k) || poKolumnie.set(k, []).get(k)).push(o);
+  }
+  for (const [k, lista] of poKolumnie) {
+    const t = towary.get(lista[0].tw_id);
+    const kol = k.slice(k.indexOf('|') + 1);
+    lista.sort((a, b) => (b.ilosc || 0) - (a.ilosc || 0));   // stabilne — przy równym stanie kolejność z bazy
+    lista.forEach((o, i) => {
+      o.inne_oferty = lista.length - 1;
+      if (!i) { t.rynki[kol] = o; return; }
+      (t.dodatkowe[i - 1] ||= {})[kol] = o;
+    });
+  }
+  return towary;
+}
+// Wszystkie oferty towaru — także z wierszy dodatkowych (filtry, liczniki, pulpit).
+const ofertyTowaru = (t) => [t.rynki, ...(t.dodatkowe || [])].flatMap(Object.values);
+
 // Oferta spełnia oba wymiary naraz.
 const ofertaPasuje = (o, z, s) => zakres(z).oferta(o) && sytuacja(s).oferta(o);
-const towarPasuje = (t, z, s) => Object.values(t.rynki).some((o) => ofertaPasuje(o, z, s));
+const towarPasuje = (t, z, s) => ofertyTowaru(t).some((o) => ofertaPasuje(o, z, s));
 
 // Porządek wierszy: ranking sytuacji (najlepsza pasująca oferta towaru), inaczej po SKU.
 function porownaj(z, s) {
   const syt = sytuacja(s);
   if (!syt.wartosc) return (a, b) => String(a.symbol).localeCompare(String(b.symbol));
-  const w = (t) => Math.max(...Object.values(t.rynki).filter((o) => ofertaPasuje(o, z, s)).map(syt.wartosc));
+  const w = (t) => Math.max(...ofertyTowaru(t).filter((o) => ofertaPasuje(o, z, s)).map(syt.wartosc));
   return (a, b) => w(b) - w(a);
 }
 
@@ -90,4 +118,4 @@ function chipy(towary, z, s) {
   };
 }
 
-module.exports = { ZAKRESY, SYTUACJE, SORTY, sortuj, poStanie, parametry, ofertaPasuje, towarPasuje, porownaj, chipy, ponizejMin };
+module.exports = { ZAKRESY, SYTUACJE, SORTY, sortuj, poStanie, parametry, ofertaPasuje, towarPasuje, porownaj, chipy, ponizejMin, grupujTowary, ofertyTowaru };

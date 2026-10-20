@@ -66,3 +66,19 @@ test('sortowanie po stanie: malejąco, bez stanu na końcu, remis zachowuje popr
   assert.strictEqual(f.sortuj('stan'), 'stan');
   assert.strictEqual(f.sortuj('cokolwiek'), '');
 });
+
+test('wiersze macierzy: druga oferta towaru na tym samym rynku dostaje własny wiersz, nie znika (XSH36786, 2026-10-20)', () => {
+  const f = require('../pricing/filtry-cen');
+  const of = (id, kol, ilosc, o = {}) => ({ id, tw_id: 88500, symbol_gt: 'XSH36786', nazwa: 'X-Shot', kolumna: kol, ilosc, sku: `S${id}`, ...o });
+  const t = f.grupujTowary([of(1, 'ALLEGRO_EKAJTEK', 50), of(2, 'ALLEGRO_EKAJTEK', 50, { kod: 'obnizka' }), of(3, 'DE', 10), of(4, 'ALLEGRO_EKAJTEK', 70)],
+    (o) => o.kolumna).get(88500);
+  assert.strictEqual(t.rynki.ALLEGRO_EKAJTEK.id, 4);                    // największy stan w głównym wierszu
+  assert.deepStrictEqual(t.dodatkowe.map((r) => Object.keys(r)), [['ALLEGRO_EKAJTEK'], ['ALLEGRO_EKAJTEK']]);
+  assert.deepStrictEqual(t.dodatkowe.map((r) => r.ALLEGRO_EKAJTEK.id), [1, 2]);   // równy stan — kolejność z bazy
+  assert.strictEqual(t.rynki.DE.id, 3);
+  assert.strictEqual(f.ofertyTowaru(t).length, 4);
+  assert.strictEqual(t.rynki.ALLEGRO_EKAJTEK.inne_oferty, 2);
+  // filtr widzi ofertę z wiersza dodatkowego
+  assert.strictEqual(f.towarPasuje(t, 'wszystkie', 'szansa'), true);
+  assert.strictEqual(f.towarPasuje({ ...t, dodatkowe: [] }, 'wszystkie', 'szansa'), false);
+});

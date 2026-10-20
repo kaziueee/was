@@ -137,7 +137,8 @@ const SQL_OFERTY = `
 const kolumnyKanalu = (kanal) => KOLUMNY.filter((k) => k.platforma === kanal || k.klucz === kanal);
 const zawez = (towary, kolumny) => {
   const kl = new Set(kolumny.map((k) => k.klucz));
-  return towary.map((t) => ({ ...t, rynki: Object.fromEntries(Object.entries(t.rynki).filter(([k]) => kl.has(k))) }))
+  const tylko = (r) => Object.fromEntries(Object.entries(r).filter(([k]) => kl.has(k)));
+  return towary.map((t) => ({ ...t, rynki: tylko(t.rynki), dodatkowe: (t.dodatkowe || []).map(tylko).filter((r) => Object.keys(r).length) }))
     .filter((t) => Object.keys(t.rynki).length);
 };
 // Chipy kanałów; n = ile towarów w kanale przechodzi BIEŻĄCY filtr (i wyszukiwanie).
@@ -153,23 +154,9 @@ function chipyKanalow(towary, pasuje) {
   return chipy;
 }
 
-// Towary macierzy: tw_id → { symbol, nazwa, rynki: { kolumna: oferta } }. Ten sam towar bywa wystawiony dwa razy na
-// jednym rynku (SKU z dopiskiem -1) — w komórce pokazujemy ofertę z większym stanem, resztę liczymy, żeby ekran nie
-// ukrywał duplikatu. Wspólne dla macierzy i pulpitu (kafel liczy to samo, co macierz pokaże po kliknięciu).
-function towaryMacierzy() {
-  const towary = new Map();
-  for (const o of db.prepare(SQL_OFERTY).all()) {
-    let t = towary.get(o.tw_id);
-    if (!t) towary.set(o.tw_id, t = { tw_id: o.tw_id, symbol: o.symbol_gt, nazwa: o.nazwa, rynki: {} });
-    const kol = kluczKolumny(o.platforma, o.rynek);
-    const byla = t.rynki[kol];
-    if (!byla || (o.ilosc || 0) > (byla.ilosc || 0)) {
-      t.rynki[kol] = { ...zKanalem(o), inne_oferty: (byla ? byla.inne_oferty + 1 : 0) };
-    }
-    else byla.inne_oferty++;
-  }
-  return towary;
-}
+// Towary macierzy (pricing/filtry-cen.js grupujTowary): druga i kolejna oferta towaru w tej samej kolumnie dostaje
+// własny wiersz pod towarem (`dodatkowe`). Wspólne dla macierzy i pulpitu (kafel liczy to samo, co macierz pokaże).
+const towaryMacierzy = () => filtry.grupujTowary(db.prepare(SQL_OFERTY).all().map(zKanalem), (o) => o.kolumna);
 
 // Express 4 nie łapie odrzuconych obietnic — wyjątek w handlerze async wywróciłby cały WMS.
 const asyncH = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -186,7 +173,7 @@ router.get('/macierz', asyncH(async (req, res) => {
   const towary = towaryMacierzy();
 
   const pasuje = (t) => {
-    const of = Object.values(t.rynki);
+    const of = filtry.ofertyTowaru(t);
     if (q && !(String(t.symbol).toLowerCase().includes(q) || String(t.nazwa || '').toLowerCase().includes(q)
       || of.some((o) => o.sku.toLowerCase().includes(q) || String(o.asin || '').toLowerCase() === q))) return false;
     if (q) return true;                                  // wyszukiwanie ma pierwszeństwo przed filtrem
@@ -208,7 +195,7 @@ router.get('/macierz', asyncH(async (req, res) => {
   const pokazane = wiersze.slice((strona - 1) * limit, strona * limit);
   // Która komórka spełnia wybraną sytuację — ekran ją obrysowuje (w wierszu bywa kilka rynków).
   if (sytuacja !== 'wszystkie' && !q) {
-    for (const t of pokazane) for (const o of Object.values(t.rynki)) o.trafienie = filtry.ofertaPasuje(o, zakres, sytuacja);
+    for (const t of pokazane) for (const o of filtry.ofertyTowaru(t)) o.trafienie = filtry.ofertaPasuje(o, zakres, sytuacja);
   }
   if (stanGt === undefined) stanGt = await stanyGt(pokazane.map((t) => t.tw_id));
   for (const t of pokazane) t.stan_gt = stanGt ? stanGt(t.tw_id) : null;
@@ -265,7 +252,7 @@ router.get('/pulpit', asyncH(async (req, res) => {
   const ileDni = pm.oknoTrendu(req.query.dni);
   const dni = pm.dniOkna(ileDni, teraz);
   const klucze = new Set(KOLUMNY.map((k) => k.klucz));
-  const pokazane = [...towaryMacierzy().values()].flatMap((t) => Object.values(t.rynki));
+  const pokazane = [...towaryMacierzy().values()].flatMap(filtry.ofertyTowaru);
   const kohorta = pulpit.kohortaAutomatu();
   const { stan: stanTeraz, wiersze } = pulpit.stanTeraz(teraz, pokazane, kohorta.ids);
   const wczesniej = (h) => { const T = new Date(teraz.getTime() - h * 3600e3); return pm.stanNaChwile(pulpit.wierszeNaChwile(T, kohorta.ids), T); };

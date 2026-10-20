@@ -1264,6 +1264,9 @@ main {
 .ceny-tabela thead th:first-child { left: 0; z-index: 3; }
 .ceny-tabela td.ceny-towar { position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: 1px 0 0 #e3e6ee; }
 .ceny-tabela tbody tr:hover td.ceny-towar { background: #f8f9fa; }
+.ceny-tabela tr.ceny-dodatkowy td { border-top: 1px dashed #dde1e6; }
+.ceny-tabela tr.ceny-dodatkowy td.ceny-towar { padding-left: 1.4rem; }
+.ceny-dodatkowa-et { font-size: 0.8rem; color: #5f6670; }
 .ceny-kom.off { background: #eceef1; }
 .ceny-kom.bb { background: #e3f3e8; }
 .ceny-kom.off.bb { background: #eceef1; box-shadow: inset 3px 0 0 #1f7a3d; }

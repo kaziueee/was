@@ -139,3 +139,77 @@ test('zgodność policzRynek ↔ wycenaPrzyCenie na każdym rynku (i w obu profi
     }
   }
 });
+
+// --- wycenaZamowienia: zysk całego zamówienia (moduł analiz sprzedaży) ---
+
+test('zamówienie z jedną sztuką = wycenaPrzyCenie na każdym rynku (i w obu profilach eMAG)', () => {
+  for (const r of rynki.RYNKI) {
+    for (const genius of [true, false, null]) {
+      const gg = { ...g, genius };
+      for (const [koszt, cena] of [[15, 39.99], [60, 129.99], [240, 499.99]]) {
+        const a = rynki.wycenaPrzyCenie(koszt, r, gg, cena);
+        const b = rynki.wycenaZamowienia(r, gg, { pozycje: [{ koszt, cena, szt: 1 }] });
+        assert.ok(Math.abs(a.zysk - b.zysk) < 1e-6, `${r.nazwa} genius=${genius} ${cena}: ${a.zysk} vs ${b.zysk}`);
+        assert.ok(Math.abs(a.marza - b.marza) < 1e-6, `${r.nazwa} genius=${genius} ${cena}: marża ${a.marza} vs ${b.marza}`);
+        assert.ok(Math.abs(b.pozycje[0].zysk - b.zysk) < 1e-6, 'jedna pozycja niesie cały zysk');
+      }
+    }
+  }
+});
+
+test('dwie sztuki w jednej paczce: wysyłka i obsługa raz, a nie od sztuki (Amazon DE)', () => {
+  const r = rynek('Amazon DE');
+  const jedna = rynki.wycenaZamowienia(r, g, { pozycje: [{ koszt: 40, cena: 59.99, szt: 1 }] });
+  const dwie = rynki.wycenaZamowienia(r, g, { pozycje: [{ koszt: 40, cena: 59.99, szt: 2 }] });
+  // dwa osobne zamówienia płacą dwie wysyłki DHL i dwie obsługi, ale też dostają 2 × 4,99 € od klienta
+  const p = 0.15 * 1.23, denom = 1 / 1.19 - p;
+  const oszczednosc = (jedna.detal.kosztWys * g.eur + g.obsluga) - 4.99 * denom * g.eur;
+  assert.ok(Math.abs(dwie.zysk - (2 * jedna.zysk + oszczednosc)) < 1e-6, `${dwie.zysk} vs ${2 * jedna.zysk + oszczednosc}`);
+  assert.ok(dwie.zysk > 2 * jedna.zysk, 'jedna paczka zamiast dwóch — zysk wyższy niż dwa razy jedna sztuka');
+});
+
+test('wysyłka zapłacona przez klienta z faktury zastępuje założenie kalkulatora (4,99 €)', () => {
+  const r = rynek('Amazon DE');
+  const zalozenie = rynki.wycenaZamowienia(r, g, { pozycje: [{ koszt: 40, cena: 59.99, szt: 1 }] });
+  const darmowa = rynki.wycenaZamowienia(r, g, { pozycje: [{ koszt: 40, cena: 59.99, szt: 1 }], wysylkaKlienta: 0 });
+  const denom = 1 / 1.19 - 0.15 * 1.23;
+  assert.ok(Math.abs(zalozenie.zysk - darmowa.zysk - 4.99 * denom * g.eur) < 1e-6);
+  // Allegro: wysyłka klienta nie wchodzi (kosztem dostawy jest dopłata Smart wg wartości zamówienia)
+  const a = rynek('Allegro');
+  const x = rynki.wycenaZamowienia(a, g, { pozycje: [{ koszt: 40, cena: 99.99, szt: 1 }], wysylkaKlienta: 12.99 });
+  const y = rynki.wycenaZamowienia(a, g, { pozycje: [{ koszt: 40, cena: 99.99, szt: 1 }] });
+  assert.strictEqual(x.zysk, y.zysk);
+});
+
+test('dopłata Smart Allegro i opłata Genius eMAG wg wartości CAŁEGO zamówienia, raz', () => {
+  const a = rynek('Allegro');
+  const z = rynki.wycenaZamowienia(a, g, { pozycje: [{ koszt: 10, cena: 30, szt: 1 }, { koszt: 10, cena: 30, szt: 1 }] });
+  assert.strictEqual(z.detal.dostawaSmart, rynki.doplataSmartAllegro(60));   // próg 45–65 zł, nie 2 × próg „< 45”
+  const e = rynek('eMAG RO');
+  const ze = rynki.wycenaZamowienia(e, { ...g, genius: true }, { pozycje: [{ koszt: 10, cena: 30, szt: 2 }] });
+  assert.ok(Math.abs(ze.detal.oplataZamOczek - rynki.oplataZamOczekiwana(rynki.profilRynku(e, { genius: true }), 60)) < 1e-9);
+});
+
+test('rozkład zysku na pozycje: suma = zysk zamówienia, gratis ma zysk = −koszt', () => {
+  const r = rynek('Empik');
+  const z = rynki.wycenaZamowienia(r, g, { pozycje: [
+    { koszt: 30, cena: 89.99, szt: 1 }, { koszt: 5, cena: 19.99, szt: 3 }, { koszt: 4, cena: 0, szt: 1 },
+  ] });
+  const suma = z.pozycje.reduce((s, x) => s + x.zysk, 0);
+  assert.ok(Math.abs(suma - z.zysk) < 1e-6, `${suma} vs ${z.zysk}`);
+  assert.ok(Math.abs(z.pozycje[2].zysk + 4) < 1e-9, 'gratis: zysk = −koszt zakupu');
+  assert.ok(z.pozycje[0].zysk > z.pozycje[1].zysk / 3, 'droższa pozycja niesie większą część wkładu');
+});
+
+test('kurs dokumentu: zysk w zł liczony kursem podanym w g (analiza), nie ostrożnym kursem repricera', () => {
+  const r = rynek('Amazon FR');
+  const ostrozny = rynki.wycenaZamowienia(r, g, { pozycje: [{ koszt: 40, cena: 59.99, szt: 1 }] });
+  const dokument = rynki.wycenaZamowienia(r, { ...g, eur: 4.27 }, { pozycje: [{ koszt: 40, cena: 59.99, szt: 1 }] });
+  assert.ok(dokument.zysk > ostrozny.zysk, 'wyższy kurs EUR = wyższy zysk w zł przy tej samej cenie');
+  assert.ok(Math.abs(dokument.przychodNetto - (59.99 + 4.99) / 1.2 * 4.27) < 1e-6);
+});
+
+test('zamówienie bez wartości (same gratisy, brak pozycji) — błąd, nie dzielenie przez zero', () => {
+  assert.ok(rynki.wycenaZamowienia(rynek('Allegro'), g, { pozycje: [] }).blad);
+  assert.ok(rynki.wycenaZamowienia(rynek('Allegro'), g, { pozycje: [{ koszt: 5, cena: 0, szt: 1 }] }).blad);
+});

@@ -425,6 +425,60 @@ function wycenaPrzyCenie(kosztPLN, rynek, g, cena) {
     detal: r.typ === 'flat' ? { kosztWys, wysKlient: S, oplataZam: oplataZamowienia(r, pb), oplataZamOczek: opl, profil: r.profil } : { kosztWys, wysKlient: S } });
 }
 
+// Zysk CAŁEGO zamówienia (moduł analiz sprzedaży, docs/analiza-sprzedazy.md) — siostra wycenaPrzyCenie: te same
+// klocki kosztów, ale nasza wysyłka, obsługa, opłata za zamówienie (Genius, Empik Premium) i dopłata Smart Allegro
+// liczą się RAZ na zamówienie, a nie od sztuki. Kalkulator zakłada „zamówienie = 1 sztuka”, a FS z kilkoma
+// sztukami niosą ~45% sprzedanych sztuk (OKITRADE, 90 dni do 20.10.2026) — wysyłka od sztuki zaniżałaby ich zysk.
+// Zamówienie z jedną sztuką daje dokładnie to, co wycenaPrzyCenie (test zgodności w test/rynki.test.js).
+//   pozycje        — [{ koszt (PLN netto za sztukę), cena (brutto za sztukę, w walucie rynku), szt }]
+//   wysylkaKlienta — ile klient zapłacił za dostawę (brutto, waluta rynku, z FS); null = jak kalkulator (r.wysKlient).
+//                    Allegro nie bierze jej pod uwagę, tak jak kalkulator (koszt dostawy = dopłata Smart).
+//   g              — parametry PACZKI (waga, paczka, genius, docinanie) i kursy; analiza podaje kurs dokumentu.
+// Zysk rozkładamy na pozycje: przychód po kosztach kanału dzielony proporcjonalnie do wartości brutto pozycji,
+// minus jej własny koszt zakupu — gratis (cena 0) ma więc zysk = −koszt, a nie udział w cudzej marży.
+function wycenaZamowienia(rynek, g, { pozycje = [], wysylkaKlienta = null } = {}) {
+  const r = profilRynku(rynek, g);
+  const poz = pozycje.map((x) => ({ koszt: +x.koszt || 0, cena: +x.cena || 0, szt: +x.szt || 0 })).filter((x) => x.szt > 0);
+  const T = poz.reduce((s, x) => s + x.cena * x.szt, 0);           // towar brutto, waluta rynku
+  const K = poz.reduce((s, x) => s + x.koszt * x.szt, 0);          // koszt zakupu, PLN
+  if (!poz.length || T <= 0) return wynik(r, { blad: 'brak wartości zamówienia', status: 'bad' });
+  const v = (+r.vat || 0) / 100, obs = +g.obsluga || 0;
+  let kurs, zyskWal, pnWal, detal;
+  if (r.typ === 'allegro') {
+    kurs = 1;
+    const p = oplatyAllegro(r, g), dost = doplataSmartAllegro(T);
+    zyskWal = T * (1 / (1 + v) - p) - (K + dost + obs);
+    pnWal = T / (1 + v);
+    detal = { dostawaSmart: dost };
+  } else {
+    const S = wysylkaKlienta != null ? +wysylkaKlienta || 0 : +r.wysKlient || 0;
+    let kosztWys, p, opl = 0;
+    if (r.typ === 'amazon-dhl') {
+      kurs = kursDla('EUR', g);
+      if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });
+      const stawka = stawkaDHL(r.kraj, +g.waga || 0, (g.docinanieOn && g.docinanie) ? 1 : 0);
+      if (stawka == null) return wynik(r, { blad: 'waga > 31,5 kg', status: 'bad' });
+      kosztWys = stawka * (1 + (+g.paliwowa || 0) / 100) / kurs;
+      p = ((+r.prowizja || 0) / 100) * (1 + vatProwizji(r, g) / 100);
+    } else {
+      kurs = kursDla(r.waluta, g);
+      if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });
+      kosztWys = kosztWysylkiFlat(r, g, kurs);
+      p = prowizjaUlamek(r);
+      opl = oplataZamOczekiwana(r, T);
+    }
+    const total = T + S;
+    zyskWal = total * (1 / (1 + v) - p) - (K / kurs + kosztWys + obs / kurs + opl);
+    pnWal = total / (1 + v);
+    detal = { kosztWys, wysKlient: S, oplataZamOczek: opl, profil: r.profil };
+  }
+  const zysk = zyskWal * kurs, wklad = zysk + K;
+  return wynik(r, {
+    zysk, marza: pnWal > 0 ? zyskWal / pnWal * 100 : 0, przychodNetto: pnWal * kurs, status: 'ok', detal,
+    pozycje: poz.map((x) => ({ ...x, zysk: wklad * (x.cena * x.szt / T) - x.koszt * x.szt })),
+  });
+}
+
 // Tryb 'kotwica': rynki bazowe (Allegro, Amazon DE, Kaufland DE) licza sie na marzy, a rynki z
 // flaga `kotwica` (Amazon FR/IT/ES/NL) celuja w TEN SAM zysk netto co Amazon DE + `bufor` (zl,
 // poduszka na drozsze zwroty) - zamiast wlasnej marzy. Dzieki temu wysoka wysylka na dalekich
@@ -478,5 +532,5 @@ module.exports = {
   do99, totalCelu, kursDla, doplataSmartAllegro, stawkaDHL, kosztWysylkiFlat, oplataZamowienia, oplataZamOczekiwana,
   prowizjaUlamek,
   miesciSieWAutomacie, profilRynku,
-  policzRynek, policzKotwica, wycenaPrzyCenie, policzZRecznaCena, policzWszystkie,
+  policzRynek, policzKotwica, wycenaPrzyCenie, wycenaZamowienia, policzZRecznaCena, policzWszystkie,
 };

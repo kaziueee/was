@@ -285,3 +285,20 @@ test('wyniki dla kilku zapisów EAN łączą się (XSH36786: humbi tylko pod EAN
   // ta sama oferta pod dwoma zapisami liczy się raz
   assert.strictEqual(k.zNiezbednika([ean12, ean12], 149.89, NASZE, teraz).ofert, 1);
 });
+
+test('reguła 6 nie dotyczy pełnej listy konkurentów: po podwyżce przyszedł tańszy — schodzimy bez cofnięcia; zniknął — podwyżka mimo blokady', () => {
+  // BARJFL66 20.10: podniesione do 89,90, Niezbędnik pokazuje nowego sprzedawcę za 78,99 (nad minimum 77,99), remis
+  const kontekst = { ostatniaPodwyzka: { cena_przed: 87.95, cena_nowa: 89.9 }, blokadaPodwyzek: true };
+  const ob = k.doModelu({ cena: 89.9, wysylka: 0, konkurenci: [69.95, 70, 78.99, 89.9] }, 77.99, 0);
+  const d = decyzja(ob, pas(77.99, 116.98), { krok: 0 }, kontekst);
+  assert.strictEqual(d.kod, 'obnizka_limit');             // nie 'cofniecie' do 87,95
+  assert.strictEqual(d.cel, 78.99);
+  // sprzedawca za 78,99 zniknął — wracamy pod 89,90 mimo cofnięcia w ostatnich 24 h
+  const ob2 = k.doModelu({ cena: 78.99, wysylka: 0, konkurenci: [69.95, 70, 89.9, 89.99] }, 77.99, 0);
+  const d2 = decyzja(ob2, pas(77.99, 116.98), { krok: 0 }, kontekst);
+  assert.strictEqual(d2.kod, 'podwyzka_limit');
+  assert.strictEqual(d2.cel, 89.9);
+  // bez listy konkurentów (Amazon, eMAG, raport Top) reguła 6 działa jak dotąd
+  const amazon = decyzja({ cena: 89.9, wysylka: 0, bbNasz: false, bbCena: 85 }, pas(77.99, 116.98), {}, kontekst);
+  assert.strictEqual(amazon.kod, 'cofniecie');
+});

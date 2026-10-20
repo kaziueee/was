@@ -212,10 +212,16 @@ const normNazwa = (s) => String(s || '').trim().toLowerCase();
 // nie podaje — po sklepie, ale tylko wtedy, gdy mamy na produkcie jedną ofertę (dwie = nie wiemy, która
 // to ta; zwracamy obserwację bez Buy Boxa, model nic nie zmieni). null = naszej oferty nie ma wśród
 // aktywnych ofert produktu.
-// „Buy Box” = oferta na górze listy po cenie łącznej (stabilnie, więc remis rozstrzyga kolejność Mirakl:
-// premium, ocena sklepu). Czy Empik pokazuje na karcie produktu tę samą — DO SPRAWDZENIA na żywym API.
+// „Buy Box” (Empik: „Preferowany Sprzedawca”) = najniższa CENA TOWARU, bez dostawy; remis rozstrzyga
+// kolejność Mirakl (premium, ocena sklepu). P11 sortuje po cenie łącznej z najtańszą dostawą, ale Empik
+// wybiera inaczej — empik.com/pomoc/jak-sortujemy-produkty: kryteria to m.in. „najniższa cena produktu”,
+// deklarowana wysyłka i jakość obsługi. Sprawdzone 2026-10-20 na XSH36830 (p1705543793): nasze 123,99
+// z dostawą tylko kurierem od 16,99 (łącznie 140,98) jest na górze strony przed Yupi 129,88 z dostawą
+// Premium 0 zł. Porównanie po cenie łącznej kazało repricerowi „gonić” Yupi w dół do 108,24.
+// Dlatego `wysylka` = 0: model porównuje same ceny towaru (jak eMAG). Kolejność bywa inna dla klientów
+// Premium i zalogowanych (Empik o tym pisze) — liczymy pod widok domyślny.
 function obserwacja(ofertyProduktu, { offerId = null, sklep: s = {} } = {}) {
-  const oferty = (ofertyProduktu || []).filter((o) => o && o.active !== false && cenaLaczna(o) != null);
+  const oferty = (ofertyProduktu || []).filter((o) => o && o.active !== false && cenaOferty(o) != null);
   const naszSklep = (o) => (s.id != null && liczba(o.shop_id) != null && liczba(o.shop_id) === s.id)
     || (!!s.nazwa && !!o.shop_name && normNazwa(o.shop_name) === normNazwa(s.nazwa));
   const poId = offerId != null ? oferty.find((o) => liczba(o.offer_id) > 0 && liczba(o.offer_id) === liczba(offerId)) : null;
@@ -226,12 +232,12 @@ function obserwacja(ofertyProduktu, { offerId = null, sklep: s = {} } = {}) {
     // dwie nasze oferty, a P11 nie mówi, która jest która — bez Buy Boxa (model: brak_danych)
     return { cena: null, wysylka: 0, bbNasz: null, bbInnaNasza: false, bbCena: null, bbFba: false, najtanszaInna: null, ofert: oferty.length, surowa: null };
   }
-  const posort = oferty.map((o, i) => ({ o, i, l: cenaLaczna(o) })).sort((a, b) => a.l - b.l || a.i - b.i);
+  const posort = oferty.map((o, i) => ({ o, i, l: cenaOferty(o) })).sort((a, b) => a.l - b.l || a.i - b.i);
   const pierwsza = posort[0].o;
   const inne = posort.filter((x) => x.o !== ta && !nasze.includes(x.o));
   return {
     cena: cenaOferty(ta),
-    wysylka: liczba(ta.min_shipping_price) || 0,
+    wysylka: 0,                       // porównujemy ceny towaru — patrz komentarz nad funkcją
     bbNasz: pierwsza === ta,
     bbInnaNasza: pierwsza !== ta && nasze.includes(pierwsza),
     bbCena: posort[0].l,

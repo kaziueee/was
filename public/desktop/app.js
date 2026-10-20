@@ -4868,7 +4868,7 @@ function cenyKomorka(o, rynek) {
   const bb = o.platforma === 'allegro'
     ? (konkNowsza ? cenyKonkKomorka(o, w)
       : topT ? `<div class="${topT.cel ? 'ceny-bb' : 'ceny-m'}${o.top.aktualny ? '' : ' ceny-nieaktualne'}" title="${cenyEsc(cenyTopTytul(o, w))}">${cenyEsc(topT.tekst)}</div>` : '')
-    : !o.bb_nasz && o.bb_cena != null ? `<div class="ceny-bb">BB ${cenyLiczba(o.bb_cena)} ${w}${o.bb_fba ? ' (FBA)' : ''}${o.platforma === 'emag' ? '' : ' z wys.'}</div>` : '';
+    : !o.bb_nasz && o.bb_cena != null ? `<div class="ceny-bb">BB ${cenyLiczba(o.bb_cena)} ${w}${o.bb_fba ? ' (FBA)' : ''}${['emag', 'empik'].includes(o.platforma) ? '' : ' z wys.'}</div>` : '';
   // eMAG: Genius zmienia koszt (opłata za zamówienie, tańsza wysyłka) — pokazujemy, który profil liczy kalkulator.
   const gen = o.genius == null ? '' : `<div class="ceny-m" title="${o.genius ? 'Genius aktywny: opłata Genius 3–8 RON, dostawa do automatu' : 'Bez Genius: kurier do domu, klient płaci 25 RON za dostawę'}">${o.genius ? 'Genius' : 'bez Genius'}</div>`;
   const div = document.createElement('div');
@@ -5126,9 +5126,9 @@ function cenyKartaRynekHtml(o) {
       ${o.wysylka_wstrzymana ? '<div class="hint">⏸ automat liczy ceny, ale wysyłka na ten kanał jest wstrzymana do decyzji</div>' : ''}
       <div class="ceny-linki">${linki}</div></div>
     <div class="ceny-k-cena"><span class="ceny-et">${o.czeka ? `Cena · wysłana ${cenyGodzina(o.dec_czas)}` : `Cena · stan z ${cenyGodzina(o.obs_czas)}`}</span>${obs ? `<b class="ceny-duza">${cenyLiczba(o.cena)} ${w}</b>
-      <span class="ceny-m">${o.platforma === 'emag' ? (o.genius ? 'dostawę do automatu opłaca klient w eMAG' : 'kurier do domu: klient płaci 25 RON') : o.platforma === 'allegro' ? 'dostawa wg cennika oferty (kalkulator: dopłata Smart)' : o.wysylka ? `+ wysyłka ${cenyLiczba(o.wysylka)} ${w}` : 'wysyłka gratis'}</span>
+      <span class="ceny-m">${o.platforma === 'emag' ? (o.genius ? 'dostawę do automatu opłaca klient w eMAG' : 'kurier do domu: klient płaci 25 RON') : o.platforma === 'allegro' ? 'dostawa wg cennika oferty (kalkulator: dopłata Smart)' : o.platforma === 'empik' ? 'Empik wybiera ofertę po cenie towaru, bez dostawy' : o.wysylka ? `+ wysyłka ${cenyLiczba(o.wysylka)} ${w}` : 'wysyłka gratis'}</span>
       <span class="ceny-m">marża ${o.marza != null ? cenyLiczba(o.marza, 1) + '%' : '—'}</span><span class="ceny-m">zysk ${o.zysk != null ? cenyLiczba(o.zysk) + ' zł' : '—'}</span>` : '<span class="hint">—</span>'}</div>
-    <div class="ceny-k-konk"><span class="ceny-et">Konkurencja (${o.platforma === 'emag' || o.platforma === 'allegro' ? 'cena towaru' : 'z wysyłką'})</span>
+    <div class="ceny-k-konk"><span class="ceny-et">Konkurencja (${['emag', 'allegro', 'empik'].includes(o.platforma) ? 'cena towaru' : 'z wysyłką'})</span>
       ${o.platforma === 'allegro' && (o.top || o.konkurencja?.wynik) ? `${cenyKonkKartaHtml(o, w)}${o.top ? cenyTopKartaHtml(o, w) : ''}`
         : o.bez_konkurencji ? `<span class="hint">${cenyEsc(cenyKanal(o))} nie podaje przez API cen innych sprzedawców — repricer pilnuje tylko minimum</span>`
         : `<span>Buy Box: <b>${o.bb_cena != null ? `${cenyLiczba(o.bb_cena)} ${w}` : '—'}</b>${o.bb_cena != null ? (o.bb_nasz ? ' (my)' : o.bb_fba ? ' (FBA)' : '') : ''}</span>

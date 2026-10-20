@@ -31,33 +31,45 @@ test('Empik: cena łączna = total_price, a bez niego cena + najtańsza dostawa'
   assert.strictEqual(empik.cenaLaczna(nasza({ total_price: null, min_shipping_price: null })), 59.99);
 });
 
-test('Empik: mamy najlepszą ofertę — Buy Box nasz, następny konkurent z dostawą', () => {
+test('Empik: mamy najlepszą ofertę — Buy Box nasz, następny konkurent po cenie towaru', () => {
   const ob = empik.obserwacja([p11('Poszukiwacze Frajdy', 59.99, 8.99), p11('Sklep B', 64.99, 9.99), p11('Sklep C', 61, 14.99)], { sklep: SKLEP });
   assert.strictEqual(ob.bbNasz, true);
   assert.strictEqual(ob.cena, 59.99);
-  assert.strictEqual(ob.wysylka, 8.99);
-  assert.strictEqual(ob.bbCena, 68.98);
-  assert.strictEqual(ob.najtanszaInna, 74.98, 'najtańsza cudza po cenie łącznej (B 74,98 < C 75,99)');
+  assert.strictEqual(ob.wysylka, 0, 'Empik wybiera po cenie towaru — dostawy nie porównujemy');
+  assert.strictEqual(ob.bbCena, 59.99);
+  assert.strictEqual(ob.najtanszaInna, 61, 'najtańsza cudza po cenie towaru (C 61 < B 64,99), mimo droższej dostawy');
   assert.strictEqual(ob.ofert, 3);
-  // model: podnosimy pod konkurenta (74,98 − 0,01 − 8,99 dostawy = 65,98)
   const d = decyzja(ob, { min: 50, max: 90 });
   assert.strictEqual(d.kod, 'podwyzka');
-  assert.strictEqual(d.cel, 65.98);
+  assert.strictEqual(d.cel, 60.99);
 });
 
-test('Empik: przegrywamy — Buy Box = najlepsza cena łączna, model schodzi pod nią', () => {
+test('Empik: przegrywamy — Buy Box = najniższa cena towaru, model schodzi pod nią', () => {
   const ob = empik.obserwacja([p11('Sklep B', 57, 9.99), p11('Poszukiwacze Frajdy', 59.99, 8.99)], { sklep: SKLEP });
   assert.strictEqual(ob.bbNasz, false);
-  assert.strictEqual(ob.bbCena, 66.99);
-  assert.strictEqual(ob.najtanszaInna, 66.99);
+  assert.strictEqual(ob.bbCena, 57);
+  assert.strictEqual(ob.najtanszaInna, 57);
   const d = decyzja(ob, { min: 40, max: 90 });
   assert.strictEqual(d.kod, 'obnizka');
-  assert.strictEqual(d.cena, 57.99, '66,99 − 0,01 − 8,99 naszej dostawy');
+  assert.strictEqual(d.cena, 56.99, '57 − 0,01');
 });
 
-test('Empik: kolejność liczymy sami (po cenie łącznej), remis zostawia kolejność Mirakl', () => {
-  const ob = empik.obserwacja([p11('Poszukiwacze Frajdy', 70, 8.99), p11('Sklep B', 60, 9.99)], { sklep: SKLEP });
-  assert.strictEqual(ob.bbNasz, false, 'P11 może zwrócić inną kolejność — decyduje cena łączna');
+test('Empik: XSH36830 (20.10) — nasze 123,99 + kurier 16,99 to Buy Box przed 129,88 z dostawą Premium 0 zł', () => {
+  const ob = empik.obserwacja([
+    p11('Yupi', 129.88, 0, { min_shipping_zone: 'premium-shipping' }),
+    p11('Poszukiwacze Frajdy', 123.99, 16.99, { min_shipping_zone: 'POLAND' }),
+    p11('dvdmax', 171.11, 0),
+  ], { sklep: SKLEP });
+  assert.strictEqual(ob.bbNasz, true, 'tak pokazuje empik.com — po cenie łącznej (140,98) wychodziło, że przegrywamy');
+  assert.strictEqual(ob.najtanszaInna, 129.88);
+  const d = decyzja(ob, { min: 100, max: 200 });
+  assert.notStrictEqual(d.kod, 'obnizka', 'nie schodzimy do 108,24 jak przed poprawką');
+  assert.strictEqual(d.cel, 129.87, 'mamy Buy Box — wolno podejść pod Yupi');
+});
+
+test('Empik: kolejność liczymy sami (po cenie towaru), remis zostawia kolejność Mirakl', () => {
+  const ob = empik.obserwacja([p11('Poszukiwacze Frajdy', 70, 0), p11('Sklep B', 60, 19.99)], { sklep: SKLEP });
+  assert.strictEqual(ob.bbNasz, false, 'P11 sortuje po cenie łącznej (B 79,99 > my 70) — Empik po cenie towaru (B 60 < my 70)');
   const remis = empik.obserwacja([p11('Sklep B', 59.99, 8.99), p11('Poszukiwacze Frajdy', 59.99, 8.99)], { sklep: SKLEP });
   assert.strictEqual(remis.bbNasz, false, 'remis: wygrywa oferta, którą Mirakl dał wyżej (premium, ocena)');
 });

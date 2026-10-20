@@ -1928,6 +1928,13 @@ function pokazZakladkeAdmina() {
     const tab = el(id);
     if (tab) tab.style.display = biuro ? '' : 'none';
   }
+  // Sprzedaż → Dzień (analiza: zysk, marża, koszt) tylko admin (decyzja usera 2026-10-21; zamek: /api/analiza
+  // w app.js). Biuro wchodzi w Sprzedaż prosto na zadanie sprzedażowe.
+  const analiza = !window.WMS || rola === 'admin';
+  const dzien = document.querySelector('#podzakladki-sprzedaz [data-pod="sprzedaz"]');
+  if (dzien) dzien.style.display = analiza ? '' : 'none';
+  GRUPY.sprzedaz.domyslny = analiza ? 'sprzedaz' : 'sprzedaz-zadanie';
+  if (!analiza && zHasha().nazwa === 'sprzedaz') przejdzZHasha();
 }
 if (window.WMS) WMS.gotowe.then(pokazZakladkeAdmina);
 window.addEventListener('wms-zalogowano', pokazZakladkeAdmina);

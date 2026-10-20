@@ -89,7 +89,8 @@ app.use('/api/do-sprawdzenia', doSprawdzeniaRouter);  // czysty odczyt (GT + kop
 // Ceny i sprzedaz tylko dla admin/biuro - takze odczyt (koszt zakupu nie jest dla hali).
 app.use('/api/cennik', auth.wymagajRoli('admin', 'biuro'), cennikRouter);  // odczyt z GT - koszt zakupu (tc_CenaNetto0) + ceny per rynek
 app.use('/api/sprzedaz', auth.wymagajRoli('admin', 'biuro'), sprzedazRouter);  // zadanie sprzedazowe (FS z GT)
-app.use('/api/analiza', auth.wymagajRoli('admin', 'biuro'), analizaRouter);  // analiza sprzedazy: czyta tylko db/sprzedaz.db (docs/analiza-sprzedazy.md)
+// analiza sprzedazy (zysk, marza, koszt): TYLKO admin - decyzja usera 2026-10-21; biuro ma zadanie sprzedazowe wyzej
+app.use('/api/analiza', auth.wymagajRoli('admin'), analizaRouter);  // czyta tylko db/sprzedaz.db (docs/analiza-sprzedazy.md)
 app.use('/api/ceny', auth.wymagajRoli('admin', 'biuro'), cenyRouter);  // repricer: odczyt db/pricing.db (liczy osobny proces pricing/worker.js); admin + biuro od 2026-10-16 (decyzja usera), także przełączanie automatu
 app.use('/api/magazyny', magazynyRouter);
 app.use('/api/status', statusRouter); // publiczny - pasek stanu na ekranie logowania

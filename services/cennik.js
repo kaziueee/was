@@ -36,17 +36,13 @@ function liczba(v) {
 // mr_Pozostalo = ile tej dostawy leży na magazynie; cena = ostatnia wycena serii (dok_MagWart, po korekcie FZ).
 // Suma warstw = st_Stan dla 15 560 z 15 560 par (towar, magazyn) — pomiar 2026-10-21. Magazyny Razem (bez BRK).
 // Bez stanu — kartoteka. Indeks IX_dok_MagRuch_2 (mr_TowId, mr_MagId, mr_Pozostalo): na SRV ~31 ms zamiast ~7 ms
-// na 500 towarów. GRATISY (dostawa po ≤ GRATIS_DO_ZL — GT nie przyjmie PZ z ceną 0, więc gratis idzie po 0,01) nie
-// wchodzą do średniej: koszt ~0 sprowadziłby minimum repricera do samych opłat (XSH3618: Amazon DE 9,99 → 3,99 €).
-// Pomiar 2026-10-21: 146 towarów ma na stanie takie dostawy (148 z 178 warstw po 0,01 zł), 2 z nich z automatem.
-// Same gratisy na stanie — kartoteka. Moduł analiz liczy zysk z rzeczywistego rozchodu, z gratisami.
-const GRATIS_DO_ZL = 0.10;
+// na 500 towarów. GRATISY (dostawy po 0,01 zł — GT nie przyjmie PZ z ceną 0) wchodzą do średniej po cenie przyjęcia
+// (decyzja usera 2026-10-21): 146 towarów ma je na stanie, 2 z automatem (XSH3618: minimum Amazon DE 9,99 → 3,99 €).
 const MAG_KOSZTU = MAGAZYNY_RAZEM.map((k) => MAGAZYN_GT_ID[k]).filter(Number.isInteger).join(',');
 const SREDNIA_DOSTAW = (tw) => `SELECT SUM(m.mr_Pozostalo * ISNULL(w.mw_Cena, m.mr_Cena)) / NULLIF(SUM(m.mr_Pozostalo), 0) AS sr
                FROM dok_MagRuch m OUTER APPLY (SELECT TOP 1 mw.mw_Cena FROM dok_MagWart mw WHERE mw.mw_SeriaId = m.mr_SeriaId
                  ORDER BY mw.mw_Data DESC) w
-               WHERE m.mr_TowId = ${tw} AND m.mr_MagId IN (${MAG_KOSZTU}) AND m.mr_Pozostalo > 0
-                 AND ISNULL(w.mw_Cena, m.mr_Cena) > ${GRATIS_DO_ZL}`;
+               WHERE m.mr_TowId = ${tw} AND m.mr_MagId IN (${MAG_KOSZTU}) AND m.mr_Pozostalo > 0`;
 
 // Zestaw (rodzaj 8): koszt = suma składników, każdy swoją średnią dostaw (bez stanu — kartoteka składnika;
 // services/zestawy-model.js kosztZakupu). Podzapytania liczą się dla każdego wiersza, ale zwykły towar nie ma

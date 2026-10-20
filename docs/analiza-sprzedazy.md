@@ -213,8 +213,8 @@ dnia**. Nie jest już pilne przed sezonem — wchodzi w etapie 1.
     tak, jak je zaksięgowano. ZK bez FS nie ma jeszcze rozchodu — tam średnia dostaw na stanie z `wycenaHurtem`.
     Historia wczytana raz daje przy ponownym wczytaniu ten sam koszt (to dane GT, nie dzisiejsza cena).
   - **Repricer i Cennik: średnia ważona dostaw na stanie** (`services/cennik.js`, magazyny Razem), zestaw = suma
-    składników, każdy swoją średnią. Gratisy (≤ 0,10 zł) pominięte — koszt ~0 sprowadziłby minimum do samych opłat
-    (XSH3618: Amazon DE 9,99 → 3,99 €); 146 towarów ma takie dostawy na stanie, 2 z automatem. Bez stanu — kartoteka.
+    składników, każdy swoją średnią. **Gratisy (dostawy po 0,01 zł) po cenie przyjęcia** (decyzja usera) — 146 towarów
+    ma je na stanie, 2 z automatem (XSH3618: minimum Amazon DE 9,99 → 3,99 €). Bez stanu — kartoteka.
   - Wpływ (2026-10-21): zysk modułu w 2026 r. +4–10 tys. zł/mies. (marża +0,4–1,2 pp), XII 2025 +28 tys. zł,
     I–VI 2025 −4…−17 tys. zł/mies. Repricer: 209 z 1033 ofert z automatem zmienia minimum o > 2% (114 w dół,
     95 w górę; 86 o > 10%), lista `~/Documents/repricer-minima-srednia-dostaw-2026-10-21.csv`.
@@ -305,8 +305,9 @@ przychód):
 
 - **[decyzja] Telefon przez Tailscale** (ta sama sieć co Mac i SRV, konto kaziueee@). Nic nie wystawiamy do
   internetu.
-- **[decyzja] Admin + biuro**, wymuszone w backendzie (`auth.wymagajRoli('admin', 'biuro')`, także na odczyt),
-  tak jak Cennik, Sprzedaż i Ceny.
+- **[decyzja 2026-10-21] Tylko admin**, wymuszone w backendzie (`auth.wymagajRoli('admin')` na `/api/analiza`,
+  także na odczyt). Wcześniej admin + biuro; biuro zostaje przy zadaniu sprzedażowym (`/api/sprzedaz`), a na
+  desktopie wchodzi w zakładkę Sprzedaż prosto na nie (podzakładka „Dzień” ukryta).
 - Telefon dostaje osobną, lekką stronę (PWA, „dodaj do ekranu głównego”) z tym samym logowaniem co WMS, a nie
   pełną aplikację desktopu.
 

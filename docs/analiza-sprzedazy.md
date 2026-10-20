@@ -237,7 +237,8 @@ i kosztu nie da się odtworzyć.
 
 - Przychód netto, zysk, marża, sztuki, zamówienia; **vs ten sam dzień tygodnia rok temu (−364 dni)
   [decyzja]**, data kalendarzowa w podpisie.
-- Wiersz na kanał: szt · przychód · zysk · marża · % r/r. Allegro rozwijane na konta i kraje. „Sklep” (PA) to
+- Wiersz na kanał: szt · przychód · % r/r · marża · **zysk na sztuce** · zysk · udział **[decyzja 20.10: zysk na
+  sztuce przed zyskiem łącznym, wszędzie, gdzie stoi marża i zysk]**. Allegro rozwijane na konta i kraje. „Sklep” (PA) to
   osobny wiersz. Zwroty (KFS) w osobnej kolumnie.
 - Zakresy: dzień (← →), 7 dni, miesiąc do dziś, rok do dziś — każdy vs ten sam zakres przesunięty o 364 dni.
 - Przełącznik „wg zamówienia / wg faktury”.
@@ -247,7 +248,7 @@ i kosztu nie da się odtworzyć.
 Karta na towar sprzedany w wybranym dniu (lub zakresie), domyślnie od największego zysku (przełącznik: sztuki,
 przychód):
 - zdjęcie (miniatura z istniejącego `GET /api/produkty/:tw_Id/zdjecie`, tap = duże), SKU, nazwa, grupa;
-- per kanał: sztuki, marża %, zysk zł; suma;
+- per kanał: sztuki, marża %, zysk na sztuce, zysk zł; suma w tej samej kolejności;
 - **[decyzja] stan i dni zapasu**: K4+K4G, Razem, dni zapasu przy obecnym tempie, flaga „kończy się”;
 - **[decyzja] stan w repricerze**: per kanał automat tak/nie, Buy Box tak/nie, strategia (z `pricing.db`).
 

@@ -6,6 +6,10 @@ const DB_PATH = path.join(__dirname, 'wms.db');
 const INIT_SQL_PATH = path.join(__dirname, '001_init.sql');
 
 const db = new DatabaseSync(DB_PATH);
+// Bazę otwiera nie tylko WMS-Node: skrypty (np. scripts/analiza-wczytaj.js przez wycenę → kartony) i równoległe
+// pliki testów. Bez czasu oczekiwania drugi proces dostaje „database is locked” od razu — już przy tym PRAGMA —
+// i pada (złapane 2026-10-20 w testach). Tak samo jak pricing.db i sprzedaz.db.
+db.exec('PRAGMA busy_timeout = 15000');
 db.exec('PRAGMA journal_mode = WAL');
 db.exec('PRAGMA foreign_keys = ON');
 

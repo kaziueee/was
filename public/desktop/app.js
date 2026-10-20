@@ -107,7 +107,8 @@ const panele = {
   uzytkownicy: { sekcja: 'panel-uzytkownicy', zaladowano: false, odswiez: odswiezUzytkownicy },
   kartony: { sekcja: 'panel-kartony', zaladowano: false, odswiez: odswiezKartony },
   cennik: { sekcja: 'panel-cennik', zaladowano: false, odswiez: odswiezCennik },
-  sprzedaz: { sekcja: 'panel-sprzedaz', zaladowano: false, odswiez: odswiezSprzedaz },
+  sprzedaz: { sekcja: 'panel-sprzedaz-dzien', zaladowano: false, odswiez: () => odswiezSprzedazDzien() },   // sprzedaz-dzien.js
+  'sprzedaz-zadanie': { sekcja: 'panel-sprzedaz', zaladowano: false, odswiez: odswiezSprzedaz },
   ceny: { sekcja: 'panel-ceny', zaladowano: false, odswiez: () => odswiezCeny() },
 };
 
@@ -122,6 +123,8 @@ const panele = {
 const GRUPY = {
   ruchy: { domyslny: 'uzupelnienia', panele: ['uzupelnienia', 'dostawy', 'do-sprawdzenia', 'rozjazdy', 'mm'] },
   lokalizacje: { domyslny: 'lokalizacje', panele: ['lokalizacje', 'zajetosc'] },
+  // Sprzedaz: #sprzedaz = analiza dnia (domyslna), zadanie sprzedazowe pod #sprzedaz/sprzedaz-zadanie
+  sprzedaz: { domyslny: 'sprzedaz', panele: ['sprzedaz', 'sprzedaz-zadanie'] },
 };
 
 // panel -> grupa, do zaznaczania wlasciwej zakladki glownej i pokazania paska podzakladek

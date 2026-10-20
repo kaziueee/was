@@ -293,6 +293,18 @@ Miniatura produktu na Zebrze — nagłówek kroku wyboru w **Ruchu**, karta w **
 - **Cache na dysku `db/zdjecia/`** (poza repo): meta `{url, sprawdzono, pliki}` + bajty per rozmiar, ważność 3 dni (zdjęcie) / 1 dzień (brak zdjęcia). Sellasist nie odpowiada → oddajemy ostatnią kopię, nawet starą. Czysta logika w `services/zdjecia-model.js` (testy `test/zdjecia-model.test.js`).
 - Wymaga `SELLASIST_ACCOUNT` / `SELLASIST_API_KEY` w `.env`; bez nich endpoint zwraca 503, a ekrany po prostu nie pokazują zdjęć.
 
+## Analiza sprzedaży — moduł (etap 1, 2026-10-20)
+
+Zakładka desktopu **Sprzedaż → Dzień** (`#sprzedaz`, zadanie sprzedażowe przeszło pod `#sprzedaz/sprzedaz-zadanie`) i strona na telefon **`/sprzedaz/`** (PWA, Tailscale): podsumowanie dnia / 7 dni / miesiąca / roku vs ten sam zakres sprzed **364 dni**, kanały (Allegro rozbite na kraje, małe kanały w „Inne”), produkty ze zdjęciem, sztukami, marżą, zyskiem na sztuce i zyskiem per kanał, stanem, dniami zapasu, flagami i stanem repricera. Projekt i decyzje usera: `docs/analiza-sprzedazy.md`. Zastępuje ERP Dashboard (Metabase + widoki w OKITRADE).
+
+- **Ekrany nie pytają GT.** Wszystko czyta `routes/analiza.js` z osobnej bazy **`db/sprzedaz.db`** (`db/sprzedaz.js`), którą zasila job `services/analiza-job.js` (co `ANALIZA_INTERWAL_MIN` = 15 min: FS z 4 dni + ZK bez FS; nocny po 2:00: 14 dni, kartoteka, stany, tempa) — tylko SELECT-y do GT. Historię wczytuje raz `node scripts/analiza-wczytaj.js --od 2024-10-01 --zapisz` (dry-run bez `--zapisz`; 2 lata ≈ 1 min). `ANALIZA_WYLACZ=1` wyłącza job.
+- **Zamówienie = ZK** (FS bez ZK samo; paragon PA z MAG = kanał „Sklep”). Dwie daty: zamówienia (Allegro z **UUID v1** w ZK `pwd_Tekst05` — prawdziwa data i godzina, także gdy integracja stała) i faktury; przełącznik na ekranie.
+- **Kanał** rozstrzyga raz `services/analiza-kanal.js` (Źródło FS → Źródło ZK → kategoria FS/ZK → numer zamówienia Amazona w uwagach → kraj płatnika) i zapisuje regułę. Reguła kraju sprawdzona na 31 997 FS z rozliczeniami Amazona: 99,8%.
+- **Zysk = po kosztach kanału, na całe zamówienie**: `rynki.wycenaZamowienia` (siostra `wycenaPrzyCenie`; wysyłka, obsługa, opłata za zamówienie raz na paczkę, wysyłka klienta z FS, kurs dokumentu). Zamówienie z 1 sztuką = `wycenaPrzyCenie` (test zgodności). Kanały bez reguł → marża handlowa, oznaczona „≈”. Koszt zakupu zostaje z pierwszego wczytania.
+- Zwroty (KFS) w osobnej kolumnie, nie odejmowane; zestawy w dwóch widokach (sprzedaż zestawu + zużycie składników do tempa); grupy towarów = `tw_IdGrupa`.
+- Czysta logika i testy: `services/analiza-model.js` (zakresy −364, UUID, kurs HUF za 100, flagi, dni nietypowe, zwrot z KFS), `services/analiza-kanal.js`, `config/rynki.js` (`wycenaZamowienia`).
+- Zadanie sprzedażowe liczy z `db/sprzedaz.db`, gdy historia modułu sięga daty — inaczej z GT jak dawniej.
+
 ## Zadanie sprzedażowe + rola `biuro` (2026-10-06)
 
 Zakładka desktopu **„Sprzedaż"** (`#sprzedaz`): lista SKU, którym chcemy podbić sprzedaż (motywacyjne zadanie dla biura), i efekt: **przed startem (śr. szt./tydz. z 4 tyg.) · od startu · ostatnie 7 dni**. Liczone **na żywo z FS z magazynu K4** (`dok_Typ=2`, `dok_Status=1`, `dok_MagId=4` — decyzja usera; FS z MAG to ~0,2% sztuk; pozycje pod `ob_DokHanId`) przy każdym otwarciu — w WMS trzymamy tylko listę (`zadania_sprzedazowe`, klucz `tw_Id`), nie liczby. **Paragony (PA) i korekty (KFS) świadomie pominięte** (decyzja usera): ~99,7% FS powstaje z ZK, czyli to sprzedaż internetowa; PA to stanowiska 1/2. Czysta logika dat w `services/sprzedaz-model.js` (testy `test/sprzedaz-model.test.js`), zapytanie `services/gt-sprzedaz.js`, trasa `routes/sprzedaz.js`. GT padnięte → lista zostaje, liczby „—" (`gt_ok:false`).

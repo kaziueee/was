@@ -11,9 +11,29 @@ const router = express.Router();
 const db = require('../db/database');
 const { znajdzTowarPoKodzie } = require('../services/gt-produkty');
 const { sprzedazDziennaFs } = require('../services/gt-sprzedaz');
+const sprzedazDb = require('../db/sprzedaz');
 const { dzisLokalnie, zakresOd, podsumujSprzedaz } = require('../services/sprzedaz-model');
 
 const DATA_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Sprzedaż dzienna z bazy modułu analiz (db/sprzedaz.db) — ta sama definicja co dotąd: FS z K4, data faktury, bez
+// paragonów (status 'zafakturowane'). Bez czekania na GT. Gdy historia modułu nie sięga `od` (świeże wdrożenie,
+// zanim scripts/analiza-wczytaj.js wczytał przeszłość), liczymy jak dawniej z GT — inaczej „przed startem” wyszłoby 0.
+async function sprzedazDzienna(twIds, od) {
+  const hist = sprzedazDb.meta.get('historia_od')?.wartosc;
+  if (!hist || hist > od) return sprzedazDziennaFs(twIds, od);
+  const idy = [...new Set(twIds.map(Number))].filter(Number.isInteger);
+  const wynik = new Map();
+  if (!idy.length) return wynik;
+  const r = sprzedazDb.db.prepare(`SELECT p.tw_id, z.data_fs dzien, SUM(p.szt) szt FROM pozycje p JOIN zamowienia z ON z.id = p.zam_id
+    WHERE z.status = 'zafakturowane' AND z.data_fs >= ? AND p.tw_id IN (${idy.map(() => '?').join(',')}) GROUP BY p.tw_id, z.data_fs`).all(od, ...idy);
+  for (const w of r) {
+    const k = String(w.tw_id);
+    if (!wynik.has(k)) wynik.set(k, []);
+    wynik.get(k).push({ dzien: w.dzien, szt: Number(w.szt) || 0 });
+  }
+  return wynik;
+}
 
 router.get('/zadania', async (req, res) => {
   const zadania = db.prepare('SELECT * FROM zadania_sprzedazowe ORDER BY od_dnia DESC, id DESC').all();
@@ -23,7 +43,7 @@ router.get('/zadania', async (req, res) => {
   let sprzedaz = null;
   try {
     const od = zadania.map((z) => zakresOd(z.od_dnia, dzis)).sort()[0];
-    sprzedaz = await sprzedazDziennaFs(zadania.map((z) => z.artykul_gt_id), od);
+    sprzedaz = await sprzedazDzienna(zadania.map((z) => z.artykul_gt_id), od);
   } catch (e) {
     // GT nie odpowiada: lista zostaje (to wiedza WMS), liczb nie zgadujemy - front pokaze "—"
     console.error('[sprzedaz] GT:', e.message);

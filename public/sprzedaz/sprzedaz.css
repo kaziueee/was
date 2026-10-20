@@ -1,0 +1,73 @@
+:root {
+  --granat: #1d3557; --tlo: #f2f2f2; --karta: #fff; --tekst: #1a1a1a; --szary: #6b7280; --linia: #e3e5e8;
+  --plus: #1a7f37; --minus: #c62828; --uwaga: #a15c00; --info: #1d4ed8; --miekki: #f6f7f9;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size: 15px; background: var(--tlo); color: var(--tekst); }
+body { padding-bottom: env(safe-area-inset-bottom); }
+.hidden { display: none !important; }
+button { font: inherit; }
+
+.t-gora { background: var(--granat); color: #fff; padding: calc(10px + env(safe-area-inset-top)) 14px 10px; position: sticky; top: 0; z-index: 5; }
+.t-gora .r1 { display: flex; justify-content: space-between; align-items: center; }
+.t-gora h1 { margin: 0; font-size: 18px; }
+.t-gora .dzien { display: flex; gap: 6px; align-items: center; font-size: 15px; }
+.t-gora .dzien button { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.35); border-radius: 6px; width: 32px; height: 30px; font-size: 17px; }
+.t-gora .dzien button:disabled { opacity: .3; }
+.seg { display: inline-flex; border: 1px solid var(--linia); border-radius: 8px; overflow: hidden; background: #fff; }
+.seg button { border: 0; background: transparent; padding: 6px 10px; cursor: pointer; color: var(--tekst); font-size: 14px; }
+.seg button + button { border-left: 1px solid var(--linia); }
+.seg button.wl { background: var(--granat); color: #fff; }
+.t-gora .seg { margin-top: 10px; background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.25); width: 100%; }
+.t-gora .seg button { color: #fff; flex: 1; padding: 6px 4px; }
+.t-gora .seg button + button { border-color: rgba(255,255,255,.25); }
+.t-gora .seg button.wl { background: #fff; color: var(--granat); }
+.seg.maly button { padding: 3px 8px; font-size: 12px; }
+
+.t-blok { background: #fff; margin: 10px; border-radius: 12px; padding: 12px; }
+.komunikat { color: var(--minus); }
+.ostrz { background: #fff4e5; color: #6b4500; font-size: 13px; line-height: 1.45; }
+.t-hero .et { font-size: 12px; color: var(--szary); }
+.t-hero .w { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.t-hero .r { display: flex; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--szary); margin-top: 4px; }
+.t-hero .r b { color: var(--tekst); }
+.t-kan { display: grid; grid-template-columns: 1fr auto auto; gap: 5px 10px; font-size: 13px; align-items: baseline; font-variant-numeric: tabular-nums; }
+.t-kan .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-kan .z { color: var(--szary); font-size: 12px; text-align: right; }
+.t-kan .dz { padding-left: 12px; color: #444; font-size: 12px; }
+.t-sekcja { display: flex; justify-content: space-between; align-items: center; margin: 4px 10px 0; gap: 8px; }
+.t-sekcja h2 { margin: 0; font-size: 14px; }
+
+.karty { display: flex; align-items: flex-start; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 10px 10px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.karty::-webkit-scrollbar { display: none; }
+.karty .pusto { padding: 20px; color: var(--szary); }
+.sw-karta { flex: 0 0 calc(100% - 28px); scroll-snap-align: center; background: #fff; border-radius: 14px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.sw-foto { height: 160px; border-radius: 10px; background: #fff; border: 1px solid var(--linia); display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: zoom-in; }
+.sw-foto img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.sw-foto.sw-bez-foto { height: 44px; cursor: default; }
+.sw-foto.sw-bez-foto::after { content: "brak zdjęcia"; color: var(--szary); font-size: 12px; }
+.sw-sku { font-family: ui-monospace, Menlo, monospace; font-size: 13px; font-weight: 700; margin-top: 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.sw-tag { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 5px; background: var(--miekki); color: var(--szary); }
+.sw-naz { font-size: 13px; line-height: 1.3; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sw-suma { margin-top: 8px; font-size: 14px; display: flex; gap: 6px 10px; flex-wrap: wrap; }
+.sw-suma b { font-size: 16px; }
+.sw-ktab { width: 100%; font-size: 13px; margin-top: 6px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.sw-ktab td { padding: 4px 0 4px 6px; border-bottom: 1px solid #f2f3f5; white-space: nowrap; }
+.sw-ktab td:first-child { padding-left: 0; white-space: normal; }
+.sw-l { text-align: right; }
+.sw-pole { margin-top: 8px; font-size: 13px; background: var(--miekki); border-radius: 8px; padding: 8px; line-height: 1.5; }
+.sw-t { font-size: 11px; color: var(--szary); text-transform: uppercase; letter-spacing: .03em; }
+.sw-rep { display: grid; grid-template-columns: 1fr auto auto auto; gap: 2px 8px; }
+.sw-tak { color: var(--plus); font-weight: 700; } .sw-nie { color: var(--minus); font-weight: 700; } .sw-brak { color: var(--szary); }
+.sw-plus { color: var(--plus); } .sw-minus { color: var(--minus); } .sw-przybl { color: var(--szary); }
+.sw-flaga { display: inline-block; font-size: 11px; border-radius: 4px; padding: 1px 6px; margin-right: 4px; font-weight: 600; }
+.sw-flaga-konczy { background: #fde8e8; color: var(--minus); }
+.sw-flaga-nadmiar, .sw-flaga-zalega { background: #fff1d6; color: var(--uwaga); }
+.sw-flaga-nowosc { background: #e3ecff; color: var(--info); }
+
+.t-nav { display: flex; justify-content: space-between; align-items: center; padding: 4px 14px 8px; font-size: 13px; color: var(--szary); }
+.t-nav button { border: 1px solid var(--linia); background: #fff; border-radius: 50%; width: 34px; height: 34px; font-size: 16px; }
+.dol { text-align: center; padding: 4px 10px 20px; font-size: 12px; }
+.dol .seg { margin-bottom: 8px; }
+.podglad { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: flex; align-items: center; justify-content: center; z-index: 20; }
+.podglad img { max-width: 96vw; max-height: 90vh; background: #fff; border-radius: 8px; }

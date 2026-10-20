@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Sprzedaż</title>
+  <link rel="manifest" href="/sprzedaz/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg">
+  <meta name="theme-color" content="#1d3557">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Sprzedaż">
+  <link rel="stylesheet" href="sprzedaz.css">
+</head>
+<!-- Analiza sprzedaży na telefon (docs/analiza-sprzedazy.md): podsumowanie dnia/zakresu vs ten sam dzień tygodnia
+     rok temu, kanały i swipe kart produktów. Dostęp przez Tailscale, role admin + biuro (wymusza backend). -->
+<body>
+  <header class="t-gora">
+    <div class="r1">
+      <h1>Sprzedaż</h1>
+      <span class="dzien"><button id="d-wstecz" aria-label="poprzedni dzień">‹</button><span id="d-data"></span><button id="d-dalej" aria-label="następny dzień">›</button></span>
+    </div>
+    <div class="seg" id="seg-zakres"></div>
+  </header>
+  <main>
+    <div class="t-blok komunikat hidden" id="komunikat"></div>
+    <div class="t-blok t-hero" id="hero"><div class="sw-brak">Ładuję…</div></div>
+    <div class="t-blok ostrz hidden" id="ostrz"></div>
+    <div class="t-blok"><div class="t-kan" id="kanaly"></div></div>
+    <div class="t-sekcja"><h2 id="prod-tyt">Produkty</h2><span class="seg maly" id="seg-sort"></span></div>
+    <div class="karty" id="karty"></div>
+    <div class="t-nav"><button id="k-wstecz" aria-label="poprzedni produkt">‹</button><span id="k-licznik"></span><button id="k-dalej" aria-label="następny produkt">›</button></div>
+    <div class="dol"><span class="seg" id="seg-baza"></span><div class="sw-brak" id="stopka"></div></div>
+  </main>
+  <div class="podglad hidden" id="podglad"><img alt=""></div>
+  <script src="/shared/auth.js"></script>
+  <script src="/shared/sprzedaz-wspolne.js"></script>
+  <script src="sprzedaz.js"></script>
+</body>
+</html>

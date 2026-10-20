@@ -359,7 +359,7 @@ zysk handlowy jako przybliżenie zysku po kosztach kanału):
 ## Otwarte
 
 1. Tier i to, co z niego weźmie repricer (etap 3) — dane wyżej.
-2. Sprawdzenie reguły kraju przed 26.08 (`Internet` = Allegro już potwierdzone).
+2. ~~Sprawdzenie reguły kraju przed 26.08~~ — potwierdzone 2026-10-20 na 31 997 FS z rozliczeniami Amazona: 99,8% (sekcja „Wdrożenie etapu 1”).
 3. Koszty kanału dla Allegro CZ/SK/HU.
 4. Historia kosztu przed startem zdjęć: dzisiejszy koszt (domyślnie) czy ostatnia cena z PZ przed sprzedażą.
 5. Push na telefon i alert „kanał milczy”.
@@ -376,3 +376,36 @@ rozwijaniem, produkty dnia) i telefon (podsumowanie, swipe 361 kart: zdjęcie, p
 i zapas, repricer). Liczby: dzień wg zamówienia 41 101 zł / zysk 13 142 zł / marża 32,0%; wg faktury 88 235 zł
 (−12% r/r); 7 dni 255 tys. zł (−4%). Uproszczenia makiety: zysk od sztuki (nie na zamówienie), „rok” bez zysku,
 zdjęcia tylko 40 kart.
+
+## Wdrożenie etapu 1 (2026-10-20)
+
+Gałąź `claude/wizardly-volhard-9b3564`. Opis techniczny w CLAUDE.md („Analiza sprzedaży — moduł”).
+
+**Sprawdzenia przed kodem (OKITRADE, tylko SELECT; rozliczenia.db tylko odczyt):**
+- Reguła kraju: 31 997 FS z numerem zamówienia Amazona, których rynek znają rozliczenia Amazona (X.2025–IX.2026):
+  trafia w 99,8% (DE 29 248, FR 1 922, PL 761); myli tylko Belgię (51 FS: 28 FR, 23 DE) i Holandię (15: 13 DE, 2 FR) —
+  te idą jako „kraj niepewny”. Od sierpnia kategoria dokumentu zgadza się z rozliczeniami w 100% (355/355).
+- Amazon EU miał po drodze trzy integracje i każda zostawiła inny ślad: BaseLinker 2024–25 — „Źródło” `amazon`
+  (FS) / `Amazon.de` (ZK) w EUR; „IDEA” XI.2025–VIII.2026 — bez pól własnych, numer `Am<3-7-7>` w uwagach FS;
+  Sellasist od 26.08 — kategoria, od 14.10 — „Źródło”. Kaskada kanału łapie wszystkie trzy.
+- Kurs dokumentu: `dok_WalutaKurs` = PLN za 1 jednostkę, HUF za 100 Ft. Wysyłka klienta = wiersze FS bez towaru
+  („Koszt wysyłki DHL DE Connect” 4,99 €). KFS = różnice z `ob_Znak`. ZK ma ten sam układ wartości co FS.
+
+**Zrobione:** baza modułu, wczytanie (FS, ZK bez FS, PA, KFS, zestawy → składniki), zysk na zamówienie, kaskada
+kanału, job (15 min + nocny), skrypt historii, API (admin + biuro), ekran Sprzedaż → Dzień na desktopie, strona
+`/sprzedaz/` na telefon, zadanie sprzedażowe z bazy modułu. Testy: 446/446.
+
+**Liczby z próby (2 lata, X.2024–X.2026):** 403 tys. zamówień, 40,7 mln zł netto, zysk po kosztach kanału 12,8 mln zł
+(31,5%); wczytanie ≈ 1 min, baza 163 MB. Czasy odpowiedzi: podsumowanie 7–221 ms (rok do dziś najdłużej),
+produkty dnia 9–15 ms. 19.10.2026 wg faktury 88 235 zł (jak makieta), wg zamówienia 40 854 zł / zysk 13 457 zł (32,9%).
+Dzień sprzed roku (20.10.2025) wg zamówienia: 70 722 zł — UUID Allegro rozłożył zaległości z weekendu przestoju na
+właściwe dni, więc ostrzeżenie o dniu nietypowym już się nie zapala.
+
+**Wdrożenie na SRV (na słowo usera):** `git pull` → `node scripts/analiza-wczytaj.js --od 2024-10-01 --zapisz`
+(GT tylko SELECT, pisze `C:\was\db\sprzedaz.db`) → restart WMS-Node → na telefonie Tailscale i
+`http://100.107.156.67:3000/sprzedaz/` (albo `http://srv:3000/sprzedaz/`), „Dodaj do ekranu głównego”.
+
+**Do zrobienia po etapie 1:** `sprzedaz.db` do backupu B2 (zdjęć rezerwacji i kosztu nie da się odtworzyć);
+odtworzenie stanów wstecz („dni bez stanu”) — potrzebne w etapie 2; B2B (Paperie) jako osobny kanał; zysk
+rzeczywisty z `rozliczenia.db` (Otwarte pkt 7). Do sprawdzenia: NERE6192-E6218 w październiku 201 szt. ze stratą
+216 zł (koszt w kartotece czy cena) — materiał na alert „sprzedaż ze stratą”.

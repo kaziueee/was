@@ -32,6 +32,7 @@ function parametry(q) {
 function stanWczytania() {
   return {
     historia_od: meta.get('historia_od')?.wartosc || null,
+    historia_wczytana: meta.get('historia_wczytana')?.wartosc || null,
     biezacy: meta.get('biezacy')?.wartosc || null,
     nocny: meta.get('nocny')?.wartosc || null,
     blad: meta.get('blad')?.wartosc || null,

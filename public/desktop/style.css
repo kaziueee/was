@@ -1499,3 +1499,36 @@ main {
 .cs-skutek.dol { color: #b42318; font-weight: 600; }
 .cs-odst { font-size: 0.7rem; font-weight: 600; color: #1d3557; border: 1px dashed #1d3557; border-radius: 4px; padding: 0 0.25rem; }
 .cs-bb { font-size: 0.68rem; font-weight: 700; color: #1f7a3d; }
+
+/* === Sprzedaż → Dzień (sprzedaz-dzien.js; klasy sw-* wspólne z telefonem, /shared/sprzedaz-wspolne.js) === */
+.sd-pasek { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.sd-data { display: inline-flex; gap: 6px; align-items: center; }
+.sd-data input { font: inherit; padding: 4px 6px; }
+.sd-seg { display: inline-flex; border: 1px solid #d6d9de; border-radius: 8px; overflow: hidden; background: #fff; }
+.sd-seg button { border: 0; background: transparent; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 14px; color: #1a1a1a; }
+.sd-seg button + button { border-left: 1px solid #d6d9de; }
+.sd-seg button.wl { background: #1d3557; color: #fff; }
+.sd-ostrz { background: #fff4e5; border: 1px solid #f3cf9a; color: #6b4500; border-radius: 8px; padding: 8px 12px; font-size: 13px; margin-bottom: 12px; line-height: 1.45; }
+.sd-kafle { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+@media (max-width: 1400px) { .sd-kafle { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.sd-kafel { background: #fff; border: 1px solid #e3e5e8; border-radius: 8px; padding: 10px 12px; min-width: 0; }
+.sd-et { font-size: 12px; color: #6b7280; }
+.sd-w { font-size: 21px; font-weight: 700; margin-top: 2px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sd-p { font-size: 12px; color: #6b7280; margin-top: 2px; }
+.sd-tabela td.num, .sd-tabela th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sd-tabela tr.sd-grupa { cursor: pointer; }
+.sd-tabela tr.sd-grupa td:first-child::before { content: "▸ "; color: #6b7280; }
+.sd-tabela tr.sd-grupa.otw td:first-child::before { content: "▾ "; }
+.sd-tabela tr.sd-dziecko td { font-size: 13px; color: #444; background: #fafbfc; }
+.sd-tabela tr.sd-dziecko td:first-child { padding-left: 28px; }
+.sd-tabela tr.sd-suma td { font-weight: 700; border-top: 2px solid #e3e5e8; }
+.sd-min { width: 34px; height: 34px; object-fit: contain; border-radius: 4px; background: #fff; border: 1px solid #e3e5e8; vertical-align: middle; }
+.sd-nz { max-width: 320px; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle; white-space: nowrap; }
+.sd-kan { font-size: 12px; }
+.sw-tag { font-size: 11px; border-radius: 4px; padding: 1px 5px; background: #f6f7f9; color: #6b7280; margin-left: 6px; vertical-align: 1px; }
+.sw-plus { color: #1a7f37; } .sw-minus { color: #c62828; } .sw-brak, .sw-przybl { color: #6b7280; }
+.sw-przybl { cursor: help; }
+.sw-flaga { display: inline-block; font-size: 11px; border-radius: 4px; padding: 1px 6px; margin-right: 4px; font-weight: 600; }
+.sw-flaga-konczy { background: #fde8e8; color: #c62828; }
+.sw-flaga-nadmiar, .sw-flaga-zalega { background: #fff1d6; color: #a15c00; }
+.sw-flaga-nowosc { background: #e3ecff; color: #1d4ed8; }

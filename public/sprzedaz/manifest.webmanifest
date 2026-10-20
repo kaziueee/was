@@ -1,0 +1,13 @@
+{
+  "name": "WMS Sprzedaż",
+  "short_name": "Sprzedaż",
+  "start_url": "/sprzedaz/",
+  "scope": "/sprzedaz/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f2f2f2",
+  "theme_color": "#1d3557",
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

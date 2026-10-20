@@ -158,8 +158,40 @@ test('pulpit: źródło zamówienia z FS → kanał repricera', () => {
   assert.strictEqual(k('empik', 'PLN'), 'EMPIK_PL');
   assert.strictEqual(k('Allegro - ekajtek_pl', 'CZK'), 'ALLEGRO_EKAJTEK');
   assert.strictEqual(k('Allegro - NaTropieZabawek', 'PLN'), 'ALLEGRO_NATROPIE');
-  assert.strictEqual(k('marketplace'), m.MARKETPLACE);            // Sellasist przed 14.10 — kanał nieznany
+  assert.strictEqual(k('marketplace'), m.MARKETPLACE);            // Sellasist przed 14.10, bez kategorii — kanał nieznany
   for (const z of ['personal', 'tergpl', '', null, 'Amazon_XX']) assert.strictEqual(k(z), m.INNE);
+});
+
+test('pulpit: FS „marketplace” — rynek z kategorii dokumentu', () => {
+  const klucze = new Set(KOLUMNY.map((k) => k.klucz));
+  const k = (kat, w = 'EUR', z = 'marketplace') => m.kolumnaZrodla(z, w, klucze, kat);
+  assert.strictEqual(k('Amazon_DE'), 'DE');                        // Sellasist 26.08–14.10: kategoria niesie rynek
+  assert.strictEqual(k('Amazon_FR'), 'FR');
+  assert.strictEqual(k(' amazon_it '), 'IT');
+  assert.strictEqual(k('Kaufland'), 'KAUFLAND_DE');
+  assert.strictEqual(k('Kaufland', 'CZK'), m.MARKETPLACE);          // Kaufland poza EUR — kraj nieznany
+  assert.strictEqual(k('Amazon_XX'), m.MARKETPLACE);                // rynek spoza repricera
+  for (const kat of ['Sprzedaż', '', null, undefined]) assert.strictEqual(k(kat), m.MARKETPLACE);   // Amazon IT przed 14.10
+  // kategoria liczy się tylko dla „marketplace” — „Źródło” rozpoznane albo obce zostaje, jak było
+  assert.strictEqual(k('Amazon_FR', 'EUR', 'Amazon_DE'), 'DE');
+  assert.strictEqual(k('Amazon_DE', 'PLN', 'personal'), m.INNE);
+  assert.strictEqual(k('Kaufland', 'EUR', ''), m.INNE);
+  // bez kategorii w kluczach (rynek wyłączony z repricera) — zostaje kubełek „marketplace”
+  assert.strictEqual(m.kolumnaZrodla('marketplace', 'EUR', new Set(['FR']), 'Amazon_DE'), m.MARKETPLACE);
+});
+
+test('pulpit: sprzedaż z FS „marketplace” trafia do kanału z kategorii', () => {
+  const klucze = new Set(['DE', 'FR', 'KAUFLAND_DE']);
+  const s = m.sprzedazKanalami(
+    [{ dzien: '2026-10-10', zrodlo: 'marketplace', kategoria: 'Amazon_DE', waluta: 'EUR', zamowien: 5, szt: 6 },
+     { dzien: '2026-10-10', zrodlo: 'marketplace', kategoria: 'Kaufland', waluta: 'EUR', zamowien: 1, szt: 1 },
+     { dzien: '2026-10-10', zrodlo: 'marketplace', kategoria: 'Sprzedaż', waluta: 'EUR', zamowien: 2, szt: 2 }],
+    [{ dzien: '2026-10-10', zrodlo: 'marketplace', kategoria: 'Amazon_DE', waluta: 'EUR', tw_id: 7, szt: 4 }],
+    new Map([['DE', new Set([7])]]), klucze);
+  const d = s.get('2026-10-10');
+  assert.deepStrictEqual(d.get('DE'), { zamowien: 5, szt: 6, szt_auto: 4 });
+  assert.deepStrictEqual(d.get('KAUFLAND_DE'), { zamowien: 1, szt: 1, szt_auto: 0 });
+  assert.deepStrictEqual(d.get(m.MARKETPLACE), { zamowien: 2, szt: 2, szt_auto: 0 });
 });
 
 test('pulpit: sprzedaż z FS per kanał i trend z pustymi dniami', () => {

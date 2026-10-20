@@ -245,12 +245,24 @@ function zdrowie({ stan = {}, teraz = new Date(), interwalMin = 30, zapis = fals
 
 // --- Sprzedaż z FS wg „Źródła zamówienia” ----------------------------------------------------------------------
 // Pole „Źródło” na FS (pw_Dane −2, Tekst04) wpisuje integrator. Sellasist od 2026-10-14 12:22 pisze Amazon_DE,
-// Amazon_FR, Amazon_IT, Kaufland_DE — wcześniej każdy rynek jako „marketplace” (osobny kubełek: kanału nie da się
-// odtworzyć). BaseLinker: „amazon” (Amazon PL, w PLN), emagro/emaghu/emagbg, empik, „Allegro - <konto>”
-// (sprawdzone na OKITRADE 2026-10-18). Reszta (personal, tergpl, erli…) to kanały spoza repricera.
+// Amazon_FR, Amazon_IT, Kaufland_DE — wcześniej każdy rynek jako „marketplace”. Rynek takiej FS siedzi wtedy w
+// KATEGORII dokumentu (dok_KatId → sl_Kategoria): od 2026-08-26 każda FS Sellasist ma `Amazon_DE`, `Amazon_FR`
+// albo `Kaufland`, a po 14.10 kategoria zgadza się ze „Źródłem” w 100% (OKITRADE, 2026-10-20). „marketplace” bez
+// takiej kategorii (Amazon IT przed 14.10 ma „Sprzedaż”) zostaje w osobnym kubełku. BaseLinker: „amazon” (Amazon PL,
+// w PLN), emagro/emaghu/emagbg, empik, „Allegro - <konto>” (sprawdzone na OKITRADE 2026-10-18). Reszta (personal,
+// tergpl, erli…) to kanały spoza repricera.
 const MARKETPLACE = '_marketplace', INNE = '_inne';
 const ALLEGRO_KONTA_FS = { 'ekajtek_pl': 'ALLEGRO_EKAJTEK', 'natropiezabawek': 'ALLEGRO_NATROPIE' };
-function kolumnaZrodla(zrodlo, waluta, klucze) {
+// Rynek z kategorii dokumentu — tylko dla FS „marketplace”. Kategoria `Kaufland` nie mówi, który kraj, więc
+// Kaufland DE tylko przy EUR (dziś jedyny Kaufland w repricerze); inna waluta = nie wiemy.
+function kolumnaKategorii(kategoria, waluta, klucze) {
+  const k = String(kategoria || '').trim().toLowerCase();
+  let r;
+  if ((r = k.match(/^amazon_([a-z]{2})$/)) && klucze.has(r[1].toUpperCase())) return r[1].toUpperCase();
+  if (k === 'kaufland' && String(waluta || '').toUpperCase() === 'EUR' && klucze.has('KAUFLAND_DE')) return 'KAUFLAND_DE';
+  return MARKETPLACE;
+}
+function kolumnaZrodla(zrodlo, waluta, klucze, kategoria) {
   const z = String(zrodlo || '').trim().toLowerCase();
   const jest = (k) => (klucze.has(k) ? k : INNE);
   let r;
@@ -260,11 +272,11 @@ function kolumnaZrodla(zrodlo, waluta, klucze) {
   if ((r = z.match(/^emag(ro|hu|bg)$/))) return jest(`EMAG_${r[1].toUpperCase()}`);
   if (z === 'empik') return jest('EMPIK_PL');
   if ((r = z.match(/^allegro\s*-\s*(.+)$/))) return ALLEGRO_KONTA_FS[r[1].trim()] ? jest(ALLEGRO_KONTA_FS[r[1].trim()]) : INNE;
-  if (z === 'marketplace') return MARKETPLACE;
+  if (z === 'marketplace') return kolumnaKategorii(kategoria, waluta, klucze);
   return INNE;
 }
 
-// dokumenty: [{ dzien, zrodlo, waluta, zamowien, szt }], pozycje: [{ dzien, zrodlo, waluta, tw_id, szt }],
+// dokumenty: [{ dzien, zrodlo, kategoria, waluta, zamowien, szt }], pozycje: [{ dzien, zrodlo, kategoria, waluta, tw_id, szt }],
 // kohorta: Map kanał → Set tw_id z automatem (dziś). Zwraca Map dzień → Map kanał → { zamowien, szt, szt_auto }
 // (sumę „razem” liczy zlozTrend).
 function sprzedazKanalami(dokumenty, pozycje, kohorta, klucze) {
@@ -274,12 +286,12 @@ function sprzedazKanalami(dokumenty, pozycje, kohorta, klucze) {
     return d.get(k) || d.set(k, { zamowien: 0, szt: 0, szt_auto: 0 }).get(k);
   };
   for (const x of dokumenty) {
-    const g = daj(x.dzien, kolumnaZrodla(x.zrodlo, x.waluta, klucze));
+    const g = daj(x.dzien, kolumnaZrodla(x.zrodlo, x.waluta, klucze, x.kategoria));
     g.zamowien += Number(x.zamowien) || 0;
     g.szt += Number(x.szt) || 0;
   }
   for (const x of pozycje) {
-    const k = kolumnaZrodla(x.zrodlo, x.waluta, klucze);
+    const k = kolumnaZrodla(x.zrodlo, x.waluta, klucze, x.kategoria);
     if (kohorta.get(k)?.has(Number(x.tw_id))) daj(x.dzien, k).szt_auto += Number(x.szt) || 0;
   }
   return m;

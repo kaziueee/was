@@ -140,7 +140,7 @@ async function sprzedazTowarow(twIds, dni, { maxWiekMs = 3 * 3600e3 } = {}) {
     const wiersze = await sprzedazTowarowZCena(doPobrania, dzienLokalny(od));
     const nowe = new Map(doPobrania.map((tw) => [tw, {}]));
     for (const w of wiersze) {
-      const k = kolumnaZrodla(w.zrodlo, w.waluta, KLUCZE);
+      const k = kolumnaZrodla(w.zrodlo, w.waluta, KLUCZE, w.kategoria);
       if (!KLUCZE.has(k) || WALUTY_FS[String(w.waluta).toUpperCase()] !== WALUTA_KOLUMNY[k]) continue;
       const d = nowe.get(w.tw_id);
       if (!d) continue;

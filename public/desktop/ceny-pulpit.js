@@ -30,7 +30,7 @@ const CP_MIARY = [
 ];
 // Sytuacje na kaflu kanału (nazwy i opisy przychodzą z backendu: pricing/filtry-cen.js).
 const CP_SYTUACJE = ['ponizej', 'wojna', 'zablokowane', 'brak_danych', 'szansa', 'podwyzka'];
-const CP_NAZWY_ZRODEL = { razem: 'Wszystkie kanały', _marketplace: 'Amazon / Kaufland — „marketplace” (przed 14.10)', _inne: 'Inne źródła (sklep, Erli, Tergo…)' };
+const CP_NAZWY_ZRODEL = { razem: 'Wszystkie kanały', _marketplace: '„marketplace” bez rynku (Sellasist przed 14.10)', _inne: 'Inne źródła (sklep, Erli, Tergo…)' };
 const CP_STANY = { ok: 'ok', opoznienie: 'warn', blad: 'blad', stoi: 'blad', brak: 'brak' };
 
 async function odswiezCenyPulpit() {

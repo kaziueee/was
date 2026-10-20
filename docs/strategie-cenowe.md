@@ -77,8 +77,9 @@ przypisane towary.
   BB (`pod_podloga`). Na FR Buy Box jest średnio 37,5% pod naszym dzisiejszym minimum — tam strategia nic
   nie da, tylko utrzyma cenę. Przykład HWHJBD90: Empik 8 szt. przy zysku ~78 zł staje się referencją, a
   podłoga na Allegro (37 szt. przy ~61 zł) idzie w górę o ~24 zł.
-- **Dane:** FS z rynkiem i ceną (niżej). **Mamy dziś:** dla kanałów BaseLinkera tak; dla Amazon EU i
-  Kauflandu dopiero od 14.10.2026.
+- **Dane:** FS z rynkiem i ceną (niżej). **Mamy dziś:** tak — dla kanałów BaseLinkera od dawna, dla Amazon
+  DE/FR i Kauflandu od 26.08.2026 (rynek FS „marketplace” z kategorii dokumentu, od 2026-10-20), Amazon IT od
+  14.10.
 - Amazon PL nie ma kalkulatora (`brak_pasa`), więc nie może być ani referencją, ani odbiorcą podłogi,
   dopóki nie dostanie rynku w `config/rynki.js`.
 
@@ -112,9 +113,14 @@ Sprawdzone 2026-10-18 na OKITRADE, tylko odczyt.
   towaru w walucie rynku. Wysyłka jest osobną pozycją `TRANSPORT`, więc liczymy tylko `tw_Rodzaj` 1 i 8.
   Kalkulator dokłada wysyłkę klienta sam (`wycenaPrzyCenie`).
 - **Dziury:**
-  - **Amazon DE/FR/IT/ES/NL i Kaufland DE: rynek na FS dopiero od 2026-10-14 12:22.** Wcześniej Sellasist
-    pisał „marketplace” dla każdego rynku: 1255 FS w EUR z 4 tygodni bez rynku. Okno 30 dni zapełni się
-    ok. 13.11. Zaległych FS nikt nie poprawił (UPDATE w GT tylko na wyraźne polecenie).
+  - **Amazon DE/FR/IT/ES/NL i Kaufland DE: „Źródło” z rynkiem dopiero od 2026-10-14 12:22.** Wcześniej
+    Sellasist pisał „marketplace” dla każdego rynku. **Rozwiązane 2026-10-20 bez poprawiania GT:** rynek takiej
+    FS siedzi w kategorii dokumentu (`dok_KatId` → `sl_Kategoria`: `Amazon_DE`, `Amazon_FR`, `Kaufland`) —
+    od 26.08 ma ją każda FS Sellasist, a po 14.10 zgadza się ze „Źródłem” w 100%. `kolumnaZrodla`
+    (`pricing/pulpit-model.js`) bierze ją dla „marketplace”. Efekt w oknie 30 dni (21.09–20.10): Amazon DE
+    254 → 1338 szt., FR 37 → 174, Kaufland DE 27 → 98, w „marketplace” zostały 2 szt. (Amazon IT przed 14.10
+    ma kategorię „Sprzedaż”). Pary towar × kanał z automatem z ≥3 szt. w 30 dni: 34 → 80 (towary z rynkiem
+    referencyjnym 33 → 68). Okno nie czeka już do 13.11.
   - **FS powstają tylko w dni robocze**, więc opóźnienie do 3 dni (po weekendzie poniedziałek nadrabia:
     936 FS 12.10). ZK są na bieżąco (`pwd_TypObiektu=-8`, `Tekst01`), ale eMAG ma tam puste „Źródło”,
     Amazon PL pisze „Amazon.de”, a ZK to zamówienie, nie sprzedaż. Dla podłogi lepsze FS: pewniejsze,
@@ -123,8 +129,9 @@ Sprawdzone 2026-10-18 na OKITRADE, tylko odczyt.
     regułami kursowymi, więc nie są osobnymi rynkami referencyjnymi. Na razie pomijane.
   - **Sprzedaży jest mało.** Z 178 towarów z automatem na 2+ kanałach tylko 49 sprzedało w 30 dni na 2+
     rozpoznanych kanałach, zwykle po 1–3 szt. na kanał. Wolumen robi Allegro.
-- **Do sprawdzenia:** czy raport zamówień Amazona (SP-API) da historię per rynek sprzed 14.10.
-  `pricing/amazon.js` ma już `raport()`. Nie sprawdzone, czy aplikacja ma do niego uprawnienia.
+- ~~Do sprawdzenia: raport zamówień Amazona (SP-API) dla historii sprzed 14.10~~ — niepotrzebne, rynek jest
+  w kategorii dokumentu (wyżej). Historia sprzed 26.08 (kategoria „Sprzedaż”) jest odtwarzalna z kraju płatnika
+  — zob. `docs/analiza-sprzedazy.md`; strategii to nie dotyczy, bo okno ma 30 dni.
 
 ## Pułapki i zabezpieczenia
 
@@ -178,7 +185,7 @@ Kod:
   strategią / co zrobi automat”; karta SKU pokazuje strategię i źródło granic.
 
 Nie w v1 (na później): znaczek strategii w macierzy i filtr „ze strategią”, przypisanie z macierzy hurtem,
-strategie z listy „Na później”, historia Amazona sprzed 14.10.
+strategie z listy „Na później”.
 
 ## Pomiar: schodki w dół (−5% na przebieg), 2026-10-19
 
@@ -211,5 +218,5 @@ strategii (np. „Najtaniej agresywnie”) to naturalny parametr szablonu.
 2. Progi „za rynkiem” (3 szt., 30 dni, mediana) i domyślne N dla końca wyprzedaży — przyjęte domyślnie,
    bez decyzji usera.
 3. Dodatkowe strategie („ustalimy”).
-4. Historia Amazon EU sprzed 14.10 — raport zamówień SP-API.
+4. ~~Historia Amazon EU sprzed 14.10~~ — rozwiązane 2026-10-20 kategorią dokumentu (sekcja „Dziury”).
 5. Czy liczyć sprzedaż Allegro CZ/SK/HU jako dowód dla ceny Allegro PL.

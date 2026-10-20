@@ -25,7 +25,7 @@ const KLUCZE = new Set(KOLUMNY.map((k) => k.klucz));
 // Kanały spoza repricera (nazwy wg projektu Rozliczenia, scripts/attribution.py). Kanały repricera mają nazwy
 // z pricing/kolumny.js — jedna lista na oba ekrany.
 const KANALY_DODATKOWE = {
-  ALLEGRO: 'Allegro (konto nieznane)',     // kategoria ZK „Internet” bez „Źródła” — 1963 FS z konta „Szef” XI.2025–VII.2026
+  ALLEGRO: 'Allegro (konto nieznane)',     // kategoria ZK „Internet” bez „Źródła” i bez śladu w Rozliczeniach (45 FS)
   MEDIA_EXPERT: 'Media Expert',
   FENOM: 'Sklep Fenom / Ceneo',
   INPOST_PAY: 'InPost Pay',
@@ -45,6 +45,8 @@ const ZRODLA = {
   'kaufland.de': 'KAUFLAND_DE',
 };
 const ZNACZNIK = /\[([a-z0-9_.-]+)\]/i;               // „Zamówienie: 136773607;[emaghu];1134850261;;…”
+// Konto Allegro z projektu Rozliczenia (d.konto_allegro, dopisuje services/analiza-dane.js), gdy GT go nie niesie
+const KONTA_ROZLICZEN = { ekajtek: 'ALLEGRO_EKAJTEK', natropie: 'ALLEGRO_NATROPIE' };
 // numer oryginalny ZK z integracji IDEA: „Kaufland_DEMBR6LU5-2_IDEA”, „Em-40102271591978-A-1_IDEA” (Mirakl = Empik)
 const NUMER_ZK = [[/^kaufland_([a-z]{2})/i, (m) => `KAUFLAND_${m[1].toUpperCase()}`], [/^em-\d+-a\b/i, () => 'EMPIK_PL']];
 // Kategorie dokumentu (sl_Kategoria) — na FS i na ZK
@@ -100,8 +102,8 @@ function amazonZKraju(kraj) {
   return ['AMAZON_EU', 'kraj_nieznany'];
 }
 
-// d: { zrodlo_fs, kat_fs, zrodlo_zk, kat_zk, kraj, waluta, uwagi, uwagi_zk, oryg_zk } (dowolne pola mogą być puste;
-// dla ZK bez FS jego własne uwagi idą w `uwagi`)
+// d: { zrodlo_fs, kat_fs, zrodlo_zk, kat_zk, kraj, waluta, uwagi, uwagi_zk, oryg_zk, konto_allegro } (dowolne pola
+// mogą być puste; dla ZK bez FS jego własne uwagi idą w `uwagi`)
 // → { kanal, rynek, regula }; rynek = kraj sprzedaży (Allegro: PL/CZ/HU/SK z waluty, Amazon: rynek), regula = skąd.
 function kanalDokumentu(d) {
   const waluta = String(d.waluta || '').toUpperCase();
@@ -126,6 +128,7 @@ function kanalDokumentu(d) {
   const marketplace = [d.zrodlo_fs, d.zrodlo_zk].some((z) => maly(z) === 'marketplace');
   if (!kanal && marketplace && waluta === 'EUR' && KRAJ_AMAZON[d.kraj]) [kanal, regula] = [KRAJ_AMAZON[d.kraj], 'kraj'];
   if (!kanal) [kanal, regula] = ['INNE', 'brak'];
+  if (kanal === 'ALLEGRO' && KONTA_ROZLICZEN[maly(d.konto_allegro)]) [kanal, regula] = [KONTA_ROZLICZEN[maly(d.konto_allegro)], 'konto_rozliczenia'];
   kanal = tenKlucz(kanal) || 'INNE';
   const rynek = kanal.startsWith('ALLEGRO') ? (RYNEK_ALLEGRO[waluta] || waluta || null)
     : kanal.startsWith('EMAG_') || kanal.startsWith('KAUFLAND_') ? kanal.split('_')[1]

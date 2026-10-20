@@ -11,6 +11,8 @@
 // „PLUSY INWENTURA 2026” 43,9 tys. zł, „ostoy wielki koncert” 81 tys. zł) i zdublowane importy z 24.11.2025. Koszt zakupu zostaje z dnia PIERWSZEGO wczytania pozycji (GT nie trzyma kosztu
 // wstecz, a ponowne wczytanie ostatnich dni nie może przepisać go dzisiejszym).
 
+const fs = require('fs');
+const { DatabaseSync } = require('node:sqlite');
 const { query } = require('./gt-sql');
 const { wycenaHurtem } = require('./cennik');
 const rynki = require('../config/rynki');
@@ -177,7 +179,8 @@ function zlozZamowienia(surowe, wyceny, sklady, koszty) {
   }
   const zkPoz = pozycjeDokumentu(surowe.zkPoz);
   for (const d of surowe.zk) {
-    const kanal = kanalDokumentu({ zrodlo_zk: d.zrodlo_zk, kat_zk: d.kat_zk, kraj: d.kraj, waluta: d.waluta, uwagi: d.uwagi, oryg_zk: d.oryg_zk });
+    const kanal = kanalDokumentu({ zrodlo_zk: d.zrodlo_zk, kat_zk: d.kat_zk, kraj: d.kraj, waluta: d.waluta, uwagi: d.uwagi,
+      oryg_zk: d.oryg_zk, konto_allegro: d.konto_allegro });
     const data = am.dataZamowienia({ uuid: kanal.kanal.startsWith('ALLEGRO') ? d.uuid : null, dataZk: d.data_zk });
     dodaj({ id: `Z${d.zk_id}`, zk_id: d.zk_id, fs_id: null, numer: d.numer, status: 'zamowione', data_zam: data.dzien, godz_zam: data.godz,
       data_zam_zrodlo: data.zrodlo, data_zk: d.data_zk, data_fs: null, waluta: d.waluta, kurs: am.kursDokumentu(d.waluta, d.kurs) },
@@ -196,6 +199,31 @@ function zlozZamowienia(surowe, wyceny, sklady, koszty) {
       kanal: x.fs_id ? kanalDokumentu(x).kanal : 'INNE', tw_id: TOWAR(x.rodzaj) ? x.tw_id : null, szt: TOWAR(x.rodzaj) ? zw.szt : 0, netto: zw.netto });
   }
   return { zamowienia, pozycje, skladniki, zwroty };
+}
+
+// Konto Allegro z projektu Rozliczenia — dla FS Allegro bez „Źródła” (kategoria ZK „Internet”, konto GT „Szef”,
+// XI.2025–VII.2026: 1963 FS). allegro_konto mapuje UUID zamówienia na konto; sprawdzone 2026-10-21 na 2202 FS ze
+// znanym kontem: 100% zgodnie, rozstrzyga 1918 z 1963. Tylko odczyt, lokalnie na SRV (WAL — nigdy przez udział
+// sieciowy); bez pliku (Mac) albo przy błędzie reguła się po prostu nie włącza.
+const ROZLICZENIA_DB = process.env.ROZLICZENIA_DB || 'C:\\Rozliczenia\\data\\rozliczenia.db';
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const uuidDokumentu = (d) => ((String(d.uuid || '').match(UUID) || String(d.uwagi_zk || '').match(UUID)
+  || String(d.uwagi || '').match(UUID) || [])[0] || '').toLowerCase() || null;
+
+function dopiszKontaAllegro(dokumenty) {
+  const bez = dokumenty.filter((d) => kanalDokumentu(d).kanal === 'ALLEGRO' && uuidDokumentu(d));
+  if (!bez.length || !fs.existsSync(ROZLICZENIA_DB)) return 0;
+  let r = null;
+  try {
+    r = new DatabaseSync(ROZLICZENIA_DB, { readOnly: true });
+    const st = r.prepare('SELECT konto FROM allegro_konto WHERE identyfikator = ?');
+    let n = 0;
+    for (const d of bez) { const k = st.get(uuidDokumentu(d))?.konto; if (k) { d.konto_allegro = k; n++; } }
+    return n;
+  } catch (e) {
+    console.warn(`[analiza] konto Allegro z Rozliczeń niedostępne: ${e.message}`);
+    return 0;
+  } finally { r?.close(); }
 }
 
 // --- zapis --------------------------------------------------------------------------------------------------
@@ -242,6 +270,7 @@ function zapisz({ zamowienia, pozycje, skladniki, zwroty }, { od, doDnia }) {
 // zapiszDoBazy=false → tylko policz i zwróć (dry-run skryptu historii).
 async function wczytajOkno(od, doDnia, { zapiszDoBazy = true } = {}) {
   const surowe = await pobierzOkno(od, doDnia);
+  dopiszKontaAllegro([...surowe.fs, ...surowe.zk, ...surowe.kfs.filter((x) => x.fs_id)]);
   const twIds = [...new Set([...surowe.fsPoz, ...surowe.zkPoz, ...surowe.paPoz].filter((p) => TOWAR(p.rodzaj) && p.tw_id).map((p) => p.tw_id))];
   const zestawy = [...new Set([...surowe.fsPoz, ...surowe.zkPoz, ...surowe.paPoz].filter((p) => p.rodzaj === 8).map((p) => p.tw_id))];
   const [wyceny, sklady] = await Promise.all([wycenaHurtem(twIds), skladZestawow(zestawy)]);

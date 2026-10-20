@@ -23,6 +23,16 @@ test('Allegro: konto z „Źródła”, rynek z waluty; konto spoza repricera al
   assert.deepStrictEqual(k({ zrodlo_fs: '', kat_fs: 'Sprzedaż', kat_zk: 'Internet', waluta: 'PLN' }), { kanal: 'ALLEGRO', rynek: 'PL', regula: 'kategoria_zk' });
 });
 
+test('Allegro bez „Źródła”: konto z Rozliczeń (allegro_konto po UUID zamówienia), inaczej „konto nieznane”', () => {
+  const fs = { zrodlo_fs: '', kat_fs: 'Sprzedaż', kat_zk: 'Internet', waluta: 'CZK' };
+  assert.deepStrictEqual(k({ ...fs, konto_allegro: 'Ekajtek' }), { kanal: 'ALLEGRO_EKAJTEK', rynek: 'CZ', regula: 'konto_rozliczenia' });
+  assert.strictEqual(k({ ...fs, konto_allegro: 'Natropie' }).kanal, 'ALLEGRO_NATROPIE');
+  assert.strictEqual(k({ ...fs, konto_allegro: '' }).kanal, 'ALLEGRO');
+  // konto z Rozliczeń nie nadpisuje „Źródła” ani nie zamienia innego kanału w Allegro
+  assert.strictEqual(k({ zrodlo_fs: 'Allegro - NaTropieZabawek', waluta: 'PLN', konto_allegro: 'Ekajtek' }).kanal, 'ALLEGRO_NATROPIE');
+  assert.strictEqual(k({ zrodlo_fs: 'empik', waluta: 'PLN', konto_allegro: 'Ekajtek' }).kanal, 'EMPIK_PL');
+});
+
 test('FS „marketplace” (Sellasist do 14.10): rynek z kategorii dokumentu, Amazon IT z kraju', () => {
   assert.deepStrictEqual(k({ zrodlo_fs: 'marketplace', kat_fs: 'Amazon_FR', waluta: 'EUR', kraj: 'Holandia' }), { kanal: 'FR', rynek: 'FR', regula: 'zrodlo_fs' });
   assert.strictEqual(k({ zrodlo_fs: 'marketplace', kat_fs: 'Kaufland', waluta: 'EUR' }).kanal, 'KAUFLAND_DE');

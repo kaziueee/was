@@ -128,9 +128,12 @@ gdzie są obok „Źródła”, dają ten sam kanał w 100%. Pokazały dwa błę
 - **eMAG HU w „Inne”** — 974 FS, 107 tys. zł (X.2024–XI.2025, „Źródło” ZK `Emag Węgry`).
 Drobniej: 59 FS `[personal]` → Fenom, 14 Empik (`Em-…-A`), 13 Amazon PL (znacznik `amazon` w PLN), 8 Pigu, 6 Erli,
 6 Media Expert, 4 `Allegro - Ekajtek.pl` → ekajtek. Razem zmienia się 3018 FS (0,8%).
-**Nierozstrzygnięte:** 1963 FS Allegro z kontem nieznanym (`ALLEGRO` = „Allegro (konto nieznane)”: kategoria ZK
-`Internet`, konto GT „Szef”, XI.2025–VII.2026, ~188 tys. zł) — w GT nie ma śladu, które konto; rozstrzygnęłoby
-dopiero API Allegro po UUID z uwag.
+**Allegro bez konta w GT:** 1963 FS (kategoria ZK `Internet`, konto GT „Szef”, XI.2025–VII.2026, ~188 tys. zł) nie
+mają „Źródła” ani śladu konta. Rozstrzyga projekt Rozliczenia: `allegro_konto` (UUID zamówienia → konto, z API
+Allegro) w `rozliczenia.db`, czytane tylko do odczytu lokalnie na SRV (`ROZLICZENIA_DB`). Sprawdzone na 2202 FS ze
+znanym kontem: 100% zgodnie. Daje 1586 ekajtek + 332 NaTropie (reguła `konto_rozliczenia`); zostaje 45
+(`ALLEGRO` = „Allegro (konto nieznane)”: 29 bez wpisu w Rozliczeniach, 16 bez UUID). Bez pliku (Mac) reguła się
+nie włącza.
 
 **Historia Amazon EU i Kauflandu sprzed 14.10 jest odtwarzalna z samego GT** — bez Sellasist API, raportów
 SP-API i bez UPDATE w GT:

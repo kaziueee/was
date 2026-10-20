@@ -260,3 +260,28 @@ test('odświeżenie EAN: katalog Allegro wygrywa z GT; świeży (doba) nie odpyt
     assert.ok(!wolania.some((w) => w.includes('/111')));                                                    // świeży — bez zapytania
   } finally { allegro.api = stare; }
 });
+
+test('zapisy EAN: 12 cyfr ↔ 13 z zerem, lista z oferty bez powtórzeń i śmieci', () => {
+  assert.deepStrictEqual(k.wariantyEan('193052070883'), ['193052070883', '0193052070883']);
+  assert.deepStrictEqual(k.wariantyEan('0193052070883'), ['0193052070883', '193052070883']);
+  assert.deepStrictEqual(k.wariantyEan('5010993842094'), ['5010993842094']);
+  assert.deepStrictEqual(k.eanyOferty({ ean: '193052070883,0193052070883' }), ['193052070883', '0193052070883']);
+  assert.deepStrictEqual(k.eanyOferty({ ean: '193052070883' }), ['193052070883', '0193052070883']);   // stary zapis — dokładamy wariant
+  assert.deepStrictEqual(k.eanyOferty({ ean: 'abc, ' }), []);
+  assert.deepStrictEqual(k.eanyZProduktu({ parameters: [{ name: 'EAN (GTIN)', values: ['193052070883', '0193052070883', 'x'] }] }), ['193052070883', '0193052070883']);
+});
+
+test('wyniki dla kilku zapisów EAN łączą się (XSH36786: humbi tylko pod EAN-em z zerem) — cel to humbi', () => {
+  const ean12 = wpis([kon('ekajtek_pl', 149.89, { sprzedawca: '21818279', oferta: '18292340594' }), kon('swiatbajekpl', 149.9)]);
+  const ean13 = wpis([kon('www_humbi_pl', 149.8, { stan: 101, ss: true })]);
+  const obs = k.zNiezbednika([ean12, ean13], 149.89, NASZE, teraz);
+  assert.deepStrictEqual(obs.konkurenci, [149.8, 149.9]);
+  assert.strictEqual(obs.bbNasz, false);
+  // sam wynik bez naszej oferty dalej nic nie znaczy, ale razem z drugim zapisem — tak
+  assert.strictEqual(k.zNiezbednika([ean13], 149.89, NASZE, teraz), null);
+  const p = k.podsumowanie([ean12, ean13], NASZE, teraz);
+  assert.deepStrictEqual(p.lista.map((c) => c.login), ['www_humbi_pl', 'swiatbajekpl']);
+  assert.strictEqual(p.uzyteczny, true);
+  // ta sama oferta pod dwoma zapisami liczy się raz
+  assert.strictEqual(k.zNiezbednika([ean12, ean12], 149.89, NASZE, teraz).ofert, 1);
+});

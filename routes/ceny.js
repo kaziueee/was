@@ -106,9 +106,8 @@ const zKanalem = (o) => {
     ...(o.platforma === 'allegro' ? { konkurencja: {
       co_h: konkurencja.coH(o.konk_co_h), przebicie: konkurencja.przebicie(o.konk_przebicie), wlasne: o.konk_co_h != null || o.konk_przebicie != null,
       ean: o.ean || null, ean_zrodlo: o.ean_zrodlo || null, okno: konkurencja.okno(),
-      wynik: o.konk_czas || o.konk_zlecono ? konkurencja.podsumowanie({ czas: o.konk_czas, oferty: o.konk_oferty, wszystkich: o.konk_wszystkich,
-        blad: o.konk_blad, zlecono: o.konk_zlecono }, naszeKonta()) : null } } : {}),
-    konk_oferty: undefined,   // surowy JSON z Niezbędnika (do 60 ofert) — ekran dostaje podsumowanie wyżej
+      // Wyniki dla wszystkich zapisów EAN-u (pricing/konkurencja-allegro.js eanyOferty) — połączone.
+      wynik: o.ean ? konkurencja.podsumowanie(konkurencja.wpisyOferty(o), naszeKonta()) : null } } : {}),
     // Allegro: raport „Czynniki Top oferty” (pricing/allegro-top.js) — cena Top oferty i co jeszcze blokuje.
     top: o.top_czas ? { ocena: o.top_ocena, cena: o.top_cena, roznica: o.top_roznica, cena_nasza: o.top_cena_nasza,
       czas: o.top_czas, aktualny: allegroTop.aktualny({ raport_czas: o.top_czas }), waznosc_h: allegroTop.WAZNOSC_H,
@@ -125,13 +124,11 @@ const SQL_OFERTY = `
          d.kod, d.cena_nowa, d.powod, d.min, d.max, d.zysk, d.marza, d.zysk_nowa,
          d.czas AS dec_czas, d.wyslano, d.blad AS dec_blad, d.marza_nowa, d.cena_cel, d.zysk_cel,
          t.cena_ocena AS top_ocena, t.cena_top AS top_cena, t.roznica AS top_roznica, t.cena_nasza AS top_cena_nasza,
-         t.czynniki AS top_czynniki, t.raport_czas AS top_czas,
-         k.czas AS konk_czas, k.oferty AS konk_oferty, k.wszystkich AS konk_wszystkich, k.blad AS konk_blad, k.zlecono AS konk_zlecono
+         t.czynniki AS top_czynniki, t.raport_czas AS top_czas
     FROM oferty o
     LEFT JOIN obserwacje b ON b.id = (SELECT MAX(id) FROM obserwacje WHERE oferta_id = o.id)
     LEFT JOIN decyzje d    ON d.id = (SELECT MAX(id) FROM decyzje WHERE oferta_id = o.id)
     LEFT JOIN allegro_top t ON o.platforma = 'allegro' AND t.konto = o.rynek AND t.oferta = o.asin
-    LEFT JOIN allegro_konkurencja k ON o.platforma = 'allegro' AND k.ean = o.ean
    WHERE o.aktywna = 1 AND o.tw_id IS NOT NULL AND o.ilosc > 0`;
 
 // Filtr kanału (marketplace): platforma = wszystkie jej kolumny, klucz = jedna kolumna. Wybór zawęża

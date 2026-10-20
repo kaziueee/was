@@ -19,6 +19,10 @@
 // EAN bierzemy z KATALOGU ALLEGRO (oferta → produkt → jego EAN), a z GT tylko awaryjnie: Allegro grupuje oferty
 // i wybiera Top po produkcie z katalogu. 19.10 trzy oferty z automatem (NERF0319, XSH36786, NERCHIL2S) miały w GT
 // inny EAN niż ich produkt w Allegro i Niezbędnik nie znajdował po nim nic — nawet nas (pomysł usera: „po ID oferty”).
+// Szukamy po WSZYSTKICH zapisach EAN-u produktu i po wariantach z zerem/bez zera (12-cyfrowy UPC = EAN-13 z „0”),
+// a wyniki łączymy: Niezbędnik szuka EAN-u jak frazy, a sprzedawcy wpisują różne zapisy. 20.10 XSH36786: po
+// „193052070883” — my i swiatbajekpl, po „0193052070883” — humbi (Top oferta 149,80, Smart, 101 szt.).
+// oferty.ean = lista zapisów rozdzielona przecinkiem (eanyOferty).
 // Czyste funkcje na górze (testy w test/pricing-konkurencja-allegro.test.js), baza i API niżej.
 
 const FILTRY = { has_smart: true, condition: 'new' };
@@ -36,6 +40,10 @@ const limitDzienny = () => (Number(process.env.PRICING_NSP_DZIENNIE) > 0 ? Numbe
 const waznoscH = () => (Number(process.env.PRICING_NSP_WAZNOSC_H) > 0 ? Number(process.env.PRICING_NSP_WAZNOSC_H) : 12);
 
 const dobryEan = (e) => /^(\d{8}|\d{12,14})$/.test(String(e || '').trim());
+// 12 cyfr (UPC) ↔ 13 z zerem na początku — ten sam kod, różny zapis w ofertach.
+const wariantyEan = (e) => (/^\d{12}$/.test(e) ? [e, `0${e}`] : /^0\d{12}$/.test(e) ? [e, e.slice(1)] : [e]);
+const zWariantami = (lista) => [...new Set(lista.map((e) => String(e || '').trim()).filter(dobryEan).flatMap(wariantyEan))];
+const eanyOferty = (o) => zWariantami(String(o?.ean || '').split(','));
 const coH = (v) => (CO_H.includes(Number(v)) ? Number(v) : DOMYSLNE.co_h);
 const przebicie = (v) => (v != null && Number(v) >= 0 && Number(v) <= PRZEBICIE_MAX ? Number(v) : DOMYSLNE.przebicie);
 const zBazy = (s) => (s ? Date.parse(String(s).replace(' ', 'T') + 'Z') : NaN);
@@ -68,11 +76,25 @@ function konkurenci(oferty, nasze, { minStan = DOMYSLNE.minStan } = {}) {
 // Obserwacja z wyniku Niezbędnika — w kształcie pricing/model.js. Ceny TOWARU (bez dostawy): filtr Smart
 // zostawia oferty z darmową dostawą dla klienta Smart, a raport Top ofert Allegro też porównuje cenę towaru.
 // `konkurenci` (ceny rosnąco) zostają w obserwacji — cel pod minimum wybiera doModelu(), gdy znamy pas.
-function zNiezbednika(wpis, cena, nasze, teraz = Date.now(), wazH = waznoscH()) {
-  if (!wpis || wpis.blad || !(cena > 0) || !(teraz - zBazy(wpis.czas) <= wazH * 3_600_000)) return null;
-  let oferty;
-  try { oferty = JSON.parse(wpis.oferty || '[]'); } catch { return null; }
-  const k = konkurenci(oferty, nasze);
+// wpisy — wynik(i) dla zapisów EAN-u oferty (jeden obiekt albo lista); łączymy świeże, oferty bez powtórzeń.
+const polaczWyniki = (wpisy, teraz, wazH) => {
+  const swieze = [].concat(wpisy || []).filter((w) => w && w.czas && !w.blad && teraz - zBazy(w.czas) <= wazH * 3_600_000);
+  if (!swieze.length) return null;
+  const oferty = new Map();
+  for (const w of swieze) {
+    let lista = [];
+    try { lista = JSON.parse(w.oferty || '[]'); } catch { /* uszkodzony wiersz — pomijamy */ }
+    for (const c of lista) oferty.set(c.oferta ?? `${c.login}|${c.cena}`, c);
+  }
+  const czas = swieze.map((w) => w.czas).sort().pop();
+  return { oferty: [...oferty.values()], czas, wszystkich: swieze.reduce((a, w) => a + (w.wszystkich ?? 0), 0) };
+};
+function zNiezbednika(wpisy, cena, nasze, teraz = Date.now(), wazH = waznoscH()) {
+  if (!(cena > 0)) return null;
+  const p = polaczWyniki(wpisy, teraz, wazH);
+  if (!p) return null;
+  const wpis = { czas: p.czas };
+  const k = konkurenci(p.oferty, nasze);
   if (!k.nasze.length) return null;   // wyszukiwanie nie znalazło naszego produktu — wynik nic nie mówi o konkurencji
   const ceny = k.lista.map((c) => c.cena);
   const naj = ceny.length ? ceny[0] : null;
@@ -113,25 +135,32 @@ function doSprawdzenia(oferty, ostatnie, teraz = Date.now(), { limit = Infinity,
 }
 
 // Pod kartę i komórkę: najtańsi konkurenci, pominięci, nasze oferty w wynikach.
-function podsumowanie(wpis, nasze, teraz = Date.now()) {
-  if (!wpis) return null;
-  let oferty = [];
-  try { oferty = JSON.parse(wpis.oferty || '[]'); } catch { /* uszkodzony wiersz — jak brak wyniku */ }
+function podsumowanie(wpisy, nasze, teraz = Date.now()) {
+  const lista = [].concat(wpisy || []).filter(Boolean);
+  if (!lista.length) return null;
+  // Do pokazania także stare wyniki (z „nieaktualne”) — łączymy wszystkie, które mają czas.
+  const p = polaczWyniki(lista.map((w) => ({ ...w, blad: null })), teraz, Infinity);
+  const zlecono = lista.map((w) => w.zlecono).filter(Boolean).sort().pop() || null;
+  const blad = lista.map((w) => w.blad).filter(Boolean)[0] || null;
+  const oferty = p?.oferty || [];
+  const czas = p?.czas || null;
   const k = konkurenci(oferty, nasze);
-  return { czas: wpis.czas, zlecono: wpis.zlecono || null, blad: wpis.blad || null, aktualny: teraz - zBazy(wpis.czas) <= waznoscH() * 3_600_000,
-    wszystkich: wpis.wszystkich ?? oferty.length, lista: k.lista.slice(0, 8), konkurentow: k.lista.length, pomin: k.pomin,
+  return { czas, zlecono, blad, aktualny: !!czas && teraz - zBazy(czas) <= waznoscH() * 3_600_000,
+    wszystkich: p?.wszystkich ?? oferty.length, lista: k.lista.slice(0, 8), konkurentow: k.lista.length, pomin: k.pomin,
     uzyteczny: k.nasze.length > 0,
     nasze: k.nasze.map((c) => ({ oferta: c.oferta, login: c.login, cena: c.cena })) };
 }
 
-// EAN produktu z katalogu Allegro (GET /sale/products/{id}) — parametr „EAN (GTIN)”, pierwsza poprawna wartość.
-function eanZProduktu(prod) {
+// EAN-y produktu z katalogu Allegro (GET /sale/products/{id}) — wszystkie poprawne wartości parametru „EAN (GTIN)”.
+function eanyZProduktu(prod) {
+  const wynik = [];
   for (const par of prod?.parameters || []) {
     if (!/EAN|GTIN/i.test(par.name || '')) continue;
-    for (const v of par.values || []) { const e = String(v).trim(); if (dobryEan(e)) return e; }
+    for (const v of par.values || []) { const e = String(v).trim(); if (dobryEan(e)) wynik.push(e); }
   }
-  return null;
+  return wynik;
 }
+const eanZProduktu = (prod) => eanyZProduktu(prod)[0] || null;
 const EAN_WAZNOSC_MS = 24 * 3_600_000;   // podpięcie oferty do produktu zmienia się rzadko — raz na dobę wystarczy
 
 // --- baza i API -------------------------------------------------------------------------------------
@@ -145,18 +174,26 @@ function wyniki() {
   const { db } = require('./db');
   return new Map(db.prepare('SELECT * FROM allegro_konkurencja').all().map((r) => [r.ean, r]));
 }
+// Wyniki dla wszystkich zapisów EAN-u oferty (ekran Ceny — bez wczytywania całej tabeli).
+function wpisyOferty(o) {
+  const eany = eanyOferty(o);
+  if (!eany.length) return [];
+  const { db } = require('./db');
+  return db.prepare(`SELECT * FROM allegro_konkurencja WHERE ean IN (${eany.map(() => '?').join(',')})`).all(...eany);
+}
 
-// EAN oferty z katalogu Allegro: oferta → productSet → produkt → jego EAN. null = oferta bez produktu albo bez EAN.
+// EAN-y oferty z katalogu Allegro: oferta → productSet → produkt → jego EAN-y, z wariantami 12/13 cyfr, jako
+// „a,b,c”. null = oferta bez produktu albo bez EAN.
 async function eanZAllegro(konto, ofertaId) {
   const allegro = require('./allegro');
   const s = await allegro.api(konto, `/sale/product-offers/${encodeURIComponent(ofertaId)}`);
+  const eany = [];
   for (const p of s?.productSet || []) {
     const id = p.product?.id;
-    if (!id) continue;
-    const ean = eanZProduktu(await allegro.api(konto, `/sale/products/${encodeURIComponent(id)}`));
-    if (ean) return ean;
+    if (id) eany.push(...eanyZProduktu(await allegro.api(konto, `/sale/products/${encodeURIComponent(id)}`)));
   }
-  return null;
+  const lista = zWariantami(eany);
+  return lista.length ? lista.join(',') : null;
 }
 
 // EAN-y ofert z automatem (kolumny oferty.ean / ean_zrodlo / ean_czas): z katalogu Allegro raz na dobę, z GT
@@ -167,7 +204,8 @@ async function odswiezEan(oferty, teraz = Date.now()) {
   const zapisz = db.prepare('UPDATE oferty SET ean = ?, ean_zrodlo = ?, ean_czas = ? WHERE id = ?');
   const zGt = [];
   for (const o of oferty) {
-    if (o.ean && teraz - zBazy(o.ean_czas) < EAN_WAZNOSC_MS) continue;
+    // Świeży i już z wariantami (zapis sprzed 20.10 miał jeden zapis bez wariantów — odświeżamy od razu).
+    if (o.ean && teraz - zBazy(o.ean_czas) < EAN_WAZNOSC_MS && eanyOferty(o).join(',') === o.ean) continue;
     let ean;
     try { ean = await eanZAllegro(o.rynek, o.asin); } catch { if (o.ean) continue; ean = null; }
     if (ean) { zapisz.run(ean, 'allegro', doBazy(teraz), o.id); o.ean = ean; continue; }
@@ -183,8 +221,9 @@ async function odswiezEan(oferty, teraz = Date.now()) {
     }
     for (const o of zGt) {
       if (!ean.has(o.tw_id)) continue;
-      zapisz.run(ean.get(o.tw_id), 'gt', doBazy(teraz), o.id);
-      o.ean = ean.get(o.tw_id);
+      const lista = zWariantami([ean.get(o.tw_id)]).join(',') || null;
+      zapisz.run(lista, 'gt', doBazy(teraz), o.id);
+      o.ean = lista;
     }
   }
   return oferty;
@@ -244,7 +283,7 @@ async function zlec(oferty, teraz = Date.now()) {
   const zuzycie = JSON.parse(stan.get('nsp_dzis')?.wartosc || '{}');
   const dzis = zuzycie.dzien === dzien ? zuzycie.n : 0;
   const ostatnie = wyniki();
-  const eans = doSprawdzenia(oferty.map((o) => ({ ean: o.ean, co_h: o.konk_co_h })), ostatnie, teraz, { limit: limitDzienny() - dzis });
+  const eans = doSprawdzenia(oferty.flatMap((o) => eanyOferty(o).map((ean) => ({ ean, co_h: o.konk_co_h }))), ostatnie, teraz, { limit: limitDzienny() - dzis });
   if (!eans.length) return { eanow: 0, dzis };
   const z = await nsp.zlecRaport(eans, FILTRY);
   stan.set('nsp_raport', JSON.stringify({ id: z.id, eans }));
@@ -257,5 +296,5 @@ async function zlec(oferty, teraz = Date.now()) {
   return { id: z.id, eanow: eans.length, dzis: dzis + eans.length };
 }
 
-module.exports = { FILTRY, CO_H, DOMYSLNE, PRZEBICIE_MAX, okno, waznoscH, dobryEan, coH, przebicie, godzinaPL, wOknie, zWyniku, eanZProduktu, eanZAllegro,
+module.exports = { FILTRY, CO_H, DOMYSLNE, PRZEBICIE_MAX, okno, waznoscH, dobryEan, wariantyEan, eanyOferty, wpisyOferty, coH, przebicie, godzinaPL, wOknie, zWyniku, eanZProduktu, eanyZProduktu, eanZAllegro,
   konkurenci, zNiezbednika, doModelu, doSprawdzenia, podsumowanie, naszeKonta, wyniki, odswiezEan, odbierz, zlec };

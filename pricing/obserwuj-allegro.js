@@ -51,7 +51,8 @@ async function obserwujAllegro(oferty, surowe) {
       const wTop = top.get(klucz(o.rynek, o.asin));
       const inne = (poTw.get(o.tw_id) || []).filter((x) => x.id !== o.id).map((x) => x.c);
       const zTop = zRaportu(wTop, cena, teraz, undefined, inne);
-      const zNsp = o.ean ? konkurencja.zNiezbednika(konk.get(o.ean), cena, nasze, teraz) : null;
+      const eany = konkurencja.eanyOferty(o);
+      const zNsp = eany.length ? konkurencja.zNiezbednika(eany.map((e) => konk.get(e)).filter(Boolean), cena, nasze, teraz) : null;
       const obs = (zTop && zNsp ? (zBazy(wTop.raport_czas) > zBazy(zNsp.czas) ? zTop : zNsp) : zTop || zNsp) || allegro.zOferty(surowa);
       wynik.set(o.id, obs);
       const w = { cena: obs.cena, wysylka: obs.wysylka, bb_nasz: b(obs.bbNasz), bb_cena: obs.bbCena, bb_fba: b(obs.bbFba),

@@ -131,9 +131,9 @@ function zlozZamowienia(surowe, wyceny, sklady, koszty) {
   const zamowienia = [], pozycje = [], skladniki = [], zwroty = [];
   const dodaj = (z, wiersze, kanal) => {
     const poz = [];
-    let wysylka = 0;
+    let wysylka = 0, wysylkaNetto = 0;
     for (const p of wiersze) {
-      if (!TOWAR(p.rodzaj) || !p.tw_id) { wysylka += (Number(p.cena) || 0) * (Number(p.szt) || 0); continue; }
+      if (!TOWAR(p.rodzaj) || !p.tw_id) { wysylka += (Number(p.cena) || 0) * (Number(p.szt) || 0); wysylkaNetto += Number(p.netto) || 0; continue; }
       const szt = Number(p.szt) || 0;
       if (szt <= 0) continue;
       const zapisany = koszty.get(`${z.id}|${p.tw_id}`);
@@ -144,6 +144,10 @@ function zlozZamowienia(surowe, wyceny, sklady, koszty) {
     z.szt = poz.reduce((s, p) => s + p.szt, 0);
     z.netto = poz.reduce((s, p) => s + p.netto, 0);
     z.wysylka_klienta = wysylka;
+    // przychód = cała faktura (towary + wysyłka klienta), jak FS i ERP Dashboard (decyzja usera 2026-10-20);
+    // wysyłkę rozkładamy na pozycje wg wartości, żeby suma produktów = suma kanałów
+    z.wysylka_netto = wysylkaNetto;
+    for (const p of poz) p.wysylka = z.netto > 0 ? wysylkaNetto * p.netto / z.netto : 0;
     const zy = z.status === 'paragon' ? (() => { for (const p of poz) p.zysk = p.netto - p.szt * (p.koszt || 0); return { zysk: poz.reduce((s, p) => s + p.zysk, 0), zrodlo: 'handlowa' }; })()
       : policzZysk(z, poz, wyceny);
     z.zysk = zy.zysk; z.zysk_zrodlo = poz.some((p) => !(p.koszt > 0)) ? zy.zrodlo + '_bez_kosztu' : zy.zrodlo;
@@ -198,14 +202,14 @@ function kosztyZapisane(ids) {
 }
 
 const KOLUMNY_ZAM = ['id', 'zk_id', 'fs_id', 'numer', 'status', 'data_zam', 'godz_zam', 'data_zam_zrodlo', 'data_zk', 'data_fs',
-  'kanal', 'rynek', 'kanal_regula', 'waluta', 'kurs', 'szt', 'netto', 'wysylka_klienta', 'zysk', 'zysk_zrodlo'];
+  'kanal', 'rynek', 'kanal_regula', 'waluta', 'kurs', 'szt', 'netto', 'wysylka_netto', 'wysylka_klienta', 'zysk', 'zysk_zrodlo'];
 
 // Zapis jednego okna: zamówienia z okna zastępują swoje stare wersje; ZK „zamówione” z okna, których GT już nie
 // zwraca (dostały FS z datą spoza okna albo zniknęły), są kasowane, żeby nie liczyły się podwójnie.
 function zapisz({ zamowienia, pozycje, skladniki, zwroty }, { od, doDnia }) {
   const insZam = db.prepare(`INSERT OR REPLACE INTO zamowienia (${KOLUMNY_ZAM.join(',')}, wczytano)
     VALUES (${KOLUMNY_ZAM.map(() => '?').join(',')}, CURRENT_TIMESTAMP)`);
-  const insPoz = db.prepare('INSERT INTO pozycje (zam_id, tw_id, rodzaj, szt, netto, cena_wal, koszt, zysk) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  const insPoz = db.prepare('INSERT INTO pozycje (zam_id, tw_id, rodzaj, szt, netto, wysylka, cena_wal, koszt, zysk) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
   const insSkl = db.prepare('INSERT INTO skladniki (zam_id, zestaw_id, tw_id, szt) VALUES (?, ?, ?, ?)');
   const insZw = db.prepare('INSERT INTO zwroty (kfs_id, fs_id, numer, data, kanal, tw_id, szt, netto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
   const delPoz = db.prepare('DELETE FROM pozycje WHERE zam_id = ?');
@@ -217,7 +221,7 @@ function zapisz({ zamowienia, pozycje, skladniki, zwroty }, { od, doDnia }) {
     const stare = db.prepare("SELECT id FROM zamowienia WHERE status = 'zamowione' AND data_zk >= ? AND data_zk < ?").all(od, doDnia);
     for (const { id } of stare) if (!nowe.has(id)) { delPoz.run(id); delSkl.run(id); delZam.run(id); }
     for (const z of zamowienia) { delPoz.run(z.id); delSkl.run(z.id); insZam.run(...KOLUMNY_ZAM.map((k) => z[k] ?? null)); }
-    for (const p of pozycje) insPoz.run(p.zam_id, p.tw_id, p.rodzaj, p.szt, p.netto, p.cena_wal, p.koszt, p.zysk);
+    for (const p of pozycje) insPoz.run(p.zam_id, p.tw_id, p.rodzaj, p.szt, p.netto, p.wysylka ?? 0, p.cena_wal, p.koszt, p.zysk);
     for (const s of skladniki) insSkl.run(s.zam_id, s.zestaw_id, s.tw_id, s.szt);
     db.prepare('DELETE FROM zwroty WHERE data >= ? AND data < ?').run(od, doDnia);
     for (const w of zwroty) insZw.run(w.kfs_id, w.fs_id, w.numer, w.data, w.kanal, w.tw_id, w.szt, w.netto);

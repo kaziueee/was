@@ -39,21 +39,22 @@
     const o = d.okresy;
     $('d-data').textContent = st.zakres === 'dzien' ? W.dzienTxt(st.dzien, false) : W.zakresTxt(o.cur);
     const wTrakcie = o.cur[1] === st.dzis;
-    $('hero').innerHTML = `<div class="et">Przychód netto · ${st.baza === 'zam' ? 'wg zamówienia' : 'wg faktury'}${wTrakcie ? ' · dzień w trakcie' : ''}</div>
+    $('hero').innerHTML = `<div class="et">Przychód netto internetu · ${st.baza === 'zam' ? 'wg zamówienia' : 'wg faktury'}${wTrakcie ? ' · dzień w trakcie' : ''}</div>
       <div class="w">${W.zl(sc.netto)}</div>
       <div class="r">${W.zmiana(sc.netto, sp.netto)} <span>vs ${W.zakresTxt(o.prev)}: ${W.zl(sp.netto)}</span></div>
       <div class="r"><span>Marża <b>${W.pct(W.marza(sc))}</b></span><span><b>${W.naSzt(sc.zysk, sc.szt)}</b></span><span>Zysk <b>${W.zl(sc.zysk)}</b></span></div>
-      <div class="r"><span><b>${W.szt(sc.szt)}</b> szt.</span><span><b>${W.szt(sc.zam)}</b> ${st.baza === 'zam' ? 'zam.' : 'FS i paragonów'}</span>
+      <div class="r"><span><b>${W.szt(sc.szt)}</b> szt.</span><span><b>${W.szt(sc.zam)}</b> ${st.baza === 'zam' ? 'zam.' : 'FS'}</span>
         ${sc.zamowione ? `<span>${W.szt(sc.zamowione)} jeszcze bez faktury</span>` : ''}<span>zwroty ${W.zl(d.cur.zwroty.netto)}</span></div>`;
     const ost = W.ostrzezenia(d);
     if (wTrakcie) ost.unshift('Dzisiejsze liczby rosną w ciągu dnia, a rok temu to pełny dzień.');
     $('ostrz').innerHTML = ost.map((x) => `<div>${W.esc(x)}</div>`).join('');
     $('ostrz').classList.toggle('hidden', !ost.length);
-    const wiersze = W.wierszeKanalow(d.cur.kanaly, d.prev.kanaly, d.nazwy);
-    $('kanaly').innerHTML = wiersze.map((w) => `<span class="n">${W.esc(w.nazwa)}</span><span>${W.zl(w.cur.netto)}</span>`
+    const { lista, osobno } = W.wierszeKanalow(d.cur.kanaly, d.prev.kanaly, d.nazwy);
+    const wiersz = (w) => `<span class="n">${W.esc(w.nazwa)}</span><span>${W.zl(w.cur.netto)}</span>`
       + `<span class="z">${W.zyskTxt(w.cur)} · ${W.zmiana(w.cur.netto, w.prev.netto)}</span>`
-      + w.dzieci.map((c) => `<span class="n dz">${W.esc(c.nazwa)}</span><span class="dz">${W.zl(c.cur.netto)}</span><span class="z">${W.zmiana(c.cur.netto, c.prev.netto)}</span>`).join('')).join('')
-      || '<span class="sw-brak" style="grid-column:1/-1">Brak sprzedaży w tym zakresie.</span>';
+      + w.dzieci.map((c) => `<span class="n dz">${W.esc(c.nazwa)}</span><span class="dz">${W.zl(c.cur.netto)}</span><span class="z">${W.zmiana(c.cur.netto, c.prev.netto)}</span>`).join('');
+    $('kanaly').innerHTML = (lista.map(wiersz).join('') || '<span class="sw-brak" style="grid-column:1/-1">Brak sprzedaży internetowej w tym zakresie.</span>')
+      + (osobno.length ? '<span class="sw-brak t-poza">Poza sumą</span>' + osobno.map(wiersz).join('') : '');
     const wcz = d.wczytanie || {};
     $('stopka').textContent = `Dane z ${W.godzina(wcz.biezacy || wcz.historia_wczytana) || '—'}` + (wcz.historia_od ? ` · historia od ${wcz.historia_od}` : ' · historia niewczytana');
   }

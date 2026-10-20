@@ -42,9 +42,12 @@
   const INNE = ['FENOM', 'MEDIA_EXPERT', 'INPOST_PAY', 'ERLI', 'PIGU', 'AMAZON_EU', 'INNE'];
   const RYNKI_ALLEGRO = { PL: 'Polska', CZ: 'Czechy', SK: 'Słowacja', HU: 'Węgry' };
 
+  // Suma na górze ekranu = sprzedaż internetowa (FS z K4, jak ERP Dashboard). Sklep (paragony z MAG) jest
+  // osobnym wierszem „poza sumą” — decyzja usera 2026-10-20: jego wahania nie mają mieszać trendu internetu.
+  const POZA_SUMA = ['SKLEP'];
   function sumy(kanaly) {
     const s = { zam: 0, szt: 0, netto: 0, zysk: 0, handl: 0, zamowione: 0 };
-    for (const g of Object.values(kanaly || {})) for (const k of Object.keys(s)) s[k] += g[k] || 0;
+    for (const [k, g] of Object.entries(kanaly || {})) { if (POZA_SUMA.includes(k)) continue; for (const p of Object.keys(s)) s[p] += g[p] || 0; }
     return s;
   }
 
@@ -53,9 +56,10 @@
     const pusty = { zam: 0, szt: 0, netto: 0, zysk: 0, handl: 0, rynki: {} };
     const klucze = [...new Set([...Object.keys(cur || {}), ...Object.keys(prev || {})])];
     const inne = { k: '_INNE', nazwa: 'Inne kanały', cur: { ...pusty }, prev: { ...pusty }, dzieci: [] };
-    const lista = [];
+    const lista = [], osobno = [];
     for (const k of klucze) {
       const w = { k, nazwa: nazwy[k] || k, cur: (cur || {})[k] || pusty, prev: (prev || {})[k] || pusty, dzieci: [] };
+      if (POZA_SUMA.includes(k)) { w.pozaSuma = true; osobno.push(w); continue; }
       if (INNE.includes(k)) {
         inne.dzieci.push(w);
         for (const o of ['cur', 'prev']) for (const p of ['zam', 'szt', 'netto', 'zysk', 'handl']) inne[o][p] += w[o][p] || 0;
@@ -71,7 +75,7 @@
     lista.sort((a, b) => b.cur.netto - a.cur.netto);
     inne.dzieci.sort((a, b) => b.cur.netto - a.cur.netto);
     if (inne.dzieci.length) lista.push(inne);
-    return lista;
+    return { lista, osobno };
   }
 
   // Zysk z oznaczeniem „≈”, gdy przeważa marża handlowa (kanał bez reguł w kalkulatorze).

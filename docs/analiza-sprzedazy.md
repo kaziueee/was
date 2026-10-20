@@ -50,9 +50,16 @@ Czego nie bierzemy: `dok_Typ IN (2, 21)` z filtrem K4 nigdy nie łapał paragon�
 |---|---|---|---|
 | Sprzedaż internetowa | FS z K4: `dok_Typ=2, dok_Status=1, dok_MagId=4`, pozycje pod `ob_DokHanId`, `tw_Rodzaj` 1 i 8 | 29 395 FS, 42 271 szt., 2,79 mln zł netto, 2604 towary | podstawa |
 | Zamówienia | ZK (`dok_Typ=16`), `FS.dok_DoDokId = ZK.dok_Id` | 99,7% FS ma ZK; 38 ZK z 27 587 bez FS (0,14%) | data zamówienia + bieżący dzień |
-| Paragony | PA (`dok_Typ=21`) **wyłącznie z MAG** | 2002 PA, 5410 szt., 161 tys. zł, 2804 towary | **[decyzja] osobny kanał „Sklep”, poza tierem** |
+| Paragony | PA (`dok_Typ=21`) **wyłącznie z MAG** | 2002 PA, 5410 szt., 161 tys. zł, 2804 towary | **[decyzja] osobny kanał „Sklep”, poza tierem i poza sumą na górze ekranu** |
 | Korekty | KFS (`dok_Typ=6`) z K4 | 832 KFS, 1056 szt. (2,5%), 78 tys. zł | **[decyzja] tylko osobna kolumna „zwroty”, nie odejmujemy** |
 | FS z MAG | `dok_MagId=1` | 12 FS, 312 szt. (0,7%) | pomijamy, jak w zadaniu sprzedażowym (decyzja 2026-10-06) |
+
+**Przychód = cała faktura netto [decyzja 20.10, po porównaniu z Metabase]:** towary + wysyłka zapłacona przez klienta
+(wiersze FS bez towaru), jak `dok_WartNetto` w ERP Dashboard; wysyłka rozłożona na pozycje wg wartości, więc suma
+produktów = suma kanałów, a marża liczy się od tego samego co w kalkulatorze. **Suma na górze = internet (FS z K4);
+Sklep poza sumą [decyzja 20.10]** — jego wahania (19.10: −83% r/r) nie mieszają trendu internetu. Zgodność z
+Metabase sprawdzona: 19.10.2026 914 FS / 91 038,77 zł (Metabase 91 039,44 — zaokrąglenia pozycji vs nagłówek) vs
+929 / 97 537,60 → −6,66%; 20.10 432 / 433 FS, −3,73% — co do procenta jak `Dashboard_Faktury_Dzien`.
 
 **Data dnia [decyzja: „oba na razie”].** Każda pozycja ma dwie daty: **zamówienia** (ZK) i **faktury** (FS).
 Ekrany mają przełącznik „wg zamówienia / wg faktury”. Po co obie: faktura powstaje tego samego dnia w 37%

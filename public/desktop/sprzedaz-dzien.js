@@ -56,12 +56,12 @@ function sdRysujPodsumowanie(d) {
   el('sd-vs').textContent = `${W.zakresTxt(o.cur)} vs ${W.zakresTxt(o.prev)} (−364 dni)`;
   const mc = W.marza(sc), mp = W.marza(sp);
   const kafle = [
-    ['Przychód netto', W.zl(sc.netto), W.zl(sp.netto), W.zmiana(sc.netto, sp.netto)],
+    ['Przychód netto (internet)', W.zl(sc.netto), W.zl(sp.netto), W.zmiana(sc.netto, sp.netto)],
     ['Marża', W.pct(mc), W.pct(mp), mc == null || mp == null ? '' : `<span class="${mc >= mp ? 'sw-plus' : 'sw-minus'}">${mc >= mp ? '+' : ''}${W.nf1.format(mc - mp)} pp</span>`],
     ['Zysk na sztuce', W.naSzt(sc.zysk, sc.szt), W.naSzt(sp.zysk, sp.szt), W.zmiana(sc.szt ? sc.zysk / sc.szt : null, sp.szt ? sp.zysk / sp.szt : null)],
     ['Zysk po kosztach kanału', W.zl(sc.zysk), W.zl(sp.zysk), W.zmiana(sc.zysk, sp.zysk)],
     ['Sztuki', W.szt(sc.szt), W.szt(sp.szt), W.zmiana(sc.szt, sp.szt)],
-    [d.baza === 'zam' ? 'Zamówienia' : 'Faktury i paragony', W.szt(sc.zam), W.szt(sp.zam), W.zmiana(sc.zam, sp.zam)],
+    [d.baza === 'zam' ? 'Zamówienia' : 'Faktury', W.szt(sc.zam), W.szt(sp.zam), W.zmiana(sc.zam, sp.zam)],
     ['Zwroty (KFS)', W.zl(d.cur.zwroty.netto), W.zl(d.prev.zwroty.netto), `${W.szt(d.cur.zwroty.szt)} szt.`],
   ];
   el('sd-kafle').innerHTML = kafle.map(([e, w, p, zm]) => `<div class="sd-kafel"><div class="sd-et">${e}</div><div class="sd-w">${w}</div>`
@@ -80,21 +80,23 @@ function sdRysujKanaly(d) {
   const W = window.SprzedazW;
   const sc = W.sumy(d.cur.kanaly), sp = W.sumy(d.prev.kanaly);
   const wiersz = (w, klasa = '', id = '') => `<tr class="${klasa}"${id ? ` data-id="${id}"` : ''}><td>${W.esc(w.nazwa)}`
-    + `${w.k === 'SKLEP' ? '<span class="sw-tag">paragony, poza tierem</span>' : ''}${w.k === '_INNE' ? `<span class="sw-tag">${w.dzieci.length}</span>` : ''}</td>`
+    + `${w.k === 'SKLEP' ? '<span class="sw-tag">paragony z MAG, poza sumą</span>' : ''}${w.k === '_INNE' ? `<span class="sw-tag">${w.dzieci.length}</span>` : ''}</td>`
     + `<td class="num">${klasa.includes('sd-dziecko') && w.k.length === 2 ? '' : W.szt(w.cur.zam)}</td><td class="num">${W.szt(w.cur.szt)}</td>`
     + `<td class="num">${W.zl(w.cur.netto)}</td><td class="num">${W.zmiana(w.cur.netto, w.prev.netto)}</td>`
     + `<td class="num">${W.pct(W.marza(w.cur))}</td><td class="num">${W.naSzt(w.cur.zysk, w.cur.szt)}</td><td class="num">${W.zyskTxt(w.cur)}</td>`
     + `<td class="num">${W.pct(sc.netto ? w.cur.netto / sc.netto * 100 : null)}</td></tr>`;
   let html = `<thead><tr><th>Kanał</th><th class="num">${d.baza === 'zam' ? 'Zamówienia' : 'Faktury'}</th><th class="num">Szt.</th>`
     + '<th class="num">Przychód netto</th><th class="num">r/r</th><th class="num">Marża</th><th class="num">Zysk na szt.</th><th class="num">Zysk</th><th class="num">Udział</th></tr></thead><tbody>';
-  for (const w of W.wierszeKanalow(d.cur.kanaly, d.prev.kanaly, d.nazwy)) {
+  const { lista, osobno } = W.wierszeKanalow(d.cur.kanaly, d.prev.kanaly, d.nazwy);
+  for (const w of lista) {
     const ma = w.dzieci.length > 0;
     html += wiersz(w, ma ? 'sd-grupa' + (sdOtwarte.has(w.k) ? ' otw' : '') : '', ma ? w.k : '');
     if (ma && sdOtwarte.has(w.k)) for (const c of w.dzieci) html += wiersz(c, 'sd-dziecko');
   }
-  html += `<tr class="sd-suma"><td>Razem</td><td class="num">${W.szt(sc.zam)}</td><td class="num">${W.szt(sc.szt)}</td><td class="num">${W.zl(sc.netto)}</td>`
+  html += `<tr class="sd-suma"><td>Razem internet</td><td class="num">${W.szt(sc.zam)}</td><td class="num">${W.szt(sc.szt)}</td><td class="num">${W.zl(sc.netto)}</td>`
     + `<td class="num">${W.zmiana(sc.netto, sp.netto)}</td><td class="num">${W.pct(W.marza(sc))}</td><td class="num">${W.naSzt(sc.zysk, sc.szt)}</td>`
-    + `<td class="num">${W.zl(sc.zysk)}</td><td></td></tr></tbody>`;
+    + `<td class="num">${W.zl(sc.zysk)}</td><td></td></tr>`
+    + osobno.map((w) => wiersz(w, 'sd-poza').replace(/<td class="num">[^<]*<\/td><\/tr>$/, '<td class="num">poza sumą</td></tr>')).join('') + '</tbody>';
   const t = el('sd-kanaly');
   t.innerHTML = html;
   t.querySelectorAll('tr.sd-grupa').forEach((tr) => { tr.onclick = () => {

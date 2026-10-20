@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS zamowienia (
   kurs          REAL,                    -- PLN za 1 jednostkę waluty (HUF przeliczony z „za 100”)
   szt           REAL NOT NULL DEFAULT 0, -- towary (rodzaj 1 i 8)
   netto         REAL NOT NULL DEFAULT 0, -- towary, PLN netto
-  wysylka_klienta REAL,                  -- brutto w walucie dokumentu (wiersze bez towaru / usługi)
+  wysylka_netto REAL,                    -- wysyłka zapłacona przez klienta (wiersze bez towaru / usługi), PLN netto
+  wysylka_klienta REAL,                  -- to samo brutto w walucie dokumentu (wejście kalkulatora)
   zysk          REAL,                    -- PLN, po kosztach kanału (albo marża handlowa — zob. zysk_zrodlo)
   zysk_zrodlo   TEXT,                    -- 'kalkulator' | 'kalkulator_pl' (Allegro poza PL) | 'handlowa' | NULL
   wczytano      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -57,7 +58,8 @@ CREATE TABLE IF NOT EXISTS pozycje (
   tw_id     INTEGER NOT NULL,
   rodzaj    INTEGER,
   szt       REAL NOT NULL,
-  netto     REAL NOT NULL,                -- PLN
+  netto     REAL NOT NULL,                -- PLN, sam towar
+  wysylka   REAL,                         -- udział pozycji w wysyłce klienta (PLN netto, wg wartości) — przychód = netto + wysylka
   cena_wal  REAL,                         -- brutto za sztukę w walucie dokumentu
   koszt     REAL,                         -- koszt zakupu za sztukę z dnia wczytania (PLN netto)
   zysk      REAL                          -- PLN, część zysku zamówienia
@@ -121,6 +123,11 @@ CREATE TABLE IF NOT EXISTS meta (
   czas      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 `);
+
+// Migracje (baza powstała przed kolumną). Przychód = cała faktura — decyzja usera 2026-10-20 po porównaniu z Metabase.
+const kolumny = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((k) => k.name);
+if (!kolumny('zamowienia').includes('wysylka_netto')) db.exec('ALTER TABLE zamowienia ADD COLUMN wysylka_netto REAL');
+if (!kolumny('pozycje').includes('wysylka')) db.exec('ALTER TABLE pozycje ADD COLUMN wysylka REAL');
 
 const meta = {
   get: (k) => db.prepare('SELECT wartosc, czas FROM meta WHERE klucz = ?').get(k) || null,

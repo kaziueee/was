@@ -1522,6 +1522,7 @@ main {
 .sd-tabela tr.sd-dziecko td { font-size: 13px; color: #444; background: #fafbfc; }
 .sd-tabela tr.sd-dziecko td:first-child { padding-left: 28px; }
 .sd-tabela tr.sd-suma td { font-weight: 700; border-top: 2px solid #e3e5e8; }
+.sd-tabela tr.sd-poza td { color: #555; font-style: italic; }
 .sd-min { width: 34px; height: 34px; object-fit: contain; border-radius: 4px; background: #fff; border: 1px solid #e3e5e8; vertical-align: middle; }
 .sd-nz { max-width: 320px; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle; white-space: nowrap; }
 .sd-kan { font-size: 12px; }

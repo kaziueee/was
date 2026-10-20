@@ -42,8 +42,9 @@ function stanWczytania() {
 router.get('/stan', (req, res) => res.json({ ...stanWczytania(), dzis: dzisLokalnie() }));
 
 function kanalyZakresu({ kol, warunek }, [od, doDnia]) {
-  const wiersze = db.prepare(`SELECT kanal, rynek, COUNT(*) zam, SUM(szt) szt, SUM(netto) netto, SUM(zysk) zysk,
-      SUM(CASE WHEN zysk_zrodlo LIKE 'handlowa%' THEN netto ELSE 0 END) handl,
+  // netto = przychód netto CAŁEJ faktury: towary + wysyłka zapłacona przez klienta (jak FS i ERP Dashboard)
+  const wiersze = db.prepare(`SELECT kanal, rynek, COUNT(*) zam, SUM(szt) szt, SUM(netto + IFNULL(wysylka_netto, 0)) netto, SUM(zysk) zysk,
+      SUM(CASE WHEN zysk_zrodlo LIKE 'handlowa%' THEN netto + IFNULL(wysylka_netto, 0) ELSE 0 END) handl,
       SUM(CASE WHEN status = 'zamowione' THEN 1 ELSE 0 END) zamowione
     FROM zamowienia WHERE ${kol} BETWEEN ? AND ? AND ${warunek} GROUP BY kanal, rynek`).all(od, doDnia);
   const kanaly = {};
@@ -123,7 +124,7 @@ router.get('/produkty', (req, res) => {
   const p = parametry(req.query);
   const sort = ['zysk', 'szt', 'netto'].includes(req.query.sort) ? req.query.sort : 'zysk';
   const limit = Math.min(Math.max(Number(req.query.limit) || 500, 1), 2000);
-  const wiersze = db.prepare(`SELECT x.tw_id, z.kanal, SUM(x.szt) szt, SUM(x.netto) netto, SUM(x.zysk) zysk,
+  const wiersze = db.prepare(`SELECT x.tw_id, z.kanal, SUM(x.szt) szt, SUM(x.netto + IFNULL(x.wysylka, 0)) netto, SUM(x.zysk) zysk,
       MAX(CASE WHEN z.zysk_zrodlo LIKE 'handlowa%' THEN 1 ELSE 0 END) handl
     FROM pozycje x JOIN zamowienia z ON z.id = x.zam_id
     WHERE z.${p.kol} BETWEEN ? AND ? AND ${p.warunek.replace('status', 'z.status')} GROUP BY x.tw_id, z.kanal`).all(...p.zakres.cur);

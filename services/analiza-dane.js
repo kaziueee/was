@@ -6,7 +6,9 @@
 //
 // Zamówienie = ZK; FS bez ZK (0,3%) to zamówienie samo w sobie; paragon (PA, tylko z MAG) to kanał „Sklep”.
 // ZK bez FS (dzisiejsze, wczorajsze) ma status „zamówione” i liczby z ZK — po wystawieniu FS ten sam wiersz
-// dostaje liczby z faktury. Koszt zakupu zostaje z dnia PIERWSZEGO wczytania pozycji (GT nie trzyma kosztu
+// dostaje liczby z faktury. ZK, które przez ZK_BEZ_FS_DNI nie dostało FS, przestaje być sprzedażą: 99,98% FS powstaje
+// do 7 dni od ZK (pomiar 2026-10-21 na 290 tys. par), a starsze ZK bez FS to rezerwacje wewnętrzne („poszukiwacze”:
+// „PLUSY INWENTURA 2026” 43,9 tys. zł, „ostoy wielki koncert” 81 tys. zł) i zdublowane importy z 24.11.2025. Koszt zakupu zostaje z dnia PIERWSZEGO wczytania pozycji (GT nie trzyma kosztu
 // wstecz, a ponowne wczytanie ostatnich dni nie może przepisać go dzisiejszym).
 
 const { query } = require('./gt-sql');
@@ -17,6 +19,10 @@ const { MAGAZYN_GT_ID, MAGAZYNY_RAZEM } = require('../config/magazyny');
 const { kanalDokumentu } = require('./analiza-kanal');
 const am = require('./analiza-model');
 const { db, meta } = require('../db/sprzedaz');
+const { dzisLokalnie } = require('./sprzedaz-model');
+
+const ZK_BEZ_FS_DNI = 14;
+const granicaZk = () => am.dodajDni(dzisLokalnie(), -ZK_BEZ_FS_DNI);
 
 const KOL = Object.fromEntries(KOLUMNY.map((k) => [k.klucz, k]));
 const WALUTA_KOLUMNY = { '€': 'EUR', 'zł': 'PLN', RON: 'RON', Ft: 'HUF' };
@@ -30,7 +36,8 @@ const POLA_FS = `d.dok_Id fs_id, d.dok_NrPelny numer, CONVERT(char(10), d.dok_Da
   d.dok_WalutaKurs kurs, LTRIM(RTRIM(ISNULL(z2.pwd_Tekst04, ''))) zrodlo_fs, ISNULL(kf.kat_Nazwa, '') kat_fs,
   LEFT(ISNULL(d.dok_Uwagi, ''), 200) uwagi, ISNULL(kr.kraj, '') kraj,
   zk.dok_Id zk_id, CONVERT(char(10), zk.dok_DataWyst, 23) data_zk, LTRIM(RTRIM(ISNULL(z8.pwd_Tekst01, ''))) zrodlo_zk,
-  ISNULL(kz.kat_Nazwa, '') kat_zk, z8.pwd_Tekst05 uuid`;
+  ISNULL(kz.kat_Nazwa, '') kat_zk, z8.pwd_Tekst05 uuid, LEFT(ISNULL(zk.dok_Uwagi, ''), 200) uwagi_zk,
+  ISNULL(zk.dok_NrPelnyOryg, '') oryg_zk`;
 const ZLACZ_FS = `LEFT JOIN dok__Dokument zk ON zk.dok_Id = d.dok_DoDokId AND zk.dok_Typ = 16
   LEFT JOIN pw_Dane z2 ON z2.pwd_IdObiektu = d.dok_Id AND z2.pwd_TypObiektu = -2
   LEFT JOIN pw_Dane z8 ON z8.pwd_IdObiektu = zk.dok_Id AND z8.pwd_TypObiektu = -8
@@ -38,7 +45,7 @@ const ZLACZ_FS = `LEFT JOIN dok__Dokument zk ON zk.dok_Id = d.dok_DoDokId AND zk
   LEFT JOIN sl_Kategoria kz ON kz.kat_Id = zk.dok_KatId
   ${KRAJ}`;
 const FS_W_OKNIE = `d.dok_Typ = 2 AND d.dok_Status = 1 AND d.dok_MagId = @mag AND d.dok_DataWyst >= @od AND d.dok_DataWyst < @do`;
-const ZK_BEZ_FS = `d.dok_Typ = 16 AND d.dok_MagId = @mag AND d.dok_DataWyst >= @od AND d.dok_DataWyst < @do
+const ZK_BEZ_FS = `d.dok_Typ = 16 AND d.dok_MagId = @mag AND d.dok_DataWyst >= @odZk AND d.dok_DataWyst < @do
   AND NOT EXISTS (SELECT 1 FROM dok__Dokument x WHERE x.dok_DoDokId = d.dok_Id AND x.dok_Typ = 2)`;
 const PA_W_OKNIE = `d.dok_Typ = 21 AND d.dok_Status = 1 AND d.dok_DataWyst >= @od AND d.dok_DataWyst < @do`;
 const POZ = (warunek) => `SELECT p.ob_DokHanId dok_id, p.ob_TowId tw_id, ISNULL(t.tw_Rodzaj, 0) rodzaj, p.ob_Ilosc szt,
@@ -47,13 +54,14 @@ const POZ = (warunek) => `SELECT p.ob_DokHanId dok_id, p.ob_TowId tw_id, ISNULL(
   WHERE ${warunek}`;
 
 async function pobierzOkno(od, doDnia) {
-  const par = { od, do: doDnia, mag: MAGAZYN_GT_ID.K4 };
+  const g = granicaZk();
+  const par = { od, odZk: od > g ? od : g, do: doDnia, mag: MAGAZYN_GT_ID.K4 };
   const [fs, fsPoz, zk, zkPoz, pa, paPoz, kfs] = await Promise.all([
     query(`SELECT ${POLA_FS} FROM dok__Dokument d ${ZLACZ_FS} WHERE ${FS_W_OKNIE}`, par),
     query(POZ(FS_W_OKNIE), par),
     query(`SELECT d.dok_Id zk_id, d.dok_NrPelny numer, CONVERT(char(10), d.dok_DataWyst, 23) data_zk, d.dok_Waluta waluta,
         d.dok_WalutaKurs kurs, LTRIM(RTRIM(ISNULL(z8.pwd_Tekst01, ''))) zrodlo_zk, ISNULL(kz.kat_Nazwa, '') kat_zk,
-        z8.pwd_Tekst05 uuid, LEFT(ISNULL(d.dok_Uwagi, ''), 200) uwagi, ISNULL(kr.kraj, '') kraj
+        z8.pwd_Tekst05 uuid, LEFT(ISNULL(d.dok_Uwagi, ''), 200) uwagi, ISNULL(kr.kraj, '') kraj, ISNULL(d.dok_NrPelnyOryg, '') oryg_zk
       FROM dok__Dokument d LEFT JOIN pw_Dane z8 ON z8.pwd_IdObiektu = d.dok_Id AND z8.pwd_TypObiektu = -8
       LEFT JOIN sl_Kategoria kz ON kz.kat_Id = d.dok_KatId ${KRAJ} WHERE ${ZK_BEZ_FS}`, par),
     query(POZ(ZK_BEZ_FS), par),
@@ -169,7 +177,7 @@ function zlozZamowienia(surowe, wyceny, sklady, koszty) {
   }
   const zkPoz = pozycjeDokumentu(surowe.zkPoz);
   for (const d of surowe.zk) {
-    const kanal = kanalDokumentu({ zrodlo_zk: d.zrodlo_zk, kat_zk: d.kat_zk, kraj: d.kraj, waluta: d.waluta, uwagi: d.uwagi });
+    const kanal = kanalDokumentu({ zrodlo_zk: d.zrodlo_zk, kat_zk: d.kat_zk, kraj: d.kraj, waluta: d.waluta, uwagi: d.uwagi, oryg_zk: d.oryg_zk });
     const data = am.dataZamowienia({ uuid: kanal.kanal.startsWith('ALLEGRO') ? d.uuid : null, dataZk: d.data_zk });
     dodaj({ id: `Z${d.zk_id}`, zk_id: d.zk_id, fs_id: null, numer: d.numer, status: 'zamowione', data_zam: data.dzien, godz_zam: data.godz,
       data_zam_zrodlo: data.zrodlo, data_zk: d.data_zk, data_fs: null, waluta: d.waluta, kurs: am.kursDokumentu(d.waluta, d.kurs) },
@@ -218,7 +226,8 @@ function zapisz({ zamowienia, pozycje, skladniki, zwroty }, { od, doDnia }) {
   const nowe = new Set(zamowienia.map((z) => z.id));
   db.exec('BEGIN');
   try {
-    const stare = db.prepare("SELECT id FROM zamowienia WHERE status = 'zamowione' AND data_zk >= ? AND data_zk < ?").all(od, doDnia);
+    // ZK bez FS: z okna, których już nie ma w GT (anulowane, scalone), i wszystkie starsze niż ZK_BEZ_FS_DNI
+    const stare = db.prepare("SELECT id FROM zamowienia WHERE status = 'zamowione' AND ((data_zk >= ? AND data_zk < ?) OR data_zk < ?)").all(od, doDnia, granicaZk());
     for (const { id } of stare) if (!nowe.has(id)) { delPoz.run(id); delSkl.run(id); delZam.run(id); }
     for (const z of zamowienia) { delPoz.run(z.id); delSkl.run(z.id); insZam.run(...KOLUMNY_ZAM.map((k) => z[k] ?? null)); }
     for (const p of pozycje) insPoz.run(p.zam_id, p.tw_id, p.rodzaj, p.szt, p.netto, p.wysylka ?? 0, p.cena_wal, p.koszt, p.zysk);
@@ -310,4 +319,4 @@ function przeliczTempa(dzis) {
   return db.prepare('SELECT COUNT(*) n FROM tempa').get().n;
 }
 
-module.exports = { przeliczTempa, wczytajOkno, zlozZamowienia, policzZysk, rynekKanalu, odswiezTowary, zdjecieStanow, pobierzOkno, meta };
+module.exports = { ZK_BEZ_FS_DNI, przeliczTempa, wczytajOkno, zlozZamowienia, policzZysk, rynekKanalu, odswiezTowary, zdjecieStanow, pobierzOkno, meta };

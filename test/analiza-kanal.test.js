@@ -15,7 +15,7 @@ test('„Źródło” FS rozstrzyga kanał (Sellasist po 14.10, BaseLinker)', ()
   assert.deepStrictEqual(k({ zrodlo_fs: 'amazon', waluta: 'PLN' }), { kanal: 'PL', rynek: 'PL', regula: 'zrodlo_fs' });
 });
 
-test('Allegro: konto z „Źródła”, rynek z waluty; konto spoza repricera to „Allegro (inne konto)”', () => {
+test('Allegro: konto z „Źródła”, rynek z waluty; konto spoza repricera albo nieznane to „ALLEGRO”', () => {
   assert.deepStrictEqual(k({ zrodlo_fs: 'Allegro - ekajtek_pl', waluta: 'CZK' }), { kanal: 'ALLEGRO_EKAJTEK', rynek: 'CZ', regula: 'zrodlo_fs' });
   assert.deepStrictEqual(k({ zrodlo_fs: 'Allegro - NaTropieZabawek', waluta: 'EUR' }), { kanal: 'ALLEGRO_NATROPIE', rynek: 'SK', regula: 'zrodlo_fs' });
   assert.strictEqual(k({ zrodlo_fs: 'Allegro - OutletZabawek-pl', waluta: 'PLN' }).kanal, 'ALLEGRO');
@@ -60,9 +60,45 @@ test('ZK bez FS (dzisiejsze zamówienia): kanał ze „Źródła” albo kategor
   assert.strictEqual(k({ zrodlo_zk: 'Empik', kat_zk: 'Empik', waluta: 'PLN' }).kanal, 'EMPIK_PL');
 });
 
-test('bez żadnego sygnału — „Bez źródła”, nie zgadujemy', () => {
+test('bez żadnego sygnału — „Ręczne / bez źródła”, nie zgadujemy', () => {
   assert.deepStrictEqual(k({ zrodlo_fs: '', kat_fs: 'Sprzedaż', kraj: 'Polska', waluta: 'PLN' }), { kanal: 'INNE', rynek: null, regula: 'brak' });
   assert.deepStrictEqual(k({}), { kanal: 'INNE', rynek: null, regula: 'brak' });
-  // EUR z Niemiec bez znaku Amazona — wciąż Amazon DE z samego kraju (reguła widoczna jako „kraj”)
-  assert.deepStrictEqual(k({ waluta: 'EUR', kraj: 'Niemcy' }), { kanal: 'DE', rynek: 'DE', regula: 'kraj' });
+  // ręczna FS w EUR do Niemiec bez żadnego znaku — może być Amazon, Kaufland albo sprzedaż poza platformą (12 FS
+  // 2024–2026, wszystkie wystawione ręcznie); kraj rozstrzyga tylko przy „marketplace” z integracji
+  assert.deepStrictEqual(k({ waluta: 'EUR', kraj: 'Niemcy', kat_fs: 'Sprzedaż' }), { kanal: 'INNE', rynek: null, regula: 'brak' });
+  assert.deepStrictEqual(k({ zrodlo_fs: 'marketplace', waluta: 'EUR', kraj: 'Niemcy' }), { kanal: 'DE', rynek: 'DE', regula: 'kraj' });
+});
+
+test('nazwy ZK z BaseLinkera: „Emag Węgry” to eMAG HU, „Kaufland.de” to Kaufland, nie Amazon z kraju', () => {
+  // X.2024–XI.2025: 974 FS eMAG HU szły do „Inne”, 1684 FS Kauflandu (X–XII.2024) — do Amazon DE z kraju
+  assert.deepStrictEqual(k({ zrodlo_zk: 'Emag Węgry', kat_fs: 'Sprzedaż', kat_zk: 'Sprzedaż', waluta: 'HUF', kraj: 'Węgry' }), { kanal: 'EMAG_HU', rynek: 'HU', regula: 'zrodlo_zk' });
+  assert.deepStrictEqual(k({ zrodlo_zk: 'Kaufland.de', kat_fs: 'Sprzedaż', waluta: 'EUR', kraj: 'Niemcy' }), { kanal: 'KAUFLAND_DE', rynek: 'DE', regula: 'zrodlo_zk' });
+  assert.strictEqual(k({ zrodlo_zk: 'Emag Rumunia', waluta: 'RON' }).kanal, 'EMAG_RO');
+  assert.strictEqual(k({ zrodlo_zk: 'Emag Bługaria', waluta: 'EUR', kraj: 'Bułgaria' }).kanal, 'EMAG_BG');    // literówka z GT
+  assert.strictEqual(k({ zrodlo_fs: 'kaufland', kat_fs: 'Sprzedaż', waluta: 'EUR' }).kanal, 'KAUFLAND_DE');
+  assert.strictEqual(k({ zrodlo_fs: 'Allegro - Ekajtek.pl', waluta: 'PLN' }).kanal, 'ALLEGRO_EKAJTEK');
+});
+
+test('znacznik integracji w uwagach ZK, gdy „Źródło” puste (XI.2025, przejście na Sellasist)', () => {
+  const zk = (kod) => `Zamówienie: 136773607;[${kod}];1134850261;;Hollósi-Pámer Lilla`;
+  assert.deepStrictEqual(k({ kat_fs: 'Sprzedaż', waluta: 'HUF', kraj: 'Węgry', uwagi_zk: zk('emaghu') }), { kanal: 'EMAG_HU', rynek: 'HU', regula: 'znacznik' });
+  assert.strictEqual(k({ waluta: 'EUR', kraj: 'Litwa', uwagi_zk: zk('pigu') }).kanal, 'PIGU');
+  assert.strictEqual(k({ waluta: 'PLN', kraj: 'Czechy', uwagi_zk: 'Zamówienie: 146743472;[personal];;;' }).kanal, 'FENOM');
+  assert.strictEqual(k({ waluta: 'EUR', kraj: 'Polska', uwagi_zk: 'Zamówienie: 113475719 [kaufland]' }).kanal, 'KAUFLAND_DE');
+  // ZK bez FS: jego uwagi przychodzą w `uwagi`
+  assert.strictEqual(k({ waluta: 'HUF', uwagi: zk('emaghu') }).kanal, 'EMAG_HU');
+  // znacznik amazon w EUR — rynek nadal z kraju płatnika
+  assert.deepStrictEqual(k({ waluta: 'EUR', kraj: 'Francja', uwagi_zk: zk('amazon') }), { kanal: 'FR', rynek: 'FR', regula: 'zrodlo_amazon_kraj' });
+  // „Źródło” wygrywa ze znacznikiem
+  assert.strictEqual(k({ zrodlo_fs: 'empik', waluta: 'PLN', uwagi_zk: zk('personal') }).kanal, 'EMPIK_PL');
+});
+
+test('numer oryginalny ZK z integracji IDEA: Kaufland_DE…, Em-…-A (Empik)', () => {
+  // V–VIII.2026 FS Kauflandu bez „Źródła” i kategorii — 236 FS liczonych z kraju jako Amazon DE
+  assert.deepStrictEqual(k({ kat_fs: 'Sprzedaż', kat_zk: 'Sprzedaż', waluta: 'EUR', kraj: 'Niemcy', oryg_zk: 'Kaufland_DEMBR6LU5-2_IDEA' }), { kanal: 'KAUFLAND_DE', rynek: 'DE', regula: 'numer_zk' });
+  assert.deepStrictEqual(k({ waluta: 'PLN', kraj: 'Polska', oryg_zk: 'Em-40102271591978-A-1_IDEA' }), { kanal: 'EMPIK_PL', rynek: 'PL', regula: 'numer_zk' });
+  // rynek Kauflandu spoza repricera — nie zgadujemy
+  assert.strictEqual(k({ waluta: 'CZK', oryg_zk: 'Kaufland_CZM12345-1_IDEA' }).kanal, 'INNE');
+  // Allegro / Sellasist mają w numerze samą liczbę albo p_ / f_ — nic z tego nie wynika
+  assert.strictEqual(k({ waluta: 'PLN', oryg_zk: 'p_389364' }).kanal, 'INNE');
 });

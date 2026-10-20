@@ -80,6 +80,12 @@ Jedno zamówienie = jeden zestaw wierszy: dopóki nie ma FS, liczby pochodzą z 
 z faktury (status „zafakturowane”). Zadanie sprzedażowe zostaje przy dacie faktury, czyli przy dzisiejszym
 znaczeniu.
 
+**ZK bez FS liczy się jako sprzedaż przez 14 dni od daty ZK** (`ZK_BEZ_FS_DNI`, 2026-10-21). 99,98% FS powstaje do
+7 dni od ZK (290 tys. par od 2025), po 14 dniach zostaje 35. Starsze ZK bez FS to nie sprzedaż: rezerwacje na
+wewnętrznego kontrahenta „poszukiwacze” / „kk kaj” („ostoy wielki koncert” 81 tys. zł, „PLUSY INWENTURA 2026”
+43,9 tys. zł, „odkurzacze pracownic”, „zabrane”) i zdublowane importy z przełączenia integracji 24.11.2025. Bez tej
+granicy lipiec 2025 był zawyżony o 7%, a styczeń 2026 o 4%. Gdy FS dojdzie później, wiersz wraca jako zafakturowany.
+
 **Historia:** FS z K4 od 2023 (19 tys.), 2024 – 143 tys., 2025 – 188 tys., 2026 do 20.10 – 104 tys. Porównanie
 rok do roku dzień po dniu jest pełne od 2024.
 
@@ -91,6 +97,12 @@ mógł powiedzieć, ile sprzedaży ma kanał z reguły zastępczej:
 
 1. **„Źródło” FS** (`pw_Dane`, `pwd_TypObiektu=-2`, `pwd_Tekst04`) przez `kolumnaZrodla`
    (`pricing/pulpit-model.js`): `Amazon_DE`, `Kaufland_DE`, `emagro`, `empik`, `Allegro - <konto>`, `amazon` + PLN…
+   Potem **„Źródło” ZK** (`-8`, `Tekst01`) — tu BaseLinker pisał po polsku: `Emag Rumunia`, `Emag Węgry`, `Emag
+   Bługaria` (sic), `Kaufland.de`, `Amazon.de`, `Fenom/Kup na ceneo`.
+   **Znacznik integracji w uwagach ZK** (`Zamówienie: 136773607;[emaghu];1134850261;;…`, też `[pigu]`, `[kaufland]`,
+   `[personal]`, `[amazon]`) — ten sam kod co „Źródło” FS; ratuje XI.2025 (przejście na Sellasist, puste „Źródło”).
+   **Numer oryginalny ZK z integracji IDEA** (`dok_NrPelnyOryg`): `Kaufland_DEMBR6LU5-2_IDEA` = Kaufland DE,
+   `Em-40102271591978-A-1_IDEA` = Empik (format Mirakla). Allegro (`p_389364`) i Sellasist (sama liczba) nic nie niosą.
 2. **Kategoria FS** (`dok_KatId`): `Amazon_DE` (17), `Amazon_FR` (19), `Kaufland` (16), `Emag_RO/HU/BG`
    (13–15), `Empik` (22), `Amazon_PL` (20), `Erli` (23), `Allegro` (24), `InPost_Buy` (21).
 3. **Kategoria ZK** — na ZK kanał bywa w kategorii, gdy na FS go nie ma: w tygodniu 6–13.10 ZK miały
@@ -102,9 +114,23 @@ mógł powiedzieć, ile sprzedaży ma kanał z reguły zastępczej:
    `amazon` w PLN = Amazon PL. Bez tego Amazon DE rok temu wychodził zerowy (makieta 2026-10-20: 106 tys. zł w
    październiku 2025 siedziało w osobnym kubełku).
 4. **Kraj płatnika + waluta** (`adr__Ewid`, `adr_IdObiektu = dok_PlatnikId`, `adr_TypAdresu = 1` →
-   `sl_Panstwo`): Niemcy/Austria + EUR → Amazon DE, Francja → Amazon FR, Włochy → Amazon IT, Rumunia/RON →
-   eMAG RO, Bułgaria → eMAG BG. Czechy/Słowacja/Węgry przy Allegro to rynek zagraniczny Allegro.
-5. Reszta → „Inne”.
+   `sl_Panstwo`) przy numerze Amazona w uwagach albo „Źródle” `amazon` w EUR: Niemcy/Austria → Amazon DE, Francja →
+   FR, Włochy → IT. Bez znaku Amazona sam kraj rozstrzyga tylko przy „marketplace” z integracji — **ręczna FS w EUR
+   do Niemiec może być Amazonem, Kauflandem albo sprzedażą poza platformą** (2026-10-21: 12 takich FS, w tym hurt
+   73,5 i 44,8 tys. zł liczony wcześniej jako Amazon DE z prowizją Amazona). RON → eMAG RO, Bułgaria → eMAG BG.
+5. Reszta → „Ręczne / bez źródła” (`INNE`): po kaskadzie zostają wyłącznie FS wystawione ręcznie przez ludzi —
+   hurt (Foam Focus NL, K4ENERGY), reklamacje, wymiany.
+
+**Przegląd kaskady 2026-10-21 (na 383 tys. FS z K4 od X.2024).** Znaczniki w uwagach ZK są niezależnym sprawdzianem:
+gdzie są obok „Źródła”, dają ten sam kanał w 100%. Pokazały dwa błędy pierwszej wersji, poprawione:
+- **Kaufland DE liczony jako Amazon DE** — 1920 FS, 280 tys. zł (X–XII.2024 „Źródło” ZK `Kaufland.de`, V–VIII.2026
+  sam numer `Kaufland_DE…_IDEA`) szło regułą kraju (EUR + Niemcy) do Amazon DE.
+- **eMAG HU w „Inne”** — 974 FS, 107 tys. zł (X.2024–XI.2025, „Źródło” ZK `Emag Węgry`).
+Drobniej: 59 FS `[personal]` → Fenom, 14 Empik (`Em-…-A`), 13 Amazon PL (znacznik `amazon` w PLN), 8 Pigu, 6 Erli,
+6 Media Expert, 4 `Allegro - Ekajtek.pl` → ekajtek. Razem zmienia się 3018 FS (0,8%).
+**Nierozstrzygnięte:** 1963 FS Allegro z kontem nieznanym (`ALLEGRO` = „Allegro (konto nieznane)”: kategoria ZK
+`Internet`, konto GT „Szef”, XI.2025–VII.2026, ~188 tys. zł) — w GT nie ma śladu, które konto; rozstrzygnęłoby
+dopiero API Allegro po UUID z uwag.
 
 **Historia Amazon EU i Kauflandu sprzed 14.10 jest odtwarzalna z samego GT** — bez Sellasist API, raportów
 SP-API i bez UPDATE w GT:
@@ -369,6 +395,11 @@ zysk handlowy jako przybliżenie zysku po kosztach kanału):
 2. ~~Sprawdzenie reguły kraju przed 26.08~~ — potwierdzone 2026-10-20 na 31 997 FS z rozliczeniami Amazona: 99,8% (sekcja „Wdrożenie etapu 1”).
 3. Koszty kanału dla Allegro CZ/SK/HU.
 4. Historia kosztu przed startem zdjęć: dzisiejszy koszt (domyślnie) czy ostatnia cena z PZ przed sprzedażą.
+   **Pomiar 2026-10-21:** z 2616 towarów sprzedanych w 30 dni 460 ma koszt w kartotece (`tc_CenaNetto0`) różny o
+   > 15% od ceny ostatniej PZ — 12% obrotu; zysk zawyżony o ~16 tys. zł (kartoteka niżej, 327 towarów) i zaniżony
+   o ~11 tys. zł (wyżej, 133). Przykład: NERE6192-E6218 — kartoteka 23,94 zł z FZ 2022, ostatnia PZ 05.10.2026 po
+   13,73 zł; „strata” 235 zł na sprzedaży 200 szt. po 22,76 zł do K4ENERGY jest w rzeczywistości zyskiem ~1,8 tys. zł.
+   Ten sam koszt bierze repricer (podłogi) — decyzja usera, nie poprawka modułu.
 5. Push na telefon i alert „kanał milczy”.
 6. Konsumenci później: pulpit repricera (`sprzedazWgZrodla`), strategia „za rynkiem” (`sprzedazTowarowZCena`),
    zakupy / domawianie.

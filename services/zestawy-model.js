@@ -30,17 +30,21 @@ function ileDoZlozenia(sklad, dostepne) {
   return wynik;
 }
 
-// Koszt zakupu zestawu do kalkulatora (Cennik + minimum repricera) — decyzja usera 2026-10-15:
-// suma cen zakupu składników × ilość na zestaw, a nie cena zakupu z kartoteki zestawu. Kartoteka
-// zestawu bywa nieaktualna w obie strony (106 ze 143 zestawów w repricerze różniło się o >5%:
+// Koszt zakupu do kalkulatora (Cennik + minimum repricera + moduł analiz).
+// Zwykły towar: średnia ważona dostaw na stanie (services/cennik.js, decyzja usera 2026-10-21), bez stanu — kartoteka.
+// Zestaw — decyzja usera 2026-10-15: suma kosztów składników × ilość na zestaw, a nie cena z kartoteki zestawu.
+// Kartoteka zestawu bywa nieaktualna w obie strony (106 ze 143 zestawów w repricerze różniło się o >5%:
 // NERCHI10 8,41 zł vs składniki 2,32; NERCHIHOL50 2,70 vs 4,50 — tam automat mógłby zejść pod koszt).
-// Z kartoteki bierzemy tylko wtedy, gdy składników nie da się wycenić w całości (brak składu albo
-// składnik bez ceny zakupu) — połowiczna suma byłaby gorsza niż stara cena.
-// Zestaw w zestawie: składnik-zestaw wchodzi swoją ceną z kartoteki (jeden poziom, jak w gt-zestawy).
-// w: { rodzaj, koszt (kartoteka), kosztSkladnikow, skladnikow, skladnikowBezCeny }
+// Każdy składnik wchodzi swoją średnią dostaw (bez stanu — kartoteką składnika). Z kartoteki zestawu bierzemy tylko
+// wtedy, gdy składników nie da się wycenić w całości (brak składu albo składnik bez żadnej ceny) — połowiczna suma
+// byłaby gorsza niż stara cena. Zestaw w zestawie: składnik-zestaw wchodzi własną ceną (jeden poziom, jak w gt-zestawy).
+// w: { rodzaj, koszt (kartoteka), kosztDostaw, kosztSkladnikow, skladnikow, skladnikowBezCeny }
 function kosztZakupu(w) {
   const kartoteka = Number(w.koszt) || 0;
-  if (Number(w.rodzaj) !== 8) return { koszt: kartoteka, zrodlo: 'kartoteka' };
+  if (Number(w.rodzaj) !== 8) {
+    const dostawy = Number(w.kosztDostaw) || 0;
+    return dostawy > 0 ? { koszt: +dostawy.toFixed(4), zrodlo: 'dostawy', kartoteka } : { koszt: kartoteka, zrodlo: 'kartoteka', kartoteka };
+  }
   const n = Number(w.skladnikow) || 0, suma = Number(w.kosztSkladnikow) || 0;
   if (n > 0 && !(Number(w.skladnikowBezCeny) > 0) && suma > 0) return { koszt: +suma.toFixed(4), zrodlo: 'skladniki', kartoteka };
   return { koszt: kartoteka, zrodlo: 'kartoteka', kartoteka, uwaga: n ? 'składnik bez ceny zakupu' : 'zestaw bez składu w GT' };

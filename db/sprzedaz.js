@@ -11,7 +11,7 @@
 //   skladniki  — zużycie składników przez sprzedane zestawy (tw_Komplet) — pod zakupy i zapas składnika
 //   zwroty     — pozycje korekt FS (KFS) z kanałem faktury pierwotnej; osobna kolumna, nie odejmujemy
 //   towary     — kopia kartoteki: symbol, nazwa, grupa GT, rodzaj, pierwsze przyjęcie
-//   stany      — zdjęcie stanów GT (K4, K4G, MAG, LS, rezerwacja K4) z danego dnia
+//   stany      — zdjęcie stanów GT (K4, K4G, MAG, LS, rezerwacje) i stan dostępny z danego dnia
 //   tempa      — sprzedaż 30/180/365 dni na towar (FS + zużycie w zestawach), przeliczana przez job — ekran tylko czyta
 //   meta       — znaczniki jobów i wczytań
 
@@ -105,6 +105,8 @@ CREATE TABLE IF NOT EXISTS stany (
   k4        REAL, k4g REAL, mag REAL, ls REAL,
   rez_k4    REAL,
   razem     REAL,                         -- K4+K4G+MAG+LS (bez BRK i K4R, jak MAGAZYNY_RAZEM)
+  rez       REAL,                         -- rezerwacje na tych samych magazynach
+  dostepne  REAL,                         -- razem − rez; zestaw: ile kompletów da się złożyć ze składników
   czas      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (tw_id, dzien)
 );
@@ -128,6 +130,9 @@ CREATE TABLE IF NOT EXISTS meta (
 const kolumny = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((k) => k.name);
 if (!kolumny('zamowienia').includes('wysylka_netto')) db.exec('ALTER TABLE zamowienia ADD COLUMN wysylka_netto REAL');
 if (!kolumny('pozycje').includes('wysylka')) db.exec('ALTER TABLE pozycje ADD COLUMN wysylka REAL');
+// Stan dostępny (decyzja usera 2026-10-21: na ekranach „Razem minus rezerwacje”, zestaw po składnikach jak repricer)
+if (!kolumny('stany').includes('rez')) db.exec('ALTER TABLE stany ADD COLUMN rez REAL');
+if (!kolumny('stany').includes('dostepne')) db.exec('ALTER TABLE stany ADD COLUMN dostepne REAL');
 
 const meta = {
   get: (k) => db.prepare('SELECT wartosc, czas FROM meta WHERE klucz = ?').get(k) || null,

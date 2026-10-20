@@ -122,6 +122,10 @@ function repricer(ids) {
   return wynik;
 }
 
+// Stan dostępny ze zdjęcia: Razem − rezerwacje (zestaw: kompletów ze składników). Wiersze sprzed 2026-10-21 nie mają
+// kolumny — wtedy Razem − rezerwacja K4 (rezerwacje poza K4 są rzadkie).
+const dostepneZeStanu = (s) => (!s ? null : s.dostepne != null ? s.dostepne : Math.max(0, (s.razem || 0) - (s.rez_k4 || 0)));
+
 // Ostatnie zdjęcie stanów każdego towaru.
 function stanyTowarow(ids) {
   const m = new Map();
@@ -142,14 +146,14 @@ function uzupelnijTowary(lista_, { zRepricerem = true } = {}) {
     rok,
     produkty: lista_.map((t) => {
       const k = towary.get(t.tw_id) || {}, s = stany.get(t.tw_id) || null, x = tp.get(t.tw_id);
-      const stan = s ? (s.k4 || 0) + (s.k4g || 0) : null;
+      const stan = dostepneZeStanu(s);
       const flagi = s ? am.flagiTowaru({ stan, ...x, pierwszePrzyjecie: k.pierwsze_przyjecie, dzis })
         .filter((f) => rok || !['nadmiar', 'zalega'].includes(f)) : [];
       const r = rep ? rep.get(t.tw_id) : null;
       return {
         ...t, kanaly: (t.kanaly || []).sort((a, b) => b.netto - a.netto),
         symbol: k.symbol || null, nazwa: k.nazwa || null, grupa: k.grupa || null, zestaw: k.rodzaj === 8,
-        stan: s ? { k4: s.k4, k4g: s.k4g, mag: s.mag, ls: s.ls, rez_k4: s.rez_k4, razem: s.razem, dzien: s.dzien, czas: s.czas } : null,
+        stan: s ? { dostepne: stan, razem: s.razem, rez: s.rez ?? s.rez_k4, dzien: s.dzien, czas: s.czas } : null,
         szt30: x.szt30, dni_zapasu: stan != null ? am.dniZapasu(stan, x.szt30) : null, flagi,
         repricer: !zRepricerem || rep === null ? null : { oferty: Object.values(r?.oferty || {}), strategia: r?.strategia || null },
       };
@@ -176,4 +180,5 @@ function produkty(p, { sort = 'zysk', limit = 500, zRepricerem = true } = {}) {
   return { dzien: p.dzien, zakres: p.zakresNazwa, baza: p.baza, razem: wszystkie.length, nazwy: NAZWY_KANALOW, historia_rok: rok, produkty: lista_ };
 }
 
-module.exports = { BAZY, POZA_SUMA, parametry, stanWczytania, kanalyZakresu, sumaInternetu, podsumowanie, produkty, uzupelnijTowary, tempa, stanyTowarow };
+module.exports = { BAZY, POZA_SUMA, parametry, stanWczytania, kanalyZakresu, sumaInternetu, podsumowanie, produkty, uzupelnijTowary, tempa, stanyTowarow,
+  dostepneZeStanu };

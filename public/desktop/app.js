@@ -4526,9 +4526,12 @@ function cenyKrokHtml(o, w) {
 
 // Stan z GT pod nazwą towaru: Razem (K4+K4G+MAG+LS, bez BRK) i półka zbioru K4 z rezerwacją.
 // tylkoRazem — w macierzy sam stan „razem” (decyzja usera 2026-10-15); K4 z rezerwacją zostaje na karcie SKU.
-// Zestaw: koszt liczony z sumy składników (services/zestawy-model.js) — obok cena z kartoteki zestawu.
+// Koszt: średnia dostaw na stanie, zestaw — suma składników (services/zestawy-model.js); obok cena z kartoteki,
+// gdy się różni.
 function kosztZestawuOpis(w) {
-  if (w.kosztZrodlo === 'skladniki') return ` <span class="hint" title="Zestaw: suma cen zakupu składników × ilość w zestawie">ze składników · kartoteka zestawu ${Number(w.kosztKartoteka || 0).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł</span>`;
+  const zl = (x) => Number(x || 0).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (w.kosztZrodlo === 'skladniki') return ` <span class="hint" title="Zestaw: suma kosztów składników (średnia dostaw na stanie) × ilość w zestawie">ze składników · kartoteka zestawu ${zl(w.kosztKartoteka)} zł</span>`;
+  if (w.kosztZrodlo === 'dostawy' && Math.abs((w.kosztKartoteka || 0) - (w.koszt || 0)) >= 0.01) return ` <span class="hint" title="Średnia ważona dostaw, które leżą na stanie (K4+K4G+MAG+LS)">średnia dostaw · kartoteka ${zl(w.kosztKartoteka)} zł</span>`;
   if (w.kosztUwaga) return ` <span class="hint">z kartoteki zestawu (${w.kosztUwaga})</span>`;
   return '';
 }

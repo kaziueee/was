@@ -8,8 +8,9 @@
 // ZK bez FS (dzisiejsze, wczorajsze) ma status „zamówione” i liczby z ZK — po wystawieniu FS ten sam wiersz
 // dostaje liczby z faktury. ZK, które przez ZK_BEZ_FS_DNI nie dostało FS, przestaje być sprzedażą: 99,98% FS powstaje
 // do 7 dni od ZK (pomiar 2026-10-21 na 290 tys. par), a starsze ZK bez FS to rezerwacje wewnętrzne („poszukiwacze”:
-// „PLUSY INWENTURA 2026” 43,9 tys. zł, „ostoy wielki koncert” 81 tys. zł) i zdublowane importy z 24.11.2025. Koszt zakupu zostaje z dnia PIERWSZEGO wczytania pozycji (GT nie trzyma kosztu
-// wstecz, a ponowne wczytanie ostatnich dni nie może przepisać go dzisiejszym).
+// „PLUSY INWENTURA 2026” 43,9 tys. zł, „ostoy wielki koncert” 81 tys. zł) i zdublowane importy z 24.11.2025. Koszt zakupu pozycji FS i PA = rzeczywisty rozchód dostaw z GT (POZ niżej),
+// więc ponowne wczytanie daje ten sam koszt. ZK bez FS nie ma rozchodu — koszt z wycenaHurtem (średnia dostaw na stanie)
+// zostaje z pierwszego wczytania, dopóki FS go nie zastąpi.
 
 const fs = require('fs');
 const { DatabaseSync } = require('node:sqlite');
@@ -19,6 +20,7 @@ const rynki = require('../config/rynki');
 const { KOLUMNY } = require('../pricing/kolumny');
 const { MAGAZYN_GT_ID, MAGAZYNY_RAZEM } = require('../config/magazyny');
 const { kanalDokumentu } = require('./analiza-kanal');
+const { doZlozeniaMapa } = require('./gt-zestawy');
 const am = require('./analiza-model');
 const { db, meta } = require('../db/sprzedaz');
 const { dzisLokalnie } = require('./sprzedaz-model');
@@ -50,9 +52,17 @@ const FS_W_OKNIE = `d.dok_Typ = 2 AND d.dok_Status = 1 AND d.dok_MagId = @mag AN
 const ZK_BEZ_FS = `d.dok_Typ = 16 AND d.dok_MagId = @mag AND d.dok_DataWyst >= @odZk AND d.dok_DataWyst < @do
   AND NOT EXISTS (SELECT 1 FROM dok__Dokument x WHERE x.dok_DoDokId = d.dok_Id AND x.dok_Typ = 2)`;
 const PA_W_OKNIE = `d.dok_Typ = 21 AND d.dok_Status = 1 AND d.dok_DataWyst >= @od AND d.dok_DataWyst < @do`;
+// Koszt pozycji = rzeczywisty koszt rozchodu z GT: dostawy, z których zeszła ta sprzedaż (dok_MagRuch po mr_PozId,
+// wiersze rozchodu mają mr_MagId NULL), cena = ostatnia wycena serii (dok_MagWart, po korekcie FZ). Pomiar 2026-10-21:
+// 2000 z 2000 pozycji FS ma rozchód w ilości równej sprzedanej; zestaw schodzi jako zmontowany, z wartością z
+// kompletacji (NERCHIELIT300: 11,10 = 30 × 0,37 składnika). ZK bez FS jeszcze nie ma rozchodu — tam koszt z
+// wycenaHurtem (średnia dostaw na stanie). Koszt: +0,3 s na największy miesiąc (XII 2025, 89 tys. pozycji).
 const POZ = (warunek) => `SELECT p.ob_DokHanId dok_id, p.ob_TowId tw_id, ISNULL(t.tw_Rodzaj, 0) rodzaj, p.ob_Ilosc szt,
-    p.ob_WartNetto netto, p.ob_CenaWaluta cena, p.ob_Znak znak
+    p.ob_WartNetto netto, p.ob_CenaWaluta cena, p.ob_Znak znak, kz.wart koszt_wart, kz.ilosc koszt_szt
   FROM dok_Pozycja p JOIN dok__Dokument d ON d.dok_Id = p.ob_DokHanId LEFT JOIN tw__Towar t ON t.tw_Id = p.ob_TowId
+  OUTER APPLY (SELECT SUM(m.mr_Ilosc * ISNULL(w.mw_Cena, m.mr_Cena)) wart, SUM(m.mr_Ilosc) ilosc FROM dok_MagRuch m
+    OUTER APPLY (SELECT TOP 1 mw.mw_Cena FROM dok_MagWart mw WHERE mw.mw_SeriaId = m.mr_SeriaId ORDER BY mw.mw_Data DESC) w
+    WHERE m.mr_PozId = p.ob_Id AND m.mr_MagId IS NULL) kz
   WHERE ${warunek}`;
 
 async function pobierzOkno(od, doDnia) {
@@ -136,7 +146,7 @@ function pozycjeDokumentu(lista) {
 }
 
 // Z surowych wierszy GT → { zamowienia, pozycje, skladniki, zwroty } gotowe do zapisu.
-// koszty — Map 'zamId|tw_id' → koszt zapisany przy pierwszym wczytaniu (zachowujemy go).
+// koszty — Map 'zamId|tw_id' → koszt zapisany przy pierwszym wczytaniu (dla ZK bez rozchodu).
 function zlozZamowienia(surowe, wyceny, sklady, koszty) {
   const zamowienia = [], pozycje = [], skladniki = [], zwroty = [];
   const dodaj = (z, wiersze, kanal) => {
@@ -146,9 +156,11 @@ function zlozZamowienia(surowe, wyceny, sklady, koszty) {
       if (!TOWAR(p.rodzaj) || !p.tw_id) { wysylka += (Number(p.cena) || 0) * (Number(p.szt) || 0); wysylkaNetto += Number(p.netto) || 0; continue; }
       const szt = Number(p.szt) || 0;
       if (szt <= 0) continue;
+      // koszt: rozchód z GT (FS, PA) → zapisany przy pierwszym wczytaniu (ZK) → dzisiejsza wycena (średnia dostaw)
+      const rozchod = Number(p.koszt_szt) > 0 ? Number(p.koszt_wart) / Number(p.koszt_szt) : null;
       const zapisany = koszty.get(`${z.id}|${p.tw_id}`);
       poz.push({ zam_id: z.id, tw_id: p.tw_id, rodzaj: p.rodzaj, szt, netto: Number(p.netto) || 0, cena_wal: Number(p.cena) || 0,
-        cena: Number(p.cena) || 0, koszt: zapisany != null ? zapisany : (wyceny.get(p.tw_id)?.koszt ?? null), zysk: null });
+        cena: Number(p.cena) || 0, koszt: rozchod ?? zapisany ?? wyceny.get(p.tw_id)?.koszt ?? null, zysk: null });
     }
     z.kanal = kanal.kanal; z.rynek = kanal.rynek; z.kanal_regula = kanal.regula;
     z.szt = poz.reduce((s, p) => s + p.szt, 0);
@@ -304,25 +316,43 @@ async function odswiezTowary(twIds) {
 }
 
 // Zdjęcie stanów z dnia `dzien`: towary ze stanem na K4/K4G/MAG/LS (albo podane `twIds`). Razem = MAGAZYNY_RAZEM.
+// Zdjęcie stanów na dziś. Na ekranach liczy się stan DOSTĘPNY = Razem (K4+K4G+MAG+LS) − rezerwacje na tych
+// magazynach, a dla zestawu — ile kompletów da się złożyć ze składników, tym samym wzorem co repricer i Sellasist
+// (gt-zestawy.doZlozeniaMapa; decyzje usera 2026-10-21). Stan zmontowanego zestawu (zwykle 0) nic nie mówi.
+// twIds = null → wszystkie towary ze stanem + zestawy sprzedane w roku (stan 0, ale składniki na półce).
 async function zdjecieStanow(dzien, twIds = null) {
-  const mag = { 4: 'k4', 8: 'k4g', 1: 'mag', 6: 'ls' };
-  const filtr = twIds ? `s.st_TowId IN (${[...new Set(twIds.map(Number))].filter(Number.isInteger).join(',') || 0})`
-    : 's.st_TowId IN (SELECT st_TowId FROM tw_Stan WHERE st_MagId IN (1, 4, 6, 8) AND st_Stan > 0)';
+  const kody = { K4: 'k4', K4G: 'k4g', MAG: 'mag', LS: 'ls' };
+  const mag = Object.fromEntries(Object.entries(kody).map(([k, v]) => [MAGAZYN_GT_ID[k], v]));
+  const magi = Object.keys(mag).join(',');
+  const lista = (ids) => [...new Set(ids.map(Number))].filter(Number.isInteger);
+  const filtr = twIds ? `s.st_TowId IN (${lista(twIds).join(',') || 0})`
+    : `s.st_TowId IN (SELECT st_TowId FROM tw_Stan WHERE st_MagId IN (${magi}) AND st_Stan > 0)`;
   const r = await query(`SELECT s.st_TowId tw, s.st_MagId mag, s.st_Stan stan, s.st_StanRez rez FROM tw_Stan s
-    WHERE s.st_MagId IN (1, 4, 6, 8) AND ${filtr}`);
+    WHERE s.st_MagId IN (${magi}) AND ${filtr}`);
+  const pusty = () => ({ k4: 0, k4g: 0, mag: 0, ls: 0, rez_k4: 0, rez: 0 });
   const m = new Map();
   for (const x of r.recordset) {
-    const w = m.get(x.tw) || m.set(x.tw, { k4: 0, k4g: 0, mag: 0, ls: 0, rez_k4: 0 }).get(x.tw);
+    const w = m.get(x.tw) || m.set(x.tw, pusty()).get(x.tw);
     w[mag[x.mag]] = Number(x.stan) || 0;
-    if (x.mag === 4) w.rez_k4 = Number(x.rez) || 0;
+    w.rez += Number(x.rez) || 0;
+    if (mag[x.mag] === 'k4') w.rez_k4 = Number(x.rez) || 0;
   }
-  const doRazem = { K4: 'k4', K4G: 'k4g', MAG: 'mag', LS: 'ls' };
-  const ins = db.prepare(`INSERT INTO stany (tw_id, dzien, k4, k4g, mag, ls, rez_k4, razem, czas) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  const kandydaci = twIds ? lista(twIds)
+    : db.prepare('SELECT t.tw_id FROM towary t JOIN tempa p ON p.tw_id = t.tw_id WHERE t.rodzaj = 8 AND p.szt365 > 0').all().map((x) => x.tw_id);
+  const zestawy = await doZlozeniaMapa(kandydaci);          // wpis tylko dla zestawów; null = skład nieokreślony w GT
+  for (const id of zestawy.keys()) if (!m.has(id)) m.set(id, pusty());
+  const ins = db.prepare(`INSERT INTO stany (tw_id, dzien, k4, k4g, mag, ls, rez_k4, razem, rez, dostepne, czas)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(tw_id, dzien) DO UPDATE SET k4 = excluded.k4, k4g = excluded.k4g, mag = excluded.mag, ls = excluded.ls,
-      rez_k4 = excluded.rez_k4, razem = excluded.razem, czas = excluded.czas`);
+      rez_k4 = excluded.rez_k4, razem = excluded.razem, rez = excluded.rez, dostepne = excluded.dostepne, czas = excluded.czas`);
   db.exec('BEGIN');
   try {
-    for (const [tw, w] of m) ins.run(tw, dzien, w.k4, w.k4g, w.mag, w.ls, w.rez_k4, MAGAZYNY_RAZEM.reduce((s, k) => s + (w[doRazem[k]] || 0), 0));
+    for (const [tw, w] of m) {
+      const razem = MAGAZYNY_RAZEM.reduce((s, k) => s + (w[kody[k]] || 0), 0);
+      const zestaw = zestawy.get(tw);
+      const dostepne = zestaw != null ? zestaw : Math.max(0, razem - w.rez);
+      ins.run(tw, dzien, w.k4, w.k4g, w.mag, w.ls, w.rez_k4, razem, w.rez, dostepne);
+    }
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
   return m.size;

@@ -94,7 +94,8 @@
       + `<td class="sw-l">${pct(c.netto ? c.zysk / c.netto * 100 : null)}</td><td class="sw-l">${naSzt(c.zysk, c.szt)}</td>`
       + `<td class="sw-l">${c.handl ? `<span class="sw-przybl" title="marża handlowa">≈ ${zl(c.zysk)}</span>` : zl(c.zysk)}</td></tr>`).join('');
     const s = p.stan;
-    const stan = s ? `K4 <b>${szt(s.k4)}</b>${s.rez_k4 ? ` <span class="sw-brak">(rez. ${szt(s.rez_k4)})</span>` : ''} · K4G <b>${szt(s.k4g)}</b> · Razem <b>${szt(s.razem)}</b><br>`
+    // stan dostępny = Razem − rezerwacje; zestaw — kompletów ze składników (jak repricer)
+    const stan = s ? `Dostępne <b>${szt(s.dostepne)}</b> <span class="sw-brak">${p.zestaw ? 'kompletów ze składników' : 'Razem − rezerwacje'}</span><br>`
       + (p.dni_zapasu == null ? 'brak sprzedaży w 30 dni' : `zapas ~${szt(p.dni_zapasu)} dni <span class="sw-brak">(tempo 30 dni: ${szt(p.szt30)} szt.)</span>`)
       + (p.flagi.length ? '<br>' + flagi(p.flagi) : '')
       : '<span class="sw-brak">brak zdjęcia stanów</span>';

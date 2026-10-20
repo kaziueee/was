@@ -27,8 +27,15 @@ test('zestaw: zdublowany wiersz składnika sumuje ilość, liczba z GT jako mone
   assert.strictEqual(ileDoZlozenia([{ skladnik: 1, liczba: '3.0000' }], new Map([[1, 9]])), 3);
 });
 
-test('koszt zakupu: zestaw = suma składników, zwykły towar = kartoteka', () => {
-  assert.deepStrictEqual(kosztZakupu({ rodzaj: 1, koszt: 12.5, kosztSkladnikow: 3 }), { koszt: 12.5, zrodlo: 'kartoteka' });
+test('koszt zakupu: zwykły towar = średnia dostaw na stanie, bez stanu kartoteka', () => {
+  // NERE6192-E6218 (2026-10-21): kartoteka 23,94 zł z FZ 2022, cały stan z dostawy po 13,73
+  assert.deepStrictEqual(kosztZakupu({ rodzaj: 1, koszt: 23.94, kosztDostaw: 13.73 }), { koszt: 13.73, zrodlo: 'dostawy', kartoteka: 23.94 });
+  assert.deepStrictEqual(kosztZakupu({ rodzaj: 1, koszt: 12.5, kosztDostaw: null, kosztSkladnikow: 3 }), { koszt: 12.5, zrodlo: 'kartoteka', kartoteka: 12.5 });
+  assert.strictEqual(kosztZakupu({ rodzaj: 1, koszt: 12.5, kosztDostaw: 0 }).zrodlo, 'kartoteka');
+});
+
+test('koszt zakupu: zestaw = suma składników (nie średnia dostaw zmontowanego zestawu)', () => {
+  assert.strictEqual(kosztZakupu({ rodzaj: 8, koszt: 8.41, kosztDostaw: 11.1, kosztSkladnikow: 2.32, skladnikow: 3, skladnikowBezCeny: 0 }).koszt, 2.32);
   const z = kosztZakupu({ rodzaj: 8, koszt: 8.41, kosztSkladnikow: 2.32, skladnikow: 3, skladnikowBezCeny: 0 });
   assert.strictEqual(z.koszt, 2.32);
   assert.strictEqual(z.zrodlo, 'skladniki');

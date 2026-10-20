@@ -9,7 +9,7 @@
 //   cena_towaru = total - wysylka_klienta
 //   prowizja i VAT (kraju) sa wliczone w mianownik D; marza liczona od przychodu netto.
 // Zrodla liczb: Allegro - realne rozliczenia (~94 tys. zam.); Amazon EU - umowa DHL Parcel Connect;
-// koszt zakupu - tw_Cena.tc_CenaNetto0 z GT (patrz services/cennik.js).
+// koszt zakupu - srednia wazona dostaw na stanie z GT, bez stanu tw_Cena.tc_CenaNetto0 (patrz services/cennik.js).
 
 // --- parametry wspolne (preset; panel pracownika ich nie edytuje) ---
 const DOMYSLNE = {

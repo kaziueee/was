@@ -108,13 +108,13 @@ function sdRysujProdukty(d, pod) {
   const W = window.SprzedazW;
   el('sd-prod-tyt').textContent = `Produkty: ${W.zakresTxt(pod.okresy.cur)} — ${W.szt(d.razem)} towarów, pierwsze ${Math.min(50, d.razem)} wg: ${SD_OPCJE.sort.find((o) => o[0] === sdStan.sort)[1]}`;
   el('sd-prod').innerHTML = '<thead><tr><th></th><th>SKU / nazwa</th><th class="num">Szt.</th><th class="num">Przychód</th><th class="num">Marża</th>'
-    + '<th class="num">Zysk na szt.</th><th class="num">Zysk</th><th>Kanały</th><th class="num">K4 + K4G</th><th class="num">Zapas</th><th></th></tr></thead><tbody>'
+    + '<th class="num">Zysk na szt.</th><th class="num">Zysk</th><th>Kanały</th><th class="num" title="Razem (K4+K4G+MAG+LS) minus rezerwacje; zestaw — kompletów ze składników">Dostępne</th><th class="num">Zapas</th><th></th></tr></thead><tbody>'
     + d.produkty.map((p) => `<tr><td><img class="sd-min" src="/api/produkty/${p.tw_id}/zdjecie?rozmiar=mini" alt="" loading="lazy" onerror="this.remove()"></td>`
       + `<td><b>${W.esc(p.symbol || p.tw_id)}</b> <span class="sd-nz" title="${W.esc(p.nazwa)}">${W.esc(p.nazwa || '')}</span></td>`
       + `<td class="num">${W.szt(p.szt)}</td><td class="num">${W.zl(p.netto)}</td><td class="num">${W.pct(p.netto ? p.zysk / p.netto * 100 : null)}</td>`
       + `<td class="num">${W.naSzt(p.zysk, p.szt)}</td><td class="num">${W.zl(p.zysk)}</td>`
       + `<td class="sd-kan">${p.kanaly.map((c) => W.esc(d.nazwy[c.k] || c.k) + ' ' + W.szt(c.szt)).join(', ')}</td>`
-      + `<td class="num">${p.stan ? W.szt(p.stan.k4 + p.stan.k4g) : '—'}</td><td class="num">${p.dni_zapasu == null ? '—' : W.szt(p.dni_zapasu) + ' dni'}</td>`
+      + `<td class="num">${p.stan ? W.szt(p.stan.dostepne) : '—'}</td><td class="num">${p.dni_zapasu == null ? '—' : W.szt(p.dni_zapasu) + ' dni'}</td>`
       + `<td>${W.flagi(p.flagi)}</td></tr>`).join('') + '</tbody>';
 }
 

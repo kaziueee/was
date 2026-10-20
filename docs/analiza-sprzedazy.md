@@ -204,9 +204,22 @@ dnia**. Nie jest już pilne przed sezonem — wchodzi w etapie 1.
 
 ### Koszt i zysk
 
-- Koszt zakupu = `tw_Cena.tc_CenaNetto0`, zestaw = suma składników (`services/cennik.js` / `zestawy-model.js`).
-  GT trzyma tylko dzisiejszy koszt, więc od startu modułu job zapisuje koszt każdego dnia (jako przedziały
-  zmian), a historia sprzed startu liczy się dzisiejszym kosztem z oznaczeniem „koszt dzisiejszy”.
+- **[decyzja usera 2026-10-21] Koszt = średnia z dostaw, nie kartoteka.** Kartoteka (`tc_CenaNetto0`) bywa
+  nieaktualna (niżej, „Otwarte” pkt 4), a ostatnia PZ też nie rozstrzyga (100 szt. po 10 zł + 1 po 20 zł = ~10).
+  - **Moduł: rzeczywisty koszt rozchodu z GT** — dostawy, z których zeszła dana sprzedaż (`dok_MagRuch` po
+    `mr_PozId`, wiersze rozchodu `mr_MagId IS NULL`, cena = ostatnia wycena serii `dok_MagWart`). 2000 z 2000 pozycji
+    FS ma rozchód w ilości równej sprzedanej; od IX.2026 koszt ma 20 687 z 20 688 pozycji FS. Zestaw schodzi jako
+    zmontowany, z wartością z kompletacji (NERCHIELIT300: 11,10 = 30 × 0,37 składnika). Gratisy (0,01 zł) liczą się
+    tak, jak je zaksięgowano. ZK bez FS nie ma jeszcze rozchodu — tam średnia dostaw na stanie z `wycenaHurtem`.
+    Historia wczytana raz daje przy ponownym wczytaniu ten sam koszt (to dane GT, nie dzisiejsza cena).
+  - **Repricer i Cennik: średnia ważona dostaw na stanie** (`services/cennik.js`, magazyny Razem), zestaw = suma
+    składników, każdy swoją średnią. Gratisy (≤ 0,10 zł) pominięte — koszt ~0 sprowadziłby minimum do samych opłat
+    (XSH3618: Amazon DE 9,99 → 3,99 €); 146 towarów ma takie dostawy na stanie, 2 z automatem. Bez stanu — kartoteka.
+  - Wpływ (2026-10-21): zysk modułu w 2026 r. +4–10 tys. zł/mies. (marża +0,4–1,2 pp), XII 2025 +28 tys. zł,
+    I–VI 2025 −4…−17 tys. zł/mies. Repricer: 209 z 1033 ofert z automatem zmienia minimum o > 2% (114 w dół,
+    95 w górę; 86 o > 10%), lista `~/Documents/repricer-minima-srednia-dostaw-2026-10-21.csv`.
+  - Obciążenie zmierzone na SRV: Cennik/repricer ~31 ms zamiast ~7 ms na 500 towarów; okno joba co 15 min ~15 ms
+    zamiast ~7; okno nocne ~150 zamiast ~70 ms; największy miesiąc przy przeładowaniu historii 0,75 zamiast 0,4 s.
 - **[decyzja] Zysk = po kosztach kanału**, z tego samego kalkulatora co repricer i Cennik (`config/rynki.js`):
   przychód netto − koszt zakupu − prowizja − nasza wysyłka − pozostałe składniki rynku. „Marża 20%” znaczy na
   ekranach to samo co w strategiach. To szacunek: stawki prowizji i wysyłek są dzisiejsze.
@@ -397,7 +410,8 @@ zysk handlowy jako przybliżenie zysku po kosztach kanału):
 1. Tier i to, co z niego weźmie repricer (etap 3) — dane wyżej.
 2. ~~Sprawdzenie reguły kraju przed 26.08~~ — potwierdzone 2026-10-20 na 31 997 FS z rozliczeniami Amazona: 99,8% (sekcja „Wdrożenie etapu 1”).
 3. Koszty kanału dla Allegro CZ/SK/HU.
-4. Historia kosztu przed startem zdjęć: dzisiejszy koszt (domyślnie) czy ostatnia cena z PZ przed sprzedażą.
+4. ~~Historia kosztu~~ — rozstrzygnięte 2026-10-21: koszt rozchodu z GT (sekcja „Koszt i zysk”). Pomiar, który
+   do tego doprowadził:
    **Pomiar 2026-10-21 — średnia ważona dostaw na stanie, nie ostatnia PZ** (uwaga usera: 100 szt. po 10 zł i jedna
    nowa po 20 zł to koszt ~10, nie 20). Warstwy dostaw: `dok_MagRuch` z `mr_MagId` (przychód: PZ, MM-przyjęcie,
    zwrot), `mr_Pozostalo` = ile tej dostawy leży na magazynie, cena = ostatnia `dok_MagWart.mw_Cena` serii (124 z

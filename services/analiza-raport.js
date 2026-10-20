@@ -40,7 +40,8 @@ function okres(dzien, zakres, baza = 'zam') {
   return { ...d, sc: q.sumaInternetu(d.cur.kanaly), sp: q.sumaInternetu(d.prev.kanaly) };
 }
 
-// Kończący się zapas: sprzedaje się (≥ 10 szt./30 dni), a na K4+K4G zostało mniej niż na 14 dni (albo nic).
+// Kończący się zapas: sprzedaje się (≥ 10 szt./30 dni), a stanu dostępnego (Razem − rezerwacje; zestaw — ze
+// składników) zostało mniej niż na 14 dni (albo nic).
 function konczySie(limit = 12) {
   const kand = db.prepare('SELECT tw_id, szt30 FROM tempa WHERE szt30 >= ?').all(KONCZY_MIN_SZT30);
   const stany = q.stanyTowarow(kand.map((k) => k.tw_id));
@@ -48,8 +49,8 @@ function konczySie(limit = 12) {
   for (const k of kand) {
     const s = stany.get(k.tw_id);
     if (!s) continue;
-    const stan = (s.k4 || 0) + (s.k4g || 0), dni = am.dniZapasu(stan, k.szt30);
-    if (dni != null && dni < KONCZY_DNI) wynik.push({ tw_id: k.tw_id, szt30: k.szt30, stan, dni, mag: s.mag || 0, ls: s.ls || 0 });
+    const stan = q.dostepneZeStanu(s), dni = am.dniZapasu(stan, k.szt30);
+    if (dni != null && dni < KONCZY_DNI) wynik.push({ tw_id: k.tw_id, szt30: k.szt30, stan, dni });
   }
   wynik.sort((a, b) => b.szt30 - a.szt30);
   return q.uzupelnijTowary(wynik.slice(0, limit), { zRepricerem: false }).produkty.map((p, i) => ({ ...p, ...wynik[i] }));
@@ -169,14 +170,13 @@ function htmlRaportu(r, { podglad = false } = {}) {
       + `<div style="font-size:12px;color:#333">${esc((p.nazwa || '').slice(0, 70))}</div>`
       + `<div style="font-size:12px;margin-top:2px"><b>${szt(p.szt)}</b> szt. · marża <b>${pct(marza(p))}</b> · <b>${naSzt(p.zysk, p.szt)}</b> · zysk <b>${zl(p.zysk)}</b></div>`
       + `<div style="font-size:11px;color:#6b7280">${p.kanaly.map((c) => `${esc(nazwy[c.k] || c.k)} ${szt(c.szt)}`).join(' · ')}`
-      + `${p.stan ? ` · K4+K4G ${szt(p.stan.k4 + p.stan.k4g)}${p.dni_zapasu != null ? `, zapas ~${szt(p.dni_zapasu)} dni` : ''}` : ''}</div></td></tr>`;
+      + `${p.stan ? ` · dostępne ${szt(p.stan.dostepne)}${p.dni_zapasu != null ? `, zapas ~${szt(p.dni_zapasu)} dni` : ''}` : ''}</div></td></tr>`;
   }).join('');
   const konczy = r.konczy.length ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr><th style="${TH}">Towar</th>`
-    + `<th style="${THN}">30 dni</th><th style="${THN}">K4+K4G</th><th style="${THN}">Zapas</th><th style="${THN}">MAG / LS</th></tr>`
+    + `<th style="${THN}">30 dni</th><th style="${THN}">Dostępne</th><th style="${THN}">Zapas</th></tr>`
     + r.konczy.map((p) => `<tr><td style="${TD}"><b style="font-family:Menlo,Consolas,monospace;font-size:12px">${esc(p.symbol || p.tw_id)}</b> <span style="font-size:12px;color:#333">${esc((p.nazwa || '').slice(0, 45))}</span></td>`
       + `<td style="${TDN}">${szt(p.szt30)}&nbsp;szt.</td><td style="${TDN}">${szt(p.stan)}</td>`
-      + `<td style="${TDN}color:${p.dni < 7 ? '#c62828' : '#a15c00'};font-weight:600">${p.stan > 0 ? `~${szt(p.dni)}&nbsp;dni` : 'brak'}</td>`
-      + `<td style="${TDN}">${p.mag || p.ls ? `${szt(p.mag)} / ${szt(p.ls)}` : '—'}</td></tr>`).join('') + '</table>'
+      + `<td style="${TDN}color:${p.dni < 7 ? '#c62828' : '#a15c00'};font-weight:600">${p.stan > 0 ? `~${szt(p.dni)}&nbsp;dni` : 'brak'}</td></tr>`).join('') + '</table>'
     : '<div style="font-size:13px;color:#6b7280">Nic — wszystkie dobrze sprzedające się towary mają zapas na co najmniej 14 dni.</div>';
   const strata = r.strata.length ? `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr><th style="${TH}">Towar</th>`
     + `<th style="${TH}">Kanał</th><th style="${THN}">Szt.</th><th style="${THN}">Przychód</th><th style="${THN}">Zysk</th></tr>`
@@ -206,8 +206,8 @@ ${sekcja('Kanały', tabelaKanalow(z, nazwy), '„≈” = marża handlowa (kana�
 ${sekcja(`Miesiąc do dziś (${zakresTxt(m.okresy.cur)})`, `<div style="font-size:13px">Przychód <b>${zl(m.sc.netto)}</b> (${zmiana(m.sc.netto, m.sp.netto)} r/r) · zysk <b>${zl(m.sc.zysk)}</b> (${zmiana(m.sc.zysk, m.sp.zysk)}) · marża <b>${pct(marza(m.sc))}</b> · ${szt(m.sc.zam)} zam.</div>`)}
 ${tydzien}
 ${sekcja('Top 10 produktów dnia (wg zysku)', `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">${top}</table>`)}
-${sekcja('Kończy się zapas', konczy, `Sprzedaje się (≥ ${KONCZY_MIN_SZT30} szt. w 30 dni), a na K4+K4G zostało na mniej niż ${KONCZY_DNI} dni. Kolumna MAG / LS — czy jest skąd uzupełnić.`)}
-${sekcja('Sprzedaż ze stratą', strata, 'Zamówienia z tego dnia z zyskiem po kosztach kanału poniżej zera — do sprawdzenia: koszt w kartotece, ręczna cena albo za niska podłoga.')}
+${sekcja('Kończy się zapas', konczy, `Sprzedaje się (≥ ${KONCZY_MIN_SZT30} szt. w 30 dni), a stanu dostępnego (Razem − rezerwacje, zestaw — ze składników) zostało na mniej niż ${KONCZY_DNI} dni.`)}
+${sekcja('Sprzedaż ze stratą', strata, 'Zamówienia z tego dnia z zyskiem po kosztach kanału poniżej zera (koszt = rzeczywisty rozchód dostaw z GT) — do sprawdzenia: ręczna cena albo za niska podłoga.')}
 <tr><td style="padding:18px 16px 16px;font-size:11px;color:#6b7280;line-height:1.5;border-top:1px solid #eef0f2">
   Zysk po kosztach kanału = kalkulator repricera liczony na całe zamówienie (wysyłka raz na paczkę, kurs z faktury). Przychód = cała faktura netto (towary + wysyłka klienta).
   Wygenerowano ${godz} z bazy modułu analiz WMS. Pełny widok: <a href="${ADRES_TELEFON}" style="color:#1d4ed8">${ADRES_TELEFON}</a> (Tailscale).

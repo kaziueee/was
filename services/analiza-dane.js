@@ -100,17 +100,20 @@ function policzZysk(z, poz, wyceny) {
   const rk = rynekKanalu(z.kanal);
   if (!rk || !poz.length) return handlowa();
   const allegroZagranica = rk.def.typ === 'allegro' && z.waluta !== 'PLN';
-  if (!allegroZagranica && rk.waluta !== z.waluta) return handlowa();   // np. eMAG BG w BGN przed 2026
+  // eMAG BG do końca 2025 sprzedawał w BGN (od 01.01.2026 w EUR): lew jest sztywno związany z euro (1,95583),
+  // więc przeliczamy do waluty kalkulatora zamiast spadać do marży handlowej.
+  const bgn = z.waluta === 'BGN' && rk.waluta === 'EUR' ? 1.95583 : 1;
+  if (!allegroZagranica && rk.waluta !== (bgn !== 1 ? 'EUR' : z.waluta)) return handlowa();
   const najw = poz.reduce((a, p) => ((wyceny.get(p.tw_id)?.waga || 0) > (wyceny.get(a.tw_id)?.waga || 0) ? p : a), poz[0]);
   const w = wyceny.get(najw.tw_id) || {};
   const g = { ...rynki.DOMYSLNE, waga: w.waga || rynki.DOMYSLNE.waga, paczka: w.paczka || null, genius: w.genius ?? null,
     docinanie: !!w.docinalny, docinanieOn: true };
-  if (z.waluta === 'EUR') g.eur = z.kurs; else if (z.waluta === 'RON') g.ron = z.kurs; else if (z.waluta === 'HUF') g.huf = z.kurs;
+  if (z.waluta === 'EUR' || bgn !== 1) g.eur = z.kurs * bgn; else if (z.waluta === 'RON') g.ron = z.kurs; else if (z.waluta === 'HUF') g.huf = z.kurs;
   // Allegro CZ/SK/HU: reguły Allegro PL przy cenie brutto w zł (netto × 1,23) — kosztów rynków zagranicznych Allegro
   // per zamówienie nie zna nikt (Rozliczenia: billing API tylko allegro-pl), więc oznaczamy źródło osobno.
   const wejscie = poz.map((p) => ({ koszt: p.koszt || 0, szt: p.szt,
-    cena: allegroZagranica ? p.netto / p.szt * 1.23 : p.cena }));
-  const r = rynki.wycenaZamowienia(rk.def, g, { pozycje: wejscie, wysylkaKlienta: allegroZagranica ? null : z.wysylka_klienta });
+    cena: allegroZagranica ? p.netto / p.szt * 1.23 : p.cena / bgn }));
+  const r = rynki.wycenaZamowienia(rk.def, g, { pozycje: wejscie, wysylkaKlienta: allegroZagranica ? null : z.wysylka_klienta / bgn });
   if (r.blad) return handlowa();
   r.pozycje.forEach((x, i) => { poz[i].zysk = x.zysk; });
   return { zysk: r.zysk, zrodlo: allegroZagranica ? 'kalkulator_pl' : 'kalkulator' };

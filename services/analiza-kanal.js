@@ -55,12 +55,13 @@ function zeZrodla(zrodlo, waluta, kategoria) {
   if (!z) return null;
   if (ZRODLA[z]) return ZRODLA[z];
   if (z.startsWith('fenom')) return 'FENOM';                 // ZK: „Fenom/Kup na ceneo”
-  if (z === 'amazon.de') return 'PL';                        // ZK Amazon PL z BaseLinkera (kategoria Amazon_PL)
+  // BaseLinker pisze „amazon” na FS i „Amazon.de” na ZK zarówno dla Amazon PL (w PLN), jak i — do sierpnia 2026 —
+  // dla Amazon EU (w EUR). W EUR rynek bierzemy z kraju płatnika (niżej, kaskada).
+  if (z === 'amazon' || z === 'amazon.de') return String(waluta).toUpperCase() === 'PLN' ? 'PL' : null;
   if (/^allegro\s*-/.test(z)) {
     const k = kolumnaZrodla(zrodlo, 'PLN', KLUCZE);
     return KLUCZE.has(k) ? k : 'ALLEGRO';                    // konto spoza repricera (np. OutletZabawek-pl)
   }
-  if (z === 'amazon' && String(waluta).toUpperCase() !== 'PLN') return null;   // Amazon EU z BaseLinkera — rynek z kraju
   const k = kolumnaZrodla(zrodlo, waluta, KLUCZE, kategoria);
   return KLUCZE.has(k) ? k : null;                           // „marketplace” bez kategorii, nieznane — dalej w kaskadzie
 }
@@ -83,7 +84,7 @@ function amazonZKraju(kraj) {
 // → { kanal, rynek, regula }; rynek = kraj sprzedaży (Allegro: PL/CZ/HU/SK z waluty, Amazon: rynek), regula = skąd.
 function kanalDokumentu(d) {
   const waluta = String(d.waluta || '').toUpperCase();
-  const zrodloAmazonEur = maly(d.zrodlo_fs) === 'amazon' && waluta !== 'PLN';
+  const zrodloAmazonEur = waluta !== 'PLN' && [d.zrodlo_fs, d.zrodlo_zk].some((z) => ['amazon', 'amazon.de'].includes(maly(z)));
   let kanal = null, regula = null;
   for (const [pole, kat, nazwa] of [[d.zrodlo_fs, d.kat_fs, 'zrodlo_fs'], [d.zrodlo_zk, d.kat_zk, 'zrodlo_zk']]) {
     if ((kanal = zeZrodla(pole, waluta, kat))) { regula = nazwa; break; }

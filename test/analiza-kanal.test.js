@@ -38,6 +38,9 @@ test('Amazon EU przed Sellasist: numer zamówienia w uwagach (IDEA) albo „amaz
   assert.deepStrictEqual(k({ ...idea, kraj: 'Szwecja' }), { kanal: 'AMAZON_EU', rynek: null, regula: 'kraj_nieznany' });
   // BaseLinker 2025: „Źródło” amazon w EUR to Amazon EU, nie Amazon PL
   assert.deepStrictEqual(k({ zrodlo_fs: 'amazon', waluta: 'EUR', kraj: 'Niemcy' }), { kanal: 'DE', rynek: 'DE', regula: 'zrodlo_amazon_kraj' });
+  // ZK z BaseLinkera: „Amazon.de” w EUR (X.2025: 196 tys. zł) to Amazon EU; w PLN — Amazon PL
+  assert.deepStrictEqual(k({ zrodlo_fs: '', zrodlo_zk: 'Amazon.de', waluta: 'EUR', kraj: 'Francja' }), { kanal: 'FR', rynek: 'FR', regula: 'zrodlo_amazon_kraj' });
+  assert.strictEqual(k({ zrodlo_zk: 'Amazon.de', kat_zk: 'Amazon_PL', waluta: 'PLN' }).kanal, 'PL');
 });
 
 test('kanały spoza repricera mają swoje nazwy (Rozliczenia: tergpl = Media Expert, personal = Fenom)', () => {

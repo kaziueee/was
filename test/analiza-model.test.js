@@ -63,10 +63,18 @@ test('zwrot z pozycji KFS: zmniejszenie ilości i obniżka ceny jako dodatnie wa
 
 test('dni nietypowe: przestój integracji (weekend bez ZK, poniedziałek z zaległościami)', () => {
   const liczby = new Map();
-  for (let i = 0; i < 40; i++) liczby.set(m.dodajDni('2025-09-10', i), 430);
+  for (let i = 0; i < 50; i++) liczby.set(m.dodajDni('2025-09-10', i), 430);    // do 29.10 — sąsiedzi z obu stron
   liczby.set('2025-10-18', 2); liczby.set('2025-10-19', 0); liczby.set('2025-10-20', 1047);
   const w = m.dniNietypowe(liczby, m.dniZakresu(['2025-10-14', '2025-10-20']));
   assert.deepStrictEqual(w.map((x) => x.dzien), ['2025-10-18', '2025-10-19', '2025-10-20']);
   assert.strictEqual(w[2].mediana, 430);
-  assert.deepStrictEqual(m.dniNietypowe(new Map([['2025-10-20', 5]]), ['2025-10-20']), []);   // brak historii — nic nie twierdzimy
+  assert.deepStrictEqual(m.dniNietypowe(new Map([['2025-10-20', 5]]), ['2025-10-20']), []);   // brak sąsiadów — nic nie twierdzimy
+});
+
+test('dni nietypowe: sezonowy wzrost (2× w miesiąc) to nie przestój; dzisiejszy niepełny dzień nie jest oceniany', () => {
+  const liczby = new Map();
+  for (let i = 0; i < 60; i++) liczby.set(m.dodajDni('2025-11-01', i), Math.round(400 * (1 + i / 30)));   // 400 → 1200
+  assert.deepStrictEqual(m.dniNietypowe(liczby, m.dniZakresu(['2025-11-05', '2025-12-25'])), []);
+  liczby.set('2025-12-20', 80);                                                                        // dziś, po południu
+  assert.deepStrictEqual(m.dniNietypowe(liczby, ['2025-12-19', '2025-12-20'], { dzis: '2025-12-20' }), []);
 });

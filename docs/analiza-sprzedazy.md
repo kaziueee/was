@@ -384,6 +384,27 @@ i zapas, repricer). Liczby: dzień wg zamówienia 41 101 zł / zysk 13 142 zł /
 (−12% r/r); 7 dni 255 tys. zł (−4%). Uproszczenia makiety: zysk od sztuki (nie na zamówienie), „rok” bez zysku,
 zdjęcia tylko 40 kart.
 
+## Raport mailem (2026-10-20)
+
+**[decyzje usera 20.10]** Gmail API z uprawnieniem tylko do wysyłania (jak Rozliczenia, tam tylko odczyt — token nie
+czyta i nie kasuje skrzynki, bez hasła na serwerze); codziennie o 7:00 za wczoraj, w poniedziałek dodatkowo tydzień;
+do kaziueee@gmail.com i PawelkaZ@gmail.com (`ANALIZA_RAPORT_DO`); w treści kafle (przychód, zysk, marża, zysk na sztuce,
+sztuki, zamówienia vs −364 dni), kanały, miesiąc do dziś, top 10 produktów ze zdjęciem (inline cid:), kończący się
+zapas (≥ 10 szt./30 dni i < 14 dni na K4+K4G, z MAG/LS obok), sprzedaż ze stratą, dni nietypowe.
+**Przegląd produktów = tylko K4, bez paragonów z MAG** (decyzja usera, dotyczy też ekranów).
+
+- Liczby wg daty zamówienia (wczorajszy dzień jest pełny), pod spodem wg faktury (jak ERP Dashboard); w temacie
+  dzień r/r **i 7 dni r/r**, a przy dniu nietypowym „r/r niemiarodajne”. Powód: pon. 19.10.2026 vs pon. 20.10.2025
+  wg zamówienia −38% (przestój integracji 18–19.10.2025 — ZK Amazona dostały datę poniedziałku, 612 zamiast ~440),
+  przy −3% za 7 dni i −6,7% wg faktury.
+- **Dni nietypowe — zmiana reguły:** mediana z 28 dni wstecz (i wariant „ten sam dzień tygodnia z 4 tygodni”)
+  zapalała alarm w całym sezonie: 223 z 718 dni. Teraz mediana sąsiadów ±3 dni, progi 45% / 180%: 13 z 745 dni —
+  przestoje (17.05.2025, 27.09.2025), nadrabianie (29.09.2025, 20.10.2025, 27.04 i 04.05.2026), Wigilia, Wielka Sobota.
+- Mail mieści się w szerokości telefonu (kafle po 2, kanały bez kolumny udziału); dane starsze niż 3 h = ostrzeżenie.
+- Uruchomienie: zgoda `node scripts/gmail-zgoda.js --klient <.gmail-credentials.json z Rozliczeń>` (ekran zgody w
+  Google Cloud musi być „In production”, inaczej token wygasa co 7 dni) → plik `gmail-wysylka.env` na SRV do `.env` →
+  `node scripts/sekrety.js zaszyfruj` → `ANALIZA_RAPORT_DO` w `.env` → restart WMS-Node.
+
 ## Wdrożenie etapu 1 (2026-10-20)
 
 Gałąź `claude/wizardly-volhard-9b3564`. Opis techniczny w CLAUDE.md („Analiza sprzedaży — moduł”).

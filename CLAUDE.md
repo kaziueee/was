@@ -305,6 +305,9 @@ Zakładka desktopu **Sprzedaż → Dzień** (`#sprzedaz`, zadanie sprzedażowe p
 - Zwroty (KFS) w osobnej kolumnie, nie odejmowane; zestawy w dwóch widokach (sprzedaż zestawu + zużycie składników do tempa); grupy towarów = `tw_IdGrupa`.
 - Czysta logika i testy: `services/analiza-model.js` (zakresy −364, UUID, kurs HUF za 100, flagi, dni nietypowe, zwrot z KFS), `services/analiza-kanal.js`, `config/rynki.js` (`wycenaZamowienia`).
 - Zadanie sprzedażowe liczy z `db/sprzedaz.db`, gdy historia modułu sięga daty — inaczej z GT jak dawniej.
+- **Przegląd produktów = tylko K4** (bez paragonów z MAG; decyzja usera 2026-10-20). Liczby API i maila składa jeden moduł `services/analiza-zapytania.js`.
+- **Dni nietypowe** = liczba zamówień < 45% albo > 180% mediany sąsiadów ±3 dni (`dniNietypowe`) — nie porównanie z tygodniami wstecz, bo sezon (2–3× w miesiąc) zapalał alarm w co trzecim dniu.
+- **Raport mailem** (`services/analiza-raport.js`, wysyła job): codziennie od `ANALIZA_RAPORT_GODZINA` (7:00) za wczoraj, w poniedziałek z tygodniem; do `ANALIZA_RAPORT_DO`. Gmail API z zakresem **tylko do wysyłania** (`services/gmail-wysylka.js`, bez haseł i bibliotek); zgoda raz `node scripts/gmail-zgoda.js --klient <plik OAuth>`, klucze `GMAIL_*` → `.env.dpapi`. Podgląd / ręczna wysyłka: `node scripts/analiza-raport.js [--dzien] [--tydzien] [--wyslij --do adres]`, podgląd w WMS `GET /api/analiza/raport`. Bez konfiguracji job nic nie wysyła; najwyżej 3 próby dziennie.
 
 ## Zadanie sprzedażowe + rola `biuro` (2026-10-06)
 

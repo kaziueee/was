@@ -7,6 +7,9 @@
 //   nocny (raz na dobę, pierwszy przebieg po 2:00): ostatnie 14 dni na nowo (korekty, FS z cofniętą datą, ZK, które
 //     zniknęły), kartoteka towarów aktywnych i nowych, zdjęcie stanów wszystkich towarów ze stanem.
 // Historię sprzed startu wczytuje raz scripts/analiza-wczytaj.js. Tylko SELECT-y do GT.
+//   raport mailem (services/analiza-raport.js): raz dziennie od ANALIZA_RAPORT_GODZINA (7:00) za wczoraj, do
+//     ANALIZA_RAPORT_DO, przez Gmail API z zakresem tylko do wysyłania; najwyżej 3 próby dziennie. Bez konfiguracji
+//     (adresaci + GMAIL_*) — nic nie wysyła.
 // ANALIZA_WYLACZ=1 wyłącza job (np. lokalny WMS na kopii Z_KAJTEK, żeby nie mieszał danych w bazie modułu).
 
 const dane = require('./analiza-dane');
@@ -15,10 +18,12 @@ const { dodajDni } = require('./analiza-model');
 const { dzisLokalnie } = require('./sprzedaz-model');
 const { interwalMsZMinut } = require('./interwal');
 const awarie = require('./awarie');
+const gmail = require('./gmail-wysylka');
 
 const GODZINA_NOCNA = 2;
 const OPOZNIENIE_STARTU_MS = 90 * 1000;   // po starcie WMS-Node daj wstać reszcie (most, joby GT)
 
+const MAX_PROB_RAPORTU = 3;
 let trwa = false;
 
 async function biezacy() {
@@ -51,16 +56,44 @@ async function nocny() {
   return { zamowien: w.zamowienia.length, towarow: tw.length, stany };
 }
 
+// Raport za wczoraj, jeśli jest pora i jeszcze nie poszedł. Licznik prób per dzień: błąd Gmaila (np. odwołana zgoda)
+// nie może wysyłać co kwadrans przez cały dzień ani zasypywać logu.
+async function raportJesliPora(teraz = new Date()) {
+  const doKogo = process.env.ANALIZA_RAPORT_DO;
+  if (!doKogo || !gmail.skonfigurowane()) return null;
+  const dzis = dzisLokalnie(teraz);
+  const godzina = Number(process.env.ANALIZA_RAPORT_GODZINA) || 7;
+  if (teraz.getHours() < godzina || meta.get('raport')?.wartosc === dzis) return null;
+  const p = meta.get('raport_proby')?.wartosc || '';
+  const proby = p.startsWith(dzis + ':') ? Number(p.split(':')[1]) || 0 : 0;
+  if (proby >= MAX_PROB_RAPORTU) return null;
+  meta.set('raport_proby', `${dzis}:${proby + 1}`);
+  const raport = require('./analiza-raport');
+  const r = await raport.zbierzRaport(dodajDni(dzis, -1));
+  const w = await gmail.wyslij({ do: doKogo, temat: raport.tematRaportu(r), html: raport.htmlRaportu(r), obrazy: r.obrazy });
+  meta.set('raport', dzis);
+  console.log(`[analiza] raport za ${dodajDni(dzis, -1)} wysłany (${w.id})`);
+  return w;
+}
+
 async function przebieg(teraz = new Date()) {
   if (trwa) return null;              // poprzedni przebieg jeszcze trwa (GT wolne) — nie dokładamy drugiego
   trwa = true;
   try {
-    const nocnyDzis = meta.get('nocny')?.wartosc === dzisLokalnie(teraz);
-    return teraz.getHours() >= GODZINA_NOCNA && !nocnyDzis ? await nocny() : await biezacy();
-  } catch (e) {
-    awarie.blad('analiza', e.message);
-    meta.set('blad', `${new Date().toISOString()} ${e.message}`);
-    return null;
+    let wynik = null;
+    try {
+      const nocnyDzis = meta.get('nocny')?.wartosc === dzisLokalnie(teraz);
+      wynik = teraz.getHours() >= GODZINA_NOCNA && !nocnyDzis ? await nocny() : await biezacy();
+    } catch (e) {
+      awarie.blad('analiza', e.message);
+      meta.set('blad', `${new Date().toISOString()} ${e.message}`);
+    }
+    // raport osobno: padnięte GT nie blokuje maila z tego, co już jest w bazie, a błąd Gmaila — dosypywania danych
+    try { await raportJesliPora(teraz); } catch (e) {
+      awarie.blad('analiza-raport', e.message);
+      meta.set('raport_blad', `${new Date().toISOString()} ${e.message}`);
+    }
+    return wynik;
   } finally {
     trwa = false;
   }
@@ -76,4 +109,4 @@ function start() {
   return timer;
 }
 
-module.exports = { start, przebieg, biezacy, nocny };
+module.exports = { start, przebieg, biezacy, nocny, raportJesliPora };

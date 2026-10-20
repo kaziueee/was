@@ -89,20 +89,24 @@ function zwrotZPozycji({ znak, ilosc, netto }) {
   return { szt: -(z * (+ilosc || 0)), netto: -(z * (+netto || 0)) };
 }
 
-// Dni nietypowe w zakresie porównania: liczba zamówień poniżej 40% albo powyżej 180% mediany z 28 dni przed tym
-// dniem. Tak wygląda przestój integracji (18–19.10.2025: 2 i 0 ZK, poniedziałek 20.10: 1047 zamiast ~430) — porównanie
-// dzień do dnia jest wtedy mylące i ekran ma to powiedzieć wprost (×2,4 mediany — stąd górny próg 1,8; Black Friday
-// też wyjdzie jako nietypowy i to jest prawda). liczby: Map dzień → liczba zamówień.
-function dniNietypowe(liczby, dni) {
+// Dni nietypowe w zakresie porównania: liczba zamówień poniżej 45% albo powyżej 180% mediany SĄSIADÓW (±3 dni).
+// Sąsiedzi, a nie ostatnie tygodnie: w sezonie zamówień przybywa 2–3× w miesiąc i porównanie z 4 tygodniami wstecz
+// zapalało alarm w co trzecim dniu (223 z 718, sprawdzone 2026-10-20 na 2 latach), a przestój integracji to dzień
+// wyraźnie niższy od sąsiadów, a nadrabianie — wyraźnie wyższy. Na 745 dniach reguła zapala się 13 razy: przestoje
+// (17.05.2025, 27.09.2025), nadrabianie (29.09.2025, 20.10.2025: 612 ZK przy ~300 obok, 27.04 i 04.05.2026),
+// Wigilia, Wielka Sobota. Dni od `dzis` (niepełne) nie są ani oceniane, ani sąsiadami. liczby: Map dzień → liczba.
+const SASIEDZI = [-3, -2, -1, 1, 2, 3];
+function dniNietypowe(liczby, dni, { dzis = null } = {}) {
   const wynik = [];
+  const pelny = (d) => !dzis || d < dzis;
   for (const d of dni) {
-    const okno = [];
-    for (let i = 1; i <= 28; i++) { const x = liczby.get(dodajDni(d, -i)); if (x != null) okno.push(x); }
-    if (okno.length < 14) continue;                        // za mało historii, żeby cokolwiek twierdzić
+    if (!pelny(d)) continue;
+    const okno = SASIEDZI.map((i) => dodajDni(d, i)).filter(pelny).map((x) => liczby.get(x)).filter((x) => x != null);
+    if (okno.length < 3) continue;                         // za mało sąsiadów, żeby cokolwiek twierdzić
     okno.sort((a, b) => a - b);
-    const med = okno[Math.floor(okno.length / 2)];
+    const med = okno.length % 2 ? okno[(okno.length - 1) / 2] : (okno[okno.length / 2 - 1] + okno[okno.length / 2]) / 2;
     const n = liczby.get(d) || 0;
-    if (med > 0 && (n < 0.4 * med || n > 1.8 * med)) wynik.push({ dzien: d, zamowien: n, mediana: med });
+    if (med > 0 && (n < 0.45 * med || n > 1.8 * med)) wynik.push({ dzien: d, zamowien: n, mediana: med });
   }
   return wynik;
 }

@@ -22,6 +22,11 @@
 //     straciliśmy BB, a nasza cena to wciąż ta podniesiona — wracamy od razu (bez schodka) do ceny
 //     sprzed podwyżki, przy której BB był nasz. Po cofnięciu podwyżki są wstrzymane na
 //     `blokadaPodwyzekH` godzin; obniżki i podłoga działają normalnie.
+//     NIE dotyczy obserwacji z pełną listą konkurentów (`obs.konkurenci` — Allegro z Niezbędnikiem, decyzja
+//     usera 2026-10-21): tam „utrata” po podwyżce znaczy tylko, że pojawił się tańszy konkurent — reguła 3
+//     schodzi pod niego, a gdy zniknie, podwyżka wraca. BARJFL66 20.10: po podwyżce do 89,90 przyszedł
+//     sprzedawca za 78,99 → cofnięcie do 87,95 (nic nie dało) i blokada, przez którą cena nie wróciła na
+//     89,90 po jego zniknięciu.
 //  7. Cena poniżej minimum idzie od razu na minimum (bez schodka) i się nie cofa — utrata BB
 //     przy cenie minimalnej nie szkodzi (decyzja usera 2026-10-14).
 //  8. Wojna o grosze (decyzja usera 2026-10-15): po `wojnaObnizek` WYSŁANYCH obniżkach do ceny
@@ -76,8 +81,10 @@ const zaokr = (x) => Math.round(x * 100) / 100;
 //                      i ile godzin minęło od ostatniej z nich (reguła 8)
 // Zwraca { cena, cel, zmiana, kod, powod } — `cena` to cena towaru do ustawienia w tym przebiegu,
 // `cel` to cena docelowa (bez limitu schodka); bez zmiany cel = cena.
-function decyzja(obs, pas, reguly = {}, kontekst = {}) {
+function decyzja(obs, pas, reguly = {}, kontekstWe = {}) {
   const r = { ...DOMYSLNE_REGULY, ...reguly };
+  // Reguła 6 tylko tam, gdzie Buy Box zależy od rzeczy, których nie widzimy (opis wyżej).
+  const kontekst = Array.isArray(obs.konkurenci) ? { ...kontekstWe, ostatniaPodwyzka: null, blokadaPodwyzek: false } : kontekstWe;
   const cena = Number(obs.cena);
   const wys = Number(obs.wysylka) || 0;
   const { min, max } = pas || {};

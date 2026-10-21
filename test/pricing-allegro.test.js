@@ -77,7 +77,7 @@ test('Allegro: dwie kolumny (konta), automat bez wysyłki do zgody usera, minimu
   for (const konto of Object.keys(allegro.KONTA)) {
     const k = kolumna('allegro', konto);
     assert.ok(k, konto);
-    assert.ok(!k.tylkoOdczyt);                                   // od 2026-10-19 automat da się włączyć…
+    assert.strictEqual(!!k.tylkoOdczyt, konto === 'NATROPIE');   // ekajtek: automat od 19.10; NaTropie tylko odczyt (21.10)…
     assert.strictEqual(k.wysylkaPoZgodzie, 'PRICING_ALLEGRO_WYSYLKA');   // …ale cen nie wysyła bez zgody w .env
     assert.strictEqual(k.bezKonkurencji, true);
     assert.strictEqual(k.kalkulator, 'Allegro');

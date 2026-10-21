@@ -37,8 +37,9 @@ const KOLUMNY = [
   // da się włączyć, ale wysyłka cen czeka na osobną decyzję usera (PRICING_ALLEGRO_WYSYLKA=1).
   { klucz: 'ALLEGRO_EKAJTEK', platforma: 'allegro', rynek: 'EKAJTEK', nazwa: 'Allegro ekajtek', etykieta: 'ekajtek', waluta: 'zł', kalkulator: 'Allegro',
     wysylkaPoZgodzie: 'PRICING_ALLEGRO_WYSYLKA', bezKonkurencji: true },
+  // NaTropie na razie tylko obserwacja (decyzja usera 2026-10-21) — automat tylko na ekajtek.
   { klucz: 'ALLEGRO_NATROPIE', platforma: 'allegro', rynek: 'NATROPIE', nazwa: 'Allegro NaTropie', etykieta: 'NaTropie', waluta: 'zł', kalkulator: 'Allegro',
-    wysylkaPoZgodzie: 'PRICING_ALLEGRO_WYSYLKA', bezKonkurencji: true,
+    tylkoOdczyt: true, wysylkaPoZgodzie: 'PRICING_ALLEGRO_WYSYLKA', bezKonkurencji: true,
     rynekNadpisz: { ads: 0 } },   // NaTropie nie prowadzi kampanii Ads (Rozliczenia III kw. 2026: 0 zł)
   // Kaufland DE: obserwacja od 2026-10-16, możliwość automatu od 2026-10-18 (decyzja usera po teście zapisu
   // 16.10: cena widoczna po 1–2 min, przez 1,5 doby nikt jej nie cofnął). Smart Pricing Kauflandu wyłączony

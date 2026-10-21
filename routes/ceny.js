@@ -74,12 +74,8 @@ async function stanyGt(twIds) {
   }
 }
 
-// Linki do oferty — każda platforma po swojemu (Amazon po ASIN, eMAG po PNK, Empik po numerze produktu,
-// Allegro po numerze oferty, Kaufland po id_product — wszystkie trzymane w `asin`).
-const linki = (o) => (o.platforma === 'emag' ? emag.linkiOferty(o.asin, o.rynek)
-  : o.platforma === 'empik' ? empik.linkiOferty(o.asin) : o.platforma === 'allegro' ? allegro.linkiOferty(o.asin)
-  : o.platforma === 'kaufland' ? kaufland.linkiOferty(o.asin, o.rynek)
-  : linkiOferty(o.rynek, o.asin));
+// Linki do oferty — każda platforma po swojemu (pricing/linki.js, wspólne z kartą produktu w Trendach).
+const { linkiOferty: linki } = require('../pricing/linki');
 // Nasze konta Allegro (numer + login) — raz na żądanie wystarczy, KONTA się nie zmieniają.
 let naszeKontaCache = null;
 const naszeKonta = () => (naszeKontaCache ||= konkurencja.naszeKonta());

@@ -10,6 +10,8 @@
 //   raport mailem (services/analiza-raport.js): raz dziennie od ANALIZA_RAPORT_GODZINA (7:00) za wczoraj, do
 //     ANALIZA_RAPORT_DO, przez Gmail API z zakresem tylko do wysyłania; najwyżej 3 próby dziennie. Bez konfiguracji
 //     (adresaci + GMAIL_*) — nic nie wysyła.
+//   Trendy (services/analiza-trendy.js): po każdym przebiegu, gdy brak wyniku, zmienił się dzień albo minęła godzina.
+// Chodzi w osobnym wątku (services/analiza-watek.js) — ZASADA usera: w ciągu dnia nic nie może przeszkadzać Zebrom.
 // ANALIZA_WYLACZ=1 wyłącza job (np. lokalny WMS na kopii Z_KAJTEK, żeby nie mieszał danych w bazie modułu).
 
 const dane = require('./analiza-dane');
@@ -19,6 +21,7 @@ const { dzisLokalnie } = require('./sprzedaz-model');
 const { interwalMsZMinut } = require('./interwal');
 const awarie = require('./awarie');
 const gmail = require('./gmail-wysylka');
+const { isMainThread } = require('worker_threads');
 
 const GODZINA_NOCNA = 2;
 const OPOZNIENIE_STARTU_MS = 90 * 1000;   // po starcie WMS-Node daj wstać reszcie (most, joby GT)
@@ -88,6 +91,11 @@ async function przebieg(teraz = new Date()) {
       awarie.blad('analiza', e.message);
       meta.set('blad', `${new Date().toISOString()} ${e.message}`);
     }
+    // Trendy z tego, co już jest w bazie (dni zamknięte) — padnięte GT ich nie blokuje
+    try {
+      const t = require('./analiza-trendy').odswiezJesliTrzeba(teraz);
+      if (t) console.log(`[analiza] trendy policzone (${t.ms} ms, ${t.kb} KB)`);
+    } catch (e) { awarie.blad('analiza-trendy', e.message); }
     // raport osobno: padnięte GT nie blokuje maila z tego, co już jest w bazie, a błąd Gmaila — dosypywania danych
     try { await raportJesliPora(teraz); } catch (e) {
       awarie.blad('analiza-raport', e.message);
@@ -103,9 +111,10 @@ function start() {
   if (process.env.ANALIZA_WYLACZ === '1') { console.log('[analiza] job wyłączony (ANALIZA_WYLACZ=1)'); return null; }
   const ms = interwalMsZMinut(process.env.ANALIZA_INTERWAL_MIN, 15, 'ANALIZA_INTERWAL_MIN');
   const pierwszy = setTimeout(() => przebieg(), OPOZNIENIE_STARTU_MS);
-  pierwszy.unref?.();
+  // w wątku analiz timery MUSZĄ trzymać pętlę (inaczej wątek kończy się od razu); zwalniamy je tylko w głównym
+  if (isMainThread) pierwszy.unref?.();
   const timer = setInterval(() => przebieg(), ms);
-  timer.unref?.();
+  if (isMainThread) timer.unref?.();
   return timer;
 }
 

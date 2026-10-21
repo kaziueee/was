@@ -82,7 +82,7 @@
     <section class="tr-karta" id="tr-sek-grupy"><div class="tr-nag"><div><h3>Grupy towarów — top 30</h3><div class="tr-opis" id="tr-gr-opis"></div></div>
       <div class="tr-ster"><span class="tr-seg" id="tr-gr-okno"></span><span class="tr-seg" id="tr-gr-por"></span><span class="tr-seg" id="tr-gr-ile"></span></div></div>
       <div class="tr-przewin" style="max-height:560px"><table class="tr-tab" id="tr-grupy"></table></div>
-      <div class="tr-stopka">Klik w grupę = lista jej produktów niżej (te same filtry). Pod nazwą grupy jej 5 najlepiej sprzedających się produktów. Grupy z kartoteki GT.</div></section>
+      <div class="tr-stopka">Klik w grupę = lista jej produktów niżej (te same filtry). Grupy z kartoteki GT.</div></section>
     <section class="tr-karta" id="tr-sek-prod"><div class="tr-nag"><div><h3>Produkty</h3><div class="tr-opis" id="tr-pr-opis"></div></div>
       <div class="tr-ster"><span class="tr-seg" id="tr-pr-okno"></span><span class="tr-seg" id="tr-pr-por"></span>
         <label class="tr-opis">próg zmiany <input class="tr-pole" id="tr-pr-prog" type="number" value="30" min="5" step="5" style="width:62px"> %</label>
@@ -289,14 +289,13 @@
   // ---------- grupy ----------
   const stGr = { ile: 30 };
   function grupyDane() {
-    const g = new Map(), top = new Map();
+    const g = new Map();
     for (const w of wiersze()) {
       const x = g.get(w.grupa) || g.set(w.grupa, { grupa: w.grupa, n: 0, bn: 0, z: 0, bz: 0, s: 0, sku: 0 }).get(w.grupa);
       x.n += w.a.n; x.bn += w.b.n; x.z += w.a.z; x.bz += w.b.z; x.s += w.a.s;
-      if (w.a.s > 0) { x.sku++; (top.get(w.grupa) || top.set(w.grupa, []).get(w.grupa)).push(w); }
+      if (w.a.s > 0) x.sku++;
     }
-    return [...g.values()].filter((x) => x.n > 0 || x.bn > 0).sort((a, b) => b.n - a.n)
-      .map((x) => ({ ...x, top: (top.get(x.grupa) || []).sort((p, q) => q.a.n - p.a.n).slice(0, 5).map((w) => w.id) }));
+    return [...g.values()].filter((x) => x.n > 0 || x.bn > 0).sort((a, b) => b.n - a.n);
   }
   function iskra(g) {
     const t = X.grTyg[g] || {}, v = X.tygodnie13.map((p) => t[p] || 0), max = Math.max(...v, 1), W = 96, H = 26, n = v.length;
@@ -311,7 +310,7 @@
     const udzialTop = top.reduce((a, x) => a + x.n, 0) / suma * 100;
     $('gr-opis').innerHTML = `${st.okno} zamkniętych dni ${dd(P.od)}–${dd(P.do)} vs ${porTxt}. ${g.length} grup ze sprzedażą; top ${Math.min(ile, g.length)} = ${pct(udzialTop)} przychodu.`;
     const wiersz = (x, i, klik = true) => `<tr class="${klik ? 'tr-klik' : ''} ${x.grupa === st.grupa ? 'tr-wybrana' : ''}" data-g="${klik ? esc(x.grupa) : ''}"><td class="n tr-sz">${i ?? ''}</td>
-      <td><b>${esc(x.grupa)}</b>${x.top?.length ? `<div class="tr-miniRz">${x.top.map((id) => `<img src="${ZDJ(id)}" alt="" title="${esc((X.info[id] || [])[0])}" loading="lazy" onerror="this.remove()">`).join('')}</div>` : ''}</td>
+      <td><b>${esc(x.grupa)}</b></td>
       <td class="n"><b>${zl(x.n)}</b></td><td class="n tr-sz">${pct(x.n / suma * 100)}</td><td class="n">${zmianaZl(x.n - x.bn)}</td><td class="n">${zmiana(x.n, x.bn)}</td>
       <td class="n">${zl(x.z)}</td><td class="n">${zmianaZl(x.z - x.bz)}</td><td class="n">${pct(x.n ? x.z / x.n * 100 : null)}</td><td class="n">${szt(x.s)}</td><td class="n">${szt(x.sku)}</td><td>${klik ? iskra(x.grupa) : ''}</td></tr>`;
     const rz = reszta.reduce((a, x) => ({ ...a, n: a.n + x.n, bn: a.bn + x.bn, z: a.z + x.z, bz: a.bz + x.bz, s: a.s + x.s, sku: a.sku + x.sku }),
@@ -357,14 +356,26 @@
     const lista = ostatniaLista, i = lista.findIndex((w) => w.id === id), w = lista[i] || wiersze().find((q) => q.id === id);
     if (!w) return;
     const P = X.produkty[st.okno], porTxt = st.por === 'prev' ? `poprzednie ${st.okno} dni` : 'rok temu', off = st.por === 'prev' ? 3 : 6;
-    const kan = ((X.kanaly[st.okno] || {})[id] || []).map((k) => ({ nazwa: k[0], s: k[1], n: k[2], z: k[3], bs: k[1 + off], bn: k[2 + off] }))
+    const kan = ((X.kanaly[st.okno] || {})[id] || []).map((k) => ({ nazwa: k[0], s: k[1], n: k[2], z: k[3], bs: k[1 + off], bn: k[2 + off], klucz: k[10] }))
       .filter((k) => k.s || k.bs).sort((a, b) => b.n - a.n || b.bn - a.bn);
     const marza = (z, n) => (n ? pct(z / n * 100) : '—'), przed = st.por === 'prev' ? 'przed' : 'rok temu';
+    // nazwa kanału = link do oferty na platformie (oferty z repricera, pricing/linki.js) — dociągane niżej przy
+    // otwarciu karty; kilka ofert w kanale — kolejne numerami
+    const kanalHtml = (k, ofertyKanalu) => {
+      const of = (ofertyKanalu || {})[k.klucz] || [];
+      if (!ofertyKanalu) return esc(k.nazwa);
+      if (!of.length) return `${esc(k.nazwa)} <span class="tr-sz" title="brak aktywnej oferty w repricerze">—</span>`;
+      const tytul = (o) => `${esc(o.sku)}${o.auto ? ' · automat' : ''}${o.fba ? ' · FBA' : ''}`;
+      return `<a href="${esc(of[0].produkt)}" target="_blank" rel="noopener" title="Oferta na platformie: ${tytul(of[0])}">${esc(k.nazwa)} ↗</a>`
+        + (of[0].oferty ? ` · <a href="${esc(of[0].oferty)}" target="_blank" rel="noopener" title="Wszystkie oferty — kto ma Buy Box">oferty</a>` : '')
+        + of.slice(1, 4).map((o, j) => ` · <a href="${esc(o.produkt)}" target="_blank" rel="noopener" title="${tytul(o)}">${j + 2}</a>`).join('');
+    };
     const kafelki = [['Sztuki', szt(w.a.s), zmiana(w.a.s, w.b.s)], ['Przychód', zl(w.a.n), zmiana(w.a.n, w.b.n)], ['Zysk', zl(w.a.z), zmiana(w.a.z, w.b.z)],
       ['Marża', marza(w.a.z, w.a.n), zmiana(w.a.n ? w.a.z / w.a.n * 100 : null, w.b.n ? w.b.z / w.b.n * 100 : null, { pp: true })],
       ['Dostępne', w.dost == null ? '—' : szt(w.dost), `<span class="tr-sz">${w.zestaw ? 'kompletów ze składników' : 'Razem − rez.'}</span>`],
       ['Zapas', w.dni == null ? '—' : szt(w.dni) + ' dni', '<span class="tr-sz">tempo 30 dni</span>']];
     const t = okno();
+    document.getElementById('tr-okno').dataset.id = String(id);
     document.getElementById('tr-okno').innerHTML = `<div class="tr-nav"><span class="tr-opis" style="margin-right:auto">${i >= 0 ? `${i + 1} z ${nf0.format(lista.length)} na liście · ← → przewijanie` : ''}</span>
         <button type="button" class="btn btn-small" id="tr-ok-wstecz" ${i > 0 ? '' : 'disabled'}>‹ poprzedni</button><button type="button" class="btn btn-small" id="tr-ok-dalej" ${i >= 0 && i < lista.length - 1 ? '' : 'disabled'}>następny ›</button>
         <button type="button" class="btn btn-small" id="tr-ok-x">✕ zamknij</button></div>
@@ -373,9 +384,9 @@
           <div class="tr-opis" style="margin-top:6px">${st.okno} zamkniętych dni ${dd(P.od)}–${dd(P.do)} vs ${porTxt}</div>
           <div class="tr-statki">${kafelki.map(([a, b, c]) => `<div>${a}<b>${b}</b>${c}</div>`).join('')}</div>
           <div class="tr-wykres" id="tr-ok-tyg"></div></div></div>
-      <h3 style="font-size:15px;margin:14px 0 6px">Kanały sprzedaży</h3>
+      <h3 style="font-size:15px;margin:14px 0 6px">Kanały sprzedaży <span class="tr-opis" style="font-weight:400">— nazwa kanału otwiera ofertę na platformie</span></h3>
       <table class="tr-tab"><tr><th>Kanał</th><th class="n">Szt.</th><th class="n">Przychód</th><th class="n">Zysk</th><th class="n">Marża</th><th class="n">Zysk na szt.</th><th class="n">Szt. ${przed}</th><th class="n">Przychód ${przed}</th><th class="n">Zmiana</th></tr>
-      ${kan.map((k) => `<tr><td>${esc(k.nazwa)}</td><td class="n">${szt(k.s)}</td><td class="n">${zl(k.n)}</td><td class="n">${zl(k.z)}</td><td class="n">${marza(k.z, k.n)}</td><td class="n">${k.s ? zl(k.z / k.s) : '—'}</td><td class="n tr-sz">${szt(k.bs)}</td><td class="n tr-sz">${zl(k.bn)}</td><td class="n">${k.bn > 0 ? zmiana(k.n, k.bn) : k.n > 0 ? '<span class="tr-up">nowy kanał</span>' : '<span class="tr-down">zniknął</span>'}</td></tr>`).join('')
+      ${kan.map((k, j) => `<tr><td data-kan="${j}">${kanalHtml(k, null)}</td><td class="n">${szt(k.s)}</td><td class="n">${zl(k.n)}</td><td class="n">${zl(k.z)}</td><td class="n">${marza(k.z, k.n)}</td><td class="n">${k.s ? zl(k.z / k.s) : '—'}</td><td class="n tr-sz">${szt(k.bs)}</td><td class="n tr-sz">${zl(k.bn)}</td><td class="n">${k.bn > 0 ? zmiana(k.n, k.bn) : k.n > 0 ? '<span class="tr-up">nowy kanał</span>' : '<span class="tr-down">zniknął</span>'}</td></tr>`).join('')
         || '<tr><td colspan="9" class="tr-sz">Brak sprzedaży w obu okresach.</td></tr>'}
       <tr class="tr-razem"><td><b>Razem</b></td><td class="n"><b>${szt(w.a.s)}</b></td><td class="n"><b>${zl(w.a.n)}</b></td><td class="n"><b>${zl(w.a.z)}</b></td><td class="n">${marza(w.a.z, w.a.n)}</td><td class="n">${w.a.s ? zl(w.a.z / w.a.s) : '—'}</td><td class="n tr-sz">${szt(w.b.s)}</td><td class="n tr-sz">${zl(w.b.n)}</td><td class="n">${zmiana(w.a.n, w.b.n)}</td></tr></table>`;
     t.style.display = 'flex';
@@ -392,6 +403,10 @@
     sv += `<line x1="${L}" x2="${Wd - 8}" y1="${T + ph}" y2="${T + ph}" stroke="${kolor('--tr-axis')}"/>`;
     host.innerHTML = '<div class="tr-legenda" style="margin:0 0 2px"><span><i style="background:var(--tr-s1)"></i>sztuki tygodniowo (13 pełnych tygodni)</span><span><i class="tr-linia" style="background:var(--tr-rok)"></i>rok temu</span></div>' + SVG(Wd, H, sv);
     document.getElementById('tr-ok-x').onclick = zamknijProdukt;
+    api(`/api/analiza/oferty/${id}`).then((of) => {
+      if (document.getElementById('tr-tlo').style.display !== 'flex' || document.getElementById('tr-okno').dataset.id !== String(id)) return;
+      kan.forEach((k, j) => { const td = document.querySelector(`#tr-okno td[data-kan="${j}"]`); if (td) td.innerHTML = kanalHtml(k, of); });
+    }).catch(() => { /* bez linków — karta i tak jest */ });
     if (i > 0) document.getElementById('tr-ok-wstecz').onclick = () => otworzProdukt(lista[i - 1].id);
     if (i >= 0 && i < lista.length - 1) document.getElementById('tr-ok-dalej').onclick = () => otworzProdukt(lista[i + 1].id);
   }

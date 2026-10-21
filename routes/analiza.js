@@ -8,6 +8,7 @@
 //   GET /api/analiza/podsumowanie?dzien=&zakres=&baza=         kanały: bieżący zakres vs ten sam sprzed 364 dni
 //   GET /api/analiza/produkty?dzien=&zakres=&baza=&sort=&limit= towary z kanałami, stanem, flagami i repricerem
 //   GET /api/analiza/trendy                                    Sprzedaż → Trendy: dni zamknięte do wczoraj (services/analiza-trendy.js)
+//   GET /api/analiza/oferty/:tw_id                             linki do ofert towaru na platformach (karta produktu w Trendach)
 //   GET /api/analiza/raport?dzien=&tydzien=1                   podgląd maila (HTML) — to, co wyśle job
 // zakres: dzien | t7 | mtd | ytd · baza: zam (data zamówienia) | fs (data faktury) · sort: zysk | szt | netto
 
@@ -26,7 +27,18 @@ router.get('/produkty', (req, res) => {
   res.json(q.produkty(q.parametry(req.query), { sort, limit }));
 });
 
-router.get('/trendy', (req, res) => res.json(require('../services/analiza-trendy').trendy()));
+// Trendy liczy wątek analiz (services/analiza-watek.js) — tu tylko gotowy JSON, bez liczenia w wątku Zebry
+router.get('/trendy', (req, res) => {
+  const g = require('../services/analiza-trendy').gotowe();
+  if (!g) return res.status(503).json({ blad: 'Trendy jeszcze się liczą (pierwsze ~2 minuty po starcie WMS) — odśwież za chwilę.' });
+  res.type('application/json').send(g.json);
+});
+
+router.get('/oferty/:tw', (req, res) => {
+  const id = Number(req.params.tw);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ blad: 'Zły identyfikator towaru' });
+  res.json(require('../services/analiza-trendy').ofertyTowarow(new Set([id]))[id] || {});
+});
 
 router.get('/raport', async (req, res, next) => {
   try {

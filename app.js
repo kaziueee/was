@@ -33,7 +33,7 @@ const strefyWGtJob = require('./services/strefy-w-gt-job');
 const rozmontowaniaJob = require('./services/rozmontowania');
 const kartotekaJob = require('./services/kartoteka');
 const backupJob = require('./services/backup');
-const analizaJob = require('./services/analiza-job');
+const analizaWatek = require('./services/analiza-watek');
 const reconciliacjaMM = require('./services/reconciliacja-mm');
 const pulpitSnapshot = require('./services/pulpit-snapshot');
 const awarie = require('./services/awarie');
@@ -115,6 +115,6 @@ strefyWGtJob.start();
 rozmontowaniaJob.start();
 kartotekaJob.start();   // odswiezanie kopii kartoteki GT (symbol/nazwa/EAN) w stany_lokalizacji
 backupJob.start();
-analizaJob.start();   // analiza sprzedazy: FS/ZK z GT do db/sprzedaz.db co 15 min + nocny przebieg
+analizaWatek.start();   // analiza sprzedazy w osobnym watku (nie blokuje Zebry): FS/ZK z GT do db/sprzedaz.db co 15 min, nocny przebieg, Trendy
 reconciliacjaMM.start();
 pulpitSnapshot.start();

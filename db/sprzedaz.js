@@ -119,6 +119,14 @@ CREATE TABLE IF NOT EXISTS tempa (
   dzien     TEXT NOT NULL                 -- dzień, na który policzone
 );
 
+-- gotowe wyniki liczone w wątku analiz (services/analiza-watek.js), API tylko je podaje — np. Trendy
+CREATE TABLE IF NOT EXISTS gotowe (
+  klucz     TEXT PRIMARY KEY,
+  json      TEXT NOT NULL,
+  dzien     TEXT NOT NULL,                -- dzień, dla którego policzone (koniec = dzień wcześniej)
+  czas      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS meta (
   klucz     TEXT PRIMARY KEY,
   wartosc   TEXT,

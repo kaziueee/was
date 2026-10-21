@@ -4,9 +4,14 @@
 // miesiące r/r, udział kanałów, grupy GT i produkty (okna 7 i 30 dni vs poprzednie okno albo rok temu) z kanałami
 // i sztukami tygodniowo do widoku produktu. Decyzje usera 2026-10-21: tylko DNI ZAMKNIĘTE (koniec = wczoraj), listy
 // bez limitu (zawężają filtry na ekranie), grupy top 30 z wejściem w grupę.
-// Czyta wyłącznie db/sprzedaz.db (internet — bez paragonów Sklepu). Wynik trzymamy w pamięci do następnego
-// wczytania danych przez job (meta „biezacy”) albo do zmiany dnia — liczenie to kilkanaście zapytań SQLite.
+// Czyta db/sprzedaz.db (internet — bez paragonów Sklepu) i oferty z pricing.db (tylko odczyt, linki do ofert).
+// ZASADA usera 2026-10-21: w ciągu dnia nic nie może przeszkadzać Zebrom — liczenie (~2,8 s synchronicznego SQLite na
+// SRV) idzie w wątku analiz (services/analiza-watek.js, wywołuje job), wynik ląduje w tabeli `gotowe`, a API go tylko
+// podaje. Odświeżane raz na godzinę i przy zmianie dnia (Trendy kończą się na wczoraj, więc dzień otwarty ich nie rusza).
 
+const fs = require('fs');
+const path = require('path');
+const { DatabaseSync } = require('node:sqlite');
 const { db, meta } = require('../db/sprzedaz');
 const am = require('./analiza-model');
 const { dzisLokalnie } = require('./sprzedaz-model');
@@ -20,6 +25,8 @@ const INTERNET = "z.status != 'paragon'";
 const OKNA = [7, 30];
 const TYGODNIE_GRUP = 13;
 const NOWOSC_DNI = 30;
+const ODSWIEZ_CO_MS = 60 * 60 * 1000;
+const PRICING_DB = process.env.PRICING_DB || path.join(__dirname, '..', 'db', 'pricing.db');
 
 // Kanały w udziale tygodniowym — zgrubnie, żeby wykres miał ≤ 6 serii (stała kolejność kolorów na ekranie)
 const GRUPA_KANALU = (k) => (k.startsWith('ALLEGRO') ? 'Allegro' : ['DE', 'FR', 'IT', 'ES', 'NL', 'PL', 'AMAZON_EU'].includes(k) ? 'Amazon'
@@ -59,7 +66,7 @@ function okno(od, doDnia) {
     .all(od, doDnia).map((x) => [x.tw_id, x]));
 }
 
-// Kanały produktu: [nazwa, szt, netto, zysk] × (teraz, poprzednie okno, rok temu)
+// Kanały produktu: [nazwa, szt, netto, zysk] × (teraz, poprzednie okno, rok temu), na końcu klucz kanału (do linku)
 function kanalyProduktow(P) {
   const m = new Map();
   const zbierz = (od, doDnia, off) => {
@@ -67,14 +74,43 @@ function kanalyProduktow(P) {
         FROM pozycje p JOIN zamowienia z ON z.id = p.zam_id WHERE ${INTERNET} AND z.data_zam BETWEEN ? AND ?
         GROUP BY p.tw_id, z.kanal, z.rynek`).all(od, doDnia)) {
       const nazwa = nazwaKanalu(x.kanal, x.rynek), k = `${x.tw_id}|${nazwa}`;
-      const w = m.get(k) || m.set(k, [x.tw_id, nazwa, 0, 0, 0, 0, 0, 0, 0, 0, 0]).get(k);
+      const w = m.get(k) || m.set(k, [x.tw_id, nazwa, 0, 0, 0, 0, 0, 0, 0, 0, 0, x.kanal]).get(k);
       w[2 + off] += x.szt; w[3 + off] += x.netto; w[4 + off] += x.zysk;
     }
   };
   zbierz(P.od, P.do, 0); zbierz(P.prevOd, P.prevDo, 3); zbierz(P.rokOd, P.rokDo, 6);
   const po = {};
-  for (const w of m.values()) (po[w[0]] ||= []).push([w[1], ...w.slice(2).map(R)]);
+  for (const w of m.values()) (po[w[0]] ||= []).push([w[1], ...w.slice(2, 11).map(R), w[11]]);
   return po;
+}
+
+// Oferty towarów z repricera → linki na stronę platformy, per klucz kanału (ten sam co kanał w analizie:
+// kluczKolumny). Karta produktu pyta o jeden towar przy otwarciu (GET /api/analiza/oferty/:tw_id) — w paczce Trendów
+// linki do wszystkich ~3 tys. towarów to +1,8 MB. Best-effort: brak pricing.db albo błąd = karta bez linków.
+function ofertyTowarow(ids) {
+  if (!ids.size || !fs.existsSync(PRICING_DB)) return {};
+  let p = null;
+  try {
+    const { kluczKolumny } = require('../pricing/kolumny');
+    const { linkiOferty } = require('../pricing/linki');
+    p = new DatabaseSync(PRICING_DB, { readOnly: true });
+    const wynik = {};
+    const lista = [...ids].filter(Number.isInteger);
+    for (let i = 0; i < lista.length; i += 900) {
+      const czesc = lista.slice(i, i + 900);
+      for (const o of p.prepare(`SELECT tw_id, platforma, rynek, asin, sku, auto, kanal FROM oferty WHERE aktywna = 1 AND tw_id IN (${czesc.map(() => '?').join(',')})
+          ORDER BY auto DESC, id`).all(...czesc)) {
+        const l = linkiOferty(o);
+        if (!l?.produkt) continue;
+        ((wynik[o.tw_id] ||= {})[kluczKolumny(o.platforma, o.rynek)] ||= []).push({ produkt: l.produkt, oferty: l.oferty || null, sku: o.sku,
+          auto: !!o.auto, fba: o.kanal === 'AMAZON_EU' });
+      }
+    }
+    return wynik;
+  } catch (e) {
+    console.warn(`[analiza] trendy — oferty z repricera niedostępne: ${e.message}`);
+    return {};
+  } finally { p?.close(); }
 }
 
 function policz(dzis) {
@@ -131,11 +167,23 @@ function policz(dzis) {
     produkty, kanaly, info, grTyg, tygodnie13, tygProd, wygenerowano: new Date().toISOString() };
 }
 
-let pamiec = null;
-function trendy(dzis = dzisLokalnie()) {
-  const klucz = `${dzis}|${meta.get('biezacy')?.wartosc || ''}`;
-  if (pamiec?.klucz !== klucz) pamiec = { klucz, wynik: policz(dzis) };
-  return pamiec.wynik;
+// --- gotowy wynik (wątek analiz liczy, API podaje) -------------------------------------------------------------
+const gotowe = () => db.prepare("SELECT json, dzien, czas FROM gotowe WHERE klucz = 'trendy'").get() || null;
+
+function odswiez(dzis = dzisLokalnie()) {
+  const t0 = Date.now();
+  const json = JSON.stringify(policz(dzis));
+  db.prepare(`INSERT INTO gotowe (klucz, json, dzien, czas) VALUES ('trendy', ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(klucz) DO UPDATE SET json = excluded.json, dzien = excluded.dzien, czas = excluded.czas`).run(json, dzis);
+  return { ms: Date.now() - t0, kb: Math.round(json.length / 1024) };
 }
 
-module.exports = { trendy, policz, GRUPA_KANALU, ostatniaNiedziela };
+// Woła job (w wątku analiz) po każdym przebiegu: liczy, gdy brak wyniku, zmienił się dzień albo minęła godzina.
+function odswiezJesliTrzeba(teraz = new Date()) {
+  const dzis = dzisLokalnie(teraz), g = db.prepare("SELECT dzien, czas FROM gotowe WHERE klucz = 'trendy'").get();
+  const wiek = g ? teraz.getTime() - new Date(g.czas.replace(' ', 'T') + 'Z').getTime() : Infinity;
+  if (g && g.dzien === dzis && wiek < ODSWIEZ_CO_MS) return null;
+  return odswiez(dzis);
+}
+
+module.exports = { policz, odswiez, odswiezJesliTrzeba, gotowe, ofertyTowarow, GRUPA_KANALU, ostatniaNiedziela };

@@ -29,9 +29,14 @@ router.get('/produkty', (req, res) => {
 
 // Trendy liczy wątek analiz (services/analiza-watek.js) — tu tylko gotowy JSON, bez liczenia w wątku Zebry
 router.get('/trendy', (req, res) => {
-  const g = require('../services/analiza-trendy').gotowe();
-  if (!g) return res.status(503).json({ blad: 'Trendy jeszcze się liczą (pierwsze ~2 minuty po starcie WMS) — odśwież za chwilę.' });
-  res.type('application/json').send(g.json);
+  const t = require('../services/analiza-trendy');
+  const gz = /\bgzip\b/.test(req.get('accept-encoding') || '');
+  let g = t.gotowe({ gz });
+  if (gz && g && !g.dane) g = t.gotowe();             // wynik sprzed kolumny gz — wysyłamy zwykły
+  if (!g?.dane) return res.status(503).json({ blad: 'Trendy jeszcze się liczą (pierwsze ~2 minuty po starcie WMS) — odśwież za chwilę.' });
+  res.set('Vary', 'Accept-Encoding').type('application/json');
+  if (Buffer.isBuffer(g.dane) || g.dane instanceof Uint8Array) res.set('Content-Encoding', 'gzip').send(Buffer.from(g.dane));
+  else res.send(g.dane);
 });
 
 router.get('/oferty/:tw', (req, res) => {

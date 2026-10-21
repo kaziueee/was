@@ -10,6 +10,7 @@
 // podaje. Odświeżane raz na godzinę i przy zmianie dnia (Trendy kończą się na wczoraj, więc dzień otwarty ich nie rusza).
 
 const fs = require('fs');
+const zlib = require('zlib');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const { db, meta } = require('../db/sprzedaz');
@@ -168,14 +169,15 @@ function policz(dzis) {
 }
 
 // --- gotowy wynik (wątek analiz liczy, API podaje) -------------------------------------------------------------
-const gotowe = () => db.prepare("SELECT json, dzien, czas FROM gotowe WHERE klucz = 'trendy'").get() || null;
+// gz: true → skompresowana wersja (gdy jest), inaczej sam JSON
+const gotowe = ({ gz = false } = {}) => db.prepare(`SELECT ${gz ? 'gz' : 'json'} dane, dzien, czas FROM gotowe WHERE klucz = 'trendy'`).get() || null;
 
 function odswiez(dzis = dzisLokalnie()) {
   const t0 = Date.now();
-  const json = JSON.stringify(policz(dzis));
-  db.prepare(`INSERT INTO gotowe (klucz, json, dzien, czas) VALUES ('trendy', ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(klucz) DO UPDATE SET json = excluded.json, dzien = excluded.dzien, czas = excluded.czas`).run(json, dzis);
-  return { ms: Date.now() - t0, kb: Math.round(json.length / 1024) };
+  const json = JSON.stringify(policz(dzis)), gz = zlib.gzipSync(json, { level: 6 });
+  db.prepare(`INSERT INTO gotowe (klucz, json, gz, dzien, czas) VALUES ('trendy', ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(klucz) DO UPDATE SET json = excluded.json, gz = excluded.gz, dzien = excluded.dzien, czas = excluded.czas`).run(json, gz, dzis);
+  return { ms: Date.now() - t0, kb: Math.round(json.length / 1024), gzKb: Math.round(gz.length / 1024) };
 }
 
 // Woła job (w wątku analiz) po każdym przebiegu: liczy, gdy brak wyniku, zmienił się dzień albo minęła godzina.

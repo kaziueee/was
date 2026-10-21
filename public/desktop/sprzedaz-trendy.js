@@ -223,39 +223,13 @@
   // ---------- produkty: model ----------
   const st = { okno: 30, por: 'prev', filtr: 'wszystkie', grupa: '', szukaj: '', prog: 30, baza: 5, sort: null, kier: -1 };
   let ostatniaLista = [];
-  function wiersze() {
-    const P = X.produkty[st.okno];
-    return P.w.map((r) => {
-      const [id, cs, cn, cz, ps, pn, pz, rs, rn, rz] = r, inf = X.info[id] || [String(id), '', '(bez grupy)', 0, null, null, 0];
-      const b = st.por === 'prev' ? { s: ps, n: pn, z: pz } : { s: rs, n: rn, z: rz };
-      return { id, sym: inf[0], nazwa: inf[1], grupa: inf[2], nowosc: !!inf[3], dost: inf[4], dni: inf[5], zestaw: !!inf[6],
-        a: { s: cs, n: cn, z: cz }, b, prev: { s: ps, n: pn }, dn: cn - b.n, dz: cz - b.z, dp: b.n > 0 ? (cn / b.n - 1) * 100 : null };
-    });
-  }
-  const FILTRY = [
-    ['wszystkie', 'Wszystkie ze sprzedażą', (w) => w.a.s > 0, 'n'],
-    ['hity', 'Hity', null, 'n'],
-    ['trend', 'Trendujące', (w) => Math.max(w.a.s, w.b.s) >= st.baza && (w.b.n <= 0 ? w.a.s >= st.baza : w.dp >= st.prog), 'dn'],
-    ['spadek', 'Spadek trendu', (w) => Math.max(w.a.s, w.b.s) >= st.baza && w.b.n > 0 && w.dp <= -st.prog, 'dn+'],
-    ['strata', 'Ze stratą', (w) => w.a.s > 0 && w.a.z < 0, 'z+'],
-    ['zgasl', 'Zgasły', (w) => w.prev.s >= st.baza && w.a.s === 0, 'pn'],
-    ['nowe', 'Nowości', (w) => w.nowosc && w.a.s > 0, 'n'],
-  ];
-  // hity = produkty, które razem dają połowę przychodu okna
-  function hity(lista) {
-    const z = lista.filter((w) => w.a.s > 0).sort((p, q) => q.a.n - p.a.n), suma = z.reduce((a, w) => a + w.a.n, 0), out = new Set();
-    let c = 0;
-    for (const w of z) { if (c >= suma * 0.5) break; out.add(w.id); c += w.a.n; }
-    return out;
-  }
-  function filtruj(lista, f) {
-    if (f === 'hity') { const h = hity(lista); return lista.filter((w) => h.has(w.id)); }
-    return lista.filter(FILTRY.find((x) => x[0] === f)[2]);
-  }
+  // wiersze, filtry i sortowanie — wspólne z telefonem (public/shared/trendy-model.js)
+  const M = window.TrendyModel;
+  const wiersze = () => M.wiersze(X, st.okno, st.por);
+  const FILTRY = M.FILTRY;
+  const filtruj = (lista, f) => M.filtruj(lista, f, { prog: st.prog, baza: st.baza });
   const KOLUMNY = [['', null], ['SKU / nazwa', 'sym'], ['Szt.', 'as', 1], ['Szt. przed', 'bs', 1], ['Przychód', 'n', 1], ['Przychód przed', 'bn', 1],
     ['Zmiana zł', 'dn', 1], ['Zmiana %', 'dp', 1], ['Zysk', 'z', 1], ['Zmiana zysku', 'dz', 1], ['Marża', 'm', 1], ['Dostępne', 'dost', 1], ['Zapas', 'dni', 1], ['Uwagi', null]];
-  const klucz = (w, k) => ({ sym: w.sym, as: w.a.s, bs: w.b.s, n: w.a.n, bn: w.b.n, dn: w.dn, dp: w.dp, z: w.a.z, dz: w.dz,
-    m: w.a.n ? w.a.z / w.a.n : null, dost: w.dost, dni: w.dni, pn: w.prev.n }[k]);
   const MAX_WIERSZY = 3000;
   function rysujProd() {
     const P = X.produkty[st.okno], przed = st.por === 'prev' ? 'przed' : 'rok temu';
@@ -265,9 +239,8 @@
     if (st.grupa) baza = baza.filter((w) => w.grupa === st.grupa);
     if (st.szukaj) { const q = st.szukaj.toLowerCase(); baza = baza.filter((w) => w.sym.toLowerCase().includes(q) || w.nazwa.toLowerCase().includes(q)); }
     $('pr-filtry').innerHTML = FILTRY.map(([k, t]) => `<span class="tr-chip ${k === st.filtr ? 'wl' : ''}" data-f="${k}">${t}<span class="tr-ile">${nf0.format(filtruj(baza, k).length)}</span></span>`).join('');
-    const lista = filtruj(baza, st.filtr), def = FILTRY.find((x) => x[0] === st.filtr);
-    const [sk, kier] = st.sort ? [st.sort, st.kier] : [def[3].replace('+', ''), def[3].endsWith('+') ? 1 : -1];
-    lista.sort((p, q) => { const a = klucz(p, sk), b = klucz(q, sk); if (a == null) return 1; if (b == null) return -1; return (typeof a === 'string' ? a.localeCompare(b) : a - b) * kier; });
+    const lista = filtruj(baza, st.filtr);
+    const [sk, kier] = M.sortuj(lista, st.filtr, st.sort, st.kier);
     ostatniaLista = lista;
     const suma = (f) => lista.reduce((a, w) => a + f(w), 0), sN = suma((w) => w.a.n), sB = suma((w) => w.b.n), sZ = suma((w) => w.a.z);
     const th = KOLUMNY.map(([t, k, num]) => `<th class="${num ? 'n ' : ''}${k ? 'tr-sort' : ''}" data-k="${k || ''}">${t.replace('przed', przed)}${k && k === sk ? (kier > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('');

@@ -76,3 +76,23 @@ button { font: inherit; }
 .dol .seg { margin-bottom: 8px; }
 .podglad { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: flex; align-items: center; justify-content: center; z-index: 20; }
 .podglad img { max-width: 96vw; max-height: 90vh; background: #fff; border-radius: 8px; }
+
+/* „Zmiany” (trendy na telefonie) */
+.z-ster { display: flex; gap: 8px; flex-wrap: wrap; }
+.z-opis { color: var(--szary); font-size: 12px; margin-top: 6px; line-height: 1.4; }
+.z-chipy { display: flex; gap: 6px; overflow-x: auto; margin-top: 8px; padding-bottom: 2px; scrollbar-width: none; }
+.z-chipy::-webkit-scrollbar { display: none; }
+.z-chip { flex: 0 0 auto; border: 1px solid var(--linia); border-radius: 16px; padding: 6px 11px; font-size: 13px; background: #fff; color: var(--tekst); }
+.z-chip.wl { background: var(--granat); border-color: var(--granat); color: #fff; }
+.z-chip .ile { color: var(--szary); margin-left: 4px; } .z-chip.wl .ile { color: rgba(255,255,255,.75); }
+.z-suma { font-size: 13px; margin-top: 8px; }
+.z-por { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 10px; margin-top: 8px; font-size: 14px; font-variant-numeric: tabular-nums; align-items: baseline; }
+.z-por .t { color: var(--szary); font-size: 12px; }
+.z-por b { font-size: 16px; }
+.z-por .p { color: var(--szary); font-size: 12px; text-align: right; }
+.z-tyg { margin-top: 8px; }
+.z-tyg svg { display: block; width: 100%; }
+.sw-ktab a { color: var(--info); text-decoration: none; }
+.z-znak { display: inline-block; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 5px; }
+.z-znak.zly { background: #fde8e8; color: var(--minus); } .z-znak.dobry { background: #e3ecff; color: var(--info); } .z-znak.uwaga { background: #fff1d6; color: var(--uwaga); }
+

@@ -18,11 +18,13 @@
     <div class="r1">
       <div class="tytul"><h1>Sprzedaż</h1><div id="wms-badge-slot"></div></div>
       <span class="dzien"><button id="d-wstecz" aria-label="poprzedni dzień">‹</button><span id="d-data"></span><button id="d-dalej" aria-label="następny dzień">›</button></span>
+      <span class="dzien hidden" id="z-data"></span>
     </div>
     <div class="seg" id="seg-zakres"></div>
   </header>
   <main>
     <div class="t-blok komunikat hidden" id="komunikat"></div>
+    <div id="przeglad">
     <div class="t-blok t-hero" id="hero"><div class="sw-brak">Ładuję…</div></div>
     <div class="t-blok ostrz hidden" id="ostrz"></div>
     <div class="t-blok"><div class="t-kan" id="kanaly"></div></div>
@@ -30,10 +32,25 @@
     <div class="karty" id="karty"></div>
     <div class="t-nav"><button id="k-wstecz" aria-label="poprzedni produkt">‹</button><span id="k-licznik"></span><button id="k-dalej" aria-label="następny produkt">›</button></div>
     <div class="dol"><span class="seg" id="seg-baza"></span><div class="sw-brak" id="stopka"></div></div>
+    </div>
+    <!-- „Zmiany”: co rośnie, co spada, co zgasło — dni zamknięte, 7 / 30 dni, te same filtry co Sprzedaż → Trendy
+         na desktopie (public/shared/trendy-model.js). Bez limitu pozycji; karty dorysowują się partiami. -->
+    <div id="zmiany" class="hidden">
+      <div class="t-blok">
+        <div class="z-ster"><span class="seg" id="z-okno"></span><span class="seg" id="z-por"></span></div>
+        <div class="z-opis" id="z-opis"></div>
+        <div class="z-chipy" id="z-chipy"></div>
+        <div class="z-suma" id="z-suma"></div>
+      </div>
+      <div class="karty" id="z-karty"></div>
+      <div class="t-nav"><button id="z-wstecz" aria-label="poprzedni produkt">‹</button><span id="z-licznik"></span><button id="z-dalej" aria-label="następny produkt">›</button></div>
+      <div class="dol"><div class="sw-brak" id="z-stopka"></div></div>
+    </div>
   </main>
   <div class="podglad hidden" id="podglad"><img alt=""></div>
   <script src="/shared/auth.js"></script>
   <script src="/shared/sprzedaz-wspolne.js"></script>
+  <script src="/shared/trendy-model.js"></script>
   <script src="sprzedaz.js"></script>
 </body>
 </html>

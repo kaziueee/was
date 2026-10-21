@@ -141,6 +141,8 @@ if (!kolumny('pozycje').includes('wysylka')) db.exec('ALTER TABLE pozycje ADD CO
 // Stan dostępny (decyzja usera 2026-10-21: na ekranach „Razem minus rezerwacje”, zestaw po składnikach jak repricer)
 if (!kolumny('stany').includes('rez')) db.exec('ALTER TABLE stany ADD COLUMN rez REAL');
 if (!kolumny('stany').includes('dostepne')) db.exec('ALTER TABLE stany ADD COLUMN dostepne REAL');
+// gotowy wynik także skompresowany (gzip liczy wątek analiz — główny wątek tylko wysyła; Trendy 1,4 MB → ~0,2 MB)
+if (!kolumny('gotowe').includes('gz')) db.exec('ALTER TABLE gotowe ADD COLUMN gz BLOB');
 
 const meta = {
   get: (k) => db.prepare('SELECT wartosc, czas FROM meta WHERE klucz = ?').get(k) || null,

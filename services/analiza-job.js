@@ -94,7 +94,7 @@ async function przebieg(teraz = new Date()) {
     // Trendy z tego, co już jest w bazie (dni zamknięte) — padnięte GT ich nie blokuje
     try {
       const t = require('./analiza-trendy').odswiezJesliTrzeba(teraz);
-      if (t) console.log(`[analiza] trendy policzone (${t.ms} ms, ${t.kb} KB)`);
+      if (t) console.log(`[analiza] trendy policzone (${t.ms} ms, ${t.kb} KB, gzip ${t.gzKb} KB)`);
     } catch (e) { awarie.blad('analiza-trendy', e.message); }
     // raport osobno: padnięte GT nie blokuje maila z tego, co już jest w bazie, a błąd Gmaila — dosypywania danych
     try { await raportJesliPora(teraz); } catch (e) {

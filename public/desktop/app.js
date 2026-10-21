@@ -4499,7 +4499,7 @@ const CENY_KOD_OPIS = {
   na_min: 'na minimum', na_min_limit: 'w stronę minimum', pod_min: 'od razu na minimum', top: 'mamy BB — bez zmiany',
   top_bez_konkurencji: 'jedyna oferta', top_konk_nieznana: 'mamy BB — cen konkurencji eMAG nie podaje', cofniecie: 'cofnięcie podwyżki (utrata BB)', top_blokada: 'mamy BB — podwyżki wstrzymane', wojna_cenowa: 'wojna o grosze — obniżki wstrzymane na dobę', sonda: 'szukamy ceny konkurenta (+3%)', sonda_limit: 'szukamy ceny konkurenta (+3%)', bb_nasza_inna: 'BB ma nasza inna oferta — stoi', remis_fba: 'remis z FBA — stoi', pod_podloga: 'BB pod naszą podłogą — stoi',
   przegrana_nie_cena: 'tańsi, a bez BB', brak_danych: 'brak danych o BB', brak_ceny: 'brak naszej ceny', brak_pasa: 'brak min/max',
-  bez_konkurencji: 'w pasie (konkurencji nie widać)', top_raport: 'Top nasza (raport) — wyżej konkurencji nie znamy', korekta: 'ręczna zmiana ceny',
+  bez_konkurencji: 'w pasie (konkurencji nie widać)', top_raport: 'cena OK (raport)', korekta: 'ręczna zmiana ceny',
 };
 const CENY_AKCJE = {
   automat_wl: 'włączył automat', automat_wyl: 'wyłączył automat',
@@ -4775,7 +4775,7 @@ function cenyTopTekst(o, w) {
   }
   if (/odpowiedni/i.test(t.ocena || '')) {
     const inna = o.cena > 0 && t.cena_nasza != null && Math.abs(o.cena - t.cena_nasza) >= 0.005;
-    return { cel: false, tekst: inna ? `Top: cena OK przy ${cenyLiczba(t.cena_nasza)} ${w}` : 'Top: cena OK' };
+    return { cel: false, tekst: inna ? `cena OK (raport) przy ${cenyLiczba(t.cena_nasza)} ${w}` : 'cena OK (raport)' };
   }
   return { cel: false, tekst: `Top: ${t.ocena || 'brak oceny ceny'}` };
 }
@@ -5114,7 +5114,7 @@ function cenyKartaRynekHtml(o) {
     : o.platforma === 'allegro' && kw?.czas && kw.aktualny && kw.nasze?.length > 0 && obs && (!o.top || dataZBazy(kw.czas) > dataZBazy(o.top.czas))
     ? (kw.lista.length ? (o.cena <= kw.lista[0].cena + 0.005 ? 'najtańsi wśród konkurentów (Niezbędnik)' : `najtańszy konkurent ${cenyEsc(kw.lista[0].login || '?')}`) : 'bez konkurencji po filtrach (Niezbędnik)')
     : o.platforma === 'allegro' && o.top && obs
-    ? (!o.top.aktualny ? 'raport Top ofert nieaktualny' : o.top.cena != null ? 'Top ofertę ma inny sprzedawca (raport)' : 'cena OK w raporcie Top ofert')
+    ? (!o.top.aktualny ? 'raport Top ofert nieaktualny' : o.top.cena != null ? 'Top ofertę ma inny sprzedawca (raport)' : 'cena OK (raport) — Top prawdopodobnie nasz')
     : stanBb;
   const zmiana = CENY_ZMIANY.includes(o.kod);
   const dec = o.czeka ? `<b class="ceny-wyslano">✓ ${o.kod_dec === 'korekta' ? 'ręcznie ' : ''}wysłano ${cenyLiczba(o.cena_nowa)} ${w} o ${cenyGodzina(o.dec_czas)}</b><br><span class="hint">${cenyEsc(cenyKanal(o))} przyjął zmianę; potwierdzimy ją kilka minut po wysłaniu${o.propagacja ? ` (${cenyEsc(o.propagacja)})` : ''}. ${cenyEsc(o.powod)}</span>`

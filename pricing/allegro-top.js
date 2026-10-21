@@ -73,11 +73,14 @@ const doPoprawy = (czynniki) => Object.entries(czynniki || {}).filter(([, v]) =>
 //                 kto ma Top ofertę; równa cena co do grosza to nasz najlepszy dowód (decyzja usera 2026-10-19:
 //                 „nie bić się z drugim kontem”). Przypadkowy remis z obcym = stoimy zamiast schodzić — bezpieczna strona.
 // Raport nieświeży albo bez wiersza dla oferty → null (obserwacja jak bez raportu).
-// inne — ceny naszych pozostałych ofert tego samego towaru (oba konta) z tego przebiegu.
-function zRaportu(top, cena, teraz = Date.now(), waznoscH = WAZNOSC_H, inne = []) {
+// inne — ceny naszych pozostałych ofert tego samego towaru albo tej samej strony produktu (oba konta).
+// naszaTop — inna nasza oferta na tej samej stronie produktu ma w raporcie cenę „odpowiednią”, czyli to ona jest
+// Top ofertą (NERE0011 21.10: Top 109,99 = nasz zestaw NERE0011Z6, a cztery inne nasze oferty tego produktu dostawały
+// podpowiedź zejścia pod niego). Pewniejsze niż równa cena, bo nie zależy od tego, czy ceny zmieniły się od raportu.
+function zRaportu(top, cena, teraz = Date.now(), waznoscH = WAZNOSC_H, inne = [], naszaTop = false) {
   if (!top || !(cena > 0) || !aktualny(top, teraz, waznoscH)) return null;
   if (top.cena_top > 0) {
-    const nasza = inne.some((c) => Math.abs(c - top.cena_top) < 0.015);
+    const nasza = naszaTop || inne.some((c) => Math.abs(c - top.cena_top) < 0.015);
     return { cena, wysylka: 0, bbNasz: false, bbInnaNasza: nasza, bbCena: top.cena_top, bbFba: false, najtanszaInna: nasza ? null : top.cena_top,
       konkurencjaNiedostepna: false, ofert: null };
   }
@@ -126,10 +129,23 @@ function zapiszRaport(raport, kto) {
   return wynik;
 }
 
+// Nasze oferty per produkt katalogu Allegro (ID produktu z raportu): produkt → [{ klucz, cena, top }]. Ten sam produkt
+// bywa wystawiony przez nas kilka razy (zestawy, duplikaty SKU, drugie konto) i zwykle jedna z tych ofert ma Top.
+// cenaTeraz(klucz) — nasza cena z bieżącej listy Allegro (brak = cena z chwili raportu).
+function naszeNaProduktach(raporty, cenaTeraz = () => null, teraz = Date.now(), waznoscH = WAZNOSC_H) {
+  const m = new Map();
+  for (const [k, w] of raporty) {
+    if (!w.produkt || !aktualny(w, teraz, waznoscH)) continue;
+    const cena = cenaTeraz(k) ?? w.cena_nasza;
+    (m.get(w.produkt) || m.set(w.produkt, []).get(w.produkt)).push({ klucz: k, cena, top: /odpowiedni/i.test(w.cena_ocena || '') });
+  }
+  return m;
+}
+
 // Mapa `${konto}|${numer oferty}` → wiersz raportu (wszystkie; świeżość ocenia zRaportu).
 function raportyTop() {
   const { db } = require('./db');
   return new Map(db.prepare('SELECT * FROM allegro_top').all().map((r) => [`${r.konto}|${r.oferta}`, r]));
 }
 
-module.exports = { NAGLOWKI, CZYNNIKI, WAZNOSC_H, aktualny, raportTopOferty, cenaTop, doPoprawy, zRaportu, zapiszRaport, raportyTop };
+module.exports = { NAGLOWKI, CZYNNIKI, WAZNOSC_H, aktualny, raportTopOferty, cenaTop, doPoprawy, zRaportu, naszeNaProduktach, zapiszRaport, raportyTop };

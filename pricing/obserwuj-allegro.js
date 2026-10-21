@@ -12,7 +12,7 @@
 const allegro = require('./allegro');
 const { db } = require('./db');
 const { takaSamaObserwacja } = require('./bez-zmian');
-const { raportyTop, zRaportu } = require('./allegro-top');
+const { raportyTop, zRaportu, naszeNaProduktach } = require('./allegro-top');
 const konkurencja = require('./konkurencja-allegro');
 
 const zBazy = (s) => (s ? Date.parse(String(s).replace(' ', 'T') + 'Z') : 0);
@@ -40,6 +40,8 @@ async function obserwujAllegro(oferty, surowe) {
     cenaOferty.set(o.id, c);
     if (o.tw_id != null && c > 0) (poTw.get(o.tw_id) || poTw.set(o.tw_id, []).get(o.tw_id)).push({ id: o.id, c });
   }
+  // Nasze oferty na tej samej stronie produktu Allegro (z raportu Top) — także inne towary GT (zestawy) i drugie konto.
+  const naProduktach = naszeNaProduktach(top, (k) => { const s = poId.get(k); return s ? allegro.doOferty(s).cena : null; }, teraz);
   const wynik = new Map();
   let nowe = 0;
   db.exec('BEGIN');
@@ -49,8 +51,10 @@ async function obserwujAllegro(oferty, surowe) {
       if (!surowa) continue;
       const cena = cenaOferty.get(o.id);
       const wTop = top.get(klucz(o.rynek, o.asin));
-      const inne = (poTw.get(o.tw_id) || []).filter((x) => x.id !== o.id).map((x) => x.c);
-      const zTop = zRaportu(wTop, cena, teraz, undefined, inne);
+      const ja = klucz(o.rynek, o.asin);
+      const naProdukcie = (wTop?.produkt ? naProduktach.get(wTop.produkt) || [] : []).filter((x) => x.klucz !== ja);
+      const inne = [...(poTw.get(o.tw_id) || []).filter((x) => x.id !== o.id).map((x) => x.c), ...naProdukcie.map((x) => x.cena).filter((c) => c > 0)];
+      const zTop = zRaportu(wTop, cena, teraz, undefined, inne, naProdukcie.some((x) => x.top));
       const eany = konkurencja.eanyOferty(o);
       const zNsp = eany.length ? konkurencja.zNiezbednika(eany.map((e) => konk.get(e)).filter(Boolean), cena, nasze, teraz) : null;
       const obs = (zTop && zNsp ? (zBazy(wTop.raport_czas) > zBazy(zNsp.czas) ? zTop : zNsp) : zTop || zNsp) || allegro.zOferty(surowa);

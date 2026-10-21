@@ -122,3 +122,25 @@ test('zapis raportu: obce konto albo inny rynek → odmowa z nazwą znanych kont
   assert.throws(() => top.zapiszRaport(top.raportTopOferty(arkusze([wiersz('1', 'za wysoka', 1)], ['allegro-pl', '123']))), /ekajtek_pl \(21818279\)/);
   assert.throws(() => top.zapiszRaport(top.raportTopOferty(arkusze([wiersz('1', 'za wysoka', 1)], ['allegro-cz', '21818279']))), /allegro-cz/);
 });
+
+test('Top ma nasza oferta na tej samej stronie produktu (inny towar GT, zestaw) → nie schodzimy pod siebie (NERE0011, 21.10)', () => {
+  const raporty = new Map([
+    ['EKAJTEK|14598447291', { produkt: 'a548', cena_ocena: 'za wysoka', cena_nasza: 124.99, cena_top: 109.99, raport_czas: '2026-10-19 11:03:00' }],
+    ['EKAJTEK|9024784679', { produkt: 'a548', cena_ocena: 'odpowiednia', cena_nasza: 109.99, cena_top: null, raport_czas: '2026-10-19 11:03:00' }],
+    ['EKAJTEK|9236499939', { produkt: 'a548', cena_ocena: 'za wysoka', cena_nasza: 129.99, cena_top: 109.99, raport_czas: '2026-10-19 11:03:00' }],
+    ['EKAJTEK|11980439321', { produkt: '61af', cena_ocena: 'za wysoka', cena_nasza: 109.99, cena_top: 99, raport_czas: '2026-10-19 11:03:00' }],
+  ]);
+  const m = top.naszeNaProduktach(raporty, (k) => (k === 'EKAJTEK|9024784679' ? 112.5 : null), teraz);
+  assert.deepStrictEqual(m.get('a548').map((x) => [x.klucz, x.cena, x.top]),
+    [['EKAJTEK|14598447291', 124.99, false], ['EKAJTEK|9024784679', 112.5, true], ['EKAJTEK|9236499939', 129.99, false]]);
+  // NERE0011 124,99: Top 109,99 ma nasz zestaw („odpowiednia”) — nawet gdy jego cena od raportu się zmieniła
+  const inne = m.get('a548').filter((x) => x.klucz !== 'EKAJTEK|14598447291');
+  const obs = top.zRaportu(raporty.get('EKAJTEK|14598447291'), 124.99, teraz, 24, inne.map((x) => x.cena), inne.some((x) => x.top));
+  assert.strictEqual(obs.bbInnaNasza, true);
+  assert.strictEqual(decyzja(obs, { min: 80, max: 160 }).kod, 'bb_nasza_inna');
+  // produkt bez naszej oferty z Topem — cel jak zwykle
+  const obce = top.zRaportu(raporty.get('EKAJTEK|11980439321'), 109.99, teraz, 24, [], false);
+  assert.strictEqual(obce.bbInnaNasza, false);
+  // stary raport nie wchodzi do mapy
+  assert.strictEqual(top.naszeNaProduktach(raporty, () => null, teraz + 30 * 3_600_000).size, 0);
+});

@@ -114,7 +114,7 @@
       strategia = `<div style="margin-top:4px">Strategia: <b>${esc(st ? st.nazwa : 'All marża 20')}</b> <span class="sw-brak">${st ? (st.aktywna ? '' : '(podgląd)') + (st.do ? ` do ${esc(st.do)}` : '') : '(domyślna)'}</span></div>`;
     }
     return `<div class="sw-karta">
-      <div class="sw-foto" data-tw="${p.tw_id}"><img src="/api/produkty/${p.tw_id}/zdjecie?rozmiar=mini" alt="" loading="lazy" onerror="this.parentNode.classList.add('sw-bez-foto');this.remove()"></div>
+      ${fotoKarty(p.tw_id)}
       <div class="sw-sku">${esc(p.symbol || p.tw_id)}${p.zestaw ? '<span class="sw-tag">zestaw</span>' : ''}${p.grupa ? `<span class="sw-tag">${esc(p.grupa)}</span>` : ''}</div>
       <div class="sw-naz">${esc(p.nazwa || '')}</div>
       <div class="sw-suma"><span><b>${szt(p.szt)}</b> szt.</span><span>marża <b>${pct(p.netto ? p.zysk / p.netto * 100 : null)}</b></span>`
@@ -124,6 +124,12 @@
       <div class="sw-pole"><div class="sw-t">Repricer</div><div class="sw-rep">${rep}</div>${strategia}</div>
     </div>`;
   }
+
+  // Zdjęcie na karcie telefonu = przycisk „następna” (prawe 2/3) / „poprzednia” (lewa 1/3) — szybciej niż swipe
+  // (prośba usera 2026-10-21); powiększenie przeniesione na 🔍 w rogu. Obsługa stuknięć: /sprzedaz/sprzedaz.js.
+  const fotoKarty = (tw) => `<div class="sw-foto" data-tw="${tw}"><img src="/api/produkty/${tw}/zdjecie?rozmiar=mini" alt="" loading="lazy"`
+    + ` onerror="this.parentNode.classList.add('sw-bez-foto');this.remove()"><span class="sw-strz l">‹</span><span class="sw-strz p">›</span>`
+    + `<button type="button" class="sw-lupa" aria-label="powiększ zdjęcie">🔍</button></div>`;
 
   // Ostrzeżenia nad liczbami: dni nietypowe (przestój integracji) i brak historii rok temu.
   function ostrzezenia(d) {
@@ -137,5 +143,5 @@
   }
 
   window.SprzedazW = { zl, szt, pct, naSzt, esc, marza, dzienTxt, zakresTxt, godzina, dodajDni, zmiana, sumy, wierszeKanalow, zyskTxt,
-    flagi, karta, ostrzezenia, nf1 };
+    flagi, karta, ostrzezenia, nf1, fotoKarty };
 })();

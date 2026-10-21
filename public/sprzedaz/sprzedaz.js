@@ -72,12 +72,8 @@
     const k = $('karty');
     k.innerHTML = d.produkty.length ? d.produkty.map((p) => W.karta(p, d.nazwy)).join('') : '<div class="pusto">Brak sprzedanych produktów.</div>';
     k.scrollLeft = 0;
-    k.querySelectorAll('.sw-foto').forEach((f) => { f.onclick = () => {
-      if (f.classList.contains('sw-bez-foto')) return;
-      $('podglad').querySelector('img').src = `/api/produkty/${f.dataset.tw}/zdjecie?rozmiar=duze`;
-      $('podglad').classList.remove('hidden');
-    }; });
     licznik();
+    wczytajKolejne(k, 0);
   }
   let W_okres = { cur: [null, null] };
 
@@ -105,7 +101,34 @@
     const i = n ? Math.round(k.scrollLeft / (k.firstElementChild.offsetWidth + 10)) : 0;
     $('k-licznik').textContent = n ? `${Math.min(i + 1, n)} / ${n}` : '';
   }
-  const krok = (d) => { const k = $('karty'); k.scrollBy({ left: d * ((k.firstElementChild?.offsetWidth || 300) + 10), behavior: 'smooth' }); };
+  // Przejście o kartę: przyciskiem na dole płynnie, stuknięciem w zdjęcie OD RAZU (ma być szybciej niż swipe).
+  // Zdjęcia 3 kolejnych kart ładujemy z wyprzedzeniem, żeby po przeskoku obraz już był.
+  function przejdz(k, d, odRazu) {
+    const karta = k.querySelector('.sw-karta'); if (!karta) return;
+    const w = karta.offsetWidth + 10, n = k.querySelectorAll('.sw-karta').length;
+    const i = Math.max(0, Math.min(n - 1, Math.round(k.scrollLeft / w) + d));
+    k.scrollTo({ left: i * w, behavior: odRazu ? 'auto' : 'smooth' });
+    wczytajKolejne(k, i);
+  }
+  function wczytajKolejne(k, i) {
+    const karty = k.querySelectorAll('.sw-karta');
+    for (let j = i; j <= i + 3 && j < karty.length; j++) { const img = karty[j].querySelector('.sw-foto img[loading="lazy"]'); if (img) img.loading = 'eager'; }
+  }
+  // stuknięcie w zdjęcie: 🔍 = powiększenie, lewa 1/3 = poprzednia, reszta = następna
+  function stukniecia(k, krokFn) {
+    k.addEventListener('click', (e) => {
+      const f = e.target.closest('.sw-foto'); if (!f) return;
+      if (e.target.closest('.sw-lupa')) {
+        $('podglad').querySelector('img').src = `/api/produkty/${f.dataset.tw}/zdjecie?rozmiar=duze`;
+        $('podglad').classList.remove('hidden');
+        return;
+      }
+      const r = f.getBoundingClientRect();
+      krokFn(e.clientX - r.left < r.width / 3 ? -1 : 1, true);
+    });
+  }
+  const krok = (d, odRazu = false) => przejdz($('karty'), d, odRazu);
+  stukniecia($('karty'), krok);
   $('karty').addEventListener('scroll', () => requestAnimationFrame(licznik), { passive: true });
   $('k-wstecz').onclick = () => krok(-1);
   $('k-dalej').onclick = () => krok(1);
@@ -158,7 +181,7 @@
     $('z-stopka').textContent = `Policzone ${W.godzina(X.wygenerowano) || '—'} · dni zamknięte do ${dd(X.koniec)}`;
     const k = $('z-karty');
     k.innerHTML = zLista.length ? '' : '<div class="pusto">Nic w tym filtrze.</div>';
-    zIle = 0; dorysuj(); k.scrollLeft = 0; zLicznik();
+    zIle = 0; dorysuj(); k.scrollLeft = 0; zLicznik(); wczytajKolejne(k, 0);
   }
 
   function dorysuj() {
@@ -166,11 +189,6 @@
     const k = $('z-karty'), nowe = zLista.slice(zIle, zIle + PARTIA);
     k.insertAdjacentHTML('beforeend', nowe.map(kartaZmiany).join(''));
     zIle += nowe.length;
-    k.querySelectorAll('.sw-foto:not([data-p])').forEach((f) => { f.dataset.p = '1'; f.onclick = () => {
-      if (f.classList.contains('sw-bez-foto')) return;
-      $('podglad').querySelector('img').src = `/api/produkty/${f.dataset.tw}/zdjecie?rozmiar=duze`;
-      $('podglad').classList.remove('hidden');
-    }; });
   }
 
   // 13 pełnych tygodni sztuk (słupki) i te same tygodnie rok temu (szara linia) — bez osi, tylko kształt
@@ -192,7 +210,7 @@
       w.nowosc ? '<span class="z-znak dobry">nowość</span>' : '', w.a.s > 0 && w.a.z < 0 ? '<span class="z-znak zly">strata</span>' : ''].join('');
     const zm = (a, b) => (b > 0 ? W.zmiana(a, b) : a > 0 ? '<span class="sw-plus">nowy</span>' : '—');
     return `<div class="sw-karta" data-tw="${w.id}">
-      <div class="sw-foto" data-tw="${w.id}"><img src="/api/produkty/${w.id}/zdjecie?rozmiar=mini" alt="" loading="lazy" onerror="this.parentNode.classList.add('sw-bez-foto');this.remove()"></div>
+      ${W.fotoKarty(w.id)}
       <div class="sw-sku">${W.esc(w.sym)}${w.zestaw ? '<span class="sw-tag">zestaw</span>' : ''}<span class="sw-tag">${W.esc(w.grupa)}</span>${znaki}</div>
       <div class="sw-naz">${W.esc(w.nazwa)}</div>
       <div class="z-por"><span class="t">Sztuki</span><span><b>${W.szt(w.a.s)}</b> <span class="sw-brak">${przed} ${W.szt(w.b.s)}</span></span><span class="p">${zm(w.a.s, w.b.s)}</span>
@@ -231,7 +249,8 @@
     if (i > zIle - 6) dorysuj();
     if (karta) linkiKarty(i);
   }
-  const zKrok = (d) => { const k = $('z-karty'); k.scrollBy({ left: d * ((k.querySelector('.sw-karta')?.offsetWidth || 300) + 10), behavior: 'smooth' }); };
+  const zKrok = (d, odRazu = false) => { przejdz($('z-karty'), d, odRazu); zLicznik(); };
+  stukniecia($('z-karty'), zKrok);
   $('z-karty').addEventListener('scroll', () => requestAnimationFrame(zLicznik), { passive: true });
   $('z-wstecz').onclick = () => zKrok(-1);
   $('z-dalej').onclick = () => zKrok(1);

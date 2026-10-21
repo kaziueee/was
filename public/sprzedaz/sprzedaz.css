@@ -47,9 +47,14 @@ button { font: inherit; }
 .karty::-webkit-scrollbar { display: none; }
 .karty .pusto { padding: 20px; color: var(--szary); }
 .sw-karta { flex: 0 0 calc(100% - 28px); scroll-snap-align: center; background: #fff; border-radius: 14px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-.sw-foto { height: 160px; border-radius: 10px; background: #fff; border: 1px solid var(--linia); display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: zoom-in; }
+.sw-foto { position: relative; height: 160px; border-radius: 10px; background: #fff; border: 1px solid var(--linia); display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; }   /* bez ~300 ms opóźnienia stuknięcia */
+.sw-strz { position: absolute; top: 50%; transform: translateY(-50%); font-size: 30px; line-height: 1; color: rgba(0,0,0,.22); pointer-events: none; }
+.sw-strz.l { left: 6px; } .sw-strz.p { right: 6px; }
+.sw-lupa { position: absolute; right: 6px; bottom: 6px; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--linia); background: rgba(255,255,255,.92); font-size: 15px; padding: 0; }
+.sw-bez-foto .sw-lupa, .sw-bez-foto .sw-strz { display: none; }
 .sw-foto img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.sw-foto.sw-bez-foto { height: 44px; cursor: default; }
+.sw-foto.sw-bez-foto { height: 44px; }
 .sw-foto.sw-bez-foto::after { content: "brak zdjęcia"; color: var(--szary); font-size: 12px; }
 .sw-sku { font-family: ui-monospace, Menlo, monospace; font-size: 13px; font-weight: 700; margin-top: 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .sw-tag { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 5px; background: var(--miekki); color: var(--szary); }

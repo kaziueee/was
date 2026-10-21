@@ -13,6 +13,9 @@
 //  5. Pre-deploy: backup z etykieta jest WYLACZONY z rotacji (nigdy nie kasowany).
 //
 // Harmonogram: co godzine w godzinach pracy (7-20) + 1 nocny (2:00).
+// Chodzi w OSOBNYM WATKU (services/backup-watek.js, zasada 7 w CLAUDE.md): integrity_check x2 + VACUUM INTO na
+// 17 MB bazie to ~0,36 s synchronicznie (pomiar SRV 2026-10-21), co godzine w godzinach pracy hali — w glownym
+// watku zatrzymywalo to kazdy skan Zebry. W watku `db` to osobne polaczenie z wms.db (WAL).
 
 const path = require('path');
 const fs = require('fs');
@@ -21,6 +24,7 @@ const { DatabaseSync } = require('node:sqlite');
 const db = require('../db/database');
 const awarie = require('./awarie');
 const czytelne = require('./backup-czytelne');
+const { wWatku } = require('./watek');
 
 const DB_PATH = path.join(__dirname, '..', 'db', 'wms.db');
 const BACKUP_DIR = process.env.WMS_BACKUP_DIR || path.join(__dirname, '..', 'db', 'backups');
@@ -311,7 +315,8 @@ function zaplanujKolejny() {
     if (czyCzasNaBackup()) zrobBackup();
     zaplanujKolejny();
   }, opoznienie);
-  if (timer.unref) timer.unref(); // nie blokuj zamkniecia procesu
+  // nie blokuj zamkniecia procesu — ale w watku timer MUSI trzymac petle (inaczej watek konczy sie od razu)
+  if (timer.unref && !wWatku()) timer.unref();
 }
 
 function start() {

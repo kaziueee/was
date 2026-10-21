@@ -21,7 +21,7 @@ const { dzisLokalnie } = require('./sprzedaz-model');
 const { interwalMsZMinut } = require('./interwal');
 const awarie = require('./awarie');
 const gmail = require('./gmail-wysylka');
-const { isMainThread } = require('worker_threads');
+const { wWatku } = require('./watek');
 
 const GODZINA_NOCNA = 2;
 const OPOZNIENIE_STARTU_MS = 90 * 1000;   // po starcie WMS-Node daj wstać reszcie (most, joby GT)
@@ -112,9 +112,9 @@ function start() {
   const ms = interwalMsZMinut(process.env.ANALIZA_INTERWAL_MIN, 15, 'ANALIZA_INTERWAL_MIN');
   const pierwszy = setTimeout(() => przebieg(), OPOZNIENIE_STARTU_MS);
   // w wątku analiz timery MUSZĄ trzymać pętlę (inaczej wątek kończy się od razu); zwalniamy je tylko w głównym
-  if (isMainThread) pierwszy.unref?.();
+  if (!wWatku()) pierwszy.unref?.();
   const timer = setInterval(() => przebieg(), ms);
-  if (isMainThread) timer.unref?.();
+  if (!wWatku()) timer.unref?.();
   return timer;
 }
 

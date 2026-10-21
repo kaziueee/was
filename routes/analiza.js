@@ -1,12 +1,13 @@
 'use strict';
 
 // Moduł analiz sprzedaży — API (docs/analiza-sprzedazy.md). Czyta WYŁĄCZNIE db/sprzedaz.db (i pricing.db do
-// stanu repricera), nigdy GT — tak ekrany są szybkie także na telefonie. Montowane z auth.wymagajRoli('admin',
-// 'biuro'), także odczyt (koszty zakupu i zysk nie są dla hali). Liczby składa services/analiza-zapytania.js —
+// stanu repricera), nigdy GT — tak ekrany są szybkie także na telefonie. Montowane z auth.wymagajRoli('admin'),
+// także odczyt (zysk, marża, koszt — decyzja usera 2026-10-21). Liczby składa services/analiza-zapytania.js —
 // to samo źródło co raport mailem (services/analiza-raport.js).
 //   GET /api/analiza/stan                                     kiedy wczytano, od kiedy jest historia
 //   GET /api/analiza/podsumowanie?dzien=&zakres=&baza=         kanały: bieżący zakres vs ten sam sprzed 364 dni
 //   GET /api/analiza/produkty?dzien=&zakres=&baza=&sort=&limit= towary z kanałami, stanem, flagami i repricerem
+//   GET /api/analiza/trendy                                    Sprzedaż → Trendy: dni zamknięte do wczoraj (services/analiza-trendy.js)
 //   GET /api/analiza/raport?dzien=&tydzien=1                   podgląd maila (HTML) — to, co wyśle job
 // zakres: dzien | t7 | mtd | ytd · baza: zam (data zamówienia) | fs (data faktury) · sort: zysk | szt | netto
 
@@ -24,6 +25,8 @@ router.get('/produkty', (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 500, 1), 2000);
   res.json(q.produkty(q.parametry(req.query), { sort, limit }));
 });
+
+router.get('/trendy', (req, res) => res.json(require('../services/analiza-trendy').trendy()));
 
 router.get('/raport', async (req, res, next) => {
   try {

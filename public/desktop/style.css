@@ -1533,3 +1533,80 @@ main {
 .sw-flaga-konczy { background: #fde8e8; color: #c62828; }
 .sw-flaga-nadmiar, .sw-flaga-zalega { background: #fff1d6; color: #a15c00; }
 .sw-flaga-nowosc { background: #e3ecff; color: #1d4ed8; }
+
+/* === Sprzedaż → Trendy (sprzedaz-trendy.js) — zawężone do panelu i okna produktu ===
+   Kolory serii: referencyjna paleta dataviz (6 kanałów w stałej kolejności, sprawdzona walidatorem CVD);
+   „rok temu” = neutralny szary. Trzy kolory mają kontrast < 3:1 na jasnym tle — stąd tabela pod wykresem kanałów. */
+#panel-sprzedaz-trendy, .tr-tlo {
+  --tr-surface: #fcfcfb; --tr-ink: #0b0b0b; --tr-ink2: #52514e; --tr-muted: #898781; --tr-grid: #e1e0d9; --tr-axis: #c3c2b7;
+  --tr-ring: rgba(11,11,11,0.10); --tr-wash: #f0efec; --tr-plus: #006300; --tr-minus: #c62828; --tr-rok: #a8a69f;
+  --tr-s1: #2a78d6; --tr-s2: #eb6834; --tr-s3: #1baf7a; --tr-s4: #eda100; --tr-s5: #e87ba4; --tr-s6: #008300;
+}
+#panel-sprzedaz-trendy .tr-info { color: var(--tr-ink2); font-size: 13px; margin: 0 0 12px; }
+#panel-sprzedaz-trendy .tr-karta { background: #fff; border: 1px solid var(--tr-ring); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+#panel-sprzedaz-trendy .tr-karta h3 { margin: 0; font-size: 15px; }
+#panel-sprzedaz-trendy .tr-nag { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+#panel-sprzedaz-trendy .tr-opis, .tr-tlo .tr-opis { color: var(--tr-ink2); font-size: 12px; margin-top: 2px; }
+#panel-sprzedaz-trendy .tr-ster { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+#panel-sprzedaz-trendy .tr-seg { display: inline-flex; border: 1px solid var(--tr-grid); border-radius: 8px; overflow: hidden; background: #fff; }
+#panel-sprzedaz-trendy .tr-seg button { border: 0; background: transparent; color: var(--tr-ink); padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+#panel-sprzedaz-trendy .tr-seg button + button { border-left: 1px solid var(--tr-grid); }
+#panel-sprzedaz-trendy .tr-seg button.wl { background: #1d3557; color: #fff; }
+#panel-sprzedaz-trendy .tr-kafle { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+#panel-sprzedaz-trendy .tr-kafel { border: 1px solid var(--tr-grid); border-radius: 10px; padding: 10px 12px; background: var(--tr-surface); }
+#panel-sprzedaz-trendy .tr-t { font-weight: 600; font-size: 13px; }
+#panel-sprzedaz-trendy .tr-z { color: var(--tr-muted); font-size: 11px; margin-bottom: 6px; }
+#panel-sprzedaz-trendy .tr-glowna { font-size: 22px; font-weight: 700; white-space: nowrap; }
+#panel-sprzedaz-trendy .tr-kafel table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+#panel-sprzedaz-trendy .tr-kafel td { padding: 2px 0; }
+#panel-sprzedaz-trendy .tr-l { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#panel-sprzedaz-trendy .tr-up, .tr-tlo .tr-up { color: var(--tr-plus); font-weight: 600; }
+#panel-sprzedaz-trendy .tr-down, .tr-tlo .tr-down { color: var(--tr-minus); font-weight: 600; }
+#panel-sprzedaz-trendy .tr-sz, .tr-tlo .tr-sz { color: var(--tr-muted); }
+.tr-wykres { position: relative; }
+.tr-wykres svg { display: block; width: 100%; }
+.tr-legenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--tr-ink2); margin: 2px 0 6px; }
+.tr-legenda i, .tr-kw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.tr-legenda i.tr-linia { height: 2px; border-radius: 1px; vertical-align: 3px; width: 14px; }
+.tr-tip { position: absolute; pointer-events: none; background: #fff; border: 1px solid var(--tr-ring); box-shadow: 0 4px 14px rgba(0,0,0,.14);
+  border-radius: 8px; padding: 7px 9px; font-size: 12px; white-space: nowrap; display: none; z-index: 5; }
+.tr-tip b { font-variant-numeric: tabular-nums; }
+#panel-sprzedaz-trendy .tr-dwie { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.tr-tab { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tr-tab th { text-align: left; font-size: 11px; color: var(--tr-ink2); font-weight: 600; padding: 6px; border-bottom: 1px solid var(--tr-axis); white-space: nowrap;
+  position: sticky; top: 0; background: #fff; z-index: 1; }
+.tr-tab th.n, .tr-tab td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tr-tab th.tr-sort { cursor: pointer; } .tr-tab th.tr-sort:hover { color: var(--tr-ink); }
+.tr-tab td { padding: 5px 6px; border-bottom: 1px solid var(--tr-grid); vertical-align: middle; }
+.tr-tab tr.tr-klik { cursor: pointer; } .tr-tab tr.tr-klik:hover td { background: var(--tr-wash); }
+.tr-tab tr.tr-wybrana td { background: var(--tr-wash); }
+.tr-tab tr.tr-razem td { background: var(--tr-surface); }
+.tr-sym { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 700; font-size: 12px; }
+.tr-nz { color: var(--tr-ink2); font-size: 12px; display: block; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr-gr { color: var(--tr-muted); font-size: 11px; }
+img.tr-min { width: 40px; height: 40px; object-fit: contain; border-radius: 4px; border: 1px solid var(--tr-grid); background: #fff; display: block; }
+.tr-miniRz { display: flex; gap: 3px; margin-top: 4px; }
+.tr-miniRz img { width: 26px; height: 26px; object-fit: contain; border-radius: 3px; border: 1px solid var(--tr-grid); background: #fff; }
+#panel-sprzedaz-trendy .tr-chipy { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
+.tr-chip { border: 1px solid var(--tr-grid); border-radius: 16px; padding: 5px 11px; cursor: pointer; font-size: 13px; background: var(--tr-surface); color: var(--tr-ink); }
+.tr-chip.wl { background: #1d3557; border-color: #1d3557; color: #fff; }
+.tr-chip .tr-ile { color: var(--tr-muted); margin-left: 4px; } .tr-chip.wl .tr-ile { color: rgba(255,255,255,.75); }
+.tr-znak { display: inline-block; font-size: 11px; border-radius: 10px; padding: 1px 7px; margin: 1px 2px 1px 0; border: 1px solid var(--tr-grid); color: var(--tr-ink2); white-space: nowrap; }
+.tr-znak.zly { border-color: #e9a3a3; color: var(--tr-minus); } .tr-znak.uwaga { border-color: #f3cf9a; color: #a15c00; } .tr-znak.dobry { border-color: #9fd19f; color: var(--tr-plus); }
+#panel-sprzedaz-trendy .tr-pole { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--tr-grid); border-radius: 8px; background: #fff; color: var(--tr-ink); }
+#panel-sprzedaz-trendy .tr-przewin { max-height: 720px; overflow: auto; border: 1px solid var(--tr-grid); border-radius: 8px; }
+#panel-sprzedaz-trendy .tr-stopka { color: var(--tr-muted); font-size: 12px; line-height: 1.5; margin-top: 8px; }
+#panel-sprzedaz-trendy .tr-grupaNag { background: var(--tr-wash); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; font-size: 13px; display: none; }
+#panel-sprzedaz-trendy .tr-grupaNag .tr-chip { margin-left: 8px; }
+.tr-tlo { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: flex-start; justify-content: center; z-index: 9500; overflow: auto; padding: 30px 16px; }
+.tr-okno { background: #fff; color: var(--tr-ink); border-radius: 14px; width: min(1040px, 100%); padding: 18px 20px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+.tr-okno h3 { margin: 0 0 2px; font-size: 18px; }
+.tr-gora2 { display: grid; grid-template-columns: 220px 1fr; gap: 18px; }
+.tr-foto { width: 220px; height: 220px; object-fit: contain; border: 1px solid var(--tr-grid); border-radius: 10px; background: #fff; }
+.tr-nav { display: flex; gap: 6px; justify-content: flex-end; align-items: center; margin-bottom: 8px; }
+.tr-statki { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 10px 0; }
+.tr-statki div { border: 1px solid var(--tr-grid); border-radius: 8px; padding: 6px 8px; font-size: 12px; color: var(--tr-ink2); }
+.tr-statki b { display: block; font-size: 16px; color: var(--tr-ink); }
+@media (max-width: 1100px) { #panel-sprzedaz-trendy .tr-kafle { grid-template-columns: repeat(3, 1fr); } #panel-sprzedaz-trendy .tr-dwie { grid-template-columns: 1fr; } }
+#panel-sprzedaz-dzien th.sd-sort { cursor: pointer; user-select: none; }
+#panel-sprzedaz-dzien th.sd-sort:hover { text-decoration: underline; }

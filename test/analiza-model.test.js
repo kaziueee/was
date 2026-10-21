@@ -10,6 +10,19 @@ test('rok temu = 364 dni wstecz, ten sam dzień tygodnia', () => {
   assert.strictEqual(m.rokTemu('2026-03-01'), '2025-03-02');
 });
 
+test('zakresy z dzisiejszym dniem: 7 dni / miesiąc / rok tylko z dni zamkniętych, dzień zostaje dzisiejszy', () => {
+  const o = { dzis: '2026-10-21' };
+  assert.deepStrictEqual(m.zakres('dzien', '2026-10-21', o).cur, ['2026-10-21', '2026-10-21']);
+  assert.deepStrictEqual(m.zakres('t7', '2026-10-21', o).cur, ['2026-10-14', '2026-10-20']);
+  assert.deepStrictEqual(m.zakres('mtd', '2026-10-21', o).cur, ['2026-10-01', '2026-10-20']);
+  assert.deepStrictEqual(m.zakres('ytd', '2026-10-21', o).cur, ['2026-01-01', '2026-10-20']);
+  // pierwszy dzień miesiąca / roku: „do wczoraj” to cały poprzedni miesiąc / rok
+  assert.deepStrictEqual(m.zakres('mtd', '2026-11-01', { dzis: '2026-11-01' }).cur, ['2026-10-01', '2026-10-31']);
+  assert.deepStrictEqual(m.zakres('ytd', '2027-01-01', { dzis: '2027-01-01' }).cur, ['2026-01-01', '2026-12-31']);
+  // dzień z przeszłości — zakresy kończą się na nim
+  assert.deepStrictEqual(m.zakres('t7', '2026-10-19', o).cur, ['2026-10-13', '2026-10-19']);
+});
+
 test('zakresy: dzień, 7 dni, miesiąc i rok do dziś, każdy z odpowiednikiem sprzed 364 dni', () => {
   assert.deepStrictEqual(m.zakres('dzien', '2026-10-19'), { cur: ['2026-10-19', '2026-10-19'], prev: ['2025-10-20', '2025-10-20'] });
   assert.deepStrictEqual(m.zakres('t7', '2026-10-19'), { cur: ['2026-10-13', '2026-10-19'], prev: ['2025-10-14', '2025-10-20'] });

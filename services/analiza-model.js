@@ -17,14 +17,18 @@ const rokTemu = (dzien) => dodajDni(dzien, -ROK_TEMU_DNI);
 // Miesiąc / rok do dziś liczone od 1. dnia kalendarzowego, a rok temu — te same dni przesunięte o 364 (czyli
 // rok temu zaczyna się 2.01, nie 1.01) — tak samo długi zakres, te same dni tygodnia.
 const ZAKRESY = ['dzien', 't7', 'mtd', 'ytd'];
-function zakres(nazwa, dzien) {
+// dzis: zakresy dłuższe niż dzień porównują tylko DNI ZAMKNIĘTE (decyzja usera 2026-10-21) — gdy wybrany dzień to
+// dziś, 7 dni / miesiąc / rok kończą się na wczoraj, a miesiąc i rok liczą się od początku miesiąca/roku tego końca.
+// Sam „Dzień” zostaje dniem wybranym, także dzisiejszym (dzień otwarty z ZK — user wie po fakturach, jak się zamknie).
+function zakres(nazwa, dzien, { dzis = null } = {}) {
+  const koniec = nazwa !== 'dzien' && dzis && dzien >= dzis ? dodajDni(dzis, -1) : dzien;
   let od;
-  if (nazwa === 'dzien') od = dzien;
-  else if (nazwa === 't7') od = dodajDni(dzien, -6);
-  else if (nazwa === 'mtd') od = dzien.slice(0, 8) + '01';
-  else if (nazwa === 'ytd') od = dzien.slice(0, 5) + '01-01';
+  if (nazwa === 'dzien') od = koniec;
+  else if (nazwa === 't7') od = dodajDni(koniec, -6);
+  else if (nazwa === 'mtd') od = koniec.slice(0, 8) + '01';
+  else if (nazwa === 'ytd') od = koniec.slice(0, 5) + '01-01';
   else return null;
-  return { cur: [od, dzien], prev: [rokTemu(od), rokTemu(dzien)] };
+  return { cur: [od, koniec], prev: [rokTemu(od), rokTemu(koniec)] };
 }
 
 // Kurs dokumentu GT (dok_WalutaKurs) na PLN za 1 jednostkę waluty. GT trzyma HUF za 100 Ft (sprawdzone

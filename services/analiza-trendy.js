@@ -1,0 +1,141 @@
+'use strict';
+
+// Sprzedaż → Trendy (desktop, docs/analiza-sprzedazy.md „Etap 2”): kafle okresów, trend tygodniowy z rokiem temu,
+// miesiące r/r, udział kanałów, grupy GT i produkty (okna 7 i 30 dni vs poprzednie okno albo rok temu) z kanałami
+// i sztukami tygodniowo do widoku produktu. Decyzje usera 2026-10-21: tylko DNI ZAMKNIĘTE (koniec = wczoraj), listy
+// bez limitu (zawężają filtry na ekranie), grupy top 30 z wejściem w grupę.
+// Czyta wyłącznie db/sprzedaz.db (internet — bez paragonów Sklepu). Wynik trzymamy w pamięci do następnego
+// wczytania danych przez job (meta „biezacy”) albo do zmiany dnia — liczenie to kilkanaście zapytań SQLite.
+
+const { db, meta } = require('../db/sprzedaz');
+const am = require('./analiza-model');
+const { dzisLokalnie } = require('./sprzedaz-model');
+const { NAZWY_KANALOW } = require('./analiza-kanal');
+const { dostepneZeStanu } = require('./analiza-zapytania');
+
+const D = am.dodajDni;
+const R = (x) => Math.round(x || 0);
+const NETTO = 'z.netto + IFNULL(z.wysylka_netto, 0)';
+const INTERNET = "z.status != 'paragon'";
+const OKNA = [7, 30];
+const TYGODNIE_GRUP = 13;
+const NOWOSC_DNI = 30;
+
+// Kanały w udziale tygodniowym — zgrubnie, żeby wykres miał ≤ 6 serii (stała kolejność kolorów na ekranie)
+const GRUPA_KANALU = (k) => (k.startsWith('ALLEGRO') ? 'Allegro' : ['DE', 'FR', 'IT', 'ES', 'NL', 'PL', 'AMAZON_EU'].includes(k) ? 'Amazon'
+  : k.startsWith('EMAG') ? 'eMAG' : k.startsWith('EMPIK') ? 'Empik' : k.startsWith('KAUFLAND') ? 'Kaufland' : 'Inne');
+const nazwaKanalu = (k, r) => (NAZWY_KANALOW[k] || k) + (k.startsWith('ALLEGRO') && r && r !== 'PL' ? ' · ' + r : '');
+const ostatniaNiedziela = (d) => { let x = d; while (new Date(x + 'T12:00:00Z').getUTCDay() !== 0) x = D(x, -1); return x; };
+
+function sumy(od, doDnia) {
+  return db.prepare(`SELECT ROUND(SUM(${NETTO})) netto, ROUND(SUM(z.zysk)) zysk, IFNULL(SUM(z.szt), 0) szt, COUNT(*) zam
+    FROM zamowienia z WHERE ${INTERNET} AND z.data_zam BETWEEN ? AND ?`).get(od, doDnia);
+}
+
+function kafle(koniec) {
+  return [['7 dni', D(koniec, -6)], ['30 dni', D(koniec, -29)], ['Miesiąc do wczoraj', koniec.slice(0, 8) + '01'],
+    ['Rok do wczoraj', koniec.slice(0, 5) + '01-01'], ['12 miesięcy', D(koniec, -364)]]
+    .map(([nazwa, od]) => ({ nazwa, od, do: koniec, cur: sumy(od, koniec), prevOd: am.rokTemu(od), prevDo: am.rokTemu(koniec),
+      prev: sumy(am.rokTemu(od), am.rokTemu(koniec)) }));
+}
+
+// Pełne tygodnie pon–nd od początku historii do ostatniej niedzieli przed końcem
+function tygodnie(start, niedziela) {
+  const tyg = new Map();
+  for (const x of db.prepare(`SELECT date(z.data_zam, 'weekday 0', '-6 days') pon, z.kanal, SUM(${NETTO}) netto, SUM(z.zysk) zysk,
+      SUM(z.szt) szt, COUNT(*) zam FROM zamowienia z WHERE ${INTERNET} AND z.data_zam BETWEEN ? AND ? GROUP BY pon, z.kanal`).all(start, niedziela)) {
+    const t = tyg.get(x.pon) || tyg.set(x.pon, { pon: x.pon, netto: 0, zysk: 0, szt: 0, zam: 0, kan: {} }).get(x.pon);
+    t.netto += x.netto; t.zysk += x.zysk; t.szt += x.szt; t.zam += x.zam;
+    const k = GRUPA_KANALU(x.kanal);
+    t.kan[k] = (t.kan[k] || 0) + x.netto;
+  }
+  return [...tyg.values()].filter((t) => t.pon >= start).sort((a, b) => a.pon.localeCompare(b.pon))
+    .map((t) => ({ ...t, netto: R(t.netto), zysk: R(t.zysk), kan: Object.fromEntries(Object.entries(t.kan).map(([k, v]) => [k, R(v)])) }));
+}
+
+function okno(od, doDnia) {
+  return new Map(db.prepare(`SELECT p.tw_id, SUM(p.szt) szt, SUM(p.netto + IFNULL(p.wysylka, 0)) netto, SUM(p.zysk) zysk
+    FROM pozycje p JOIN zamowienia z ON z.id = p.zam_id WHERE ${INTERNET} AND z.data_zam BETWEEN ? AND ? GROUP BY p.tw_id`)
+    .all(od, doDnia).map((x) => [x.tw_id, x]));
+}
+
+// Kanały produktu: [nazwa, szt, netto, zysk] × (teraz, poprzednie okno, rok temu)
+function kanalyProduktow(P) {
+  const m = new Map();
+  const zbierz = (od, doDnia, off) => {
+    for (const x of db.prepare(`SELECT p.tw_id, z.kanal, z.rynek, SUM(p.szt) szt, SUM(p.netto + IFNULL(p.wysylka, 0)) netto, SUM(p.zysk) zysk
+        FROM pozycje p JOIN zamowienia z ON z.id = p.zam_id WHERE ${INTERNET} AND z.data_zam BETWEEN ? AND ?
+        GROUP BY p.tw_id, z.kanal, z.rynek`).all(od, doDnia)) {
+      const nazwa = nazwaKanalu(x.kanal, x.rynek), k = `${x.tw_id}|${nazwa}`;
+      const w = m.get(k) || m.set(k, [x.tw_id, nazwa, 0, 0, 0, 0, 0, 0, 0, 0, 0]).get(k);
+      w[2 + off] += x.szt; w[3 + off] += x.netto; w[4 + off] += x.zysk;
+    }
+  };
+  zbierz(P.od, P.do, 0); zbierz(P.prevOd, P.prevDo, 3); zbierz(P.rokOd, P.rokDo, 6);
+  const po = {};
+  for (const w of m.values()) (po[w[0]] ||= []).push([w[1], ...w.slice(2).map(R)]);
+  return po;
+}
+
+function policz(dzis) {
+  const koniec = D(dzis, -1), niedziela = ostatniaNiedziela(koniec);
+  const start = meta.get('historia_od')?.wartosc || D(koniec, -730);
+  const tyg = tygodnie(start, niedziela);
+  const miesiace = db.prepare(`SELECT substr(z.data_zam, 1, 7) m, ROUND(SUM(${NETTO})) netto, ROUND(SUM(z.zysk)) zysk, SUM(z.szt) szt, COUNT(*) zam
+    FROM zamowienia z WHERE ${INTERNET} AND z.data_zam BETWEEN ? AND ? GROUP BY m ORDER BY m`).all(start, koniec);
+  // bieżący miesiąc rok temu do tego samego dnia — r/r niepełnego miesiąca
+  const miesiacRokTemu = sumy(`${+koniec.slice(0, 4) - 1}${koniec.slice(4, 8)}01`, `${+koniec.slice(0, 4) - 1}${koniec.slice(4)}`);
+
+  const produkty = {}, kanaly = {}, wszystkie = new Set();
+  for (const dl of OKNA) {
+    const od = D(koniec, -dl + 1);
+    const P = { od, do: koniec, prevOd: D(od, -dl), prevDo: D(od, -1), rokOd: am.rokTemu(od), rokDo: am.rokTemu(koniec) };
+    const cur = okno(P.od, P.do), prev = okno(P.prevOd, P.prevDo), rok = okno(P.rokOd, P.rokDo);
+    const v = (m, id) => { const x = m.get(id); return x ? [R(x.szt), R(x.netto), R(x.zysk)] : [0, 0, 0]; };
+    const ids = new Set([...cur.keys(), ...prev.keys(), ...rok.keys()]);
+    produkty[dl] = { ...P, w: [...ids].map((id) => { wszystkie.add(id); return [id, ...v(cur, id), ...v(prev, id), ...v(rok, id)]; }) };
+    kanaly[dl] = kanalyProduktow(P);
+  }
+
+  // kartoteka, stan dostępny (Razem − rez.; zestaw ze składników), tempo 30 dni
+  const tow = new Map(db.prepare('SELECT tw_id, symbol, nazwa, grupa, rodzaj, pierwsze_przyjecie FROM towary').all().map((x) => [x.tw_id, x]));
+  const st = new Map();
+  for (const s of db.prepare('SELECT * FROM stany WHERE dzien >= ? ORDER BY dzien DESC').all(D(koniec, -7))) if (!st.has(s.tw_id)) st.set(s.tw_id, s);
+  const tp = new Map(db.prepare('SELECT tw_id, szt30 FROM tempa').all().map((x) => [x.tw_id, x.szt30]));
+  const info = {};
+  for (const id of wszystkie) {
+    const t = tow.get(id) || {}, dost = dostepneZeStanu(st.get(id)), sz = tp.get(id) || 0;
+    info[id] = [t.symbol || String(id), t.nazwa || '', t.grupa || '(bez grupy)',
+      t.pierwsze_przyjecie && t.pierwsze_przyjecie >= D(koniec, -NOWOSC_DNI + 1) ? 1 : 0,
+      dost, dost != null && sz > 0 ? Math.round(dost / (sz / 30)) : null, t.rodzaj === 8 ? 1 : 0];
+  }
+
+  // grupy i produkty tygodniowo (13 pełnych tygodni + te same tygodnie rok temu)
+  const od13 = D(niedziela, -TYGODNIE_GRUP * 7 + 1);
+  const tygodnie13 = Array.from({ length: TYGODNIE_GRUP }, (_, i) => D(od13, i * 7));
+  const grTyg = {};
+  for (const x of db.prepare(`SELECT IFNULL(NULLIF(t.grupa, ''), '(bez grupy)') g, date(z.data_zam, 'weekday 0', '-6 days') pon,
+      SUM(p.netto + IFNULL(p.wysylka, 0)) netto FROM pozycje p JOIN zamowienia z ON z.id = p.zam_id LEFT JOIN towary t ON t.tw_id = p.tw_id
+      WHERE ${INTERNET} AND z.data_zam BETWEEN ? AND ? GROUP BY g, pon`).all(od13, niedziela)) (grTyg[x.g] ||= {})[x.pon] = R(x.netto);
+  const tygProd = {};
+  const idx = (pon, od) => Math.round((new Date(pon + 'T12:00:00Z') - new Date(od + 'T12:00:00Z')) / (7 * 864e5));
+  for (const [od, doDnia, off] of [[od13, niedziela, 0], [am.rokTemu(od13), am.rokTemu(niedziela), TYGODNIE_GRUP]]) {
+    for (const x of db.prepare(`SELECT p.tw_id, date(z.data_zam, 'weekday 0', '-6 days') pon, SUM(p.szt) szt FROM pozycje p
+        JOIN zamowienia z ON z.id = p.zam_id WHERE ${INTERNET} AND z.data_zam BETWEEN ? AND ? GROUP BY p.tw_id, pon`).all(od, doDnia)) {
+      const i = idx(x.pon, od);
+      if (!wszystkie.has(x.tw_id) || i < 0 || i >= TYGODNIE_GRUP) continue;
+      (tygProd[x.tw_id] ||= Array(2 * TYGODNIE_GRUP).fill(0))[off + i] = R(x.szt);
+    }
+  }
+  return { dzis, koniec, ostatniaNiedz: niedziela, kafle: kafle(koniec), tygodnie: tyg, miesiace, miesiacRokTemu,
+    produkty, kanaly, info, grTyg, tygodnie13, tygProd, wygenerowano: new Date().toISOString() };
+}
+
+let pamiec = null;
+function trendy(dzis = dzisLokalnie()) {
+  const klucz = `${dzis}|${meta.get('biezacy')?.wartosc || ''}`;
+  if (pamiec?.klucz !== klucz) pamiec = { klucz, wynik: policz(dzis) };
+  return pamiec.wynik;
+}
+
+module.exports = { trendy, policz, GRUPA_KANALU, ostatniaNiedziela };

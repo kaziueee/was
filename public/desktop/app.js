@@ -108,6 +108,7 @@ const panele = {
   kartony: { sekcja: 'panel-kartony', zaladowano: false, odswiez: odswiezKartony },
   cennik: { sekcja: 'panel-cennik', zaladowano: false, odswiez: odswiezCennik },
   sprzedaz: { sekcja: 'panel-sprzedaz-dzien', zaladowano: false, odswiez: () => odswiezSprzedazDzien() },   // sprzedaz-dzien.js
+  'sprzedaz-trendy': { sekcja: 'panel-sprzedaz-trendy', zaladowano: false, odswiez: () => odswiezSprzedazTrendy() },   // sprzedaz-trendy.js
   'sprzedaz-zadanie': { sekcja: 'panel-sprzedaz', zaladowano: false, odswiez: odswiezSprzedaz },
   ceny: { sekcja: 'panel-ceny', zaladowano: false, odswiez: () => odswiezCeny() },
 };
@@ -123,8 +124,8 @@ const panele = {
 const GRUPY = {
   ruchy: { domyslny: 'uzupelnienia', panele: ['uzupelnienia', 'dostawy', 'do-sprawdzenia', 'rozjazdy', 'mm'] },
   lokalizacje: { domyslny: 'lokalizacje', panele: ['lokalizacje', 'zajetosc'] },
-  // Sprzedaz: #sprzedaz = analiza dnia (domyslna), zadanie sprzedazowe pod #sprzedaz/sprzedaz-zadanie
-  sprzedaz: { domyslny: 'sprzedaz', panele: ['sprzedaz', 'sprzedaz-zadanie'] },
+  // Sprzedaz: #sprzedaz = analiza dnia (domyslna), trendy i zadanie sprzedazowe jako podzakladki
+  sprzedaz: { domyslny: 'sprzedaz', panele: ['sprzedaz', 'sprzedaz-trendy', 'sprzedaz-zadanie'] },
 };
 
 // panel -> grupa, do zaznaczania wlasciwej zakladki glownej i pokazania paska podzakladek
@@ -1928,13 +1929,17 @@ function pokazZakladkeAdmina() {
     const tab = el(id);
     if (tab) tab.style.display = biuro ? '' : 'none';
   }
-  // Sprzedaż → Dzień (analiza: zysk, marża, koszt) tylko admin (decyzja usera 2026-10-21; zamek: /api/analiza
+  // Sprzedaż → Dzień i Trendy (analiza: zysk, marża, koszt) tylko admin (decyzja usera 2026-10-21; zamek: /api/analiza
   // w app.js). Biuro wchodzi w Sprzedaż prosto na zadanie sprzedażowe.
   const analiza = !window.WMS || rola === 'admin';
-  const dzien = document.querySelector('#podzakladki-sprzedaz [data-pod="sprzedaz"]');
-  if (dzien) dzien.style.display = analiza ? '' : 'none';
+  for (const pod of ['sprzedaz', 'sprzedaz-trendy']) {
+    const a = document.querySelector(`#podzakladki-sprzedaz [data-pod="${pod}"]`);
+    if (a) a.style.display = analiza ? '' : 'none';
+  }
   GRUPY.sprzedaz.domyslny = analiza ? 'sprzedaz' : 'sprzedaz-zadanie';
-  if (!analiza && zHasha().nazwa === 'sprzedaz') przejdzZHasha();
+  // panel mógł się narysować przed rozpoznaniem roli — biuro na analizie przenosimy na zadanie (zamek: backend)
+  const [glowna, pod] = decodeURIComponent(location.hash.replace(/^#/, '')).split('/');
+  if (!analiza && ((glowna === 'sprzedaz' && pod !== 'sprzedaz-zadanie') || glowna === 'sprzedaz-trendy')) location.hash = '#sprzedaz/sprzedaz-zadanie';
 }
 if (window.WMS) WMS.gotowe.then(pokazZakladkeAdmina);
 window.addEventListener('wms-zalogowano', pokazZakladkeAdmina);

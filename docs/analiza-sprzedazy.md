@@ -318,7 +318,20 @@ faktury), więc liczby się nie zmieniają, tylko ekran przestaje czekać na GT.
 
 ## Etap 2 — trendy i centrum alertów
 
-### Trendy
+### Trendy — zrobione 2026-10-21 (desktop)
+
+**[decyzje usera 21.10]** Desktop = obraz strategiczny, telefon = szybki podgląd zmian i niespodzianek (przewijanie
+300 kart dziennie to za dużo). Zakresy dłuższe niż dzień porównują wyłącznie dni zamknięte (do wczoraj); „Dzień”
+zostaje dniem otwartym z ZK. Listy produktów **bez limitu** — zawężają filtry: hity (połowa przychodu okna),
+trendujące, spadek trendu (próg % i baza szt. do ustawienia, domyślnie 30% i 5 szt.), ze stratą, zgasły, nowości.
+Grupy GT top 30 (pomiar: 84 grupy ze sprzedażą w 30 dni, top 30 = 90% przychodu) z wejściem w grupę. Okna 7 i 30
+dni, porównanie z poprzednim oknem albo rokiem temu (dla produktów rok do roku pokazuje głównie zmianę asortymentu:
+28 dni r/r — 494 SKU ≥ +50%, 413 ≤ −50%). Klik w produkt = kanały sprzedaży, sztuki tygodniowo z rokiem temu.
+Wykres tygodniowy domyślnie 26 tygodni (przy 52 szczyt grudnia — 2,3 mln zł w tygodniu — przykrywa resztę roku);
+tydzień, nie dzień, bo pt/sob to połowa wtorku. Zostaje: przyczyny spadków (repricer: Buy Box, zmiany cen; stany
+wstecz z dokumentów), widok „Zmiany” na telefonie.
+
+Pierwotny plan (zostaje jako tło):
 
 - Listy „trendujące” i „tracące popularność”, 30 dni: sztuki i sprzedaż netto z % zmiany, przełącznik % / #
   (jak base analytics).

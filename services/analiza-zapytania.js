@@ -22,7 +22,7 @@ function parametry(q = {}) {
   const dzien = DATA_RE.test(String(q.dzien || '')) ? q.dzien : dzisLokalnie();
   const zakresNazwa = am.ZAKRESY.includes(q.zakres) ? q.zakres : 'dzien';
   const baza = BAZY[q.baza] ? q.baza : 'zam';
-  return { dzien, zakresNazwa, baza, zakres: am.zakres(zakresNazwa, dzien), ...BAZY[baza] };
+  return { dzien, zakresNazwa, baza, zakres: am.zakres(zakresNazwa, dzien, { dzis: dzisLokalnie() }), ...BAZY[baza] };
 }
 
 function stanWczytania() {

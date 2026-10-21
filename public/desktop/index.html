@@ -65,6 +65,7 @@
     </nav>
     <nav id="podzakladki-sprzedaz" class="podzakladki hidden">
       <a href="#sprzedaz" class="podzakladka" data-pod="sprzedaz">Dzień</a>
+      <a href="#sprzedaz/sprzedaz-trendy" class="podzakladka" data-pod="sprzedaz-trendy">Trendy</a>
       <a href="#sprzedaz/sprzedaz-zadanie" class="podzakladka" data-pod="sprzedaz-zadanie">Zadanie sprzedażowe</a>
     </nav>
 
@@ -882,7 +883,18 @@
       </div>
     </section>
 
-    <!-- Panel Sprzedaz → Dzien (admin/biuro): analiza sprzedazy z db/sprzedaz.db (docs/analiza-sprzedazy.md).
+    <!-- Panel Sprzedaz → Trendy (tylko admin): dni zamkniete do wczoraj, GET /api/analiza/trendy.
+         Rysuje public/desktop/sprzedaz-trendy.js (cala tresc w #tr-tresc). -->
+    <section id="panel-sprzedaz-trendy" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Sprzedaż — trendy</h2>
+        <span class="hint-inline" id="tr-wczytanie"></span>
+      </div>
+      <div class="sd-ostrz hidden" id="tr-blad"></div>
+      <div id="tr-tresc"></div>
+    </section>
+
+    <!-- Panel Sprzedaz → Dzien (tylko admin): analiza sprzedazy z db/sprzedaz.db (docs/analiza-sprzedazy.md).
          Ten sam widok na telefon: /sprzedaz/ (Tailscale). Rysuje public/desktop/sprzedaz-dzien.js. -->
     <section id="panel-sprzedaz-dzien" class="panel hidden">
       <div class="panel-naglowek">
@@ -1110,6 +1122,7 @@
   <script src="/shared/auth.js"></script>
   <script src="/shared/sprzedaz-wspolne.js"></script>
   <script src="sprzedaz-dzien.js"></script>
+  <script src="sprzedaz-trendy.js"></script>
   <script src="ceny-pulpit.js"></script>
   <script src="ceny-strategie.js"></script>
   <script src="app.js"></script>

@@ -35,7 +35,8 @@ const kartotekaJob = require('./services/kartoteka');
 const backupJob = require('./services/backup-watek');   // backup w osobnym watku (zasada 7)
 const analizaWatek = require('./services/analiza-watek');
 const reconciliacjaMM = require('./services/reconciliacja-mm');
-const pulpitSnapshot = require('./services/pulpit-snapshot');
+const watek = require('./services/watek');
+const pomiarPetli = require('./services/pomiar-petli');
 const awarie = require('./services/awarie');
 
 // globalne lapanie wyjatkow/odrzuconych obietnic + rotacja logu awarii - jak najwczesniej
@@ -111,10 +112,13 @@ app.listen(PORT, () => {
 ruchyRetry.start();
 rozjazdyJob.start();
 wagaGabJob.start();
-strefyWGtJob.start();
-rozmontowaniaJob.start();
+// joby co 10 min startowały w tej samej sekundzie i ich synchroniczne części się sumowały (sonda SRV 2026-10-21:
+// do 871 ms) — rozsunięte o 3 min; pomiar pętli (logs/petla-*.log) po „sekundzie w cyklu” pokazuje, który to job
+setTimeout(() => strefyWGtJob.start(), 3 * 60 * 1000).unref();
+setTimeout(() => rozmontowaniaJob.start(), 6 * 60 * 1000).unref();
 kartotekaJob.start();   // odswiezanie kopii kartoteki GT (symbol/nazwa/EAN) w stany_lokalizacji
 backupJob.start();
 analizaWatek.start();   // analiza sprzedazy w osobnym watku (nie blokuje Zebry): FS/ZK z GT do db/sprzedaz.db co 15 min, nocny przebieg, Trendy
 reconciliacjaMM.start();
-pulpitSnapshot.start();
+watek.uruchom(require.resolve('./services/pulpit-snapshot'), 'pulpit');   // migawka pulpitu w osobnym watku (zasada 7)
+pomiarPetli.start();   // opóźnienia głównego wątku > 100 ms → logs/petla-*.log

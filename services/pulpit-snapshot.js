@@ -22,6 +22,7 @@ const doRozlozenia = require('./do-rozlozenia');
 const doSprawdzenia = require('../routes/do-sprawdzenia');
 const { przegladZajetosci } = require('./zajetosc');
 const awarie = require('./awarie');
+const { wWatku } = require('./watek');
 
 const DOMYSLNY_INTERWAL_MS = 60 * 60 * 1000; // 1 godzina (jak job rozjazdow)
 const OPOZNIENIE_STARTU_MS = 30 * 1000;      // pierwszy przebieg 30 s po starcie (nie blokuje bootu)
@@ -128,13 +129,15 @@ async function odswiez() {
   return statusy;
 }
 
-// Godzinny job + pierwszy przebieg krotko po starcie. Timery unref() - nie blokuja
-// zamkniecia procesu.
+// Godzinny job + pierwszy przebieg krotko po starcie. Chodzi w OSOBNYM WATKU (app.js → services/watek.js, zasada 7
+// w CLAUDE.md): przebieg to ~0,7 s synchronicznie (sonda na SRV 2026-10-21: 721 ms 30 s po starcie) — w glownym
+// watku zatrzymywal kazdy skan Zebry. Pulpit (routes/pulpit.js) tylko czyta tabele pulpit_snapshot.
+// W watku timery MUSZA trzymac petle; unref() tylko w glownym watku.
 function start(interwalMs = DOMYSLNY_INTERWAL_MS) {
   const pierwszy = setTimeout(() => { odswiez(); }, OPOZNIENIE_STARTU_MS);
-  pierwszy.unref?.();
+  if (!wWatku()) pierwszy.unref?.();
   const timer = setInterval(() => { odswiez(); }, interwalMs);
-  timer.unref?.();
+  if (!wWatku()) timer.unref?.();
   return timer;
 }
 

@@ -193,6 +193,8 @@ main {
   background: #f1faee;
 }
 
+a.btn { display: inline-block; text-decoration: none; }   /* link wyglądający jak przycisk (np. „Pobierz raport w Allegro”) */
+
 .btn-primary {
   background: #2a9d8f;
   border-color: #2a9d8f;

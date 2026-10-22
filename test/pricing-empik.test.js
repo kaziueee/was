@@ -270,3 +270,44 @@ test('Empik: koszt wysyłki wg gabarytu — paczkomat A/B/C z wymiarów paczki, 
   assert.strictEqual(+rynki.kosztWysylkiFlat(e, g, 1).toFixed(2), 19.88);
   assert.ok(rynki.policzRynek(40, e, g).cena > rynki.policzRynek(40, e, { ...rynki.DOMYSLNE }).cena, 'duża paczka = wyższe minimum');
 });
+
+test('Empik: ręczna cena z ekranu — oferta po SKU, import PRI01 jedną linią, numer importu do potwierdzenia', async () => {
+  const http = require('node:http');
+  const zapytania = [];
+  const oferta = { offer_id: 5001, shop_sku: 'BARHRM10', product_sku: '111', active: true, quantity: 60, price: 105.99,
+    applicable_pricing: { price: 105.99 }, all_prices: [{ price: 105.99 }] };
+  const srv = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      zapytania.push({ m: req.method, u: req.url, body });
+      const json = (o, s = 200) => { res.writeHead(s, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (req.url.startsWith('/api/offers?')) return json({ offers: [oferta], total_count: 1 });
+      if (req.url === '/api/offers/pricing/imports' && req.method === 'POST') return json({ import_id: 'imp-42' }, 201);
+      json({}, 404);
+    });
+  });
+  await new Promise((r) => srv.listen(0, r));
+  const env = { k: process.env.EMPIK_API_KEY, u: process.env.EMPIK_API_URL };
+  process.env.EMPIK_API_KEY = 'klucz'; process.env.EMPIK_API_URL = `http://127.0.0.1:${srv.address().port}`;
+  try {
+    const reczna = require('../pricing/reczna-cena');
+    const { stan } = require('../pricing/db');
+    assert.strictEqual(reczna.obslugiwana('empik'), true);
+    const w = await reczna.wyslij({ platforma: 'empik', rynek: 'PL', sku: 'BARHRM10' }, 99.99);
+    assert.deepStrictEqual(w, { ok: true, cena: 99.99 });
+    assert.match(zapytania[0].u, /^\/api\/offers\?sku=BARHRM10/);
+    assert.match(zapytania[1].body, /"offer-sku";"price"\r?\n"BARHRM10";"99\.99"/);
+    assert.strictEqual(JSON.parse(stan.get('empik_import').wartosc).id, 'imp-42');
+    // oferta z promocją — import by ją skasował, nie wysyłamy
+    oferta.discount = { discount_price: 89.99 };
+    const z = await reczna.wyslij({ platforma: 'empik', rynek: 'PL', sku: 'BARHRM10' }, 99.99);
+    assert.strictEqual(z.ok, false);
+    assert.match(z.blad, /promocja/);
+    assert.strictEqual(zapytania.filter((q) => q.m === 'POST').length, 1, 'drugi import nie poszedł');
+  } finally {
+    srv.close();
+    if (env.k === undefined) delete process.env.EMPIK_API_KEY; else process.env.EMPIK_API_KEY = env.k;
+    if (env.u === undefined) delete process.env.EMPIK_API_URL; else process.env.EMPIK_API_URL = env.u;
+  }
+});

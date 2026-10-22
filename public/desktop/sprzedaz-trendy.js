@@ -700,14 +700,14 @@
           <div class="tr-statki">${kafelki.map(([a, b, c]) => `<div>${a}<b>${b}</b>${c}</div>`).join('')}</div>
           <div id="tr-ok-ozn"></div></div></div>
       <div class="tr-wykres" id="tr-ok-tyg" ${wyk ? '' : 'hidden'}></div>
-      <div class="tr-ceny-nag"><h3 style="font-size:15px;margin:0">Ceny ofert</h3><div id="tr-ok-strat" class="tr-opis"></div></div>
-      <div class="tr-ok-msg" id="tr-ok-msg" hidden></div>
-      <div id="tr-ok-ceny"><p class="tr-sz">Wczytuję oferty z repricera…</p></div>
-      <h3 style="font-size:15px;margin:16px 0 6px">Kanały sprzedaży <span class="tr-opis" style="font-weight:400">— nazwa kanału otwiera ofertę na platformie</span></h3>
+      <h3 style="font-size:15px;margin:14px 0 6px">Kanały sprzedaży <span class="tr-opis" style="font-weight:400">— nazwa kanału otwiera ofertę na platformie</span></h3>
       <table class="tr-tab"><tr><th>Kanał</th><th class="n">Szt.</th><th class="n">Przychód</th><th class="n">Zysk</th><th class="n">Marża</th><th class="n">Zysk na szt.</th><th class="n">Szt. ${przed}</th><th class="n">Przychód ${przed}</th><th class="n">Zmiana</th></tr>
       ${kan.map((k, j) => `<tr><td data-kan="${j}">${kanalHtml(k, null)}</td><td class="n">${szt(k.s)}</td><td class="n">${zl(k.n)}</td><td class="n">${zl(k.z)}</td><td class="n">${marza(k.z, k.n)}</td><td class="n">${k.s ? zl(k.z / k.s) : '—'}</td><td class="n tr-sz">${szt(k.bs)}</td><td class="n tr-sz">${zl(k.bn)}</td><td class="n">${k.bn > 0 ? zmiana(k.n, k.bn) : k.n > 0 ? '<span class="tr-up">nowy kanał</span>' : '<span class="tr-down">zniknął</span>'}</td></tr>`).join('')
         || '<tr><td colspan="9" class="tr-sz">Brak sprzedaży w obu okresach.</td></tr>'}
-      <tr class="tr-razem"><td><b>Razem</b></td><td class="n"><b>${szt(w.a.s)}</b></td><td class="n"><b>${zl(w.a.n)}</b></td><td class="n"><b>${zl(w.a.z)}</b></td><td class="n">${marza(w.a.z, w.a.n)}</td><td class="n">${w.a.s ? zl(w.a.z / w.a.s) : '—'}</td><td class="n tr-sz">${szt(w.b.s)}</td><td class="n tr-sz">${zl(w.b.n)}</td><td class="n">${zmiana(w.a.n, w.b.n)}</td></tr></table>`;
+      <tr class="tr-razem"><td><b>Razem</b></td><td class="n"><b>${szt(w.a.s)}</b></td><td class="n"><b>${zl(w.a.n)}</b></td><td class="n"><b>${zl(w.a.z)}</b></td><td class="n">${marza(w.a.z, w.a.n)}</td><td class="n">${w.a.s ? zl(w.a.z / w.a.s) : '—'}</td><td class="n tr-sz">${szt(w.b.s)}</td><td class="n tr-sz">${zl(w.b.n)}</td><td class="n">${zmiana(w.a.n, w.b.n)}</td></tr></table>
+      <div class="tr-ceny-nag"><h3 style="font-size:15px;margin:0">Ceny ofert</h3><div id="tr-ok-strat" class="tr-opis"></div></div>
+      <div class="tr-ok-msg" id="tr-ok-msg" hidden></div>
+      <div id="tr-ok-ceny"><p class="tr-sz">Wczytuję oferty z repricera…</p></div>`;
     t.style.display = 'flex';
     if (wyk) rysujWykresProduktu(id);
     document.getElementById('tr-ok-wykres').onclick = () => przelaczWykres(id);

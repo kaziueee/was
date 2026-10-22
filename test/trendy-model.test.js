@@ -74,3 +74,13 @@ test('model działa poza przeglądarką — filtry też', () => {
   const lista = [wiersz({ id: 1 }), wiersz({ id: 2, a: { s: 0, n: 0, z: 0 } })];
   assert.deepStrictEqual(filtruj(lista, 'wszystkie', { prog: 30, baza: 1 }).map((w) => w.id), [1]);
 });
+
+test('bez stanu: pewne zero z GT przy sprzedaży w oknie — oznaczenie towaru, nie wierszy', () => {
+  const of = [oferta({ ilosc: 0, aktywna: 0 }), oferta({ id: 8, ilosc: 0, tylko_odczyt: true })];
+  const o = oznaczenia(wiersz({ dost: null, dni: null }), of, { razemGt: 0 }).find((x) => x.kod === 'bez_stanu');
+  assert.ok(o);
+  assert.equal(o.produkt, true);
+  assert.deepStrictEqual(o.oferty, [7], 'tylko kanały, na których da się coś ustawić');
+  assert.ok(!kody(oznaczenia(wiersz({ dost: null }), of, { razemGt: null })).includes('bez_stanu'), 'GT nie odpowiada = nie wiemy, nie zero');
+  assert.ok(!kody(oznaczenia(wiersz({ a: { s: 0, n: 0, z: 0 } }), of, { razemGt: 0 })).includes('bez_stanu'), 'bez sprzedaży w oknie — nic pilnego');
+});

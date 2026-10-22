@@ -8,8 +8,14 @@
 //   wyslij(oferta, cena) → { ok, cena, blad } — oferta = wiersz `oferty`, cena brutto w walucie rynku;
 //                          odmowa platformy to wynik, nie wyjątek
 //   propagacja           — dla ekranu: kiedy nowa cena będzie widoczna na platformie
+//   tylkoAktywne         — cenę zmienimy wyłącznie na ofercie aktywnej (`oferty.aktywna = 1`)
 // Nowa platforma = nowy wpis tutaj. Trasa i ekran pytają `obslugiwana()`, więc kanał bez wpisu po prostu
 // nie dostaje pola ręcznej ceny.
+//
+// Oferty nieaktywne (stan 0 — eMAG, Empik i Kaufland wyłączają wtedy ofertę; karta produktu w Trendach): Amazon, eMAG,
+// Kaufland i Empik dostają WYŁĄCZNIE cenę (purchasable_offer / id + sale_price / listing_price / linia PRI01), więc
+// zmiana nie wznawia oferty ani nie rusza stanu. Allegro trzyma w bazie tylko oferty aktywne, a zakończonej nie
+// pobierzemy (`ofertaPoId` szuka wśród aktywnych) — stąd tylkoAktywne.
 
 const amazon = require('./amazon');
 const emag = require('./emag');
@@ -53,6 +59,7 @@ const PLATFORMY = {
       if (!s) return { ok: false, blad: `Allegro ${o.rynek}: oferty ${o.asin} nie ma wśród aktywnych` };
       return allegro.ustawCene(s, cena);
     },
+    tylkoAktywne: true,
     // Test 18.10 (HASG1435): PATCH 200 po 0,2 s, nowa cena w API po ~3 s; CZ/SK/HU idą za nią same (reguły kursowe).
     propagacja: 'Allegro zmienia cenę od razu (kilka sekund); ceny CZ/SK/HU przeliczają się same',
   },
@@ -76,7 +83,8 @@ const PLATFORMY = {
   },
 };
 
-const obslugiwana = (platforma) => !!PLATFORMY[platforma];
+// aktywna = false — oferta nieaktywna (zakończona, stan 0); brak = jak dotąd (ekrany pokazujące tylko aktywne)
+const obslugiwana = (platforma, aktywna = true) => !!PLATFORMY[platforma] && (aktywna || !PLATFORMY[platforma].tylkoAktywne);
 const propagacja = (platforma) => PLATFORMY[platforma]?.propagacja || null;
 
 async function wyslij(o, cena) {

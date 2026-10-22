@@ -445,7 +445,7 @@
     return `${cenyLiczba(g.min)}${zr(g.zrodlo_min)} – ${cenyLiczba(g.max)}${zr(g.zrodlo_max)} ${wal}`;
   }
   function edycjaHtml(o, wal) {
-    if (!o.reczna_cena) return `<span class="tr-sz">${o.tylko_odczyt ? 'tylko odczyt' : `z ekranu jeszcze niedostępne (${esc(cenyKanal(o))})`}</span>`;
+    if (!o.reczna_cena) return `<span class="tr-sz">${o.aktywna === 0 ? 'oferta zakończona — cenę zmienisz po jej wznowieniu' : o.tylko_odczyt ? 'tylko odczyt' : `z ekranu jeszcze niedostępne (${esc(cenyKanal(o))})`}</span>`;
     return `<form class="tr-cena" data-of="${o.id}" novalidate>
       <input name="cena" class="tr-pole" inputmode="decimal" autocomplete="off" placeholder="${o.cena != null ? cenyLiczba(o.cena) : 'cena'}" aria-label="Nowa cena ${esc(cenyKanal(o))} ${esc(o.sku)}"> ${wal}
       <span class="tr-sz" aria-hidden="true">⇄</span>
@@ -459,23 +459,39 @@
   function cenyHtml(d, kan, ozn) {
     const sprz = new Map();
     for (const k of kan) { const x = sprz.get(k.klucz) || { s: 0, bs: 0 }; x.s += k.s; x.bs += k.bs; sprz.set(k.klucz, x); }
+    const sp = (k) => sprz.get(k) || { s: 0, bs: 0 };
     const grupy = new Map();
     for (const o of d.oferty) (grupy.get(o.kolumna) || grupy.set(o.kolumna, []).get(o.kolumna)).push(o);
-    const sp = (k) => sprz.get(k) || { s: 0, bs: 0 };
-    const kolejne = [...grupy.entries()].sort(([a, x], [b, y]) => sp(b).s - sp(a).s || cenyKanal(x[0]).localeCompare(cenyKanal(y[0])));
+    // Kanał repricera, na którym towar się sprzedawał, a oferty w repricerze nie ma — wiersz z powodem zamiast ciszy.
+    const kol = new Map((d.kolumny || []).map((k) => [k.klucz, k]));
+    for (const [k, x] of sprz) if (kol.has(k) && !grupy.has(k) && x.s + x.bs > 0) grupy.set(k, []);
+    const nazwa = (k, lista) => (lista[0] ? cenyKanal(lista[0]) : kol.get(k)?.nazwa || k);
+    const kolejne = [...grupy.entries()].sort(([a, x], [b, y]) => sp(b).s - sp(a).s || nazwa(a, x).localeCompare(nazwa(b, y)));
     const podsw = new Set(ozn.filter((x) => x.waga === 'uwaga' && !x.produkt).flatMap((x) => x.oferty));
-    const wiersze = kolejne.map(([kol, lista]) => {
-      lista.sort((a, b) => (b.ilosc > 0) - (a.ilosc > 0) || b.auto - a.auto || a.id - b.id);
-      const s = sp(kol);
+    const sprzedazHtml = (k, n) => {
+      const s = sp(k);
+      return `<td class="tr-kan" rowspan="${n}"><b>${esc(nazwa(k, grupy.get(k)))}</b><div>${szt(s.s)} szt.${s.bs > 0 ? ` ${zmiana(s.s, s.bs)}` : s.s > 0 ? ' <span class="tr-up">nowy</span>' : ''}</div></td>`;
+    };
+    const wiersze = kolejne.map(([k, lista]) => {
+      if (!lista.length) {
+        const powod = kol.get(k)?.platforma === 'allegro'
+          ? 'repricer pobiera z Allegro tylko aktywne oferty — ta jest zakończona (przy stanie 0 Allegro kończy ofertę) albo nie ma SKU powiązanego z towarem GT; cenę i automat ustawisz po jej wznowieniu'
+          : 'oferta niepowiązana z towarem GT albo usunięta z platformy — sprawdź w Ceny → Do powiązania';
+        return `<tr class="tr-of-brak">${sprzedazHtml(k, 1)}<td colspan="7" class="tr-sz">Oferty nie ma w repricerze: ${esc(powod)}.</td></tr>`;
+      }
+      lista.sort((a, b) => b.aktywna - a.aktywna || (b.ilosc > 0) - (a.ilosc > 0) || b.auto - a.auto || a.id - b.id);
       return lista.map((o, j) => {
-        const wal = cenyWaluta(o);
+        const wal = cenyWaluta(o), zeStanem = o.ilosc > 0 && o.aktywna !== 0;
         const oferta = o.linki?.produkt ? `<a href="${esc(o.linki.produkt)}" target="_blank" rel="noopener" title="Oferta na platformie">${esc(o.sku)} ↗</a>` : esc(o.sku);
         const cena = o.cena == null ? '<span class="tr-sz">—</span>'
           : `<b>${cenyLiczba(o.cena)} ${wal}</b>${o.czeka ? `<div class="tr-sz">wysłano ${esc(cenyGodzina(o.dec_czas))} — czeka na potwierdzenie</div>` : ''}${o.wysylka ? `<div class="tr-sz">+ wysyłka ${cenyLiczba(o.wysylka)}</div>` : ''}`;
-        const auto = o.tylko_odczyt ? '<span class="tr-sz">tylko odczyt</span>' : o.ilosc > 0 ? `<span data-auto="${o.id}"></span>${o.wysylka_wstrzymana ? ' <span title="Automat liczy, ale wysyłka cen na ten kanał jest wstrzymana">⏸</span>' : ''}` : '<span class="tr-sz">bez stanu</span>';
-        return `<tr class="${o.ilosc > 0 ? '' : 'tr-of-bez'}${podsw.has(o.id) ? ' tr-of-uwaga' : ''}">
-          ${j === 0 ? `<td class="tr-kan" rowspan="${lista.length}"><b>${esc(cenyKanal(o))}</b><div>${szt(s.s)} szt.${s.bs > 0 ? ` ${zmiana(s.s, s.bs)}` : s.s > 0 ? ' <span class="tr-up">nowy</span>' : ''}</div></td>` : ''}
-          <td>${oferta}<div class="tr-sz">stan ${o.ilosc}${o.auto ? '' : ' · ręczna'}</div>${o.blokada ? `<div class="tr-down" title="${esc(o.blokada)}">⚠ wstrzymana przez platformę</div>` : ''}</td>
+        const auto = o.tylko_odczyt ? '<span class="tr-sz">tylko odczyt</span>'
+          : `<span data-auto="${o.id}"></span>${o.wysylka_wstrzymana ? ' <span title="Automat liczy, ale wysyłka cen na ten kanał jest wstrzymana">⏸</span>' : ''}${zeStanem ? '' : '<div class="tr-sz">bez stanu — zadziała po dostawie</div>'}`;
+        // zaznaczone domyślnie: oferty ze stanem, na których coś da się zrobić — reszta jednym kliknięciem „wszystkie”
+        const zazn = `<input type="checkbox" class="tr-zazn" data-zazn="${o.id}" ${zeStanem && !o.tylko_odczyt ? 'checked' : ''} aria-label="Zaznacz ${esc(cenyKanal(o))} ${esc(o.sku)}">`;
+        return `<tr class="${zeStanem ? '' : 'tr-of-bez'}${podsw.has(o.id) ? ' tr-of-uwaga' : ''}">
+          ${j === 0 ? sprzedazHtml(k, lista.length) : ''}
+          <td><label class="tr-oferta">${zazn}<span>${oferta}<span class="tr-sz tr-blok">${o.aktywna === 0 ? '<span class="tr-znak">nieaktywna</span> ' : ''}stan ${o.ilosc}${o.auto ? ' · automat' : ' · ręczna'}</span>${o.blokada ? `<span class="tr-down tr-blok" title="${esc(o.blokada)}">⚠ wstrzymana przez platformę</span>` : ''}</span></label></td>
           <td class="n">${cena}</td>
           <td>${konkurencjaHtml(o, wal)}</td>
           <td class="n ${o.zysk != null && o.zysk < 0 ? 'tr-down' : ''}">${o.marza != null ? pct(o.marza) : '—'}<div class="tr-sz">${zl2(o.zysk)}</div></td>
@@ -484,7 +500,84 @@
           <td>${edycjaHtml(o, wal)}</td></tr>`;
       }).join('');
     }).join('');
-    return `<table class="tr-tab tr-ceny"><tr><th>Kanał · sprzedaż ${st.okno} dni</th><th>Oferta</th><th class="n">Cena teraz</th><th>Konkurencja</th><th class="n">Marża · zysk/szt.</th><th>Automat</th><th class="n">Granice automatu</th><th>Nowa cena ⇄ marża</th></tr>${wiersze}</table>`;
+    if (!wiersze) return '<p class="tr-sz">Brak ofert tego towaru w repricerze — ceny zmienisz na platformie.</p>';
+    const grupowe = d.oferty.length ? `<div class="tr-grupowe">
+        <span>Zaznaczone <b data-ile></b> z ${d.oferty.length}</span>
+        <span class="tr-sz">zaznacz: <button type="button" class="tr-link" data-zaznacz="stan">ze stanem</button> · <button type="button" class="tr-link" data-zaznacz="wszystkie">wszystkie</button> · <button type="button" class="tr-link" data-zaznacz="zadne">żadne</button></span>
+        <span class="tr-grupowe-akcje">Cena <button type="button" class="btn btn-small" data-procent="5">+5%</button><button type="button" class="btn btn-small" data-procent="10">+10%</button></span>
+        <span class="tr-grupowe-akcje">Automat <button type="button" class="btn btn-small" data-automat="1">włącz</button><button type="button" class="btn btn-small" data-automat="0">wyłącz</button></span>
+      </div>` : '';
+    return `${grupowe}<table class="tr-tab tr-ceny"><tr><th>Kanał · sprzedaż ${st.okno} dni</th><th>Oferta</th><th class="n">Cena teraz</th><th>Konkurencja</th><th class="n">Marża · zysk/szt.</th><th>Automat</th><th class="n">Granice automatu</th><th>Nowa cena ⇄ marża</th></tr>${wiersze}</table>`;
+  }
+
+  // ---------- akcje grupowe na zaznaczonych ofertach ----------
+  // „+5% / +10%” liczy i sprawdza backend (POST /api/ceny/cena/hurtem: najpierw podgląd, potem wysyłka tych samych
+  // cen) — te same reguły co pojedyncza ręczna cena: ostrzeżenia do potwierdzenia, ręczna cena wyłącza automat.
+  const zaznaczone = (d) => d.oferty.filter((o) => document.querySelector(`#tr-ok-ceny [data-zazn="${o.id}"]`)?.checked);
+  function podepnijGrupowe(d, id, w) {
+    const box = document.getElementById('tr-ok-ceny'), pasek = box.querySelector('.tr-grupowe');
+    if (!pasek) return;
+    const licz = () => { pasek.querySelector('[data-ile]').textContent = zaznaczone(d).length; };
+    licz();
+    box.querySelectorAll('[data-zazn]').forEach((c) => c.addEventListener('change', licz));
+    pasek.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.zaznacz) {
+        for (const o of d.oferty) {
+          const c = box.querySelector(`[data-zazn="${o.id}"]`);
+          if (c) c.checked = b.dataset.zaznacz === 'wszystkie' || (b.dataset.zaznacz === 'stan' && o.ilosc > 0 && o.aktywna !== 0 && !o.tylko_odczyt);
+        }
+        licz();
+      } else if (b.dataset.procent) cenaGrupowa(d, id, w, Number(b.dataset.procent), b);
+      else if (b.dataset.automat) automatGrupowy(d, id, w, b.dataset.automat === '1');
+    });
+  }
+
+  async function cenaGrupowa(d, id, w, procent, btn) {
+    const zazn = zaznaczone(d), zCena = zazn.filter((o) => o.reczna_cena);
+    if (!zCena.length) {
+      komunikatKarty(zazn.length ? 'Na zaznaczonych ofertach ceny z ekranu nie zmienimy (tylko odczyt albo zakończona oferta Allegro).' : 'Zaznacz oferty, na których zmienić cenę.', 'blad');
+      return;
+    }
+    btn.disabled = true;
+    try {
+      const pod = await cenyPost('/api/ceny/cena/hurtem', { zmiany: zCena.map((o) => ({ oferta_id: o.id, procent })), podglad: true });
+      const ok = pod.pozycje.filter((p) => !p.blad), zle = pod.pozycje.filter((p) => p.blad);
+      const pomin = zazn.length - zCena.length;
+      if (!ok.length) { komunikatKarty(`Nic do wysłania: ${zle.map((p) => `${p.kanal_nazwa || ''} ${p.sku || p.oferta_id} — ${p.blad}`).join('; ')}`, 'blad'); return; }
+      const ostrz = ok.flatMap((p) => p.ostrzezenia.map((x) => ({ ...x, tekst: `${p.kanal_nazwa} ${p.sku}: ${x.tekst}` })));
+      const nAuto = ok.filter((p) => p.auto).length;
+      const dwa = (a, b, f) => `${a != null ? f(a) : '—'} → <b>${b != null ? f(b) : '—'}</b>`;
+      const tak = await cenyOknoPotwierdzenia({
+        tytul: `+${procent}% na ${ok.length} ${ok.length === 1 ? 'ofercie' : 'ofertach'} ${w.sym}?`,
+        tresc: `<table class="tabela mca-tabela"><thead><tr><th>Oferta</th><th>Cena</th><th>Marża</th><th>Zysk/szt.</th></tr></thead><tbody>
+            ${ok.map((p) => `<tr class="${p.ostrzezenia.length ? 'mca-podmin' : ''}"><td><b>${esc(p.kanal_nazwa)}</b> <span class="ceny-sku">${esc(p.sku)}</span>${p.auto ? ' <span class="hint">automat</span>' : ''}</td>
+              <td>${dwa(p.teraz, p.cena, (x) => `${cenyLiczba(x)} ${esc(p.waluta)}`)}</td><td>${dwa(p.marza_teraz, p.marza, (x) => `${cenyLiczba(x, 1)}%`)}</td><td>${dwa(p.zysk_teraz, p.zysk, (x) => `${cenyLiczba(x)} zł`)}</td></tr>`).join('')}
+            ${zle.map((p) => `<tr><td><b>${esc(p.kanal_nazwa || '')}</b> <span class="ceny-sku">${esc(p.sku || p.oferta_id)}</span></td><td colspan="3" class="hint">pominięta — ${esc(p.blad)}</td></tr>`).join('')}
+          </tbody></table>${pomin ? `<p class="hint">Pominięte bez pytania: ${pomin} zaznaczonych ofert, na których ceny z ekranu nie zmienimy.</p>` : ''}`,
+        ostrzezenia: ostrz,
+        uwaga: `${nAuto ? `<b>Automat zostanie wyłączony na ${nAuto} ${nAuto === 1 ? 'ofercie' : 'ofertach'}</b> — ręczna cena wyłącza automat; włączysz go z powrotem przyciskiem „Automat włącz”. ` : ''}Ceny idą od razu na platformy, po kolei. Procent od ceny teraz, do grosza.`,
+        przycisk: `Wyślij ${ok.length} ${ok.length === 1 ? 'cenę' : ok.length < 5 ? 'ceny' : 'cen'}`,
+        szeroki: true,
+      });
+      if (!tak) return;
+      komunikatKarty(`Wysyłam ${ok.length}…`, 'info');
+      const r = await cenyPost('/api/ceny/cena/hurtem', { zmiany: ok.map((p) => ({ oferta_id: p.oferta_id, cena: p.cena })), ...(ostrz.length ? { potwierdz: true } : {}) });
+      const wysl = r.pozycje.filter((p) => p.wyslano), odrz = r.pozycje.filter((p) => !p.wyslano), wyl = wysl.filter((p) => p.automat_wylaczony).length;
+      komunikatKarty(`+${procent}%: wysłano ${wysl.length} z ${r.pozycje.length}.${wyl ? ` Automat wyłączony na ${wyl}.` : ''}`
+        + `${odrz.length ? ` Nie wysłano: ${odrz.map((p) => `${p.kanal_nazwa || ''} ${p.sku || p.oferta_id} — ${p.blad}`).join('; ')}.` : ''} Potwierdzenie z platform po kilku minutach.`, odrz.length ? 'blad' : 'ok');
+      wczytajCeny(id, w);
+    } catch (e) { komunikatKarty(e.message, 'blad'); }
+    finally { btn.disabled = false; }
+  }
+
+  function automatGrupowy(d, id, w, wlacz) {
+    const zazn = zaznaczone(d).filter((o) => !o.tylko_odczyt);
+    if (!zazn.length) { komunikatKarty('Zaznacz oferty (kanały tylko do odczytu automatu nie mają).', 'blad'); return; }
+    const doZmiany = zazn.filter((o) => !!o.auto !== wlacz);
+    if (!doZmiany.length) { komunikatKarty(`Automat jest już ${wlacz ? 'włączony' : 'wyłączony'} na zaznaczonych ofertach.`, 'info'); return; }
+    cenyUstawAutomat(doZmiany, wlacz, { komunikat: komunikatKarty, poZmianie: () => wczytajCeny(id, w) });
   }
 
   // Pole ceny ⇄ pole marży: wpisanie jednego liczy drugie w backendzie (podgląd / cena przy marży), więc obie
@@ -543,7 +636,8 @@
       document.getElementById('tr-ok-ozn').innerHTML = ozn.map((x) => `<div class="tr-ozn ${x.waga}">${x.waga === 'uwaga' ? '⚠' : '•'} ${esc(x.tekst)}</div>`).join('');
     };
     let d;
-    try { d = await api(`/api/ceny/towar/${id}`); } catch (e) {
+    // nieaktywne=1: także oferty bez stanu, które platforma wyłączyła — na nich też da się włączyć automat i zmienić cenę
+    try { d = await api(`/api/ceny/towar/${id}?nieaktywne=1`); } catch (e) {
       if (moj !== cenyNr || !otwarty(id)) return;
       box.innerHTML = `<p class="tr-sz">${e.status === 404 ? 'Brak ofert tego towaru w repricerze — ceny zmienisz na platformie.' : `Repricer nie odpowiada: ${esc(e.message)}`}</p>`;
       pokazOznaczenia(TrendyModel.oznaczenia(w, []));       // „kończy się” dotyczy towaru, nie ofert
@@ -552,15 +646,16 @@
     }
     if (moj !== cenyNr || !otwarty(id)) return;
     d.oferty = d.oferty.map(cenyPoWyslaniu);
-    const ozn = TrendyModel.oznaczenia(w, d.oferty);
+    const ozn = TrendyModel.oznaczenia(w, d.oferty, { razemGt: d.stan_gt?.razem ?? null });
     pokazOznaczenia(ozn);
-    box.innerHTML = cenyHtml(d, kan, ozn) + `<p class="tr-sz" style="margin:6px 0 0">${d.gt_ok ? `Koszt zakupu ${zl2(d.gt.koszt)} (średnia z dostaw) — marża i zysk po kosztach kanału, ten sam kalkulator co minimum automatu.` : '<span class="tr-down">Subiekt nie odpowiada — bez kosztu nie policzymy marży ani minimum.</span>'} Ręczna cena idzie od razu na platformę i wyłącza automat na tej ofercie.</p>`;
+    box.innerHTML = cenyHtml(d, kan, ozn) + (d.oferty.length ? `<p class="tr-sz" style="margin:6px 0 0">${d.gt_ok ? `Koszt zakupu ${zl2(d.gt.koszt)} (średnia z dostaw) — marża i zysk po kosztach kanału, ten sam kalkulator co minimum automatu.` : '<span class="tr-down">Subiekt nie odpowiada — bez kosztu nie policzymy marży ani minimum.</span>'} Ręczna cena idzie od razu na platformę i wyłącza automat na tej ofercie.</p>` : '');
     const opcje = { komunikat: komunikatKarty, poZmianie: () => wczytajCeny(id, w) };
     box.querySelectorAll('[data-auto]').forEach((slot) => {
       const o = d.oferty.find((x) => String(x.id) === slot.dataset.auto);
       slot.appendChild(cenyPrzelacznikOferty(o, cenyKanal(o), opcje));
     });
     box.querySelectorAll('form.tr-cena').forEach((f) => podepnijCene(f, d.oferty.find((x) => String(x.id) === f.dataset.of), id, w));
+    podepnijGrupowe(d, id, w);
     const linki = {};
     for (const o of d.oferty) if (o.linki?.produkt) (linki[o.kolumna] ||= []).push({ produkt: o.linki.produkt, oferty: o.linki.oferty || null, sku: o.sku, auto: !!o.auto });
     linkiKanalow(kan, linki);

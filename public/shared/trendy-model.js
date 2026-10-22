@@ -61,11 +61,12 @@
   // 2026-10-22). w — wiersz z wiersze(); oferty — GET /api/ceny/towar/:tw_id `oferty` z ceną już po wysłaniu
   // (jak cenyPoWyslaniu w app.js): { id, kanal_nazwa, ilosc, auto, tylko_odczyt, bez_konkurencji, cena, zysk,
   // bb_nasz, bb_cena, bb_nasza_inna, blokada, granice: { min } }.
+  // razemGt — stan Razem z GT na żywo (GET /api/ceny/towar `stan_gt.razem`; null = nie wiemy).
   // → [{ kod, waga: 'uwaga' | 'info', tekst, oferty: [id], produkt }] — `oferty` = których ofert dotyczy (podświetlenie
   // wiersza; później cel akcji grupowej). `produkt: true` = oznaczenie całego towaru (kończy się / zalega) — dotyczy
   // wszystkich ofert, więc ekran go nie podświetla w wierszach.
   const KONCZY_DNI = 14, ZALEGA_DNI = 120, ZALEGA_SPADEK = -30;
-  function oznaczenia(w, oferty = []) {
+  function oznaczenia(w, oferty = [], { razemGt = null } = {}) {
     const out = [];
     const nazwy = (lista) => [...new Set(lista.map((o) => o.kanal_nazwa))].join(', ');
     const dodaj = (kod, waga, tekst, lista = [], produkt = false) => out.push({ kod, waga, tekst, oferty: lista.map((o) => o.id), produkt });
@@ -75,6 +76,12 @@
     if (w.dost > 0 && w.dni != null && w.dni < KONCZY_DNI && w.a.s > 0 && w.a.s >= w.b.s) {
       dodaj('konczy', 'uwaga', `Kończy się: dostępne ${w.dost} szt. na ~${w.dni} dni, sprzedaż ${w.b.s > 0 ? `${w.a.s} szt. vs ${w.b.s} przed` : `${w.a.s} szt., wcześniej 0`} — rozważ podniesienie cen`,
         zeStanem.filter((o) => !o.tylko_odczyt), true);
+    }
+    // Sprzedawał się, a towaru nie ma — oferty stoją bez stanu (eMAG, Empik, Kaufland je wyłączają, Allegro kończy).
+    // Cenę i automat ustawisz już teraz; zadziałają po dostawie. Tylko pewne zero z GT, nie „nie wiemy”.
+    if (razemGt === 0 && w.a.s > 0) {
+      dodaj('bez_stanu', 'uwaga', `Brak towaru (Razem 0 w GT), a w oknie sprzedało się ${w.a.s} szt. — ustaw cenę albo włącz automat teraz, zadziałają po dostawie`,
+        oferty.filter((o) => !o.tylko_odczyt), true);
     }
     if (w.dni != null && w.dni > ZALEGA_DNI && w.dp != null && w.dp <= ZALEGA_SPADEK) {
       dodaj('zalega', 'info', `Zalega: zapas na ~${w.dni} dni, przychód ${Math.round(w.dp)}% — rozważ obniżkę albo strategię wyprzedaży`, zeStanem, true);

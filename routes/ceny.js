@@ -22,6 +22,8 @@
 //   GET  /api/ceny/cena/dla-marzy?oferta_id=&marza=                   cena przy wpisanej marży (kalkulator) + to samo co podgląd
 //   POST /api/ceny/cena     { oferta_id, cena, potwierdz }             ręczna cena → platforma (pricing/reczna-cena.js);
 //        wyłącza automat na tej ofercie (decyzja usera 2026-10-16); z ostrzeżeniami tylko z potwierdz = true
+//   POST /api/ceny/cena/hurtem { zmiany: [{ oferta_id, cena | procent }], podglad, potwierdz }   to samo dla kilku ofert
+//        naraz (karta produktu w Trendach: +5% / +10%); podglad = bez wysyłki
 //   POST /api/ceny/granice  { oferta_id, min, max, potwierdz }         ręczne min/max repricera (puste = kalkulator)
 //   GET  /api/ceny/powiazania                                          oferty do powiązania (bez GT / po obcięciu) + ręczne
 //   POST /api/ceny/powiaz        { sku, kod }                          powiąż SKU z towarem GT (symbol/EAN)
@@ -98,7 +100,7 @@ const zKanalem = (o) => {
   }
   return { ...o, kolumna: kluczKolumny(o.platforma, o.rynek), kanal_nazwa: k.nazwa || `${o.platforma} ${o.rynek}`,
     waluta: k.waluta || '', tylko_odczyt: !!k.tylkoOdczyt, bez_konkurencji: !!k.bezKonkurencji, linki: linki(o),
-    reczna_cena: reczna.obslugiwana(o.platforma), wysylka_wstrzymana: wysylkaWstrzymana(k),
+    reczna_cena: reczna.obslugiwana(o.platforma, o.aktywna !== 0), wysylka_wstrzymana: wysylkaWstrzymana(k),
     // Allegro: ustawienia sprawdzania konkurencji (Niezbędnik) i ostatni wynik dla EAN-u towaru.
     ...(o.platforma === 'allegro' ? { konkurencja: {
       co_h: konkurencja.coH(o.konk_co_h), przebicie: konkurencja.przebicie(o.konk_przebicie), wlasne: o.konk_co_h != null || o.konk_przebicie != null,
@@ -115,7 +117,7 @@ const zKanalem = (o) => {
 
 // Ostatnia obserwacja i ostatnia decyzja każdej oferty — jedno zapytanie, korelowane po max(id).
 const SQL_OFERTY = `
-  SELECT o.id, o.platforma, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.dopasowanie, o.genius, o.blokada,
+  SELECT o.id, o.platforma, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.aktywna, o.dopasowanie, o.genius, o.blokada,
          o.prowizja, o.min_reczne, o.max_reczne, o.kategoria, o.kategoria_nazwa, o.ean, o.ean_zrodlo, o.konk_co_h, o.konk_przebicie,
          b.czas AS obs_czas, COALESCE(b.widziana, b.czas) AS obs_widziana, b.cena, b.wysylka, b.bb_nasz, b.bb_cena, b.bb_fba, b.najtansza_inna, b.ofert, b.bb_nasza_inna,
          d.kod, d.cena_nowa, d.powod, d.min, d.max, d.zysk, d.marza, d.zysk_nowa,
@@ -304,10 +306,18 @@ router.get('/pulpit', asyncH(async (req, res) => {
 
 // Karta SKU — wszystkie oferty towaru (każdy rynek, także bez stanu i z dopiskiem -1), ostatnia
 // obserwacja i decyzja, historia do wykresu. Koszt i waga na żywo z GT; GT padnięte = karta bez nich.
+// ?nieaktywne=1 (karta produktu w Sprzedaż → Trendy) — także oferty, które zniknęły z listy platformy (`aktywna = 0`:
+// najczęściej stan 0 — eMAG, Empik i Kaufland wyłączają wtedy ofertę), bo i na nich da się włączyć automat (zadziała,
+// gdy wróci stan) i zmienić cenę; towar bez żadnej oferty = pusta lista zamiast 404, plus kanały repricera, żeby
+// ekran mógł powiedzieć, gdzie oferty nie ma.
+const SQL_OFERTY_WSZYSTKIE = SQL_OFERTY.replace('AND o.ilosc > 0', '').replace('o.aktywna = 1 AND ', '');
 router.get('/towar/:tw_id', asyncH(async (req, res) => {
   const twId = Number(req.params.tw_id);
-  const oferty = db.prepare(SQL_OFERTY.replace('AND o.ilosc > 0', '') + ' AND o.tw_id = ? ORDER BY o.platforma, o.rynek, o.ilosc DESC').all(twId);
-  if (!oferty.length) return res.status(404).json({ blad: 'Brak ofert dla tego towaru' });
+  const nieaktywne = req.query.nieaktywne === '1';
+  const oferty = nieaktywne
+    ? db.prepare(SQL_OFERTY_WSZYSTKIE + ' AND o.tw_id = ? ORDER BY o.aktywna DESC, o.platforma, o.rynek, o.ilosc DESC').all(twId)
+    : db.prepare(SQL_OFERTY.replace('AND o.ilosc > 0', '') + ' AND o.tw_id = ? ORDER BY o.platforma, o.rynek, o.ilosc DESC').all(twId);
+  if (!oferty.length && !nieaktywne) return res.status(404).json({ blad: 'Brak ofert dla tego towaru' });
   const decyzje = db.prepare(`SELECT czas, cena_przed, cena_nowa, cena_cel, zysk_cel, min, max, kod, powod, wyslano, blad, auto, zysk, zysk_nowa
                                 FROM decyzje WHERE oferta_id = ? ORDER BY id DESC LIMIT 30`);
   const obserwacje = db.prepare(`SELECT czas, cena, wysylka, bb_nasz, bb_cena, bb_fba, najtansza_inna
@@ -329,8 +339,9 @@ router.get('/towar/:tw_id', asyncH(async (req, res) => {
     strategia: strat.przypisanie ? { id: strat.przypisanie.strategia.id, nazwa: strat.przypisanie.strategia.nazwa, typ: strat.przypisanie.strategia.typ,
       opis: opisStrategii(strat.przypisanie.strategia), aktywna: strat.przypisanie.strategia.aktywna, dziala: !!strat.aktywna,
       do: strat.przypisanie.do, kto: strat.przypisanie.kto, czas: strat.przypisanie.czas } : null,
-    symbol: oferty[0].symbol_gt,
-    nazwa: oferty[0].nazwa,
+    symbol: oferty[0]?.symbol_gt ?? null,
+    nazwa: oferty[0]?.nazwa ?? null,
+    ...(nieaktywne ? { kolumny: KOLUMNY.map((k) => ({ klucz: k.klucz, platforma: k.platforma, nazwa: k.nazwa })) } : {}),
     gt_ok: !!gt,
     gt,
     przebieg: stan.get('przebieg'),
@@ -434,8 +445,10 @@ const opisPasa = ({ pas, kalk }) => ({
   strategia: kalk?.strategia ?? null, bazowy: kalk?.bazowy ?? null, referencja: kalk?.referencja ?? null,
 });
 
+// Także oferty nieaktywne (stan 0) — karta w Trendach zmienia na nich cenę; czego platforma nie pozwala, odmawia
+// pricing/reczna-cena.js (Allegro: zakończona oferta).
 const ofertaPoId = (id) => (Number.isInteger(Number(id))
-  ? db.prepare(SQL_OFERTY.replace('AND o.ilosc > 0', '') + ' AND o.id = ?').get(Number(id)) || null : null);
+  ? db.prepare(SQL_OFERTY_WSZYSTKIE + ' AND o.id = ?').get(Number(id)) || null : null);
 
 // Cena, którą oferta ma TERAZ: wysłana decyzja nowsza niż obserwacja = cena już poszła na platformę
 // (tak samo liczy ekran — cenyPoWyslaniu w public/desktop/app.js).
@@ -468,7 +481,7 @@ const podgladCeny = (o, r) => ({
   waluta: kolumna(o.platforma, o.rynek)?.waluta || '', sku: o.sku, auto: !!o.auto,
   cena: r.cena, zysk: r.ocena.zysk, marza: r.ocena.marza, ostrzezenia: r.ocena.ostrzezenia,
   teraz: r.teraz, zysk_teraz: r.przed?.zysk ?? null, marza_teraz: r.przed?.marza ?? null,
-  granice: opisPasa(r.p), gt_ok: r.gtOk, obslugiwana: reczna.obslugiwana(o.platforma), propagacja: reczna.propagacja(o.platforma),
+  granice: opisPasa(r.p), gt_ok: r.gtOk, obslugiwana: reczna.obslugiwana(o.platforma, !!o.aktywna), propagacja: reczna.propagacja(o.platforma),
 });
 
 router.get('/cena/podglad', asyncH(async (req, res) => {
@@ -531,11 +544,20 @@ router.post('/konkurencja', (req, res) => {
   res.json({ ok: true, co_h: konkurencja.coH(coH), przebicie: konkurencja.przebicie(przeb) });
 });
 
+// Czy na tej ofercie wolno zmienić cenę z ekranu — null = tak, inaczej powód (zasada 5: także dla zbiorczej zmiany).
+function odmowaRecznej(o) {
+  const kol = kluczKolumny(o.platforma, o.rynek);
+  if (!reczna.obslugiwana(o.platforma)) return `${kol}: ręczna zmiana ceny z ekranu jeszcze nieobsługiwana`;
+  if (!reczna.obslugiwana(o.platforma, !!o.aktywna)) return `${kolumna(o.platforma, o.rynek)?.nazwa || kol} ${o.sku}: oferta nieaktywna (zakończona) — cenę zmienisz po jej wznowieniu`;
+  return null;
+}
+
 router.post('/cena', asyncH(async (req, res) => {
   const o = ofertaPoId(req.body?.oferta_id);
   if (!o) return res.status(404).json({ blad: 'Nie ma takiej oferty' });
   const kol = kluczKolumny(o.platforma, o.rynek);
-  if (!reczna.obslugiwana(o.platforma)) return res.status(400).json({ blad: `${kol}: ręczna zmiana ceny z ekranu jeszcze nieobsługiwana` });
+  const odmowa = odmowaRecznej(o);
+  if (odmowa) return res.status(400).json({ blad: odmowa });
   const r = await ocenaRecznejCeny(o, req.body?.cena);
   if (r.blad) return res.status(400).json({ blad: r.blad });
   if (r.teraz != null && Math.abs(r.cena - r.teraz) < 0.005) return res.status(400).json({ blad: `${kol} ${o.sku}: ${granice.pl(r.cena)} to już obecna cena` });
@@ -543,8 +565,15 @@ router.post('/cena', asyncH(async (req, res) => {
   if (r.ocena.ostrzezenia.length && req.body?.potwierdz !== true) {
     return res.status(409).json({ blad: `Cena wymaga potwierdzenia: ${r.ocena.ostrzezenia.map((x) => x.tekst).join('; ')}`, ostrzezenia: r.ocena.ostrzezenia, potwierdzenie: true });
   }
+  const w = await wyslijRecznaCene(o, r, req.body.operator || null);   // operator wstrzyknięty z sesji (services/auth)
+  if (!w.ok) return res.status(502).json({ blad: `${kolumna(o.platforma, o.rynek)?.nazwa || kol} nie przyjął zmiany: ${w.blad}` });
+  res.json({ ok: true, cena: w.cena, automat_wylaczony: w.automat_wylaczony, propagacja: reczna.propagacja(o.platforma) });
+}));
 
-  const kto = req.body.operator || null;              // wstrzyknięty z sesji (services/auth)
+// Wysyłka ręcznej ceny jednej oferty (POST /cena i /cena/hurtem): automat, decyzja `korekta`, log zmian.
+// r = ocenaRecznejCeny (po walidacji). → { ok, cena, automat_wylaczony, blad } — odmowa platformy to wynik.
+async function wyslijRecznaCene(o, r, kto) {
+  const kol = kluczKolumny(o.platforma, o.rynek);
   // Ręczna cena wyłącza automat na tej ofercie (decyzja usera 2026-10-16). Wyłączamy PRZED wysłaniem:
   // worker sprawdza automat jeszcze raz tuż przed swoją wysyłką, więc przebieg, który właśnie trwa,
   // nie nadpisze ręcznej ceny. Odmowa platformy = nic się nie zmieniło, automat wraca.
@@ -565,8 +594,60 @@ router.post('/cena', asyncH(async (req, res) => {
     if (byl) log.run(kto, o.id, 'automat_wyl', `${kol} ${o.sku}: ręczna zmiana ceny`);
   }
   console.log(new Date().toISOString(), `[ceny] ręczna cena ${kol} ${o.sku}: ${r.teraz} → ${r.cena} ${w.ok ? 'WYSŁANO' : `ODRZUCONO: ${w.blad}`} (${kto || '?'})`);
-  if (!w.ok) return res.status(502).json({ blad: `${kolumna(o.platforma, o.rynek)?.nazwa || kol} nie przyjął zmiany: ${w.blad}` });
-  res.json({ ok: true, cena: w.cena ?? r.cena, automat_wylaczony: byl, propagacja: reczna.propagacja(o.platforma) });
+  return w.ok ? { ok: true, cena: w.cena ?? r.cena, automat_wylaczony: byl } : { ok: false, blad: w.blad || 'odrzucone', automat_wylaczony: false };
+}
+
+// Zbiorcza zmiana ceny (karta produktu w Sprzedaż → Trendy: „+5% / +10%” na zaznaczonych ofertach towaru).
+// zmiany: [{ oferta_id, cena } | { oferta_id, procent }] — procent liczony od ceny TERAZ (jak cenaTeraz), do grosza.
+// podglad: true → tylko pozycje z marżą, zyskiem i ostrzeżeniami, nic nie idzie na platformy. Bez podglądu: każda
+// pozycja przechodzi te same reguły co POST /cena (odmowaRecznej, ocenaRecznejCeny), ostrzeżenia którejkolwiek =
+// 409 bez `potwierdz`, a wysyłka idzie po kolei przez wyslijRecznaCene (ręczna cena wyłącza automat). Pozycja, której
+// nie da się zmienić, nie zatrzymuje reszty — wraca z `blad`.
+const HURTEM_MAX = 30, PROCENT_ZAKRES = [-50, 100];
+router.post('/cena/hurtem', asyncH(async (req, res) => {
+  const b = req.body || {};
+  const zmiany = Array.isArray(b.zmiany) ? b.zmiany : [];
+  if (!zmiany.length) return res.status(400).json({ blad: 'Podaj zmiany: [{ oferta_id, cena | procent }]' });
+  if (zmiany.length > HURTEM_MAX) return res.status(400).json({ blad: `Najwyżej ${HURTEM_MAX} ofert naraz` });
+  const pozycje = [], widziane = new Set();
+  for (const z of zmiany) {
+    const o = ofertaPoId(z?.oferta_id);
+    const p = { oferta_id: Number(z?.oferta_id) };
+    pozycje.push(p);
+    if (!o) { p.blad = 'nie ma takiej oferty'; continue; }
+    Object.assign(p, { kanal_nazwa: kolumna(o.platforma, o.rynek)?.nazwa || `${o.platforma} ${o.rynek}`, sku: o.sku,
+      waluta: kolumna(o.platforma, o.rynek)?.waluta || '', auto: !!o.auto });
+    if (widziane.has(o.id)) { p.blad = 'oferta podana dwa razy'; continue; }
+    widziane.add(o.id);
+    const odmowa = odmowaRecznej(o);
+    if (odmowa) { p.blad = odmowa; continue; }
+    let cenaWe = z.cena;
+    if (z.procent != null) {
+      const pr = granice.liczba(z.procent);
+      if (pr == null || !(pr >= PROCENT_ZAKRES[0] && pr <= PROCENT_ZAKRES[1])) { p.blad = `procent od ${PROCENT_ZAKRES[0]} do +${PROCENT_ZAKRES[1]}`; continue; }
+      const teraz = cenaTeraz(o);
+      if (!(teraz > 0)) { p.blad = 'brak obecnej ceny (oferta jeszcze nieobserwowana) — nie ma od czego liczyć procentu'; continue; }
+      cenaWe = Math.round(teraz * (1 + pr / 100) * 100) / 100;
+    }
+    const r = await ocenaRecznejCeny(o, cenaWe);
+    if (r.blad) { p.blad = r.blad; continue; }
+    if (r.teraz != null && Math.abs(r.cena - r.teraz) < 0.005) { p.blad = `${granice.pl(r.cena)} to już obecna cena`; continue; }
+    Object.assign(p, podgladCeny(o, r));
+    Object.defineProperty(p, 'wysylka', { value: { o, r }, enumerable: false });   // nie idzie do JSON-a
+  }
+  const doWyslania = pozycje.filter((p) => p.wysylka);
+  if (b.podglad === true) return res.json({ ok: true, podglad: true, pozycje });
+  if (!doWyslania.length) return res.status(400).json({ blad: 'Żadnej z tych cen nie da się wysłać', pozycje });
+  const ostrz = doWyslania.flatMap((p) => p.ostrzezenia.map((x) => ({ ...x, tekst: `${p.kanal_nazwa} ${p.sku}: ${x.tekst}` })));
+  if (ostrz.length && b.potwierdz !== true) {
+    return res.status(409).json({ blad: `Ceny wymagają potwierdzenia: ${ostrz.map((x) => x.tekst).join('; ')}`, ostrzezenia: ostrz, potwierdzenie: true, pozycje });
+  }
+  const kto = b.operator || null;
+  for (const p of doWyslania) {
+    const w = await wyslijRecznaCene(p.wysylka.o, p.wysylka.r, kto);
+    Object.assign(p, { wyslano: w.ok, automat_wylaczony: w.automat_wylaczony, ...(w.ok ? { cena: w.cena } : { blad: w.blad }) });
+  }
+  res.json({ ok: true, wyslane: doWyslania.filter((p) => p.wyslano).length, pozycje });
 }));
 
 router.post('/granice', asyncH(async (req, res) => {

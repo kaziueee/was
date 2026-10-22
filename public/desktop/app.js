@@ -5297,7 +5297,9 @@ async function cenyWyslijRecznaCene(o, cena, { komunikat = pokazKomunikat } = {}
 // Okno potwierdzenia ręcznej ceny / granic. Ostrzeżenia (pod minimum, strata, skok…) nie blokują, ale
 // przycisk działa dopiero po zaznaczeniu „rozumiem” — backend i tak odrzuci bez `potwierdz`.
 // Zwraca Promise<boolean>; Esc / klik w tło / Anuluj = false.
-function cenyOknoPotwierdzenia({ tytul, tresc, ostrzezenia = [], uwaga = '', przycisk }) {
+// szeroki — tabela kilku ofert (zbiorcza zmiana ceny na karcie produktu w Trendach).
+function cenyOknoPotwierdzenia({ tytul, tresc, ostrzezenia = [], uwaga = '', przycisk, szeroki = false }) {
+  el('modal-ceny-reczna').querySelector('.mcr-box').classList.toggle('mcr-szeroki', szeroki);
   el('mcr-tytul').textContent = tytul;
   el('mcr-tresc').innerHTML = tresc;
   const ostrz = el('mcr-ostrzezenia');

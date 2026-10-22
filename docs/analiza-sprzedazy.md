@@ -349,6 +349,19 @@ strategii na karcie — jest, choć własnych strategii jeszcze nie ma (lista pu
   **zalega** (> 120 dni zapasu i przychód ≤ −30%), pod minimum automatu, strata na sztuce, Buy Box u obcego, automat
   wyłączony, oferta wstrzymana przez platformę. Kończy się / zalega dotyczą towaru — nie podświetlają wierszy.
 
+**Akcje grupowe — zrobione 2026-10-22.** Zaznaczanie ofert (domyślnie: ze stanem, poza kanałami tylko do odczytu),
+**+5% / +10%** i **automat włącz / wyłącz** na zaznaczonych. Procent liczy backend od ceny teraz, do grosza
+(`POST /api/ceny/cena/hurtem` z `podglad: true`), okno pokazuje tabelę teraz → nowa z marżą i zyskiem, ostrzeżenia
+wymagają „rozumiem”, a wysyłka idzie z cenami z podglądu (to, co widać, jest tym, co pójdzie). Oferta bez obserwowanej
+ceny jest pomijana z powodem. Ręczna cena wyłącza automat — okno mówi, na ilu ofertach.
+
+**Przypadek PLA71316 (zgłoszenie usera 22.10):** sprzedawał się (2 szt. na Allegro, ze stratą), stan 0 — karta mówiła
+tylko „brak ofert w repricerze”. Powód: trasa karty brała wyłącznie oferty aktywne, a jedyna oferta w repricerze (Empik)
+była nieaktywna, Allegro zaś w ogóle nie ma jej w bazie (synchronizacja pobiera tylko aktywne oferty Allegro, a przy
+stanie 0 Allegro ofertę kończy). Teraz karta pokazuje oferty nieaktywne (automat i ręczna cena — eMAG, Empik, Kaufland,
+Amazon dostają wyłącznie cenę, więc zmiana nie wznawia oferty), oznaczenie „brak towaru” i wiersz „oferty nie ma w
+repricerze” z powodem dla kanału ze sprzedażą. Allegro zakończone — cenę ustawi się po wznowieniu oferty.
+
 Pierwotny plan (zostaje jako tło):
 
 - Listy „trendujące” i „tracące popularność”, 30 dni: sztuki i sprzedaż netto z % zmiany, przełącznik % / #

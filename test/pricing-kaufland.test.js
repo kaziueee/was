@@ -198,3 +198,13 @@ test('Kaufland: kalkulator liczy prowizję 13% od ceny z wysyłką BEZ VAT (rapo
   const ade = rynki.RYNKI.find((x) => x.nazwa === 'Amazon DE');
   assert.ok(rynki.policzRynek(30, ade, g).cena > rynki.policzRynek(30, ade, { ...g, vatProwizji: 0 }).cena);
 });
+
+// Karta produktu w Trendach pokazuje też oferty nieaktywne (stan 0). Cenę zmieniamy tam, gdzie platforma dostaje samą
+// cenę; zakończonej oferty Allegro nie pobierzemy, więc na niej ręcznej ceny nie ma (pricing/reczna-cena.js tylkoAktywne).
+test('ręczna cena na ofercie nieaktywnej: Amazon, eMAG, Kaufland, Empik tak — Allegro nie', () => {
+  const { obslugiwana } = require('../pricing/reczna-cena');
+  for (const p of ['amazon', 'emag', 'kaufland', 'empik']) assert.strictEqual(obslugiwana(p, false), true, p);
+  assert.strictEqual(obslugiwana('allegro', false), false);
+  assert.strictEqual(obslugiwana('allegro'), true, 'aktywna — jak dotąd');
+  assert.strictEqual(obslugiwana('nieznana', true), false);
+});

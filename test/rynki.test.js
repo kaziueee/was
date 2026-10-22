@@ -213,3 +213,17 @@ test('zamówienie bez wartości (same gratisy, brak pozycji) — błąd, nie dzi
   assert.ok(rynki.wycenaZamowienia(rynek('Allegro'), g, { pozycje: [] }).blad);
   assert.ok(rynki.wycenaZamowienia(rynek('Allegro'), g, { pozycje: [{ koszt: 5, cena: 0, szt: 1 }] }).blad);
 });
+
+// Amazon PL (2026-10-22): liczby z rozliczeń Amazon PL — prowizja 6,15% brutto, Easy Ship 4,29 zł za paczkę, dostawa
+// dla klienta darmowa. Towar 50 zł: koszty 50 + 4,29 + 3 = 57,29 zł, D = 0,8 / 1,23 − 0,0615 → 97,28 → ,99 w dół.
+test('Amazon PL: minimum przy marży 20% z prowizji 6,15% i stałej opłaty Easy Ship 4,29 zł', () => {
+  const r = rynek('Amazon PL');
+  assert.ok(r, 'brak Amazon PL w RYNKI');
+  assert.deepStrictEqual([r.waluta, r.vat, r.typ, r.wysKlient], ['PLN', 23, 'flat', 0]);
+  const w = rynki.policzRynek(50, r, g);
+  assert.strictEqual(w.cena, 96.99);
+  assert.ok(Math.abs(w.zysk - (96.99 * (1 / 1.23 - 0.0615) - 57.29)) < 1e-9, `zysk ${w.zysk}`);
+  assert.ok(w.marza > 19.5 && w.marza < 20, `marża ${w.marza}`);
+  // Easy Ship to stała opłata — waga (inaczej niż DHL na Amazon DE) minimum nie zmienia
+  assert.strictEqual(rynki.policzRynek(50, r, { ...g, waga: 25 }).cena, w.cena);
+});

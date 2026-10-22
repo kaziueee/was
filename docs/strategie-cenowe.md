@@ -80,8 +80,8 @@ przypisane towary.
 - **Dane:** FS z rynkiem i ceną (niżej). **Mamy dziś:** tak — dla kanałów BaseLinkera od dawna, dla Amazon
   DE/FR i Kauflandu od 26.08.2026 (rynek FS „marketplace” z kategorii dokumentu, od 2026-10-20), Amazon IT od
   14.10.
-- Amazon PL nie ma kalkulatora (`brak_pasa`), więc nie może być ani referencją, ani odbiorcą podłogi,
-  dopóki nie dostanie rynku w `config/rynki.js`.
+- Amazon PL do 2026-10-22 nie miał kalkulatora (`brak_pasa`), więc nie był ani referencją, ani odbiorcą podłogi.
+  Od tego dnia ma rynek „Amazon PL” w `config/rynki.js` (prowizja 6,15%, Easy Ship 4,29 zł) i liczy się jak pozostałe.
 
 ### Wyprzedaż
 
@@ -139,8 +139,8 @@ Sprawdzone 2026-10-18 na OKITRADE, tylko odczyt.
   bieżąca cena nie jest nigdy referencją — tylko cena, po której się sprzedało.
 - **Przeciąganie między rynkami:** podłoga tylko w górę i tylko ze zrealizowanych sprzedaży. Zmiana
   ceny jednego rynku nie przesuwa podłogi innego, dopóki nie przyjdzie sprzedaż po tej cenie.
-- **Rynki bez danych:** brak sprzedaży = podłoga bazowa. Rynek bez kalkulatora (Amazon PL) = strategia
-  nie działa (`brak_pasa` jak dziś). Ekran mówi to wprost.
+- **Rynki bez danych:** brak sprzedaży = podłoga bazowa. Rynek bez kalkulatora = strategia
+  nie działa (`brak_pasa` jak dziś; Amazon PL ma kalkulator od 2026-10-22). Ekran mówi to wprost.
 - **Sprzedaż ze stratą:** tylko szablon wyprzedaży z `zysk` < 0, z potwierdzeniem i datą końca.
   Wyprzedaż bez daty nie istnieje.
 - **Waluty:** zysk w zł liczony ostrożnymi kursami kalkulatora (EUR 4,20, RON 0,79, HUF 0,0115) —

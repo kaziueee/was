@@ -94,7 +94,8 @@ test('pas eMAG RO: Genius z oferty (API) wygrywa z wymiarami z GT', () => {
   assert.notStrictEqual(zGenius.min, bezGenius.min);
   // Amazon bez zmian: klucz = kod rynku
   assert.ok(pasyZWyceny(w).DE.min > 0);
-  assert.strictEqual(pasyZWyceny(w).PL, undefined, 'Amazon PL nie ma rynku w kalkulatorze');
+  // Amazon PL (kalkulator od 2026-10-22): Genius eMAG go nie dotyczy
+  assert.strictEqual(pasyZWyceny(w).PL.min, pasyZWyceny(w, { genius: false }).PL.min);
 });
 
 test('eMAG: zmiana ceny — id + sale_price NETTO z 4 miejscami, dające dokładnie cenę brutto', () => {

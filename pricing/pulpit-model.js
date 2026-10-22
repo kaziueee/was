@@ -310,7 +310,7 @@ function zlozTrend(dni, stany, sprzedaz, klucze) {
     for (const k of kanaly.slice(0, -1)) {
       const st = s.get(k);
       const sp = sprzedaz ? (f?.get(k) || { zamowien: 0, szt: 0, szt_auto: 0 }) : null;
-      // Zysk nieznany, gdy Buy Boxy są, a żaden nie ma zysku z kalkulatora (Amazon PL: brak pasa) — wtedy „—”, nie 0.
+      // Zysk nieznany, gdy Buy Boxy są, a żaden nie ma zysku z kalkulatora (kanał bez kalkulatora: brak pasa) — wtedy „—”, nie 0.
       const zyskZnany = st?.automat.ofert && !(st.automat.bb > 0 && !st.automat.zysk_n);
       const pkt = {
         bb: st?.wszystkie.ofert ? st.wszystkie.bb : null,

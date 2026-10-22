@@ -8,13 +8,15 @@
 //   wyslij(oferta, cena) → { ok, cena, blad } — oferta = wiersz `oferty`, cena brutto w walucie rynku;
 //                          odmowa platformy to wynik, nie wyjątek
 //   propagacja           — dla ekranu: kiedy nowa cena będzie widoczna na platformie
-// Nowa platforma = nowy wpis tutaj (Allegro, Empik i Kaufland dochodzą w osobnych gałęziach). Trasa i
-// ekran pytają `obslugiwana()`, więc kanał bez wpisu po prostu nie dostaje pola ręcznej ceny.
+// Nowa platforma = nowy wpis tutaj. Trasa i ekran pytają `obslugiwana()`, więc kanał bez wpisu po prostu
+// nie dostaje pola ręcznej ceny.
 
 const amazon = require('./amazon');
 const emag = require('./emag');
 const kaufland = require('./kaufland');
 const allegro = require('./allegro');
+const empik = require('./empik');
+const { stan } = require('./db');
 
 const PLATFORMY = {
   amazon: {
@@ -53,6 +55,24 @@ const PLATFORMY = {
     },
     // Test 18.10 (HASG1435): PATCH 200 po 0,2 s, nowa cena w API po ~3 s; CZ/SK/HU idą za nią same (reguły kursowe).
     propagacja: 'Allegro zmienia cenę od razu (kilka sekund); ceny CZ/SK/HU przeliczają się same',
+  },
+  empik: {
+    // Import cen PRI01 (pricing/empik.js) jedną linią, na ofercie świeżo pobranej po SKU (OF21) —
+    // empik.zmianaCeny odmawia oferty z promocją albo kilkoma cenami (import „usuń i zastąp” by je skasował).
+    // Empik przyjmuje plik od razu; czy cena weszła, worker sprawdza po PRICING_POTWIERDZENIE_EMPIK_MIN
+    // (status importu PRI02 + cena z P11) — stąd numer importu w `stan`. Import wolno raz na minutę: gdy
+    // worker właśnie wysłał swój, Empik odpowie 429 — wtedy za minutę jeszcze raz.
+    wyslij: async (o, cena) => {
+      const lista = await empik.ofertaPoSku(o.sku);
+      if (lista.length !== 1) return { ok: false, blad: `Empik: ${lista.length} ofert z SKU ${o.sku} — oczekiwano jednej` };
+      const w = await empik.ustawCeny([{ surowa: lista[0], cena }]);
+      const r = w.wyniki[0] || {};
+      if (!r.ok) return { ok: false, blad: r.blad || 'Empik nie przyjął pliku z ceną' };
+      if (w.importId) stan.set('empik_import', JSON.stringify({ id: w.importId, ofert: 1 }));
+      return { ok: true, cena: r.cena };
+    },
+    // Pierwsze ręczne zmiany zmierzą czas — do tego czasu ostrożnie.
+    propagacja: 'Empik przyjął import cen; czas do widoczności na stronie jeszcze niezmierzony — status importu i cenę sprawdzimy po ~10 min',
   },
 };
 

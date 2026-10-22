@@ -2,7 +2,7 @@
 
 // Sprzedaż → „Trendy” (desktop, tylko admin): kafle okresów, trend tygodniowy z rokiem temu, miesiące r/r, udział
 // kanałów, grupy top 30 z wejściem w grupę, produkty bez limitu z filtrami (hity, trendujące, spadek trendu, ze
-// stratą, zgasły, nowości) i widok produktu z kanałami sprzedaży. Dane: GET /api/analiza/trendy
+// stratą, zgasły, nowości) i karta produktu: ceny ofert z edycją ceny ⇄ marży (repricer) i kanały sprzedaży. Dane: GET /api/analiza/trendy
 // (services/analiza-trendy.js) — dni zamknięte do wczoraj. Wszystko poza pobraniem liczy się w przeglądarce, więc
 // przełączniki nie pytają serwera. Plik ładuje się PRZED app.js; app.js woła odswiezSprzedazTrendy().
 
@@ -308,7 +308,12 @@
     if (przewin) $('sek-prod').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  // ---------- widok produktu: kanały sprzedaży ----------
+  // ---------- widok produktu: ceny ofert + kanały sprzedaży ----------
+  // Karta to miejsce zarządzania ceną (decyzja usera 2026-10-22): „widzę, że produkt dobrze się sprzedaje, ale się
+  // kończy — wchodzę i podnoszę cenę albo zmieniam repricer”. Wiersz = oferta. Dane, wysyłka ceny, okna potwierdzeń i
+  // przełącznik automatu są te same co na karcie SKU w Cenach (GET /api/ceny/towar, cenyWyslijRecznaCene,
+  // cenyPrzelacznikOferty w app.js), więc reguły pilnuje jeden backend (routes/ceny.js). Oznaczenia — tylko
+  // podpowiedzi (TrendyModel.oznaczenia); akcje grupowe i automatyczne przyjdą później.
   function okno() {
     let t = document.getElementById('tr-tlo');
     if (!t) {
@@ -317,54 +322,25 @@
       t.onclick = (e) => { if (e.target === t) zamknijProdukt(); };
       document.addEventListener('keydown', (e) => {
         if (t.style.display !== 'flex') return;
+        if (document.querySelector('.modal-overlay:not(.hidden)')) return;          // okno potwierdzenia ceny ma własne klawisze
         if (e.key === 'Escape') zamknijProdukt();
+        if (e.target.closest?.('input, select, textarea')) return;                  // strzałki w polu ceny = kursor, nie następny produkt
         if (e.key === 'ArrowRight') document.getElementById('tr-ok-dalej')?.click();
         if (e.key === 'ArrowLeft') document.getElementById('tr-ok-wstecz')?.click();
       });
     }
     return t;
   }
-  function zamknijProdukt() { const t = document.getElementById('tr-tlo'); if (t) t.style.display = 'none'; }
-  function otworzProdukt(id) {
-    const lista = ostatniaLista, i = lista.findIndex((w) => w.id === id), w = lista[i] || wiersze().find((q) => q.id === id);
-    if (!w) return;
-    const P = X.produkty[st.okno], porTxt = st.por === 'prev' ? `poprzednie ${st.okno} dni` : 'rok temu', off = st.por === 'prev' ? 3 : 6;
-    const kan = ((X.kanaly[st.okno] || {})[id] || []).map((k) => ({ nazwa: k[0], s: k[1], n: k[2], z: k[3], bs: k[1 + off], bn: k[2 + off], klucz: k[10] }))
-      .filter((k) => k.s || k.bs).sort((a, b) => b.n - a.n || b.bn - a.bn);
-    const marza = (z, n) => (n ? pct(z / n * 100) : '—'), przed = st.por === 'prev' ? 'przed' : 'rok temu';
-    // nazwa kanału = link do oferty na platformie (oferty z repricera, pricing/linki.js) — dociągane niżej przy
-    // otwarciu karty; kilka ofert w kanale — kolejne numerami
-    const kanalHtml = (k, ofertyKanalu) => {
-      const of = (ofertyKanalu || {})[k.klucz] || [];
-      if (!ofertyKanalu) return esc(k.nazwa);
-      if (!of.length) return `${esc(k.nazwa)} <span class="tr-sz" title="brak aktywnej oferty w repricerze">—</span>`;
-      const tytul = (o) => `${esc(o.sku)}${o.auto ? ' · automat' : ''}${o.fba ? ' · FBA' : ''}`;
-      return `<a href="${esc(of[0].produkt)}" target="_blank" rel="noopener" title="Oferta na platformie: ${tytul(of[0])}">${esc(k.nazwa)} ↗</a>`
-        + (of[0].oferty ? ` · <a href="${esc(of[0].oferty)}" target="_blank" rel="noopener" title="Wszystkie oferty — kto ma Buy Box">oferty</a>` : '')
-        + of.slice(1, 4).map((o, j) => ` · <a href="${esc(o.produkt)}" target="_blank" rel="noopener" title="${tytul(o)}">${j + 2}</a>`).join('');
-    };
-    const kafelki = [['Sztuki', szt(w.a.s), zmiana(w.a.s, w.b.s)], ['Przychód', zl(w.a.n), zmiana(w.a.n, w.b.n)], ['Zysk', zl(w.a.z), zmiana(w.a.z, w.b.z)],
-      ['Marża', marza(w.a.z, w.a.n), zmiana(w.a.n ? w.a.z / w.a.n * 100 : null, w.b.n ? w.b.z / w.b.n * 100 : null, { pp: true })],
-      ['Dostępne', w.dost == null ? '—' : szt(w.dost), `<span class="tr-sz">${w.zestaw ? 'kompletów ze składników' : 'Razem − rez.'}</span>`],
-      ['Zapas', w.dni == null ? '—' : szt(w.dni) + ' dni', '<span class="tr-sz">tempo 30 dni</span>']];
-    const t = okno();
-    document.getElementById('tr-okno').dataset.id = String(id);
-    document.getElementById('tr-okno').innerHTML = `<div class="tr-nav"><span class="tr-opis" style="margin-right:auto">${i >= 0 ? `${i + 1} z ${nf0.format(lista.length)} na liście · ← → przewijanie` : ''}</span>
-        <button type="button" class="btn btn-small" id="tr-ok-wstecz" ${i > 0 ? '' : 'disabled'}>‹ poprzedni</button><button type="button" class="btn btn-small" id="tr-ok-dalej" ${i >= 0 && i < lista.length - 1 ? '' : 'disabled'}>następny ›</button>
-        <button type="button" class="btn btn-small" id="tr-ok-x">✕ zamknij</button></div>
-      <div class="tr-gora2"><img class="tr-foto" src="${ZDJ_DUZE(id)}" onerror="this.onerror=null;this.src='${ZDJ(id)}'" alt="">
-        <div><h3><span class="tr-sym" style="font-size:16px">${esc(w.sym)}</span></h3><div>${esc(w.nazwa)}</div><div class="tr-gr" style="margin-top:2px">${esc(w.grupa)}</div>
-          <div class="tr-opis" style="margin-top:6px">${st.okno} zamkniętych dni ${dd(P.od)}–${dd(P.do)} vs ${porTxt}</div>
-          <div class="tr-statki">${kafelki.map(([a, b, c]) => `<div>${a}<b>${b}</b>${c}</div>`).join('')}</div>
-          <div class="tr-wykres" id="tr-ok-tyg"></div></div></div>
-      <h3 style="font-size:15px;margin:14px 0 6px">Kanały sprzedaży <span class="tr-opis" style="font-weight:400">— nazwa kanału otwiera ofertę na platformie</span></h3>
-      <table class="tr-tab"><tr><th>Kanał</th><th class="n">Szt.</th><th class="n">Przychód</th><th class="n">Zysk</th><th class="n">Marża</th><th class="n">Zysk na szt.</th><th class="n">Szt. ${przed}</th><th class="n">Przychód ${przed}</th><th class="n">Zmiana</th></tr>
-      ${kan.map((k, j) => `<tr><td data-kan="${j}">${kanalHtml(k, null)}</td><td class="n">${szt(k.s)}</td><td class="n">${zl(k.n)}</td><td class="n">${zl(k.z)}</td><td class="n">${marza(k.z, k.n)}</td><td class="n">${k.s ? zl(k.z / k.s) : '—'}</td><td class="n tr-sz">${szt(k.bs)}</td><td class="n tr-sz">${zl(k.bn)}</td><td class="n">${k.bn > 0 ? zmiana(k.n, k.bn) : k.n > 0 ? '<span class="tr-up">nowy kanał</span>' : '<span class="tr-down">zniknął</span>'}</td></tr>`).join('')
-        || '<tr><td colspan="9" class="tr-sz">Brak sprzedaży w obu okresach.</td></tr>'}
-      <tr class="tr-razem"><td><b>Razem</b></td><td class="n"><b>${szt(w.a.s)}</b></td><td class="n"><b>${zl(w.a.n)}</b></td><td class="n"><b>${zl(w.a.z)}</b></td><td class="n">${marza(w.a.z, w.a.n)}</td><td class="n">${w.a.s ? zl(w.a.z / w.a.s) : '—'}</td><td class="n tr-sz">${szt(w.b.s)}</td><td class="n tr-sz">${zl(w.b.n)}</td><td class="n">${zmiana(w.a.n, w.b.n)}</td></tr></table>`;
-    t.style.display = 'flex';
-    // sztuki tygodniowo: 13 pełnych tygodni + rok temu
-    const tw = X.tygProd[id] || Array(26).fill(0), host = document.getElementById('tr-ok-tyg');
+  function zamknijProdukt() { clearTimeout(cenyTimer); const t = document.getElementById('tr-tlo'); if (t) t.style.display = 'none'; }
+  const otwarty = (id) => document.getElementById('tr-tlo')?.style.display === 'flex' && document.getElementById('tr-okno').dataset.id === String(id);
+
+  // Wykres tygodniowy — schowany, pokazywany na życzenie; wybór pamięta przeglądarka (wygoda, nie stan).
+  const WYKRES_KLUCZ = 'wms-trendy-wykres-produktu';
+  const wykresWlaczony = () => { try { return localStorage.getItem(WYKRES_KLUCZ) === '1'; } catch { return false; } };
+  function rysujWykresProduktu(id) {
+    const host = document.getElementById('tr-ok-tyg');
+    if (!host) return;
+    const tw = X.tygProd[id] || Array(26).fill(0);
     const Wd = host.clientWidth || 700, H = 150, L = 34, T = 10, B = 22, n = 13, pw = Wd - L - 8, ph = H - T - B, band = pw / n, bw = Math.min(24, band * 0.6);
     const cur = tw.slice(0, 13), rok = tw.slice(13), tk = ticki(Math.max(1, ...cur, ...rok), 3), ymax = tk[tk.length - 1], y = (v) => T + ph - v / ymax * ph;
     let sv = tk.map((v) => `<line x1="${L}" x2="${Wd - 8}" y1="${y(v)}" y2="${y(v)}" stroke="${kolor('--tr-grid')}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="${kolor('--tr-muted')}">${kompakt(v)}</text>`).join('');
@@ -375,11 +351,276 @@
     sv += `<path d="${rok.map((v, j) => `${j ? 'L' : 'M'}${L + j * band + band / 2},${y(v)}`).join(' ')}" fill="none" stroke="${kolor('--tr-rok')}" stroke-width="2" stroke-linejoin="round"/>`;
     sv += `<line x1="${L}" x2="${Wd - 8}" y1="${T + ph}" y2="${T + ph}" stroke="${kolor('--tr-axis')}"/>`;
     host.innerHTML = '<div class="tr-legenda" style="margin:0 0 2px"><span><i style="background:var(--tr-s1)"></i>sztuki tygodniowo (13 pełnych tygodni)</span><span><i class="tr-linia" style="background:var(--tr-rok)"></i>rok temu</span></div>' + SVG(Wd, H, sv);
+  }
+  function przelaczWykres(id) {
+    const host = document.getElementById('tr-ok-tyg'), pokaz = host.hidden;
+    try { localStorage.setItem(WYKRES_KLUCZ, pokaz ? '1' : '0'); } catch { /* bez pamięci wyboru */ }
+    host.hidden = !pokaz;
+    document.getElementById('tr-ok-wykres').textContent = pokaz ? '📈 schowaj wykres' : '📈 wykres tygodniowy';
+    if (pokaz) rysujWykresProduktu(id);
+  }
+
+  // Komunikat na karcie — pasek komunikatów panelu leży pod nią i nie byłoby go widać.
+  function komunikatKarty(tekst, typ = 'info') {
+    const k = document.getElementById('tr-ok-msg');
+    if (!k) return;
+    k.className = `tr-ok-msg ${typ}`; k.textContent = tekst; k.hidden = false;
+  }
+
+  // Strategie: lista do wyboru (Ceny → Strategie) — pobierana raz na kilka minut, przypisanie zmienia się rzadko.
+  let strategieCache = null;
+  async function listaStrategii() {
+    if (strategieCache && Date.now() - strategieCache.czas < 5 * 60_000) return strategieCache.d;
+    const d = await api('/api/ceny/strategie');
+    strategieCache = { d, czas: Date.now() };
+    return d;
+  }
+  async function rysujStrategie(id, w, d) {
+    const box = document.getElementById('tr-ok-strat');
+    if (!box) return;
+    const teraz = cenyStrategiaKartyHtml(d) || '';
+    let s;
+    try { s = await listaStrategii(); } catch { box.innerHTML = teraz; return; }
+    if (!otwarty(id)) return;
+    if (!s.strategie.length) {
+      box.innerHTML = `${teraz} <span class="tr-sz">· własne strategie w przygotowaniu — gdy powstaną w Ceny → Strategie, wybierzesz je tutaj</span>`;
+      return;
+    }
+    const obecna = d.strategia?.id;
+    box.innerHTML = `${teraz} <form class="tr-strat" novalidate><select name="s" class="tr-pole" aria-label="Strategia towaru">
+        <option value="">— zmień strategię —</option>${s.strategie.map((x) => `<option value="${x.id}" ${x.id === obecna ? 'disabled' : ''}>${esc(x.nazwa)}${x.aktywna ? '' : ' (podgląd)'} — ${esc(x.opis)}</option>`).join('')}</select>
+      <input type="date" name="do" class="tr-pole" min="${s.dzis}" title="Do dnia — wymagane dla wyprzedaży" aria-label="Do dnia">
+      <button class="btn btn-small">Przypisz</button>${obecna ? ' <button type="button" class="btn btn-small" data-zdejmij>Zdejmij</button>' : ''}</form>`;
+    const f = box.querySelector('form');
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const st = s.strategie.find((x) => String(x.id) === f.elements.s.value);
+      if (!st) { komunikatKarty('Wybierz strategię z listy.', 'blad'); return; }
+      try {
+        const r = await csWyslij('/api/ceny/strategie/przypisz', { strategia_id: st.id, kody: [w.sym], do: f.elements.do.value },
+          { tytul: `${w.sym} → „${st.nazwa}”`, przycisk: 'Przypisz' });
+        if (!r) return;
+        strategieCache = null;
+        komunikatKarty(r.nieznalezione?.length ? `Nie znaleziono towaru ${w.sym} w GT.` : `${w.sym}: strategia „${st.nazwa}”${st.aktywna ? ' — granice automatu zmienią się w najbliższym przebiegu' : ' (podgląd — granic jeszcze nie zmienia)'}.`, r.nieznalezione?.length ? 'blad' : 'ok');
+        wczytajCeny(id, w);
+      } catch (err) { komunikatKarty(err.message, 'blad'); }
+    });
+    box.querySelector('[data-zdejmij]')?.addEventListener('click', async () => {
+      try {
+        await api('/api/ceny/strategie/zdejmij', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tw_ids: [id], operator: operator() }) });
+        strategieCache = null;
+        komunikatKarty(`${w.sym}: strategia zdjęta — wraca domyślna (${s.domyslna.nazwa}).`, 'ok');
+        wczytajCeny(id, w);
+      } catch (err) { komunikatKarty(err.message, 'blad'); }
+    });
+  }
+
+  const zl2 = (x) => (x == null ? '—' : `${cenyLiczba(x)} zł`);
+  function konkurencjaHtml(o, wal) {
+    if (o.cena == null) return '<span class="tr-sz">jeszcze nie obserwowana</span>';
+    if (o.bb_nasza_inna) return '<span class="tr-sz">ma nasza inna oferta</span>';
+    // Allegro: Niezbędnik (ceny konkurentów per EAN) albo raport „Czynniki Top oferty” — jak na karcie SKU w Cenach
+    if (o.platforma === 'allegro') {
+      const kw = o.konkurencja?.wynik;
+      if (kw?.aktualny && kw.lista?.length) {
+        const k = kw.lista[0];
+        return o.cena <= k.cena + 0.005 ? '<span class="tr-up">najtańsi</span> <span class="tr-sz">(Niezbędnik)</span>'
+          : `najtańszy konkurent <b>${cenyLiczba(k.cena)} ${wal}</b>${k.login ? ` <span class="tr-sz">${esc(k.login)}</span>` : ''}`;
+      }
+      if (kw?.aktualny && kw.nasze?.length) return '<span class="tr-sz">bez konkurencji (Niezbędnik)</span>';
+      if (o.top?.cena != null) return `Top <b>${cenyLiczba(o.top.cena)} ${wal}</b>${o.top.aktualny ? '' : ' <span class="tr-sz">(raport stary)</span>'}`;
+      if (o.top) return `<span class="tr-sz">${/odpowiedni/i.test(o.top.ocena || '') ? 'cena OK (raport Top)' : esc(o.top.ocena || 'raport Top bez oceny')}</span>`;
+      return '<span class="tr-sz">nie sprawdzana</span>';
+    }
+    if (o.bez_konkurencji) return '<span class="tr-sz" title="Kanał nie podaje przez API cen innych sprzedawców — automat pilnuje tylko minimum">brak danych z API</span>';
+    const zWys = !['emag', 'empik'].includes(o.platforma) ? ' title="z wysyłką"' : '';
+    if (o.bb_nasz) return `<span class="tr-up">✓ mamy Buy Box</span>${o.najtansza_inna != null ? `<div class="tr-sz"${zWys}>następna ${cenyLiczba(o.najtansza_inna)} ${wal}</div>` : ''}`;
+    if (o.bb_cena != null) return `<span${zWys}>Buy Box <b>${cenyLiczba(o.bb_cena)} ${wal}</b></span>${o.bb_fba ? ' <span class="tr-sz">FBA</span>' : ''}`;
+    return o.najtansza_inna != null ? `<span${zWys}>najtańsza inna ${cenyLiczba(o.najtansza_inna)} ${wal}</span>` : '<span class="tr-sz">brak Buy Boxa</span>';
+  }
+  function granicaHtml(o, wal) {
+    const g = o.granice || {};
+    if (g.min == null) return `<span class="tr-sz">${g.gt_ok === false ? 'GT nie odpowiada' : 'brak (kalkulator nie zna rynku)'}</span>`;
+    const zr = (z) => (z && z !== 'kalkulator' ? ` <span class="tr-znak uwaga">${esc(cenyZrodlo(z))}</span>` : '');
+    return `${cenyLiczba(g.min)}${zr(g.zrodlo_min)} – ${cenyLiczba(g.max)}${zr(g.zrodlo_max)} ${wal}`;
+  }
+  function edycjaHtml(o, wal) {
+    if (!o.reczna_cena) return `<span class="tr-sz">${o.tylko_odczyt ? 'tylko odczyt' : `z ekranu jeszcze niedostępne (${esc(cenyKanal(o))})`}</span>`;
+    return `<form class="tr-cena" data-of="${o.id}" novalidate>
+      <input name="cena" class="tr-pole" inputmode="decimal" autocomplete="off" placeholder="${o.cena != null ? cenyLiczba(o.cena) : 'cena'}" aria-label="Nowa cena ${esc(cenyKanal(o))} ${esc(o.sku)}"> ${wal}
+      <span class="tr-sz" aria-hidden="true">⇄</span>
+      <input name="marza" class="tr-pole tr-pole-m" inputmode="decimal" autocomplete="off" placeholder="${o.marza != null ? cenyLiczba(o.marza, 1) : 'marża'}" aria-label="Marża % ${esc(cenyKanal(o))} ${esc(o.sku)}"> %
+      <button class="btn btn-small btn-primary">Wyślij…</button>
+      <div class="tr-podglad tr-sz">${o.auto ? 'zmiana ręczna wyłączy automat na tej ofercie' : ''}</div></form>`;
+  }
+
+  // Tabela ofert: grupy = kolumny repricera (klucz kanału ten sam co w analizie — kluczKolumny), od największej
+  // sprzedaży w oknie; sprzedaż kolumny = suma wierszy kanału (Allegro bywa rozbite na kraje).
+  function cenyHtml(d, kan, ozn) {
+    const sprz = new Map();
+    for (const k of kan) { const x = sprz.get(k.klucz) || { s: 0, bs: 0 }; x.s += k.s; x.bs += k.bs; sprz.set(k.klucz, x); }
+    const grupy = new Map();
+    for (const o of d.oferty) (grupy.get(o.kolumna) || grupy.set(o.kolumna, []).get(o.kolumna)).push(o);
+    const sp = (k) => sprz.get(k) || { s: 0, bs: 0 };
+    const kolejne = [...grupy.entries()].sort(([a, x], [b, y]) => sp(b).s - sp(a).s || cenyKanal(x[0]).localeCompare(cenyKanal(y[0])));
+    const podsw = new Set(ozn.filter((x) => x.waga === 'uwaga' && !x.produkt).flatMap((x) => x.oferty));
+    const wiersze = kolejne.map(([kol, lista]) => {
+      lista.sort((a, b) => (b.ilosc > 0) - (a.ilosc > 0) || b.auto - a.auto || a.id - b.id);
+      const s = sp(kol);
+      return lista.map((o, j) => {
+        const wal = cenyWaluta(o);
+        const oferta = o.linki?.produkt ? `<a href="${esc(o.linki.produkt)}" target="_blank" rel="noopener" title="Oferta na platformie">${esc(o.sku)} ↗</a>` : esc(o.sku);
+        const cena = o.cena == null ? '<span class="tr-sz">—</span>'
+          : `<b>${cenyLiczba(o.cena)} ${wal}</b>${o.czeka ? `<div class="tr-sz">wysłano ${esc(cenyGodzina(o.dec_czas))} — czeka na potwierdzenie</div>` : ''}${o.wysylka ? `<div class="tr-sz">+ wysyłka ${cenyLiczba(o.wysylka)}</div>` : ''}`;
+        const auto = o.tylko_odczyt ? '<span class="tr-sz">tylko odczyt</span>' : o.ilosc > 0 ? `<span data-auto="${o.id}"></span>${o.wysylka_wstrzymana ? ' <span title="Automat liczy, ale wysyłka cen na ten kanał jest wstrzymana">⏸</span>' : ''}` : '<span class="tr-sz">bez stanu</span>';
+        return `<tr class="${o.ilosc > 0 ? '' : 'tr-of-bez'}${podsw.has(o.id) ? ' tr-of-uwaga' : ''}">
+          ${j === 0 ? `<td class="tr-kan" rowspan="${lista.length}"><b>${esc(cenyKanal(o))}</b><div>${szt(s.s)} szt.${s.bs > 0 ? ` ${zmiana(s.s, s.bs)}` : s.s > 0 ? ' <span class="tr-up">nowy</span>' : ''}</div></td>` : ''}
+          <td>${oferta}<div class="tr-sz">stan ${o.ilosc}${o.auto ? '' : ' · ręczna'}</div>${o.blokada ? `<div class="tr-down" title="${esc(o.blokada)}">⚠ wstrzymana przez platformę</div>` : ''}</td>
+          <td class="n">${cena}</td>
+          <td>${konkurencjaHtml(o, wal)}</td>
+          <td class="n ${o.zysk != null && o.zysk < 0 ? 'tr-down' : ''}">${o.marza != null ? pct(o.marza) : '—'}<div class="tr-sz">${zl2(o.zysk)}</div></td>
+          <td>${auto}</td>
+          <td class="n">${granicaHtml(o, wal)}</td>
+          <td>${edycjaHtml(o, wal)}</td></tr>`;
+      }).join('');
+    }).join('');
+    return `<table class="tr-tab tr-ceny"><tr><th>Kanał · sprzedaż ${st.okno} dni</th><th>Oferta</th><th class="n">Cena teraz</th><th>Konkurencja</th><th class="n">Marża · zysk/szt.</th><th>Automat</th><th class="n">Granice automatu</th><th>Nowa cena ⇄ marża</th></tr>${wiersze}</table>`;
+  }
+
+  // Pole ceny ⇄ pole marży: wpisanie jednego liczy drugie w backendzie (podgląd / cena przy marży), więc obie
+  // liczby pochodzą z tego samego kalkulatora co minimum automatu. Wysyłka przez cenyWyslijRecznaCene.
+  function podepnijCene(f, o, id, w) {
+    const pc = f.elements.cena, pm = f.elements.marza, podglad = f.querySelector('.tr-podglad'), btn = f.querySelector('button');
+    const domyslny = podglad.textContent;
+    let timer = null, nr = 0, ostatnie = null;
+    const zapytaj = (zrodlo, v) => api(zrodlo === 'cena'
+      ? `/api/ceny/cena/podglad?${new URLSearchParams({ oferta_id: o.id, cena: v })}`
+      : `/api/ceny/cena/dla-marzy?${new URLSearchParams({ oferta_id: o.id, marza: v })}`);
+    const pokaz = (p) => {
+      const zm = p.teraz ? ` <span class="${p.cena >= p.teraz ? 'tr-up' : 'tr-down'}">${p.cena >= p.teraz ? '+' : '−'}${nf1.format(Math.abs((p.cena / p.teraz - 1) * 100))}%</span>` : '';
+      podglad.className = `tr-podglad ${p.ostrzezenia.length ? 'tr-down' : 'tr-sz'}`;
+      podglad.innerHTML = `${cenyLiczba(p.cena)} ${esc(p.waluta)}${zm} · marża <b>${pct(p.marza)}</b> · zysk <b>${zl2(p.zysk)}</b>${p.ostrzezenia.length ? `<br>⚠ ${esc(p.ostrzezenia.map((x) => x.tekst).join('; '))}` : ''}`;
+    };
+    const licz = (zrodlo) => {
+      clearTimeout(timer); ostatnie = zrodlo; nr++;
+      const v = (zrodlo === 'cena' ? pc : pm).value.trim();
+      (zrodlo === 'cena' ? pm : pc).value = '';
+      if (!v) { podglad.className = 'tr-podglad tr-sz'; podglad.textContent = domyslny; return; }
+      timer = setTimeout(async () => {
+        const moj = ++nr;
+        try {
+          const p = await zapytaj(zrodlo, v);
+          if (moj !== nr) return;
+          if (zrodlo === 'cena') pm.value = p.marza != null ? String(p.marza).replace('.', ',') : '';
+          else pc.value = String(p.cena).replace('.', ',');
+          pokaz(p);
+        } catch (e) { if (moj === nr) { podglad.className = 'tr-podglad tr-down'; podglad.textContent = e.message; } }
+      }, 350);
+    };
+    pc.addEventListener('input', () => licz('cena'));
+    pm.addEventListener('input', () => licz('marza'));
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearTimeout(timer); nr++;
+      btn.disabled = true;
+      try {
+        let cena = pc.value.trim();
+        // wpisana marża, a cena jeszcze niepoliczona (Enter tuż po wpisaniu) — policz teraz, zanim cokolwiek wyślemy
+        if (ostatnie === 'marza' && pm.value.trim()) cena = String((await zapytaj('marza', pm.value.trim())).cena);
+        if (!cena) { komunikatKarty('Wpisz nową cenę albo marżę.', 'blad'); return; }
+        if (await cenyWyslijRecznaCene(o, cena, { komunikat: komunikatKarty })) wczytajCeny(id, w);
+      } catch (err) { komunikatKarty(err.message, 'blad'); }
+      finally { btn.disabled = false; }
+    });
+  }
+
+  let cenyTimer = null, cenyNr = 0;
+  // kan — kanały produktu z bieżącego okna (sprzedaż do tabeli ofert i linki w tabeli kanałów)
+  async function wczytajCeny(id, w, kan = ostatnieKanaly) {
+    const moj = ++cenyNr;
+    const box = document.getElementById('tr-ok-ceny');
+    const pokazOznaczenia = (ozn) => {
+      document.getElementById('tr-ok-ozn').innerHTML = ozn.map((x) => `<div class="tr-ozn ${x.waga}">${x.waga === 'uwaga' ? '⚠' : '•'} ${esc(x.tekst)}</div>`).join('');
+    };
+    let d;
+    try { d = await api(`/api/ceny/towar/${id}`); } catch (e) {
+      if (moj !== cenyNr || !otwarty(id)) return;
+      box.innerHTML = `<p class="tr-sz">${e.status === 404 ? 'Brak ofert tego towaru w repricerze — ceny zmienisz na platformie.' : `Repricer nie odpowiada: ${esc(e.message)}`}</p>`;
+      pokazOznaczenia(TrendyModel.oznaczenia(w, []));       // „kończy się” dotyczy towaru, nie ofert
+      if (e.status === 404) linkiKanalow(kan, {});
+      return;
+    }
+    if (moj !== cenyNr || !otwarty(id)) return;
+    d.oferty = d.oferty.map(cenyPoWyslaniu);
+    const ozn = TrendyModel.oznaczenia(w, d.oferty);
+    pokazOznaczenia(ozn);
+    box.innerHTML = cenyHtml(d, kan, ozn) + `<p class="tr-sz" style="margin:6px 0 0">${d.gt_ok ? `Koszt zakupu ${zl2(d.gt.koszt)} (średnia z dostaw) — marża i zysk po kosztach kanału, ten sam kalkulator co minimum automatu.` : '<span class="tr-down">Subiekt nie odpowiada — bez kosztu nie policzymy marży ani minimum.</span>'} Ręczna cena idzie od razu na platformę i wyłącza automat na tej ofercie.</p>`;
+    const opcje = { komunikat: komunikatKarty, poZmianie: () => wczytajCeny(id, w) };
+    box.querySelectorAll('[data-auto]').forEach((slot) => {
+      const o = d.oferty.find((x) => String(x.id) === slot.dataset.auto);
+      slot.appendChild(cenyPrzelacznikOferty(o, cenyKanal(o), opcje));
+    });
+    box.querySelectorAll('form.tr-cena').forEach((f) => podepnijCene(f, d.oferty.find((x) => String(x.id) === f.dataset.of), id, w));
+    const linki = {};
+    for (const o of d.oferty) if (o.linki?.produkt) (linki[o.kolumna] ||= []).push({ produkt: o.linki.produkt, oferty: o.linki.oferty || null, sku: o.sku, auto: !!o.auto });
+    linkiKanalow(kan, linki);
+    rysujStrategie(id, w, d);
+  }
+  // nazwa kanału w tabeli kanałów = link do oferty na platformie; kilka ofert w kanale — kolejne numerami
+  function kanalHtml(k, ofertyKanalu) {
+    if (!ofertyKanalu) return esc(k.nazwa);
+    const of = ofertyKanalu[k.klucz] || [];
+    if (!of.length) return `${esc(k.nazwa)} <span class="tr-sz" title="brak aktywnej oferty w repricerze">—</span>`;
+    const tytul = (o) => `${esc(o.sku)}${o.auto ? ' · automat' : ''}`;
+    return `<a href="${esc(of[0].produkt)}" target="_blank" rel="noopener" title="Oferta na platformie: ${tytul(of[0])}">${esc(k.nazwa)} ↗</a>`
+      + (of[0].oferty ? ` · <a href="${esc(of[0].oferty)}" target="_blank" rel="noopener" title="Wszystkie oferty — kto ma Buy Box">oferty</a>` : '')
+      + of.slice(1, 4).map((o, j) => ` · <a href="${esc(o.produkt)}" target="_blank" rel="noopener" title="${tytul(o)}">${j + 2}</a>`).join('');
+  }
+  function linkiKanalow(kan, of) {
+    kan.forEach((k, j) => { const td = document.querySelector(`#tr-okno td[data-kan="${j}"]`); if (td) td.innerHTML = kanalHtml(k, of); });
+  }
+
+  let ostatnieKanaly = [];
+  function otworzProdukt(id) {
+    const lista = ostatniaLista, i = lista.findIndex((w) => w.id === id), w = lista[i] || wiersze().find((q) => q.id === id);
+    if (!w) return;
+    const P = X.produkty[st.okno], porTxt = st.por === 'prev' ? `poprzednie ${st.okno} dni` : 'rok temu', off = st.por === 'prev' ? 3 : 6;
+    const kan = ((X.kanaly[st.okno] || {})[id] || []).map((k) => ({ nazwa: k[0], s: k[1], n: k[2], z: k[3], bs: k[1 + off], bn: k[2 + off], klucz: k[10] }))
+      .filter((k) => k.s || k.bs).sort((a, b) => b.n - a.n || b.bn - a.bn);
+    ostatnieKanaly = kan;
+    const marza = (z, n) => (n ? pct(z / n * 100) : '—'), przed = st.por === 'prev' ? 'przed' : 'rok temu';
+    const kafelki = [['Sztuki', szt(w.a.s), zmiana(w.a.s, w.b.s)], ['Przychód', zl(w.a.n), zmiana(w.a.n, w.b.n)], ['Zysk', zl(w.a.z), zmiana(w.a.z, w.b.z)],
+      ['Marża', marza(w.a.z, w.a.n), zmiana(w.a.n ? w.a.z / w.a.n * 100 : null, w.b.n ? w.b.z / w.b.n * 100 : null, { pp: true })],
+      ['Dostępne', w.dost == null ? '—' : szt(w.dost), `<span class="tr-sz">${w.zestaw ? 'kompletów ze składników' : 'Razem − rez.'}</span>`],
+      ['Zapas', w.dni == null ? '—' : szt(w.dni) + ' dni', '<span class="tr-sz">tempo 30 dni</span>']];
+    const t = okno(), wyk = wykresWlaczony();
+    document.getElementById('tr-okno').dataset.id = String(id);
+    document.getElementById('tr-okno').innerHTML = `<div class="tr-nav"><span class="tr-opis" style="margin-right:auto">${i >= 0 ? `${i + 1} z ${nf0.format(lista.length)} na liście · ← → przewijanie` : ''}</span>
+        <button type="button" class="btn btn-small" id="tr-ok-wykres">${wyk ? '📈 schowaj wykres' : '📈 wykres tygodniowy'}</button>
+        <button type="button" class="btn btn-small" id="tr-ok-wstecz" ${i > 0 ? '' : 'disabled'}>‹ poprzedni</button><button type="button" class="btn btn-small" id="tr-ok-dalej" ${i >= 0 && i < lista.length - 1 ? '' : 'disabled'}>następny ›</button>
+        <button type="button" class="btn btn-small" id="tr-ok-x">✕ zamknij</button></div>
+      <div class="tr-gora2"><img class="tr-foto" src="${ZDJ_DUZE(id)}" onerror="this.onerror=null;this.src='${ZDJ(id)}'" alt="">
+        <div><h3><span class="tr-sym" style="font-size:16px">${esc(w.sym)}</span></h3><div>${esc(w.nazwa)}</div><div class="tr-gr" style="margin-top:2px">${esc(w.grupa)}</div>
+          <div class="tr-opis" style="margin-top:6px">${st.okno} zamkniętych dni ${dd(P.od)}–${dd(P.do)} vs ${porTxt}</div>
+          <div class="tr-statki">${kafelki.map(([a, b, c]) => `<div>${a}<b>${b}</b>${c}</div>`).join('')}</div>
+          <div id="tr-ok-ozn"></div></div></div>
+      <div class="tr-wykres" id="tr-ok-tyg" ${wyk ? '' : 'hidden'}></div>
+      <div class="tr-ceny-nag"><h3 style="font-size:15px;margin:0">Ceny ofert</h3><div id="tr-ok-strat" class="tr-opis"></div></div>
+      <div class="tr-ok-msg" id="tr-ok-msg" hidden></div>
+      <div id="tr-ok-ceny"><p class="tr-sz">Wczytuję oferty z repricera…</p></div>
+      <h3 style="font-size:15px;margin:16px 0 6px">Kanały sprzedaży <span class="tr-opis" style="font-weight:400">— nazwa kanału otwiera ofertę na platformie</span></h3>
+      <table class="tr-tab"><tr><th>Kanał</th><th class="n">Szt.</th><th class="n">Przychód</th><th class="n">Zysk</th><th class="n">Marża</th><th class="n">Zysk na szt.</th><th class="n">Szt. ${przed}</th><th class="n">Przychód ${przed}</th><th class="n">Zmiana</th></tr>
+      ${kan.map((k, j) => `<tr><td data-kan="${j}">${kanalHtml(k, null)}</td><td class="n">${szt(k.s)}</td><td class="n">${zl(k.n)}</td><td class="n">${zl(k.z)}</td><td class="n">${marza(k.z, k.n)}</td><td class="n">${k.s ? zl(k.z / k.s) : '—'}</td><td class="n tr-sz">${szt(k.bs)}</td><td class="n tr-sz">${zl(k.bn)}</td><td class="n">${k.bn > 0 ? zmiana(k.n, k.bn) : k.n > 0 ? '<span class="tr-up">nowy kanał</span>' : '<span class="tr-down">zniknął</span>'}</td></tr>`).join('')
+        || '<tr><td colspan="9" class="tr-sz">Brak sprzedaży w obu okresach.</td></tr>'}
+      <tr class="tr-razem"><td><b>Razem</b></td><td class="n"><b>${szt(w.a.s)}</b></td><td class="n"><b>${zl(w.a.n)}</b></td><td class="n"><b>${zl(w.a.z)}</b></td><td class="n">${marza(w.a.z, w.a.n)}</td><td class="n">${w.a.s ? zl(w.a.z / w.a.s) : '—'}</td><td class="n tr-sz">${szt(w.b.s)}</td><td class="n tr-sz">${zl(w.b.n)}</td><td class="n">${zmiana(w.a.n, w.b.n)}</td></tr></table>`;
+    t.style.display = 'flex';
+    if (wyk) rysujWykresProduktu(id);
+    document.getElementById('tr-ok-wykres').onclick = () => przelaczWykres(id);
     document.getElementById('tr-ok-x').onclick = zamknijProdukt;
-    api(`/api/analiza/oferty/${id}`).then((of) => {
-      if (document.getElementById('tr-tlo').style.display !== 'flex' || document.getElementById('tr-okno').dataset.id !== String(id)) return;
-      kan.forEach((k, j) => { const td = document.querySelector(`#tr-okno td[data-kan="${j}"]`); if (td) td.innerHTML = kanalHtml(k, of); });
-    }).catch(() => { /* bez linków — karta i tak jest */ });
+    // Repricer pyta GT o koszt — przy szybkim przewijaniu strzałkami nie pytamy o każdy mijany produkt.
+    cenyNr++;
+    clearTimeout(cenyTimer);
+    cenyTimer = setTimeout(() => wczytajCeny(id, w, kan), 250);
     if (i > 0) document.getElementById('tr-ok-wstecz').onclick = () => otworzProdukt(lista[i - 1].id);
     if (i >= 0 && i < lista.length - 1) document.getElementById('tr-ok-dalej').onclick = () => otworzProdukt(lista[i + 1].id);
   }

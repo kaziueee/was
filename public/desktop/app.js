@@ -4915,14 +4915,18 @@ function cenyKomorka(o, rynek) {
 // Dopasowanie pewne = SKU równe symbolowi GT albo potwierdzone ręcznie. Przy innym automatu nie
 // włączymy (backend odmawia: routes/ceny.js) — przełącznik prowadzi wtedy do zakładki „Do powiązania".
 const CENY_PEWNE = ['wprost', 'reczne'];
-function cenyPrzelacznikOferty(o, rynek) {
+// opcje — przekazywane do cenyUstawAutomat (karta w Trendach). Tam przełącznik niepewnego dopasowania nie prowadzi do
+// „Do powiązania” (to zakładka pod kartą), tylko mówi, co zrobić.
+function cenyPrzelacznikOferty(o, rynek, opcje) {
   if (!o.auto && !CENY_PEWNE.includes(o.dopasowanie)) {
-    const b = cenyPrzelacznik('', `Automat ${rynek} ${o.sku}`, () => { cenyPokazWidok('powiazania'); odswiezCeny(); });
+    const b = cenyPrzelacznik('', `Automat ${rynek} ${o.sku}`, opcje
+      ? () => opcje.komunikat?.(`${rynek} ${o.sku}: dopasowanie do towaru GT niepotwierdzone — potwierdź je w Ceny → Do powiązania, zanim włączysz automat.`, 'blad')
+      : () => { cenyPokazWidok('powiazania'); odswiezCeny(); });
     b.classList.add('niepewne');
     b.title = `Dopasowanie do towaru GT niepotwierdzone (${o.sku} → ${o.symbol_gt || '?'}) — potwierdź w zakładce „Do powiązania”`;
     return b;
   }
-  return cenyPrzelacznik(o.auto ? 'on' : '', `Automat ${rynek} ${o.sku}`, () => cenyUstawAutomat([o], !o.auto));
+  return cenyPrzelacznik(o.auto ? 'on' : '', `Automat ${rynek} ${o.sku}`, () => cenyUstawAutomat([o], !o.auto, opcje));
 }
 
 function cenyPrzelacznik(stan, etykieta, onKlik) {
@@ -4999,19 +5003,22 @@ function cenyPotwierdzWlaczenie(oferty) {
   });
 }
 
-async function cenyUstawAutomat(oferty, auto) {
+// poZmianie / komunikat — dla karty produktu w Sprzedaż → Trendy (public/desktop/sprzedaz-trendy.js), która leży
+// nad panelem: odświeża siebie i pokazuje komunikat u siebie. Zwraca true, gdy backend przyjął zmianę.
+async function cenyUstawAutomat(oferty, auto, { poZmianie = odswiezCeny, komunikat = pokazKomunikat } = {}) {
   const ids = oferty.map((o) => o.id);
   // Automat = prawdziwe zmiany cen na Amazonie — włączenie potwierdzamy, z tabelą tego, co zrobi.
-  if (auto && !(await cenyPotwierdzWlaczenie(oferty))) return;
+  if (auto && !(await cenyPotwierdzWlaczenie(oferty))) return false;
   try {
     const r = await api('/api/ceny/automat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids, auto, operator: operator() }),
     });
     const pomin = r.pominiete.length ? ` Pominięte ${r.pominiete.length}: ${r.pominiete.slice(0, 3).map((p) => `${p.sku || p.id} — ${p.powod}`).join('; ')}${r.pominiete.length > 3 ? '…' : ''}` : '';
-    pokazKomunikat(`Automat ${auto ? 'włączony' : 'wyłączony'}: ${r.zmienione} ofert.${auto && r.zmienione ? ' Pierwsza zmiana ceny przy najbliższym przebiegu (do 30 min).' : ''}${pomin}`, r.pominiete.length ? 'blad' : 'ok');
-    odswiezCeny();
-  } catch (err) { pokazKomunikat(err.message, 'blad'); }
+    komunikat(`Automat ${auto ? 'włączony' : 'wyłączony'}: ${r.zmienione} ofert.${auto && r.zmienione ? ' Pierwsza zmiana ceny przy najbliższym przebiegu (do 30 min).' : ''}${pomin}`, r.pominiete.length ? 'blad' : 'ok');
+    poZmianie();
+    return true;
+  } catch (err) { komunikat(err.message, 'blad'); return false; }
 }
 
 function cenyPokazWidok(widok) {
@@ -5229,26 +5236,7 @@ function cenyPodepnijReczne(sek, o) {
       clearTimeout(timer);
       const btn = fc.querySelector('button');
       btn.disabled = true;
-      try {
-        const p = await api(`/api/ceny/cena/podglad?${new URLSearchParams({ oferta_id: o.id, cena: pole.value.trim() })}`);
-        const g = p.granice || {};
-        const zm = p.teraz ? ` <span class="${p.cena > p.teraz ? 'ceny-gora' : 'ceny-dol'}">(${p.cena > p.teraz ? '+' : ''}${cenyLiczba(((p.cena - p.teraz) / p.teraz) * 100, 1)}%)</span>` : '';
-        const tak = await cenyOknoPotwierdzenia({
-          tytul: `Zmienić cenę ${p.kanal_nazwa} ${p.sku}?`,
-          tresc: `<table class="tabela mca-tabela"><thead><tr><th></th><th>Cena</th><th>Marża</th><th>Zysk/szt.</th></tr></thead><tbody>
-              <tr><td>Teraz</td><td>${p.teraz != null ? `${cenyLiczba(p.teraz)} ${w}` : '—'}</td><td>${p.marza_teraz != null ? cenyLiczba(p.marza_teraz, 1) + '%' : '—'}</td><td>${p.zysk_teraz != null ? cenyLiczba(p.zysk_teraz) + ' zł' : '—'}</td></tr>
-              <tr><td><b>Nowa</b></td><td><b>${cenyLiczba(p.cena)} ${w}</b>${zm}</td><td><b>${p.marza != null ? cenyLiczba(p.marza, 1) + '%' : '—'}</b></td><td><b>${p.zysk != null ? cenyLiczba(p.zysk) + ' zł' : '—'}</b></td></tr>
-            </tbody></table>
-            <p class="hint">Granice automatu: ${g.min != null ? `min ${cenyLiczba(g.min)} (${cenyZrodlo(g.zrodlo_min)}) · max ${cenyLiczba(g.max)} (${cenyZrodlo(g.zrodlo_max)}) ${w}` : 'brak'}</p>`,
-          ostrzezenia: p.ostrzezenia,
-          uwaga: `${p.auto ? '<b>Automat na tej ofercie zostanie wyłączony</b> — włączysz go z powrotem przełącznikiem. ' : ''}Cena idzie od razu na platformę. ${cenyEsc(p.propagacja || '')}.`,
-          przycisk: 'Wyślij na platformę',
-        });
-        if (!tak) return;
-        const r = await cenyPost('/api/ceny/cena', { oferta_id: o.id, cena: p.cena, ...(p.ostrzezenia.length ? { potwierdz: true } : {}) });
-        pokazKomunikat(`${p.kanal_nazwa} ${p.sku}: wysłano ${cenyLiczba(r.cena)} ${w}.${r.automat_wylaczony ? ' Automat na tej ofercie wyłączony.' : ''} Potwierdzenie z platformy pojawi się po kilku minutach.`, 'ok');
-        odswiezCenyKarta();
-      } catch (err) { pokazKomunikat(err.message, 'blad'); }
+      try { if (await cenyWyslijRecznaCene(o, pole.value.trim())) odswiezCenyKarta(); }
       finally { btn.disabled = false; }
     });
   }
@@ -5277,6 +5265,33 @@ function cenyPodepnijReczne(sek, o) {
   };
   fg.addEventListener('submit', (e) => { e.preventDefault(); zapisz(fg.querySelector('[name=min]').value.trim(), fg.querySelector('[name=max]').value.trim()); });
   fg.querySelector('[data-ceny-kalk]')?.addEventListener('click', () => zapisz('', ''));
+}
+
+// Ręczna cena jednej oferty: podgląd z backendu → okno potwierdzenia (teraz / nowa, granice, ostrzeżenia) → wysyłka.
+// Wspólne dla karty SKU w Cenach i karty produktu w Sprzedaż → Trendy (tam `komunikat` pokazuje wynik na karcie,
+// bo pasek komunikatów leży pod nią). Zwraca true, gdy platforma przyjęła cenę.
+async function cenyWyslijRecznaCene(o, cena, { komunikat = pokazKomunikat } = {}) {
+  const w = cenyWaluta(o);
+  try {
+    const p = await api(`/api/ceny/cena/podglad?${new URLSearchParams({ oferta_id: o.id, cena })}`);
+    const g = p.granice || {};
+    const zm = p.teraz ? ` <span class="${p.cena > p.teraz ? 'ceny-gora' : 'ceny-dol'}">(${p.cena > p.teraz ? '+' : ''}${cenyLiczba(((p.cena - p.teraz) / p.teraz) * 100, 1)}%)</span>` : '';
+    const tak = await cenyOknoPotwierdzenia({
+      tytul: `Zmienić cenę ${p.kanal_nazwa} ${p.sku}?`,
+      tresc: `<table class="tabela mca-tabela"><thead><tr><th></th><th>Cena</th><th>Marża</th><th>Zysk/szt.</th></tr></thead><tbody>
+          <tr><td>Teraz</td><td>${p.teraz != null ? `${cenyLiczba(p.teraz)} ${w}` : '—'}</td><td>${p.marza_teraz != null ? cenyLiczba(p.marza_teraz, 1) + '%' : '—'}</td><td>${p.zysk_teraz != null ? cenyLiczba(p.zysk_teraz) + ' zł' : '—'}</td></tr>
+          <tr><td><b>Nowa</b></td><td><b>${cenyLiczba(p.cena)} ${w}</b>${zm}</td><td><b>${p.marza != null ? cenyLiczba(p.marza, 1) + '%' : '—'}</b></td><td><b>${p.zysk != null ? cenyLiczba(p.zysk) + ' zł' : '—'}</b></td></tr>
+        </tbody></table>
+        <p class="hint">Granice automatu: ${g.min != null ? `min ${cenyLiczba(g.min)} (${cenyZrodlo(g.zrodlo_min)}) · max ${cenyLiczba(g.max)} (${cenyZrodlo(g.zrodlo_max)}) ${w}` : 'brak'}</p>`,
+      ostrzezenia: p.ostrzezenia,
+      uwaga: `${p.auto ? '<b>Automat na tej ofercie zostanie wyłączony</b> — włączysz go z powrotem przełącznikiem. ' : ''}Cena idzie od razu na platformę. ${cenyEsc(p.propagacja || '')}.`,
+      przycisk: 'Wyślij na platformę',
+    });
+    if (!tak) return false;
+    const r = await cenyPost('/api/ceny/cena', { oferta_id: o.id, cena: p.cena, ...(p.ostrzezenia.length ? { potwierdz: true } : {}) });
+    komunikat(`${p.kanal_nazwa} ${p.sku}: wysłano ${cenyLiczba(r.cena)} ${w}.${r.automat_wylaczony ? ' Automat na tej ofercie wyłączony.' : ''} Potwierdzenie z platformy pojawi się po kilku minutach.`, 'ok');
+    return true;
+  } catch (err) { komunikat(err.message, 'blad'); return false; }
 }
 
 // Okno potwierdzenia ręcznej ceny / granic. Ostrzeżenia (pod minimum, strata, skok…) nie blokują, ale

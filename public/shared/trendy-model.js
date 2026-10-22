@@ -56,5 +56,44 @@
     return [sk, k];
   }
 
-  window.TrendyModel = { wiersze, FILTRY, hity, filtruj, klucz, sortuj };
+  // Oznaczenia na karcie produktu (desktop: Trendy → produkt) — podpowiedzi, co zrobić z ceną. Na razie TYLKO
+  // oznaczenia; akcje grupowe i automatyczne (np. „+5% na wszystkich kanałach”) przyjdą później (decyzja usera
+  // 2026-10-22). w — wiersz z wiersze(); oferty — GET /api/ceny/towar/:tw_id `oferty` z ceną już po wysłaniu
+  // (jak cenyPoWyslaniu w app.js): { id, kanal_nazwa, ilosc, auto, tylko_odczyt, bez_konkurencji, cena, zysk,
+  // bb_nasz, bb_cena, bb_nasza_inna, blokada, granice: { min } }.
+  // → [{ kod, waga: 'uwaga' | 'info', tekst, oferty: [id], produkt }] — `oferty` = których ofert dotyczy (podświetlenie
+  // wiersza; później cel akcji grupowej). `produkt: true` = oznaczenie całego towaru (kończy się / zalega) — dotyczy
+  // wszystkich ofert, więc ekran go nie podświetla w wierszach.
+  const KONCZY_DNI = 14, ZALEGA_DNI = 120, ZALEGA_SPADEK = -30;
+  function oznaczenia(w, oferty = []) {
+    const out = [];
+    const nazwy = (lista) => [...new Set(lista.map((o) => o.kanal_nazwa))].join(', ');
+    const dodaj = (kod, waga, tekst, lista = [], produkt = false) => out.push({ kod, waga, tekst, oferty: lista.map((o) => o.id), produkt });
+    const zeStanem = oferty.filter((o) => o.ilosc > 0);
+    const zl = (x) => (Math.round(x * 100) / 100).toFixed(2).replace('.', ',');
+    // „Dobrze się sprzedaje, ale się kończy” — po to ta karta powstała. Sprzedaż nie spada, a zapasu mniej niż na 2 tygodnie.
+    if (w.dost > 0 && w.dni != null && w.dni < KONCZY_DNI && w.a.s > 0 && w.a.s >= w.b.s) {
+      dodaj('konczy', 'uwaga', `Kończy się: dostępne ${w.dost} szt. na ~${w.dni} dni, sprzedaż ${w.b.s > 0 ? `${w.a.s} szt. vs ${w.b.s} przed` : `${w.a.s} szt., wcześniej 0`} — rozważ podniesienie cen`,
+        zeStanem.filter((o) => !o.tylko_odczyt), true);
+    }
+    if (w.dni != null && w.dni > ZALEGA_DNI && w.dp != null && w.dp <= ZALEGA_SPADEK) {
+      dodaj('zalega', 'info', `Zalega: zapas na ~${w.dni} dni, przychód ${Math.round(w.dp)}% — rozważ obniżkę albo strategię wyprzedaży`, zeStanem, true);
+    }
+    const pod = zeStanem.filter((o) => o.cena != null && o.granice?.min != null && o.cena < o.granice.min - 0.005);
+    if (pod.length) dodaj('pod_min', 'uwaga', `Poniżej minimum automatu: ${nazwy(pod)}`, pod);
+    const strata = zeStanem.filter((o) => o.zysk != null && o.zysk < 0);
+    if (strata.length) dodaj('strata', 'uwaga', `Strata na sztuce: ${strata.map((o) => `${o.kanal_nazwa} ${zl(o.zysk)} zł`).join(', ')}`, strata);
+    const blok = oferty.filter((o) => o.blokada);
+    if (blok.length) dodaj('blokada', 'uwaga', `Platforma wstrzymała ofertę przez cenę: ${nazwy(blok)}`, blok);
+    // Buy Box u obcego — nie liczymy naszej drugiej oferty ani kanałów, które nie mówią, kto ma najlepszą ofertę.
+    const bb = zeStanem.filter((o) => o.cena != null && !o.bez_konkurencji && !o.bb_nasz && !o.bb_nasza_inna && o.bb_cena != null);
+    if (bb.length) dodaj('bb_inny', 'info', `Buy Box ma ktoś inny: ${nazwy(bb)}`, bb);
+    const reczne = zeStanem.filter((o) => !o.tylko_odczyt && !o.auto);
+    if (reczne.length) dodaj('auto_wyl', 'info', `Automat wyłączony: ${nazwy(reczne)}`, reczne);
+    return out;
+  }
+
+  const api = { wiersze, FILTRY, hity, filtruj, klucz, sortuj, oznaczenia, KONCZY_DNI };
+  if (typeof module === 'object' && module.exports) module.exports = api;   // testy (node --test)
+  else window.TrendyModel = api;
 })();

@@ -1599,7 +1599,7 @@ img.tr-min { width: 64px; height: 64px; object-fit: contain; border-radius: 4px;
 #panel-sprzedaz-trendy .tr-grupaNag { background: var(--tr-wash); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; font-size: 13px; display: none; }
 #panel-sprzedaz-trendy .tr-grupaNag .tr-chip { margin-left: 8px; }
 .tr-tlo { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: flex-start; justify-content: center; z-index: 9500; overflow: auto; padding: 30px 16px; }
-.tr-okno { background: #fff; color: var(--tr-ink); border-radius: 14px; width: min(1040px, 100%); padding: 18px 20px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+.tr-okno { background: #fff; color: var(--tr-ink); border-radius: 14px; width: min(1280px, 100%); padding: 18px 20px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
 .tr-okno h3 { margin: 0 0 2px; font-size: 18px; }
 .tr-gora2 { display: grid; grid-template-columns: 220px 1fr; gap: 18px; }
 .tr-foto { width: 220px; height: 220px; object-fit: contain; border: 1px solid var(--tr-grid); border-radius: 10px; background: #fff; }
@@ -1611,3 +1611,23 @@ img.tr-min { width: 64px; height: 64px; object-fit: contain; border-radius: 4px;
 #panel-sprzedaz-dzien th.sd-sort { cursor: pointer; user-select: none; }
 #panel-sprzedaz-dzien th.sd-sort:hover { text-decoration: underline; }
 .tr-okno .tr-tab a { color: #1d4ed8; text-decoration: none; } .tr-okno .tr-tab a:hover { text-decoration: underline; }
+/* Karta produktu w Trendach = zarządzanie ceną (2026-10-22): tabela ofert z edycją ceny ⇄ marży. Okna potwierdzeń
+   ceny i automatu (wspólne z Cenami) muszą stać NAD kartą (.tr-tlo 9500), a pod ekranem wyboru profilu (100000). */
+#modal-ceny-reczna, #modal-ceny-auto { z-index: 9600; }
+.tr-ceny-nag { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 16px 0 6px; }
+.tr-strat { display: inline-flex; gap: 6px; align-items: center; margin-left: 8px; }
+.tr-strat select { max-width: 320px; }
+.tr-tlo .tr-pole { font: inherit; font-size: 13px; padding: 4px 7px; border: 1px solid var(--tr-grid); border-radius: 7px; background: #fff; color: var(--tr-ink); }
+.tr-cena { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.tr-cena input[name=cena] { width: 76px; text-align: right; }
+.tr-cena .tr-pole-m { width: 52px; text-align: right; }
+.tr-podglad { flex-basis: 100%; font-size: 12px; line-height: 1.35; min-height: 16px; }
+.tr-ceny td { vertical-align: top; }
+.tr-ceny td.tr-kan { background: var(--tr-surface); border-right: 1px solid var(--tr-grid); white-space: nowrap; }
+.tr-ceny tr.tr-of-bez td:not(.tr-kan) { opacity: .55; }
+.tr-ceny tr.tr-of-uwaga td:not(.tr-kan) { background: #fff6e8; }
+.tr-ozn { font-size: 13px; padding: 4px 8px; border-radius: 6px; margin-top: 4px; }
+.tr-ozn.uwaga { background: #fff3e0; color: #8a4b00; font-weight: 600; }
+.tr-ozn.info { color: var(--tr-ink2); padding-top: 1px; padding-bottom: 1px; }
+.tr-ok-msg { font-size: 13px; padding: 6px 10px; border-radius: 6px; margin-bottom: 6px; }
+.tr-ok-msg.ok { background: #d8f3dc; color: #1b4332; } .tr-ok-msg.blad { background: #fde2e2; color: #9b2226; } .tr-ok-msg.info { background: #e7f1ff; color: #1d3557; }

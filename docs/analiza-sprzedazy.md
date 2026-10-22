@@ -331,6 +331,24 @@ Wykres tygodniowy domyślnie 26 tygodni (przy 52 szczyt grudnia — 2,3 mln zł 
 tydzień, nie dzień, bo pt/sob to połowa wtorku. Zostaje: przyczyny spadków (repricer: Buy Box, zmiany cen; stany
 wstecz z dokumentów), widok „Zmiany” na telefonie.
 
+### Karta produktu = zarządzanie ceną — zrobione 2026-10-22 (desktop)
+
+**[decyzje usera 22.10]** Karta produktu to miejsce, gdzie widać „dobrze się sprzedaje, ale się kończy” — więc od
+razu tam zmienia się cenę albo repricer. (1) Wiersz tabeli = **oferta** (towar ma do 15 ofert, na Allegro ekajtek
+148 towarów ma > 1 ofertę). (2) **Na razie tylko oznaczenia** — akcje grupowe i automatyczne potem. (3) Wybór
+strategii na karcie — jest, choć własnych strategii jeszcze nie ma (lista pusta = podpowiedź). (4) Przycisk „+5% /
++10% na wszystkich kanałach” — ma sens, w etapie akcji grupowych. Wykres tygodniowy schowany pod przyciskiem.
+
+- Pole **cena ⇄ marża**: wpisanie jednego liczy drugie w backendzie — `GET /api/ceny/cena/podglad` (marża i zysk
+  przy cenie, ostrzeżenia) i `GET /api/ceny/cena/dla-marzy` (cena przy marży: kalkulator minimum automatu, te same
+  koszty, prowizja i Genius, cena „,99” — marża wychodzi w okolicy wpisanej, np. 35% → 34,6%; bez progu 5 zł, bo
+  wpisana marża ma dać tę marżę, a stratę i zejście pod minimum zgłaszają ostrzeżenia).
+- Wysyłka, okna potwierdzeń (ostrzeżenia wymagają „rozumiem”) i automat — te same funkcje i trasy co karta SKU w
+  Cenach; ręczna cena wyłącza automat na ofercie jak wszędzie (decyzja z 16.10).
+- Oznaczenia (`TrendyModel.oznaczenia`): **kończy się** (dostępne > 0, zapas < 14 dni, sprzedaż nie spada),
+  **zalega** (> 120 dni zapasu i przychód ≤ −30%), pod minimum automatu, strata na sztuce, Buy Box u obcego, automat
+  wyłączony, oferta wstrzymana przez platformę. Kończy się / zalega dotyczą towaru — nie podświetlają wierszy.
+
 Pierwotny plan (zostaje jako tło):
 
 - Listy „trendujące” i „tracące popularność”, 30 dni: sztuki i sprzedaż netto z % zmiany, przełącznik % / #

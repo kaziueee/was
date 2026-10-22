@@ -19,6 +19,7 @@
 //   GET  /api/ceny/log?limit=                                          zmiany cen (auto) + działania ludzi
 //   POST /api/ceny/automat  { ids: [oferta_id...], auto: true|false }  — tylko podane oferty, nigdy hurtem
 //   GET  /api/ceny/cena/podglad?oferta_id=&cena=                      zysk/marża przy wpisanej cenie + ostrzeżenia
+//   GET  /api/ceny/cena/dla-marzy?oferta_id=&marza=                   cena przy wpisanej marży (kalkulator) + to samo co podgląd
 //   POST /api/ceny/cena     { oferta_id, cena, potwierdz }             ręczna cena → platforma (pricing/reczna-cena.js);
 //        wyłącza automat na tej ofercie (decyzja usera 2026-10-16); z ostrzeżeniami tylko z potwierdz = true
 //   POST /api/ceny/granice  { oferta_id, min, max, potwierdz }         ręczne min/max repricera (puste = kalkulator)
@@ -462,18 +463,41 @@ async function ocenaRecznejCeny(o, cenaWe) {
   return { cena: c.cena, teraz, p, ocena, przed, gtOk };
 }
 
+const podgladCeny = (o, r) => ({
+  oferta_id: o.id, kolumna: kluczKolumny(o.platforma, o.rynek), kanal_nazwa: kolumna(o.platforma, o.rynek)?.nazwa || `${o.platforma} ${o.rynek}`,
+  waluta: kolumna(o.platforma, o.rynek)?.waluta || '', sku: o.sku, auto: !!o.auto,
+  cena: r.cena, zysk: r.ocena.zysk, marza: r.ocena.marza, ostrzezenia: r.ocena.ostrzezenia,
+  teraz: r.teraz, zysk_teraz: r.przed?.zysk ?? null, marza_teraz: r.przed?.marza ?? null,
+  granice: opisPasa(r.p), gt_ok: r.gtOk, obslugiwana: reczna.obslugiwana(o.platforma), propagacja: reczna.propagacja(o.platforma),
+});
+
 router.get('/cena/podglad', asyncH(async (req, res) => {
   const o = ofertaPoId(req.query.oferta_id);
   if (!o) return res.status(404).json({ blad: 'Nie ma takiej oferty' });
   const r = await ocenaRecznejCeny(o, req.query.cena);
   if (r.blad) return res.status(400).json({ blad: r.blad });
-  res.json({
-    oferta_id: o.id, kolumna: kluczKolumny(o.platforma, o.rynek), kanal_nazwa: kolumna(o.platforma, o.rynek)?.nazwa || `${o.platforma} ${o.rynek}`,
-    waluta: kolumna(o.platforma, o.rynek)?.waluta || '', sku: o.sku, auto: !!o.auto,
-    cena: r.cena, zysk: r.ocena.zysk, marza: r.ocena.marza, ostrzezenia: r.ocena.ostrzezenia,
-    teraz: r.teraz, zysk_teraz: r.przed?.zysk ?? null, marza_teraz: r.przed?.marza ?? null,
-    granice: opisPasa(r.p), gt_ok: r.gtOk, obslugiwana: reczna.obslugiwana(o.platforma), propagacja: reczna.propagacja(o.platforma),
-  });
+  res.json(podgladCeny(o, r));
+}));
+
+// Cena przy zadanej marży (karta produktu w Sprzedaż → Trendy: pole „marża %”). Ten sam kalkulator co minimum
+// automatu (pricing/pas.js `policz`: koszty, prowizja i Genius oferty), cena „,99” jak w Cenniku — więc marża
+// wychodzi w okolicy wpisanej (20% → 19,6–20,2%); podgląd pokazuje prawdziwą. Bez progu minimalnego zysku (5 zł): wpisana
+// marża ma dać tę marżę, a stratę i zejście pod minimum i tak zgłaszają ostrzeżenia przy wysyłce.
+const MARZA_ZAKRES = [-50, 80];
+router.get('/cena/dla-marzy', asyncH(async (req, res) => {
+  const o = ofertaPoId(req.query.oferta_id);
+  if (!o) return res.status(404).json({ blad: 'Nie ma takiej oferty' });
+  const m = granice.liczba(req.query.marza);
+  if (m == null || !(m >= MARZA_ZAKRES[0] && m <= MARZA_ZAKRES[1])) return res.status(400).json({ blad: `Marża od ${MARZA_ZAKRES[0]} do ${MARZA_ZAKRES[1]}%` });
+  const { w, gtOk } = await wycenaTowaru(o.tw_id);
+  if (!w) return res.status(503).json({ blad: gtOk ? 'Brak wyceny towaru w GT' : 'Subiekt nie odpowiada — bez kosztu zakupu nie policzę ceny' });
+  const { kalk } = await pasZeStrategia(w, o);
+  if (!kalk?.policz) return res.status(400).json({ blad: `${kolumna(o.platforma, o.rynek)?.nazwa || o.platforma}: kalkulator nie zna tego rynku — wpisz cenę` });
+  const cena = kalk.policz({ tryb: 'marza', marza: m, minzysk: -1e9 });
+  if (!(cena > 0)) return res.status(400).json({ blad: `Przy marży ${granice.pl(m, 1)}% kalkulator nie daje ceny` });
+  const r = await ocenaRecznejCeny(o, cena);
+  if (r.blad) return res.status(400).json({ blad: r.blad });
+  res.json({ ...podgladCeny(o, r), marza_wpisana: m });
 }));
 
 // Raport Allegro Analytics „Czynniki wpływające na wybór Top oferty” — plik xlsx w surowej treści żądania

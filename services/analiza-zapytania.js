@@ -206,7 +206,7 @@ function live({ przed = null, limit = 40 } = {}) {
       (poz.get(p.zam_id) || poz.set(p.zam_id, []).get(p.zam_id)).push(p);
     }
   }
-  // stan, zapas w dniach i flagi (kończy się / nowość / nadmiar / zalega) — ta sama karta towaru co przegląd produktów
+  // stan, zapas w dniach i flagi (kończy się / nowość / zalega; nadmiar wyłączony) — ta sama karta towaru co przegląd produktów
   const tow = new Map(uzupelnijTowary([...new Set([...poz.values()].flat().map((p) => p.tw_id))].map((tw_id) => ({ tw_id })), { zRepricerem: false })
     .produkty.map((t) => [t.tw_id, t]));
   const ost = zam[zam.length - 1];

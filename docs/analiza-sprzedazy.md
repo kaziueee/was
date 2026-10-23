@@ -440,6 +440,10 @@ czyste funkcje z testami, bez SQLite i GT.
 | **Nadmiar** | zapas > 730 dni **przy szybszym z temp** (30 dni / rok) | 1055 towarów, 362 524 szt. = **79% sztuk na K4+K4G** (460 077) — policzone przy tempie z roku, po zmianie mniej |
 | **Kończy się** | zapas < 30 dni (zawsze, jest na karcie) | 223 towary |
 
+**Flaga „nadmiar” wyłączona 2026-10-24 (decyzja usera: nie sprawdza się)** — `FLAGI_WYLACZONE` w
+`services/analiza-model.js`; liczy się dalej (`flagiWszystkie`), ale żaden ekran ani raport jej nie pokazuje. Definicja
+do poprawy, zanim wróci.
+
 Zmiana definicji nadmiaru z makiety 2026-10-20: przy samym tempie z roku HWHJBD90 (69 szt. w 30 dni, zapas 262
 dni) wypadał jako nadmiar, bo rok temu sprzedawał się słabo. Szybko rotujący towar to nie nadmiar.
 

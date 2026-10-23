@@ -86,8 +86,14 @@ function godzinaZamowienia({ godz_zam: godz, data_zam: dataZam, data_zk: dataZk,
 //   konczy  — zapas < 30 dni przy tempie z 30 dni
 //   nadmiar — zapas > 730 dni nawet przy SZYBSZYM z temp 30 dni / rok (szybko rotujący towar to nie nadmiar)
 //   zalega  — stan, zero sprzedaży w 180 dni, nie nowość
+// WYŁĄCZONE (decyzja usera 2026-10-24): „nadmiar” się nie sprawdza — liczymy dalej (definicja do poprawy), ale nie
+// pokazujemy nigdzie (karty i „Live” na telefonie, przegląd Dzień, raport mailem — wszystkie biorą flagi stąd).
+const FLAGI_WYLACZONE = new Set(['nadmiar']);
 const PROGI = { nowoscDni: 30, konczyDni: 30, nadmiarDni: 730, zalegaDni: 180 };
-function flagiTowaru({ stan = 0, szt30 = 0, szt180 = 0, szt365 = 0, pierwszePrzyjecie = null, dzis }) {
+function flagiTowaru(dane) {
+  return flagiWszystkie(dane).filter((x) => !FLAGI_WYLACZONE.has(x));
+}
+function flagiWszystkie({ stan = 0, szt30 = 0, szt180 = 0, szt365 = 0, pierwszePrzyjecie = null, dzis }) {
   const f = [];
   const t30 = szt30 / 30, t365 = szt365 / 365, szybsze = Math.max(t30, t365);
   const nowosc = !!(pierwszePrzyjecie && dzis && pierwszePrzyjecie > dodajDni(dzis, -PROGI.nowoscDni));
@@ -160,5 +166,5 @@ function dniBezStanuWOknie(przedzialy, od, doDnia) {
 module.exports = {
   dniNietypowe, dniZakresu, przedzialyBezStanu, dniBezStanuWOknie, godzinaZamowienia, INTERWAL_JOBA_MIN,
   ROK_TEMU_DNI, ZAKRESY, PROGI, dodajDni, rokTemu, zakres, kursDokumentu, czasZUuidV1, dzienICzasPl, dataZamowienia,
-  flagiTowaru, dniZapasu, zwrotZPozycji,
+  flagiTowaru, flagiWszystkie, FLAGI_WYLACZONE, dniZapasu, zwrotZPozycji,
 };

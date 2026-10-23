@@ -59,9 +59,12 @@ test('flagi: nowość < 30 dni, kończy się < 30 dni zapasu, nadmiar przy szybs
   const dzis = '2026-10-20';
   assert.deepStrictEqual(m.flagiTowaru({ stan: 10, szt30: 30, szt180: 50, szt365: 60, pierwszePrzyjecie: '2026-10-05', dzis }), ['nowosc', 'konczy']);
   // HWHJBD90: 602 szt., 69 w 30 dni, słaby rok — przy tempie z roku byłby nadmiar, przy szybszym nie
-  assert.deepStrictEqual(m.flagiTowaru({ stan: 602, szt30: 69, szt180: 150, szt365: 250, dzis }), []);
-  assert.deepStrictEqual(m.flagiTowaru({ stan: 5000, szt30: 3, szt180: 10, szt365: 20, dzis }), ['nadmiar']);
-  assert.deepStrictEqual(m.flagiTowaru({ stan: 40, szt30: 0, szt180: 0, szt365: 3, dzis }), ['nadmiar', 'zalega']);
+  assert.deepStrictEqual(m.flagiWszystkie({ stan: 602, szt30: 69, szt180: 150, szt365: 250, dzis }), []);
+  assert.deepStrictEqual(m.flagiWszystkie({ stan: 5000, szt30: 3, szt180: 10, szt365: 20, dzis }), ['nadmiar']);
+  assert.deepStrictEqual(m.flagiWszystkie({ stan: 40, szt30: 0, szt180: 0, szt365: 3, dzis }), ['nadmiar', 'zalega']);
+  // „nadmiar” wyłączony z pokazywania (decyzja usera 2026-10-24) — reszta flag bez zmian
+  assert.deepStrictEqual(m.flagiTowaru({ stan: 5000, szt30: 3, szt180: 10, szt365: 20, dzis }), []);
+  assert.deepStrictEqual(m.flagiTowaru({ stan: 40, szt30: 0, szt180: 0, szt365: 3, dzis }), ['zalega']);
   assert.deepStrictEqual(m.flagiTowaru({ stan: 40, pierwszePrzyjecie: '2026-10-10', dzis }), ['nowosc']);   // nowość bez sprzedaży nie zalega
   assert.deepStrictEqual(m.flagiTowaru({ stan: 0, szt30: 5, dzis }), []);
   assert.strictEqual(m.dniZapasu(602, 69), 262);

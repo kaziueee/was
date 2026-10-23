@@ -12,8 +12,8 @@ const zlib = require('node:zlib');
 
 const HOST = 'https://sellingpartnerapi-eu.amazon.com';
 
-// Rynki, na których sprzedajemy (decyzja usera 2026-10-12). Kraj = klucz w config/rynki.js
-// tam, gdzie kalkulator go zna (PL jeszcze nie).
+// Rynki, na których sprzedajemy (decyzja usera 2026-10-12). Kraj = klucz kolumny w pricing/kolumny.js
+// (rynek kalkulatora „Amazon <kraj>” w config/rynki.js; PL od 2026-10-22).
 const RYNKI_AMAZON = {
   DE: { id: 'A1PA6795UKMFR9', domena: 'Amazon.de', waluta: 'EUR' },
   FR: { id: 'A13V1IB3VIYZZH', domena: 'Amazon.fr', waluta: 'EUR' },

@@ -47,6 +47,17 @@ const RYNKI = [
   { nazwa: 'Amazon IT',   kraj: 'IT', waluta: 'EUR', vat: 22, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
   { nazwa: 'Amazon ES',   kraj: 'ES', waluta: 'EUR', vat: 21, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
   { nazwa: 'Amazon NL',   kraj: 'NL', waluta: 'EUR', vat: 21, prowizja: 15, wysKlient: 4.99, typ: 'amazon-dhl', kotwica: true },
+  // Amazon PL (dodany 2026-10-22 pod repricer). Liczby zmierzone, nie z cennika: raporty rozliczeń Amazon PL
+  // (projekt Rozliczenia, 21 raportów 12.2025–09.2026, 726 zamówień) i raport zamówień SP-API (90 dni do 22.10, 300):
+  //  - prowizja 5% ceny brutto + 23% VAT od prowizji = 6,15% (kwota z VAT, jak liczymy prowizję Amazon DE) — tak od
+  //    połowy kwietnia 2026, wcześniej 10% (12,3%). Product Fees API 23.10.2026: ReferralFee = 5% ceny, bez promocji
+  //    (pojedyncze produkty 4% — liczymy 5%, ostrożniej). Amazon liczy ją od całości z wysyłką (pozycja ShippingHB),
+  //  - wysyłka = Amazon Easy Ship (szablon „std-ez-pl”, doręcza InPost): STAŁA opłata za paczkę 3,49 zł + VAT = 4,29 zł
+  //    bez względu na wagę i gabaryt (mail Amazon 25.02.2026: ryczałt krajowy 3,39 → 3,49 zł od 15.03.2026) —
+  //    w rozliczeniach ma ją każde zamówienie; przewoźnikowi nie płacimy nic więcej,
+  //  - klient nie płaci za dostawę (300 z 300 zamówień),
+  //  - abonament sprzedawcy 204,18 zł/mies. (pobierany na PL) poza kalkulatorem, jak abonament Kauflandu.
+  { nazwa: 'Amazon PL',   kraj: 'PL', waluta: 'PLN', vat: 23, prowizja: 6.15, wysylka: 4.29, wysKlient: 0, typ: 'flat' },
   // eMAG RO (przywrócony 2026-10-14 pod repricer). Liczby z umowy Okitrade i realnych rozliczeń:
   //  - prowizja 16% od ceny BEZ VAT (`prowizjaOdNetto`) — aneks „Condiții comerciale” z 30.09.2026:
   //    zabawki 16% od 15.04.2026 (pluszaki i część niemowlęcych 18%); API eMAG

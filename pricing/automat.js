@@ -53,7 +53,7 @@ async function main([akcja, ...reszta]) {
     }
     if (!(o.ilosc > 0)) uwagi.push('brak stanu — worker pomija oferty bez stanu');
     const pas = (pasy.get(o.tw_id) || {})[r];
-    if (!pas) uwagi.push('brak pasa z kalkulatora (np. Amazon PL) — automat nie zdecyduje');
+    if (!pas) uwagi.push('brak pasa z kalkulatora — automat nie zdecyduje');
     else {
       const cena = o.obs_cena ?? o.cena;
       if (Math.round(cena * 100) < Math.round(pas.min * 100)) uwagi.push(`cena ${cena} poniżej minimum ${pas.min} — automat PODNIESIE ją do minimum`);

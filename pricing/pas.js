@@ -5,7 +5,7 @@
 // max = min × MNOZNIK_MAX. Wycena hurtem po tw_Id (jedno zapytanie GT na 500 towarów).
 //
 // Klucze wyniku = klucze kolumn (pricing/kolumny.js): DE, FR, …, EMAG_RO. Kanał bez rynku w
-// kalkulatorze (Amazon PL) → brak pasa → repricer nie decyduje (brak_pasa).
+// kalkulatorze → brak pasa → repricer nie decyduje (brak_pasa); Amazon PL ma rynek od 2026-10-22.
 //
 // eMAG: profil Genius / bez Genius rozstrzyga oferta z API (genius_computed), a gdy jej nie ma —
 // wymiary z GT (services/cennik.js). Towar z Genius ma inny koszt (opłata Genius, tańsza wysyłka),

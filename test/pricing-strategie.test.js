@@ -101,7 +101,7 @@ test('strategie: All marża X — niższa podłoga, max = min × mnożnik, pas b
     assert.deepStrictEqual(p[k].strategia, { id: 1, nazwa: 'Marża 10', typ: 'marza' });
     assert.ok(p[k].ocen(p[k].min).marza >= 9, `${k}: marża przy podłodze ${p[k].ocen(p[k].min).marza}`);
   }
-  assert.strictEqual(p.PL, undefined);                              // Amazon PL bez kalkulatora — bez pasa jak dziś
+  assert.ok(p.PL.min < baza.PL.min);                                 // Amazon PL ma kalkulator od 2026-10-22
 });
 
 test('strategie: wyprzedaż — podłoga przy zysku ~0 zł', () => {

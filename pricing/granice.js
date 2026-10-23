@@ -10,7 +10,7 @@
 //   max = ręczne max, inaczej max kalkulatora — ale nie niżej niż ręczne min × MNOZNIK_MAX: ręczne
 //         min nad dawnym max nie może zostawić pasa „do góry nogami”, a ręczne min PONIŻEJ
 //         kalkulatora nie ścina miejsca na podwyżki.
-// Ręczne min działa też tam, gdzie kalkulator nie zna rynku (Amazon PL, Empik): jest wtedy jedynym
+// Ręczne min działa też tam, gdzie kalkulator nie zna rynku: jest wtedy jedynym
 // źródłem pasa, a zysku i marży nie znamy (ocen → null).
 //
 // Ręczna cena (ta sama data): bez blokad, ale cena pod minimum, ze stratą, nad maksimum, z dużym

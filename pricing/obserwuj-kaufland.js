@@ -14,14 +14,15 @@ const { takaSamaObserwacja } = require('./bez-zmian');
 const klucz = (rynek, sku) => `${String(rynek || 'DE').toUpperCase()}|${String(sku || '').trim().toUpperCase()}`;
 
 // oferty: [{ id, sku, rynek }]; surowe: unity z kaufland.wszystkieUnits / unitPoSku (pole `_rynek`).
-async function obserwujKaufland(oferty, surowe) {
+// naPostep — postęp pobierania rankingów (kaufland.buyboxyHurtem).
+async function obserwujKaufland(oferty, surowe, { naPostep } = {}) {
   const poSku = new Map((surowe || []).map((u) => [klucz(u._rynek, u.id_offer), u]));
   const pary = [];
   for (const o of oferty) {
     const u = poSku.get(klucz(o.rynek, o.sku));
     if (u) pary.push({ o, u, rynek: o.rynek, idProduktu: u.id_product });
   }
-  const rankingi = await kaufland.buyboxyHurtem(pary);
+  const rankingi = await kaufland.buyboxyHurtem(pary, { naPostep });
 
   const zapisz = db.prepare(`INSERT INTO obserwacje (oferta_id, cena, wysylka, bb_nasz, bb_cena, bb_fba, najtansza_inna, ofert, bb_nasza_inna)
                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);

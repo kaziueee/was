@@ -92,3 +92,65 @@ test('zadanie co minutę rusza tylko przy wolnej kolejce; wynik przebiegu idzie 
   assert.deepStrictEqual(wynik, ['oferta']);
   assert.strictEqual(k.jesliWolne(async () => {}), true);
 });
+
+test('pełny przebieg trafia na poprzedni pełny — pominięcie zostaje w logu z czasem trwania (24.10: 2 h ciszy w logu)', async () => {
+  const z = zegarNaNiby();
+  const logi = [];
+  const k = utworzKolejke({ zegar: z.zegar, teraz: z.teraz, log: (...a) => logi.push(a.join(' ')) });
+  const pelny = blokada();
+  k.przebieg(pelny.fn);
+  await z.uplyw(31 * 60_000);
+  assert.strictEqual(k.przebieg(async () => {}), false);
+  assert.match(logi.join('\n'), /pełny przebieg pominięty — poprzedni trwa od 1970-01-01T00:00:00\.000Z \(31 min\)/);
+});
+
+test('strażnik: zadanie ponad limit zgłasza się RAZ, a kolejka zostaje zajęta — drugi przebieg nie rusza obok zawieszonego', async () => {
+  const z = zegarNaNiby();
+  const logi = [], zgloszenia = [];
+  const k = utworzKolejke({ zegar: z.zegar, teraz: z.teraz, limitMs: 60 * 60_000, poZawieszeniu: (b) => zgloszenia.push(b),
+    log: (...a) => logi.push(a.join(' ')) });
+  const zawieszony = blokada();
+  k.przebieg(zawieszony.fn);
+  await z.uplyw(60 * 60_000);
+  assert.strictEqual(k.straznik(), false);        // równo limit — jeszcze nie
+  await z.uplyw(60_000);
+  assert.strictEqual(k.straznik(), true);
+  assert.deepStrictEqual(zgloszenia, [{ opis: 'pełny przebieg', od: 0, minut: 61 }]);
+  assert.match(logi.join('\n'), /STRAŻNIK: pełny przebieg trwa 61 min \(od 1970-01-01T00:00:00\.000Z, limit 60 min\)/);
+  await z.uplyw(60_000);
+  assert.strictEqual(k.straznik(), false);        // bez powtórek co minutę
+  assert.strictEqual(zgloszenia.length, 1);
+  let drugi = 0;
+  assert.strictEqual(k.przebieg(async () => { drugi++; }), false);
+  assert.strictEqual(k.zajete, true);             // kolejki nie zwalniamy — tylko worker może zakończyć proces
+  await zawieszony.zwolnij();                     // „obudził się” — dopiero teraz kolejka wolna
+  await z.uplyw(60_000);
+  assert.strictEqual(drugi, 0);
+  assert.strictEqual(k.zajete, false);
+});
+
+test('strażnik pilnuje też krótkich zadań i liczy od początku KAŻDEGO zadania', async () => {
+  const z = zegarNaNiby();
+  const zgloszenia = [];
+  const k = utworzKolejke({ zegar: z.zegar, teraz: z.teraz, limitMs: 60 * 60_000, poZawieszeniu: (b) => zgloszenia.push(b.opis), log: () => {} });
+  const szybki = blokada();
+  k.przebieg(szybki.fn);
+  await z.uplyw(50 * 60_000);
+  await szybki.zwolnij();                         // 50 min — w limicie
+  const potw = blokada();
+  k.potwierdzenie(potw.fn, 0, 'potwierdzenie Amazon (3)');
+  await z.uplyw(30 * 60_000);
+  assert.strictEqual(k.straznik(), false);        // 30 min tego zadania, nie 80 od pierwszego
+  assert.deepStrictEqual(k.biezace, { opis: 'potwierdzenie Amazon (3)', od: 50 * 60_000, minut: 30 });
+  await z.uplyw(31 * 60_000);
+  assert.strictEqual(k.straznik(), true);
+  assert.deepStrictEqual(zgloszenia, ['potwierdzenie Amazon (3)']);
+});
+
+test('strażnik przy wolnej kolejce nic nie robi', () => {
+  let zgloszono = false;
+  const k = utworzKolejke({ limitMs: 0, poZawieszeniu: () => { zgloszono = true; }, log: () => {} });
+  assert.strictEqual(k.straznik(), false);
+  assert.strictEqual(k.biezace, null);
+  assert.strictEqual(zgloszono, false);
+});

@@ -28,7 +28,7 @@
 // (awaryjne zatrzymanie wszystkich cen jedną zmianą; ekran pokazuje wtedy ostrzeżenie).
 //
 //   node pricing/worker.js --raz [--pelny]   — jeden przebieg i koniec
-//   node pricing/worker.js                   — w pętli
+//   node pricing/worker.js                   — w pętli (ze strażnikiem: zawieszone zadanie kończy proces — niżej)
 
 const { db, stan } = require('./db');
 const { obserwuj } = require('./obserwuj');
@@ -71,6 +71,18 @@ const ALLEGRO_KONTA = String(process.env.PRICING_ALLEGRO_KONTA || Object.keys(al
 // Storefronty Kaufland (pricing/kaufland.js STOREFRONTY); domyślnie tylko DE — inne dopiero, gdy znamy ich koszty.
 const KAUFLAND_RYNKI = String(process.env.PRICING_KAUFLAND_RYNKI || 'DE').split(',').map((x) => x.trim().toUpperCase()).filter((k) => kaufland.STOREFRONTY[k]);
 
+// Co przebieg robi w tej chwili: etap i obietnice, na które czeka (z postępem). Strażnik kolejki
+// (pricing/kolejka-workera.js) wpisuje to do logu, gdy przebieg wisi — 23/24.10 przebieg stał 2 h w
+// Promise.all obserwacji, log milczał, a po restarcie nie dało się już ustalić, na którą z obietnic czekał.
+const postep = { etap: null, czeka: new Map() };
+const etap = (nazwa) => { postep.etap = nazwa; };
+const sledz = (nazwa, p) => {
+  postep.czeka.set(nazwa, '');
+  return Promise.resolve(p).finally(() => postep.czeka.delete(nazwa));
+};
+const opisPostepu = () => [postep.etap && `etap: ${postep.etap}`,
+  postep.czeka.size && `czeka na: ${[...postep.czeka].map(([n, s]) => (s ? `${n} (${s})` : n)).join(', ')}`].filter(Boolean).join('; ');
+
 const minelo = (klucz, ms) => {
   const s = stan.get(klucz);
   return !s || Date.now() - new Date(s.czas.replace(' ', 'T') + 'Z').getTime() >= ms;
@@ -87,6 +99,7 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
   // liczy się w czasie synchronizacji pozostałych platform, a odbieramy go tuż przed obserwacją Allegro.
   // Tylko oferty z automatem, w oknie dnia; błąd nie zatrzymuje przebiegu.
   if (platformy.has('allegro') && niezbednik.skonfigurowany()) {
+    etap('Niezbędnik — zlecenie');
     try {
       await konkurencja.odbierz();
       const zAuto = db.prepare(`SELECT id, rynek, asin, tw_id, ean, ean_czas, konk_co_h FROM oferty WHERE platforma = 'allegro' AND auto = 1
@@ -102,6 +115,7 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
     }
   }
   if (platformy.has('amazon') && minelo('sync_oferty', SYNC_MS)) {
+    etap('lista Amazon');
     const s = await synchronizuj();
     stan.set('sync_oferty', JSON.stringify(s.map((x) => [x.rynek, x.ofert])));
     wynik.sync = s.reduce((a, x) => a + x.ofert, 0);
@@ -115,6 +129,7 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
     emagSurowe = [];
     const podsum = {};
     for (const kraj of EMAG_KRAJE) {
+      etap(`lista eMAG ${kraj}`);
       try {
         const lista = await emag.wszystkieOferty(kraj);
         const s = await synchronizujEmag(lista, kraj);
@@ -144,6 +159,7 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
   if (platformy.has('kaufland') && kaufland.skonfigurowany()) {
     const podsum = {};
     for (const rynek of KAUFLAND_RYNKI) {
+      etap(`lista Kaufland ${rynek}`);
       try {
         const lista = await kaufland.wszystkieUnits(rynek);
         podsum[rynek] = await synchronizujKaufland(lista, rynek);
@@ -168,6 +184,7 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
   // synchronizacjami lista nie jest potrzebna. Błąd Empiku nie zatrzymuje reszty przebiegu.
   let empikSurowe = null, empikOk = false;
   if (platformy.has('empik') && empik.skonfigurowany()) {
+    etap('lista Empik');
     try {
       if (minelo('sync_empik', SYNC_MS)) {
         empikSurowe = await empik.wszystkieOferty();
@@ -192,6 +209,7 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
     const podsum = {};
     const podpiete = allegro.kontaAutoryzowane();
     for (const konto of ALLEGRO_KONTA.filter((k) => podpiete.includes(k))) {
+      etap(`lista Allegro ${konto}`);
       try {
         const lista = await allegro.wszystkieOferty(konto);
         podsum[konto] = await synchronizujAllegro(konto, lista);
@@ -247,6 +265,7 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
   const raportTop = allegroOf.length ? ostatniRaportTop() : null;
   // Raport Niezbędnika zlecony na początku przebiegu — zwykle już gotowy; jeśli nie, chwilę czekamy.
   if (allegroOf.length && stan.get('nsp_raport')?.wartosc) {
+    etap('Niezbędnik — odbiór raportu');
     try {
       const r = await konkurencja.odbierz({ czekajMs: 90_000 });
       if (r?.gotowy) wynik.niezbednik = { ...(wynik.niezbednik || {}), odebrane: r.ok, bledy: r.bledy };
@@ -255,6 +274,7 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
       console.error(new Date().toISOString(), '[pricing] Niezbędnik odbiór:', e.message);
     }
   }
+  etap('obserwacje i pasy');
   // Empik: błąd P11 (limit, awaria) = oferty bez obserwacji w tym przebiegu, reszta idzie dalej.
   const obsEmpik = empikOf.length ? obserwujEmpik(empikOf, { surowe: empikSurowe }).catch((e) => {
     stan.set('blad_empik', e.message);
@@ -265,20 +285,22 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
   // wyłącznie to, co pokazuje ekran (wdrożenie kontrolowane, decyzja usera 2026-10-19). Błąd = przebieg jak dziś.
   let strategie = { poTw: new Map(), zakonczone: [] };
   try {
-    strategie = await strategieDane.strategieDlaPasow([...new Set(oferty.map((o) => o.tw_id))]);
+    strategie = await sledz('strategie', strategieDane.strategieDlaPasow([...new Set(oferty.map((o) => o.tw_id))]));
     if (strategie.poTw.size) wynik.strategie = strategie.poTw.size;
   } catch (e) {
     stan.set('blad_strategie', e.message);
     console.error(new Date().toISOString(), '[pricing] strategie:', e.message);
   }
   const [obsA, obsE, obsP, obsL, pasy, obsK] = await Promise.all([
-    amazon.length ? obserwuj(amazon) : new Map(),
-    emagOf.length ? obserwujEmag(emagOf, emagSurowe) : new Map(),
-    obsEmpik,
-    allegroOf.length ? obserwujAllegro(allegroOf, allegroSurowe) : new Map(),
-    pasyHurtem(oferty.map((o) => o.tw_id), geniusPoTw, prowizjaPoTw, strategie.poTw),
-    kauflandOf.length ? obserwujKaufland(kauflandOf, kauflandSurowe) : new Map(),
+    amazon.length ? sledz('obserwacja Amazon', obserwuj(amazon, { naPostep: (i, n) => postep.czeka.set('obserwacja Amazon', `${i}/${n}`) })) : new Map(),
+    emagOf.length ? sledz('obserwacja eMAG', obserwujEmag(emagOf, emagSurowe)) : new Map(),
+    sledz('obserwacja Empik', obsEmpik),
+    allegroOf.length ? sledz('obserwacja Allegro', obserwujAllegro(allegroOf, allegroSurowe)) : new Map(),
+    sledz('pasy z GT', pasyHurtem(oferty.map((o) => o.tw_id), geniusPoTw, prowizjaPoTw, strategie.poTw)),
+    kauflandOf.length ? sledz('obserwacja Kaufland', obserwujKaufland(kauflandOf, kauflandSurowe,
+      { naPostep: (x) => postep.czeka.set('obserwacja Kaufland', `${x.gotowe}/${x.wszystkie}, błędy ${x.bledy}`) })) : new Map(),
   ]);
+  etap('decyzje i wysyłka');
   if (obsA.bledyPaczek) wynik.bledy_paczek = obsA.bledyPaczek;
   if (emagOf.length) wynik.emag_obs = { ofert: obsE.size, zmian: obsE.nowe || 0 };
   if (kauflandOf.length) wynik.kaufland_obs = { ofert: obsK.size, zmian: obsK.nowe || 0, ...(obsK.bledy ? { bledy: obsK.bledy } : {}) };
@@ -355,6 +377,7 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
       empikPaczka.push({ o, ob, d });
       wPaczce = true;
     } else if (zapisWlaczony && o.auto && d.zmiana && pas && kanalZapis && pewneDopasowanie(o.dopasowanie)) {
+      etap(`wysyłka ${kluczKolumny(o.platforma, o.rynek)} ${o.sku}`);
       try {
         let w;
         if (o.platforma === 'amazon') w = await ustawCene(o.rynek, o.sku, d.cena);
@@ -387,7 +410,9 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
       zysk_nowa: potem?.zysk ?? null, zysk_cel: celOc?.zysk ?? null })) wiersze.push(wiersz);
     if (o.auto) kody[d.kod] = (kody[d.kod] || 0) + 1;
   }
+  etap('import cen Empik');
   if (empikPaczka.length) wynik.empik_import = await wyslijEmpik(empikPaczka, empikSurowe, wysylka, doPotwierdzenia);
+  etap('zapis decyzji');
   db.exec('BEGIN');
   try {
     for (const w of wiersze) zapisz.run(...w);
@@ -483,6 +508,8 @@ function nowyRaportTop() {
 
 async function przebiegBezpieczny(opcje) {
   const t0 = Date.now();
+  etap('start');
+  postep.czeka.clear();
   try {
     const w = await przebieg(opcje);
     const doPotwierdzenia = w.doPotwierdzenia || [];
@@ -494,6 +521,9 @@ async function przebiegBezpieczny(opcje) {
     stan.set('blad', e.message);
     console.error(new Date().toISOString(), '[pricing] błąd przebiegu:', e.message);
     return [];
+  } finally {
+    etap(null);              // potwierdzenie, które zawiśnie po przebiegu, nie dostanie w logu cudzego etapu
+    postep.czeka.clear();
   }
 }
 
@@ -621,11 +651,29 @@ if (require.main === module) {
     przebiegBezpieczny({ pelny: process.argv.includes('--pelny') }).then(() => process.exit(0));
   } else {
     const ms = interwalMsZMinut(process.env.PRICING_INTERWAL_MIN, 30, 'PRICING_INTERWAL_MIN');
-    console.log(`[pricing] worker startuje, przebieg co ${ms / 60000} min, `
+    // Strażnik: zadanie dłuższe niż PRICING_STRAZNIK_MIN (domyślnie 2 × interwał; przebieg trwa zwykle 6–18 min)
+    // kończy proces z kodem 1. Zawieszonej obietnicy nie da się przerwać, a zwolnienie kolejki obok niej groziłoby
+    // dwoma przebiegami naraz (zawieszony mógłby się obudzić i wysłać ceny z decyzji sprzed godziny). Nowy proces
+    // podnosi harmonogram: „ponów po awarii” w zadaniu NIE działa na kod wyjścia (zmierzone na SRV 24.10 — wyjście
+    // z kodem 1 to dla harmonogramu „ukończono pomyślnie”), dlatego WMS-Pricing ma wyzwalacz powtarzany co 5 min
+    // z „nie uruchamiaj nowego wystąpienia”: gdy proces żyje, wyzwalacz nic nie robi; gdy go nie ma — startuje go.
+    // Zawieszenie w pętli wysyłki: wysłane ceny zostają w logu (WYSŁANO), ale wiersze decyzji tego przebiegu
+    // przepadają (zapis idzie po wysyłce) — reguły 6 i 8 nie zobaczą tych zmian.
+    const STRAZNIK_MS = interwalMsZMinut(process.env.PRICING_STRAZNIK_MIN, 2 * ms / 60000, 'PRICING_STRAZNIK_MIN');
+    console.log(`[pricing] worker startuje, przebieg co ${ms / 60000} min, strażnik po ${STRAZNIK_MS / 60000} min, `
       + (process.env.PRICING_ZAPIS === '1' ? 'oferty z automatem zmieniają ceny na Amazonie' : 'HAMULEC: PRICING_ZAPIS ≠ 1, żadna cena nie idzie na Amazona'));
     // Jedna rzecz naraz (pricing/kolejka-workera.js): pełny przebieg czeka na krótkie zadania, potwierdzenia
     // czekają na swoją kolej zamiast przepadać.
-    const kolejka = utworzKolejke();
+    const kolejka = utworzKolejke({
+      limitMs: STRAZNIK_MS,
+      poZawieszeniu: (b) => {
+        const co = opisPostepu();
+        console.error(new Date().toISOString(), `[pricing] STRAŻNIK: ${co || 'bez etapu przebiegu'} — kończę proces, harmonogram uruchomi go od nowa`);
+        try { stan.set('blad', `strażnik: ${b.opis} wisiał ${b.minut} min${co ? ` (${co})` : ''} — proces zakończony`); } catch { /* wyjście ważniejsze niż wpis */ }
+        process.exit(1);
+      },
+    });
+    setInterval(() => kolejka.straznik(), 60_000);
     const potw = (lista, opoznienie, platforma) => lista.length
       && kolejka.potwierdzenie(() => potwierdz(lista), opoznienie, `potwierdzenie ${platforma} (${lista.length})`);
     const tik = () => kolejka.przebieg(() => przebiegBezpieczny(), (doPotwierdzenia = []) => {

@@ -212,18 +212,19 @@ async function buybox(idProduktu, rynek = 'DE') {
 
 // Rankingi dla wielu produktów naraz: kilka zapytań równolegle (daleko pod limitem 111/s).
 // Wynik: Map(`RYNEK|id_product` → data); błąd pojedynczego produktu = brak wpisu (bez obserwacji).
+// `naPostep({ gotowe, wszystkie, bledy })` po każdym produkcie — strażnik workera pisze to do logu, gdy przebieg wisi.
 const kluczProduktu = (rynek, idProduktu) => `${String(rynek).toUpperCase()}|${idProduktu}`;
-async function buyboxyHurtem(pary, { rownolegle = 6 } = {}) {
+async function buyboxyHurtem(pary, { rownolegle = 6, naPostep = () => {} } = {}) {
   const unikalne = [...new Map(pary.filter((p) => p.idProduktu).map((p) => [kluczProduktu(p.rynek, p.idProduktu), p])).values()];
   const wynik = new Map();
-  let bledy = 0, ostatniBlad = null, i = 0;
+  let bledy = 0, ostatniBlad = null, i = 0, gotowe = 0;
   const pracownik = async () => {
     while (i < unikalne.length) {
       const p = unikalne[i++];
       try { wynik.set(kluczProduktu(p.rynek, p.idProduktu), await buybox(p.idProduktu, p.rynek)); } catch (e) {
         bledy++; ostatniBlad = e.message;
         if (e.status === 401 || e.status === 403) throw e;      // klucze — nie ma sensu męczyć reszty
-      }
+      } finally { naPostep({ gotowe: ++gotowe, wszystkie: unikalne.length, bledy }); }
     }
   };
   await Promise.all(Array.from({ length: Math.min(rownolegle, unikalne.length) }, pracownik));

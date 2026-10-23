@@ -1,6 +1,6 @@
 'use strict';
 
-// Moduł analiz sprzedaży w osobnym wątku (services/watek.js, zasada 7 w CLAUDE.md): job analiz (co 15 min: zapis
+// Moduł analiz sprzedaży w osobnym wątku (services/watek.js, zasada 7 w CLAUDE.md): job analiz (co 5 min: zapis
 // okna, tempo ~0,7 s, nocne stany) i Trendy (~2,8 s SQLite na SRV) zatrzymywały w głównym wątku każdy skan Zebry.
 // Główny wątek tylko czyta gotowe wyniki z db/sprzedaz.db.
 

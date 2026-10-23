@@ -140,10 +140,10 @@
 
   // ---------- „Live” ----------
   // Ostatnie zamówienia po kolei, w kolejności wpływu (dzień + numer ZK — backend, indeks idx_zam_live). Godzina: Allegro
-  // z UUID (dokładna), reszta „≈” — kiedy WMS pierwszy raz zobaczył zamówienie (job co 15 min), brak = nie wiemy.
+  // z UUID (dokładna), reszta „≈” — kiedy WMS pierwszy raz zobaczył zamówienie (job co `co_min` minut), brak = nie wiemy.
   const WALUTY = { PLN: 'zł', EUR: '€', RON: 'RON', HUF: 'Ft' };
   const LIVE_CO_MS = 60_000;
-  let lKursor = null, lOstDzien = null, lTimer = null, lLaduje = false;
+  let lKursor = null, lOstDzien = null, lTimer = null, lLaduje = false, lCoMin = 5;
   const lPokazane = new Set();
   const cena = (x, w) => (x == null ? '—' : `${Number(x).toLocaleString('pl-PL', { minimumFractionDigits: w === 'HUF' ? 0 : 2, maximumFractionDigits: w === 'HUF' ? 0 : 2 })} ${WALUTY[w] || w || 'zł'}`);
   function zamowienieHtml(z, nowe) {
@@ -155,7 +155,7 @@
           <div class="l-nazwa">${W.esc(p.nazwa || '')}</div>
           <div class="l-cena"><b>${W.szt(p.szt)} × ${cena(p.cena_wal, z.waluta)}</b> <span class="sw-brak">stan ${p.dostepne == null ? '—' : W.szt(p.dostepne)}</span></div></div></div>`).join('');
     return `<div class="l-zam${nowe ? ' l-nowe' : ''}" data-id="${z.id}">
-      <div class="l-nag"><span class="l-godz" title="${z.godz_zrodlo === 'uuid' ? 'godzina złożenia (Allegro)' : z.godz ? 'kiedy WMS pierwszy raz zobaczył zamówienie (do 15 min po wpłynięciu)' : 'godzina nieznana'}">${godz}</span>
+      <div class="l-nag"><span class="l-godz" title="${z.godz_zrodlo === 'uuid' ? 'godzina złożenia (Allegro)' : z.godz ? `kiedy WMS pierwszy raz zobaczył zamówienie (do ${lCoMin} min po wpłynięciu)` : 'godzina nieznana'}">${godz}</span>
         <span class="l-kan">${W.esc(z.kanal_nazwa)}</span><span class="l-war">${W.zl(z.netto)}${zysk}</span></div>
       ${poz || '<div class="sw-brak">bez pozycji towarowych</div>'}
       <div class="l-st">${W.esc(z.numer || '')}${z.status === 'zamowione' ? ' · jeszcze bez faktury' : ''}${z.dzien !== z.wplyw ? ` · zamówione ${W.dzienTxt(z.dzien, false)}` : ''}</div>
@@ -172,7 +172,8 @@
     return { html, d };
   }
   function lStopka(d) {
-    $('l-stopka').textContent = `Dane z ${W.godzina(d.dane_z) || '—'} · WMS wczytuje zamówienia co 15 min`;
+    if (d.co_min) lCoMin = d.co_min;
+    $('l-stopka').textContent = `Dane z ${W.godzina(d.dane_z) || '—'} · WMS wczytuje zamówienia co ${lCoMin} min`;
     $('z-data').textContent = `dane z ${W.godzina(d.dane_z) || '—'}`;
   }
   async function ladujLive() {

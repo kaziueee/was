@@ -342,10 +342,11 @@ przewijana lista zamiast grupowania po produkcie, z tymi samymi danymi (zdjęcie
   Zebr (zasada 7).
 - **GT nie zapisuje godziny wystawienia ZK — tylko dzień** (sprawdzone 24.10: wszystkie kolumny dat `dok__Dokument`
   mają 00:00). Godzina: Allegro z UUID (prawdziwa godzina złożenia), reszta „≈” = kiedy job pierwszy raz zobaczył
-  zamówienie (`zamowienia.pierwszy`, do 15 min po wpływie do GT), i to tylko gdy to ten sam dzień — zamówienie wczytane
+  zamówienie (`zamowienia.pierwszy`, do 5 min po wpływie do GT), i to tylko gdy to ten sam dzień — zamówienie wczytane
   później (historia, przerwa joba) dostałoby godzinę wczytania. Wiersze sprzed kolumny godziny nie mają (nie udajemy).
 - Telefon pyta co minutę o pierwszą stronę; nowe zamówienia wstawia na górę, podświetlone, bez przewijania listy.
-  Same dane mają opóźnienie joba (do 15 min).
+  Same dane mają opóźnienie joba — **skrócone z 15 do 5 min** (decyzja usera 24.10; `INTERWAL_JOBA_MIN`, przebieg
+  bieżący to ~0,6 s zapytań do GT w wątku analiz).
 - Bez paragonów Sklepu (przegląd = internet).
 
 ### Filtr „Zakończone w okresie” — zrobione 2026-10-23 (desktop i telefon)

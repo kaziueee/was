@@ -9,6 +9,7 @@ const { db, meta } = require('../db/sprzedaz');
 const am = require('./analiza-model');
 const { NAZWY_KANALOW, nazwaKanalu } = require('./analiza-kanal');
 const { dzisLokalnie } = require('./sprzedaz-model');
+const { interwalMsZMinut } = require('./interwal');
 const { KOLUMNY, kluczKolumny } = require('../pricing/kolumny');
 
 const DATA_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -184,6 +185,8 @@ function produkty(p, { sort = 'zysk', limit = 500, zRepricerem = true } = {}) {
 // produkcie. Kolejność = dzień i numer ZK (rośnie z każdym zamówieniem; FS bez ZK — dzień FS, na końcu dnia), po indeksie
 // idx_zam_live (db/sprzedaz.js), więc odświeżanie co minutę nie sortuje 400 tys. zamówień w wątku Zebr. Bez paragonów
 // Sklepu (przegląd = internet). przed — kursor „dzień|zk|fs” ostatniego pokazanego zamówienia (następna strona).
+// co ile minut job dosypuje zamówienia — telefon podpisuje tym świeżość listy
+const JOB_MIN = interwalMsZMinut(process.env.ANALIZA_INTERWAL_MIN, am.INTERWAL_JOBA_MIN, 'ANALIZA_INTERWAL_MIN') / 60_000;
 const KLUCZ_LIVE = ['COALESCE(z.data_zk, z.data_fs, z.data_zam)', 'COALESCE(z.zk_id, 0)', 'COALESCE(z.fs_id, 0)'];
 const KURSOR_RE = /^(\d{4}-\d{2}-\d{2})\|(\d+)\|(\d+)$/;
 function live({ przed = null, limit = 40 } = {}) {
@@ -216,7 +219,7 @@ function live({ przed = null, limit = 40 } = {}) {
           cena_wal: p.cena_wal, netto: p.netto + (p.wysylka || 0), zysk: p.zysk, dostepne: dostepneZeStanu(stany.get(p.tw_id)) })) };
     }),
     kursor: zam.length === limit && ost ? `${ost.k_dzien}|${ost.k_zk}|${ost.k_fs}` : null,
-    dane_z: meta.get('biezacy')?.wartosc || null,
+    dane_z: meta.get('biezacy')?.wartosc || null, co_min: JOB_MIN,
   };
 }
 

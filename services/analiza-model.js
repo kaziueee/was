@@ -3,6 +3,9 @@
 // Moduł analiz sprzedaży — czysta logika dat, porównań i flag (bez SQLite i GT). Testy: test/analiza-model.test.js.
 // Projekt: docs/analiza-sprzedazy.md. Dni to napisy 'YYYY-MM-DD' (porównanie napisów = porównanie dat).
 
+// Job modułu (services/analiza-job.js): co ile minut dosypuje zamówienia z GT — 5 min od 2026-10-24 (telefon „Live”,
+// decyzja usera; wcześniej 15). Nadpisuje ANALIZA_INTERWAL_MIN w .env. Jedna stała dla joba i podpisów na ekranach.
+const INTERWAL_JOBA_MIN = 5;
 const ROK_TEMU_DNI = 364;   // ten sam dzień tygodnia rok wcześniej (decyzja usera 2026-10-20), jak widoki ERP Dashboard
 
 function dodajDni(dzien, dni) {
@@ -69,7 +72,7 @@ function dataZamowienia({ uuid, dataZk, dataFs }) {
 }
 
 // Godzina zamówienia na telefonie („Live”): Allegro — z UUID (prawdziwa godzina złożenia), reszta — kiedy job
-// pierwszy raz zobaczył zamówienie w GT (`pierwszy`, UTC; do 15 min po wpłynięciu), ale tylko gdy to ten sam dzień, co
+// pierwszy raz zobaczył zamówienie w GT (`pierwszy`, UTC; do INTERWAL_JOBA_MIN po wpłynięciu), ale tylko gdy to ten sam dzień, co
 // dzień wpływu: zamówienie wczytane później (historia, przerwa joba) dostałoby godzinę wczytania, a nie wpływu.
 function godzinaZamowienia({ godz_zam: godz, data_zam: dataZam, data_zk: dataZk, data_fs: dataFs, pierwszy }) {
   if (godz) return { dzien: dataZam, godz, zrodlo: 'uuid' };
@@ -155,7 +158,7 @@ function dniBezStanuWOknie(przedzialy, od, doDnia) {
 }
 
 module.exports = {
-  dniNietypowe, dniZakresu, przedzialyBezStanu, dniBezStanuWOknie, godzinaZamowienia,
+  dniNietypowe, dniZakresu, przedzialyBezStanu, dniBezStanuWOknie, godzinaZamowienia, INTERWAL_JOBA_MIN,
   ROK_TEMU_DNI, ZAKRESY, PROGI, dodajDni, rokTemu, zakres, kursDokumentu, czasZUuidV1, dzienICzasPl, dataZamowienia,
   flagiTowaru, dniZapasu, zwrotZPozycji,
 };

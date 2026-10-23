@@ -1,7 +1,7 @@
 'use strict';
 
 // Job modułu analiz sprzedaży (docs/analiza-sprzedazy.md) — dosypuje sprzedaż z GT do db/sprzedaz.db.
-//   bieżący (co ANALIZA_INTERWAL_MIN, domyślnie 15 min): wczoraj i dziś — FS (faktura dostaje datę wystawienia, więc
+//   bieżący (co ANALIZA_INTERWAL_MIN, domyślnie 5 min — analiza-model.INTERWAL_JOBA_MIN): wczoraj i dziś — FS (faktura dostaje datę wystawienia, więc
 //     FS do zamówienia sprzed 3 dni wpada w dzisiejsze okno i zastępuje jego wiersz) i ZK jeszcze bez FS, plus stany
 //     sprzedawanych towarów. Zmierzone 2026-10-20: ~0,6 s zapytań do GT (okno 4 dni: 1,8 s),
 //   nocny (raz na dobę, pierwszy przebieg po 2:00): ostatnie 14 dni na nowo (korekty, FS z cofniętą datą, ZK, które
@@ -18,7 +18,7 @@
 
 const dane = require('./analiza-dane');
 const { db, meta } = require('../db/sprzedaz');
-const { dodajDni } = require('./analiza-model');
+const { dodajDni, INTERWAL_JOBA_MIN } = require('./analiza-model');
 const { dzisLokalnie } = require('./sprzedaz-model');
 const { interwalMsZMinut } = require('./interwal');
 const awarie = require('./awarie');
@@ -113,7 +113,7 @@ async function przebieg(teraz = new Date()) {
 
 function start() {
   if (process.env.ANALIZA_WYLACZ === '1') { console.log('[analiza] job wyłączony (ANALIZA_WYLACZ=1)'); return null; }
-  const ms = interwalMsZMinut(process.env.ANALIZA_INTERWAL_MIN, 15, 'ANALIZA_INTERWAL_MIN');
+  const ms = interwalMsZMinut(process.env.ANALIZA_INTERWAL_MIN, INTERWAL_JOBA_MIN, 'ANALIZA_INTERWAL_MIN');
   const pierwszy = setTimeout(() => przebieg(), OPOZNIENIE_STARTU_MS);
   // w wątku analiz timery MUSZĄ trzymać pętlę (inaczej wątek kończy się od razu); zwalniamy je tylko w głównym
   if (!wWatku()) pierwszy.unref?.();

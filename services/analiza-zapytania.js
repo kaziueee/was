@@ -7,7 +7,7 @@
 
 const { db, meta } = require('../db/sprzedaz');
 const am = require('./analiza-model');
-const { NAZWY_KANALOW } = require('./analiza-kanal');
+const { NAZWY_KANALOW, nazwaKanalu } = require('./analiza-kanal');
 const { dzisLokalnie } = require('./sprzedaz-model');
 const { KOLUMNY, kluczKolumny } = require('../pricing/kolumny');
 
@@ -180,5 +180,45 @@ function produkty(p, { sort = 'zysk', limit = 500, zRepricerem = true } = {}) {
   return { dzien: p.dzien, zakres: p.zakresNazwa, baza: p.baza, razem: wszystkie.length, nazwy: NAZWY_KANALOW, historia_rok: rok, produkty: lista_ };
 }
 
-module.exports = { BAZY, POZA_SUMA, parametry, stanWczytania, kanalyZakresu, sumaInternetu, podsumowanie, produkty, uzupelnijTowary, tempa, stanyTowarow,
+// Telefon → „Live” (decyzja usera 2026-10-24): ostatnie zamówienia po kolei, w kolejności ich wpływu — bez grupowania po
+// produkcie. Kolejność = dzień i numer ZK (rośnie z każdym zamówieniem; FS bez ZK — dzień FS, na końcu dnia), po indeksie
+// idx_zam_live (db/sprzedaz.js), więc odświeżanie co minutę nie sortuje 400 tys. zamówień w wątku Zebr. Bez paragonów
+// Sklepu (przegląd = internet). przed — kursor „dzień|zk|fs” ostatniego pokazanego zamówienia (następna strona).
+const KLUCZ_LIVE = ['COALESCE(z.data_zk, z.data_fs, z.data_zam)', 'COALESCE(z.zk_id, 0)', 'COALESCE(z.fs_id, 0)'];
+const KURSOR_RE = /^(\d{4}-\d{2}-\d{2})\|(\d+)\|(\d+)$/;
+function live({ przed = null, limit = 40 } = {}) {
+  const k = KURSOR_RE.exec(przed || '');
+  const kursor = k ? [k[1], Number(k[2]), Number(k[3])] : null;
+  // dzień <= kursora pozwala indeksowi zacząć od właściwego miejsca; krotka rozstrzyga w obrębie dnia
+  const warunek = kursor ? `AND ${KLUCZ_LIVE[0]} <= ? AND (${KLUCZ_LIVE.join(', ')}) < (?, ?, ?)` : '';
+  const zam = db.prepare(`SELECT z.id, z.numer, z.status, z.kanal, z.rynek, z.waluta, z.data_zam, z.godz_zam, z.data_zk, z.data_fs, z.pierwszy,
+      z.szt, z.netto, z.wysylka_netto, z.zysk, z.zysk_zrodlo, ${KLUCZ_LIVE[0]} k_dzien, ${KLUCZ_LIVE[1]} k_zk, ${KLUCZ_LIVE[2]} k_fs
+    FROM zamowienia z WHERE z.status != 'paragon' ${warunek}
+    ORDER BY ${KLUCZ_LIVE.map((x) => x + ' DESC').join(', ')} LIMIT ?`).all(...(kursor ? [kursor[0], ...kursor] : []), limit);
+  const ids = zam.map((z) => z.id);
+  const poz = new Map();
+  if (ids.length) {
+    for (const p of db.prepare(`SELECT p.zam_id, p.tw_id, p.szt, p.netto, p.wysylka, p.cena_wal, p.zysk, t.symbol, t.nazwa, t.rodzaj
+        FROM pozycje p LEFT JOIN towary t ON t.tw_id = p.tw_id WHERE p.zam_id IN (${lista(ids)}) ORDER BY p.netto DESC`).all(...ids)) {
+      (poz.get(p.zam_id) || poz.set(p.zam_id, []).get(p.zam_id)).push(p);
+    }
+  }
+  const stany = stanyTowarow([...new Set([...poz.values()].flat().map((p) => p.tw_id))]);
+  const ost = zam[zam.length - 1];
+  return {
+    zamowienia: zam.map((z) => {
+      const g = am.godzinaZamowienia(z);
+      // wplyw — dzień w kolejności listy (dzień ZK); dzien — dzień zamówienia (Allegro z UUID bywa dzień wcześniej)
+      return { id: z.id, numer: z.numer, status: z.status, kanal: z.kanal, kanal_nazwa: nazwaKanalu(z.kanal, z.rynek), waluta: z.waluta,
+        wplyw: z.k_dzien, dzien: g.dzien, godz: g.godz, godz_zrodlo: g.zrodlo, szt: z.szt, netto: z.netto + (z.wysylka_netto || 0), zysk: z.zysk,
+        zysk_handlowy: /^handlowa/.test(z.zysk_zrodlo || ''),
+        pozycje: (poz.get(z.id) || []).map((p) => ({ tw_id: p.tw_id, symbol: p.symbol, nazwa: p.nazwa, zestaw: p.rodzaj === 8, szt: p.szt,
+          cena_wal: p.cena_wal, netto: p.netto + (p.wysylka || 0), zysk: p.zysk, dostepne: dostepneZeStanu(stany.get(p.tw_id)) })) };
+    }),
+    kursor: zam.length === limit && ost ? `${ost.k_dzien}|${ost.k_zk}|${ost.k_fs}` : null,
+    dane_z: meta.get('biezacy')?.wartosc || null,
+  };
+}
+
+module.exports = { BAZY, POZA_SUMA, parametry, stanWczytania, kanalyZakresu, sumaInternetu, podsumowanie, produkty, live, uzupelnijTowary, tempa, stanyTowarow,
   dostepneZeStanu };

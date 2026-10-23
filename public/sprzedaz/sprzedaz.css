@@ -101,3 +101,26 @@ button { font: inherit; }
 .z-znak { display: inline-block; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 5px; }
 .z-znak.zly { background: #fde8e8; color: var(--minus); } .z-znak.dobry { background: #e3ecff; color: var(--info); } .z-znak.uwaga { background: #fff1d6; color: var(--uwaga); }
 
+/* „Live” — ostatnie zamówienia po kolei (przewijana lista, najnowsze na górze) */
+.t-gora .seg button { font-size: 13px; padding: 6px 2px; }
+.l-opis-blok { padding: 8px 12px; }
+#l-lista { margin: 0 10px; }
+.l-dzien { font-size: 12px; font-weight: 700; color: var(--szary); text-transform: uppercase; letter-spacing: .03em; margin: 12px 2px 6px; }
+.l-zam { background: #fff; border-radius: 12px; padding: 8px 10px; margin-bottom: 8px; transition: background-color 2s; }
+.l-zam.l-nowe { background: #eaf3ff; }
+.l-nag { display: flex; gap: 8px; align-items: baseline; font-size: 13px; }
+.l-godz { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 44px; }
+.l-kan { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.l-war { color: var(--szary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.l-war .sw-minus { color: var(--minus); }
+.l-poz { display: flex; gap: 10px; margin-top: 8px; }
+.l-foto { flex: none; width: 64px; height: 64px; border: 1px solid var(--linia); border-radius: 8px; background: #fff; display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: pointer; }
+.l-foto img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.l-foto.l-bez img { display: none; }
+.l-foto.l-bez::after { content: "—"; color: var(--szary); }
+.l-tekst { min-width: 0; flex: 1; }
+.l-sku { font-family: ui-monospace, Menlo, monospace; font-size: 13px; font-weight: 700; display: flex; gap: 6px; align-items: center; }
+.l-nazwa { font-size: 13px; color: var(--tekst); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.l-cena { font-size: 13px; margin-top: 2px; }
+.l-st { font-size: 11px; color: var(--szary); margin-top: 6px; }
+.l-wiecej { display: block; width: calc(100% - 20px); margin: 4px 10px 8px; padding: 10px; border: 1px solid var(--linia); border-radius: 10px; background: #fff; font-size: 14px; color: var(--granat); }

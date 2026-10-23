@@ -115,3 +115,18 @@ test('przedziały bez stanu: ujemny stan (błąd metody) liczy się jako brak, b
   const p = m.przedzialyBezStanu({ stanTeraz: -1, ruchy: new Map([['2026-10-09', -3]]), dzis: '2026-10-10', od: '2026-10-07' });
   assert.deepStrictEqual(p, [['2026-10-09', '2026-10-09']], '08.10: −1 + 3 = 2 > 0');
 });
+
+// Telefon „Live”: godzina zamówienia (decyzja usera 2026-10-24 — lista w kolejności wpływu).
+test('godzina zamówienia: Allegro z UUID, reszta z pierwszego wczytania tego samego dnia', () => {
+  assert.deepStrictEqual(m.godzinaZamowienia({ godz_zam: '23:52', data_zam: '2026-10-22', data_zk: '2026-10-23' }),
+    { dzien: '2026-10-22', godz: '23:52', zrodlo: 'uuid' }, 'UUID wygrywa — prawdziwa godzina złożenia');
+  // pierwszy w UTC: 12:41 UTC = 14:41 w Warszawie (CEST)
+  assert.deepStrictEqual(m.godzinaZamowienia({ data_zam: '2026-10-23', data_zk: '2026-10-23', pierwszy: '2026-10-23 12:41:07' }),
+    { dzien: '2026-10-23', godz: '14:41', zrodlo: 'wms' });
+  assert.deepStrictEqual(m.godzinaZamowienia({ data_zam: '2026-10-22', data_zk: '2026-10-22', pierwszy: '2026-10-23 06:00:00' }),
+    { dzien: '2026-10-22', godz: null, zrodlo: null }, 'wczytane innego dnia — godzina wczytania to nie godzina wpływu');
+  assert.deepStrictEqual(m.godzinaZamowienia({ data_zam: '2026-10-21', data_fs: '2026-10-21', pierwszy: null }),
+    { dzien: '2026-10-21', godz: null, zrodlo: null }, 'FS bez ZK, sprzed kolumny');
+  // przejście czasu: zimą +1 h (25.10.2026 koniec CEST)
+  assert.strictEqual(m.godzinaZamowienia({ data_zk: '2026-11-02', pierwszy: '2026-11-02 12:41:07' }).godz, '13:41');
+});

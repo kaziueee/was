@@ -8,6 +8,7 @@
 //   GET /api/analiza/podsumowanie?dzien=&zakres=&baza=         kanały: bieżący zakres vs ten sam sprzed 364 dni
 //   GET /api/analiza/produkty?dzien=&zakres=&baza=&sort=&limit= towary z kanałami, stanem, flagami i repricerem
 //   GET /api/analiza/trendy                                    Sprzedaż → Trendy: dni zamknięte do wczoraj (services/analiza-trendy.js)
+//   GET /api/analiza/live?przed=&limit=                        telefon „Live”: ostatnie zamówienia po kolei (kursor „dzień|zk|fs”)
 //   GET /api/analiza/oferty/:tw_id                             linki do ofert towaru na platformach (karta produktu w Trendach)
 //   GET /api/analiza/raport?dzien=&tydzien=1                   podgląd maila (HTML) — to, co wyśle job
 // zakres: dzien | t7 | mtd | ytd · baza: zam (data zamówienia) | fs (data faktury) · sort: zysk | szt | netto
@@ -25,6 +26,11 @@ router.get('/produkty', (req, res) => {
   const sort = ['zysk', 'szt', 'netto'].includes(req.query.sort) ? req.query.sort : 'zysk';
   const limit = Math.min(Math.max(Number(req.query.limit) || 500, 1), 2000);
   res.json(q.produkty(q.parametry(req.query), { sort, limit }));
+});
+
+router.get('/live', (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 40, 1), 100);
+  res.json(q.live({ przed: req.query.przed || null, limit }));
 });
 
 // Trendy liczy wątek analiz (services/analiza-watek.js) — tu tylko gotowy JSON, bez liczenia w wątku Zebry

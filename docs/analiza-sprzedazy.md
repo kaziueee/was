@@ -331,6 +331,23 @@ Wykres tygodniowy domyślnie 26 tygodni (przy 52 szczyt grudnia — 2,3 mln zł 
 tydzień, nie dzień, bo pt/sob to połowa wtorku. Zostaje: przyczyny spadków (repricer: Buy Box, zmiany cen; stany
 wstecz z dokumentów), widok „Zmiany” na telefonie.
 
+### Telefon „Live” — zrobione 2026-10-24
+
+**[decyzja usera 24.10]** Szósty przycisk na telefonie: ostatnie zamówienia po kolei, „w kolejności ich schodzenia” —
+przewijana lista zamiast grupowania po produkcie, z tymi samymi danymi (zdjęcie, SKU, nazwa, cena, kanał).
+
+- Kolejność wpływu = dzień i numer ZK (numer rośnie z każdym zamówieniem; FS bez ZK — dzień FS, na końcu dnia).
+  Indeks na wyrażeniu `idx_zam_live` (db/sprzedaz.js) — pomiar na kopii (404 tys. zamówień): strona 40 zamówień
+  w 0,9 ms, budowa indeksu przy pierwszym starcie ~0,2 s. Bez niego każde odświeżenie sortowałoby całą tabelę w wątku
+  Zebr (zasada 7).
+- **GT nie zapisuje godziny wystawienia ZK — tylko dzień** (sprawdzone 24.10: wszystkie kolumny dat `dok__Dokument`
+  mają 00:00). Godzina: Allegro z UUID (prawdziwa godzina złożenia), reszta „≈” = kiedy job pierwszy raz zobaczył
+  zamówienie (`zamowienia.pierwszy`, do 15 min po wpływie do GT), i to tylko gdy to ten sam dzień — zamówienie wczytane
+  później (historia, przerwa joba) dostałoby godzinę wczytania. Wiersze sprzed kolumny godziny nie mają (nie udajemy).
+- Telefon pyta co minutę o pierwszą stronę; nowe zamówienia wstawia na górę, podświetlone, bez przewijania listy.
+  Same dane mają opóźnienie joba (do 15 min).
+- Bez paragonów Sklepu (przegląd = internet).
+
 ### Filtr „Zakończone w okresie” — zrobione 2026-10-23 (desktop i telefon)
 
 **[decyzja usera 23.10]** Zera trzeba wyciągnąć do osobnego filtru — produkt, którego nie ma, gorzej się sprzedaje,

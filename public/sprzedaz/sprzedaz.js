@@ -4,6 +4,7 @@
 // (localStorage) — wygoda, nie stan systemu.
 // „Zmiany” (piąty przycisk zakresu): co rośnie, co spada, co zgasło — gotowy wynik Trendów (GET /api/analiza/trendy,
 // skompresowany), te same filtry co na desktopie (public/shared/trendy-model.js), bez limitu pozycji.
+// „Live” (szósty): ostatnie zamówienia po kolei, przewijana lista (GET /api/analiza/live), odświeżana co minutę.
 (function () {
   const W = window.SprzedazW;
   const $ = (id) => document.getElementById(id);
@@ -11,7 +12,7 @@
   const zapamietaj = (k, v) => { try { localStorage.setItem('wms-sprzedaz-' + k, v); } catch { /* bez pamięci */ } };
 
   const OPCJE = {
-    zakres: [['dzien', 'Dzień'], ['t7', '7 dni'], ['mtd', 'Miesiąc'], ['ytd', 'Rok'], ['zmiany', 'Zmiany']],
+    zakres: [['dzien', 'Dzień'], ['t7', '7 dni'], ['mtd', 'Miesiąc'], ['ytd', 'Rok'], ['zmiany', 'Zmiany'], ['live', 'Live']],
     baza: [['zam', 'wg zamówienia'], ['fs', 'wg faktury']],
     sort: [['zysk', 'zysk'], ['szt', 'szt.'], ['netto', 'przychód']],
   };
@@ -33,11 +34,13 @@
       el.innerHTML = OPCJE[co].map(([v, t]) => `<button data-v="${v}" class="${st[co] === v ? 'wl' : ''}">${t}</button>`).join('');
       el.querySelectorAll('button').forEach((b) => { b.onclick = () => { st[co] = b.dataset.v; zapamietaj(co, st[co]); laduj(); }; });
     }
-    const zmiany = st.zakres === 'zmiany';
-    $('przeglad').classList.toggle('hidden', zmiany);
+    const zmiany = st.zakres === 'zmiany', live = st.zakres === 'live';
+    $('przeglad').classList.toggle('hidden', zmiany || live);
     $('zmiany').classList.toggle('hidden', !zmiany);
-    document.querySelector('.t-gora .dzien:not(#z-data)').classList.toggle('hidden', zmiany);
-    $('z-data').classList.toggle('hidden', !zmiany);
+    $('live').classList.toggle('hidden', !live);
+    document.querySelector('.t-gora .dzien:not(#z-data)').classList.toggle('hidden', zmiany || live);
+    $('z-data').classList.toggle('hidden', !zmiany && !live);
+    if (!live) clearInterval(lTimer);
     $('d-dalej').disabled = !st.dzis || st.dzien >= st.dzis;
   }
 
@@ -80,6 +83,7 @@
   async function laduj() {
     przelaczniki();
     if (st.zakres === 'zmiany') return ladujZmiany();
+    if (st.zakres === 'live') return ladujLive();
     const moje = ++nr;
     const q = `dzien=${st.dzien}&zakres=${st.zakres}&baza=${st.baza}`;
     $('komunikat').classList.add('hidden');
@@ -133,6 +137,103 @@
   $('k-wstecz').onclick = () => krok(-1);
   $('k-dalej').onclick = () => krok(1);
   $('podglad').onclick = () => $('podglad').classList.add('hidden');
+
+  // ---------- „Live” ----------
+  // Ostatnie zamówienia po kolei, w kolejności wpływu (dzień + numer ZK — backend, indeks idx_zam_live). Godzina: Allegro
+  // z UUID (dokładna), reszta „≈” — kiedy WMS pierwszy raz zobaczył zamówienie (job co 15 min), brak = nie wiemy.
+  const WALUTY = { PLN: 'zł', EUR: '€', RON: 'RON', HUF: 'Ft' };
+  const LIVE_CO_MS = 60_000;
+  let lKursor = null, lOstDzien = null, lTimer = null, lLaduje = false;
+  const lPokazane = new Set();
+  const cena = (x, w) => (x == null ? '—' : `${Number(x).toLocaleString('pl-PL', { minimumFractionDigits: w === 'HUF' ? 0 : 2, maximumFractionDigits: w === 'HUF' ? 0 : 2 })} ${WALUTY[w] || w || 'zł'}`);
+  function zamowienieHtml(z, nowe) {
+    const godz = z.godz ? (z.godz_zrodlo === 'uuid' ? z.godz : '≈' + z.godz) : '—';
+    const zysk = z.zysk == null ? '' : ` · <span class="${z.zysk < 0 ? 'sw-minus' : ''}">zysk ${z.zysk_handlowy ? '≈' : ''}${W.zl(z.zysk)}</span>`;
+    const poz = z.pozycje.map((p) => `<div class="l-poz">
+        <div class="l-foto" data-tw="${p.tw_id}"><img src="/api/produkty/${p.tw_id}/zdjecie?rozmiar=mini" alt="" loading="lazy" onerror="this.parentNode.classList.add('l-bez')"></div>
+        <div class="l-tekst"><div class="l-sku">${W.esc(p.symbol || p.tw_id)}${p.zestaw ? '<span class="sw-tag">zestaw</span>' : ''}</div>
+          <div class="l-nazwa">${W.esc(p.nazwa || '')}</div>
+          <div class="l-cena"><b>${W.szt(p.szt)} × ${cena(p.cena_wal, z.waluta)}</b> <span class="sw-brak">stan ${p.dostepne == null ? '—' : W.szt(p.dostepne)}</span></div></div></div>`).join('');
+    return `<div class="l-zam${nowe ? ' l-nowe' : ''}" data-id="${z.id}">
+      <div class="l-nag"><span class="l-godz" title="${z.godz_zrodlo === 'uuid' ? 'godzina złożenia (Allegro)' : z.godz ? 'kiedy WMS pierwszy raz zobaczył zamówienie (do 15 min po wpłynięciu)' : 'godzina nieznana'}">${godz}</span>
+        <span class="l-kan">${W.esc(z.kanal_nazwa)}</span><span class="l-war">${W.zl(z.netto)}${zysk}</span></div>
+      ${poz || '<div class="sw-brak">bez pozycji towarowych</div>'}
+      <div class="l-st">${W.esc(z.numer || '')}${z.status === 'zamowione' ? ' · jeszcze bez faktury' : ''}${z.dzien !== z.wplyw ? ` · zamówione ${W.dzienTxt(z.dzien, false)}` : ''}</div>
+    </div>`;
+  }
+  // separator dnia przed pierwszym zamówieniem z innego dnia wpływu
+  const naglowekDnia = (d) => `<div class="l-dzien" data-dzien="${d}">${W.dzienTxt(d, false)}</div>`;
+  function zDniami(lista, ostDzien, nowe = false) {
+    let d = ostDzien, html = '';
+    for (const z of lista) {
+      if (z.wplyw !== d) { html += naglowekDnia(z.wplyw); d = z.wplyw; }
+      html += zamowienieHtml(z, nowe);
+    }
+    return { html, d };
+  }
+  function lStopka(d) {
+    $('l-stopka').textContent = `Dane z ${W.godzina(d.dane_z) || '—'} · WMS wczytuje zamówienia co 15 min`;
+    $('z-data').textContent = `dane z ${W.godzina(d.dane_z) || '—'}`;
+  }
+  async function ladujLive() {
+    $('komunikat').classList.add('hidden');
+    $('l-opis').textContent = 'Najnowsze na górze, w kolejności wpływu. Godzina: Allegro dokładna, pozostałe „≈” — kiedy WMS je zobaczył. Stuknięcie w zdjęcie = powiększenie.';
+    try {
+      const d = await get('/api/analiza/live?limit=40');
+      lPokazane.clear();
+      d.zamowienia.forEach((z) => lPokazane.add(z.id));
+      const r = zDniami(d.zamowienia, null);
+      $('l-lista').innerHTML = r.html || '<div class="t-blok sw-brak">Brak zamówień.</div>';
+      lOstDzien = r.d; lKursor = d.kursor;
+      $('l-wiecej').classList.toggle('hidden', !lKursor);
+      lStopka(d);
+    } catch (e) { $('komunikat').textContent = e.message; $('komunikat').classList.remove('hidden'); return; }
+    clearInterval(lTimer);
+    lTimer = setInterval(odswiezLive, LIVE_CO_MS);
+  }
+  // nowe zamówienia na górę (podświetlone); starsza część listy zostaje, żeby nie skakało przewijanie
+  async function odswiezLive() {
+    if (st.zakres !== 'live' || document.hidden) return;
+    try {
+      const d = await get('/api/analiza/live?limit=40');
+      const nowe = d.zamowienia.filter((z) => !lPokazane.has(z.id));
+      lStopka(d);
+      if (!nowe.length) return;
+      const naGorze = $('l-lista').querySelector('.l-dzien'), dzienGory = naGorze?.dataset.dzien || null;
+      const dni = new Set(nowe.map((z) => z.wplyw));
+      // przełom dnia z zamówieniami z obu dni (rzadko, około północy) — prościej narysować listę od nowa
+      if (dni.size > 1 || !naGorze) { ladujLive(); return; }
+      nowe.forEach((z) => lPokazane.add(z.id));
+      // ten sam dzień — pod jego nagłówek; nowy dzień — z własnym nagłówkiem na samą górę
+      if (dni.has(dzienGory)) naGorze.insertAdjacentHTML('afterend', nowe.map((z) => zamowienieHtml(z, true)).join(''));
+      else $('l-lista').insertAdjacentHTML('afterbegin', zDniami(nowe, null, true).html);
+      setTimeout(() => document.querySelectorAll('.l-nowe').forEach((x) => x.classList.remove('l-nowe')), 8000);
+    } catch { /* następna próba za minutę */ }
+  }
+  async function starszeLive() {
+    if (!lKursor || lLaduje) return;
+    lLaduje = true;
+    try {
+      const d = await get(`/api/analiza/live?limit=40&przed=${encodeURIComponent(lKursor)}`);
+      const lista = d.zamowienia.filter((z) => !lPokazane.has(z.id));
+      lista.forEach((z) => lPokazane.add(z.id));
+      const r = zDniami(lista, lOstDzien);
+      $('l-lista').insertAdjacentHTML('beforeend', r.html);
+      lOstDzien = r.d; lKursor = d.kursor;
+      $('l-wiecej').classList.toggle('hidden', !lKursor);
+    } catch (e) { $('komunikat').textContent = e.message; $('komunikat').classList.remove('hidden'); }
+    finally { lLaduje = false; }
+  }
+  $('l-wiecej').onclick = starszeLive;
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver((e) => { if (e[0].isIntersecting && st.zakres === 'live') starszeLive(); }, { rootMargin: '600px' }).observe($('l-wiecej'));
+  }
+  $('l-lista').addEventListener('click', (e) => {
+    const f = e.target.closest('.l-foto'); if (!f || f.classList.contains('l-bez')) return;
+    $('podglad').querySelector('img').src = `/api/produkty/${f.dataset.tw}/zdjecie?rozmiar=duze`;
+    $('podglad').classList.remove('hidden');
+  });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && st.zakres === 'live') odswiezLive(); });
 
   // ---------- „Zmiany” ----------
   const M = window.TrendyModel;
@@ -269,6 +370,7 @@
     }
     laduj();
     // dziś odświeżamy co 5 minut (job dosypuje zamówienia co kwadrans)
-    setInterval(() => { if (st.zakres !== 'zmiany' && st.dzien === st.dzis && !document.hidden) laduj(); }, 5 * 60_000);
+    // „Live” odświeża się sam (co minutę, bez przewijania listy do góry) — tu tylko widoki dnia
+    setInterval(() => { if (!['zmiany', 'live'].includes(st.zakres) && st.dzien === st.dzis && !document.hidden) laduj(); }, 5 * 60_000);
   })();
 })();

@@ -46,6 +46,13 @@
       <div class="t-nav"><button id="z-wstecz" aria-label="poprzedni produkt">‹</button><span id="z-licznik"></span><button id="z-dalej" aria-label="następny produkt">›</button></div>
       <div class="dol"><div class="sw-brak" id="z-stopka"></div></div>
     </div>
+    <!-- „Live”: ostatnie zamówienia po kolei, najnowsze na górze — bez grupowania po produkcie (GET /api/analiza/live).
+         Przewijana lista, starsze dociągają się same; najnowsze odświeżają się co minutę, gdy widok jest otwarty. -->
+    <div id="live" class="hidden">
+      <div class="t-blok l-opis-blok"><div class="z-opis" id="l-opis"></div></div>
+      <div id="l-lista"></div>
+      <div class="dol"><button class="l-wiecej hidden" id="l-wiecej">Starsze zamówienia</button><div class="sw-brak" id="l-stopka"></div></div>
+    </div>
   </main>
   <div class="podglad hidden" id="podglad"><img alt=""></div>
   <script src="/shared/auth.js"></script>

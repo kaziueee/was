@@ -16,7 +16,7 @@ const { DatabaseSync } = require('node:sqlite');
 const { db, meta } = require('../db/sprzedaz');
 const am = require('./analiza-model');
 const { dzisLokalnie } = require('./sprzedaz-model');
-const { NAZWY_KANALOW } = require('./analiza-kanal');
+const { nazwaKanalu } = require('./analiza-kanal');
 const { dostepneZeStanu } = require('./analiza-zapytania');
 
 const D = am.dodajDni;
@@ -32,7 +32,6 @@ const PRICING_DB = process.env.PRICING_DB || path.join(__dirname, '..', 'db', 'p
 // Kanały w udziale tygodniowym — zgrubnie, żeby wykres miał ≤ 6 serii (stała kolejność kolorów na ekranie)
 const GRUPA_KANALU = (k) => (k.startsWith('ALLEGRO') ? 'Allegro' : ['DE', 'FR', 'IT', 'ES', 'NL', 'PL', 'AMAZON_EU'].includes(k) ? 'Amazon'
   : k.startsWith('EMAG') ? 'eMAG' : k.startsWith('EMPIK') ? 'Empik' : k.startsWith('KAUFLAND') ? 'Kaufland' : 'Inne');
-const nazwaKanalu = (k, r) => (NAZWY_KANALOW[k] || k) + (k.startsWith('ALLEGRO') && r && r !== 'PL' ? ' · ' + r : '');
 const ostatniaNiedziela = (d) => { let x = d; while (new Date(x + 'T12:00:00Z').getUTCDay() !== 0) x = D(x, -1); return x; };
 
 function sumy(od, doDnia) {

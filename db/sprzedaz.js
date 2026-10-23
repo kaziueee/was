@@ -152,6 +152,11 @@ if (!kolumny('stany').includes('rez')) db.exec('ALTER TABLE stany ADD COLUMN rez
 if (!kolumny('stany').includes('dostepne')) db.exec('ALTER TABLE stany ADD COLUMN dostepne REAL');
 // gotowy wynik także skompresowany (gzip liczy wątek analiz — główny wątek tylko wysyła; Trendy 1,4 MB → ~0,2 MB)
 if (!kolumny('gotowe').includes('gz')) db.exec('ALTER TABLE gotowe ADD COLUMN gz BLOB');
+// Telefon → „Live” (2026-10-24): kiedy job PIERWSZY raz zobaczył zamówienie (GT nie trzyma godziny ZK — tylko dzień), a
+// kolejność wpływu = dzień i numer ZK (rośnie z każdym zamówieniem). Indeks na wyrażeniu z analiza-zapytania.live —
+// lista idzie po nim od góry zamiast sortować 400 tys. zamówień w wątku Zebr (pomiar: 0,3 ms pierwsza strona).
+if (!kolumny('zamowienia').includes('pierwszy')) db.exec('ALTER TABLE zamowienia ADD COLUMN pierwszy TEXT');
+db.exec('CREATE INDEX IF NOT EXISTS idx_zam_live ON zamowienia(COALESCE(data_zk, data_fs, data_zam), COALESCE(zk_id, 0), COALESCE(fs_id, 0))');
 
 const meta = {
   get: (k) => db.prepare('SELECT wartosc, czas FROM meta WHERE klucz = ?').get(k) || null,

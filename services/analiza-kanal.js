@@ -136,4 +136,7 @@ function kanalDokumentu(d) {
   return { kanal, rynek, regula };
 }
 
-module.exports = { kanalDokumentu, NAZWY_KANALOW, KANALY_DODATKOWE, NUMER_AMAZONA };
+// Nazwa kanału do pokazania: Allegro poza Polską z krajem („Allegro ekajtek · CZ”) — Trendy i telefon „Live”.
+const nazwaKanalu = (k, r) => (NAZWY_KANALOW[k] || k) + (String(k).startsWith('ALLEGRO') && r && r !== 'PL' ? ' · ' + r : '');
+
+module.exports = { kanalDokumentu, nazwaKanalu, NAZWY_KANALOW, KANALY_DODATKOWE, NUMER_AMAZONA };

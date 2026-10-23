@@ -255,8 +255,11 @@ const KOLUMNY_ZAM = ['id', 'zk_id', 'fs_id', 'numer', 'status', 'data_zam', 'god
 // Zapis jednego okna: zamówienia z okna zastępują swoje stare wersje; ZK „zamówione” z okna, których GT już nie
 // zwraca (dostały FS z datą spoza okna albo zniknęły), są kasowane, żeby nie liczyły się podwójnie.
 function zapisz({ zamowienia, pozycje, skladniki, zwroty }, { od, doDnia }) {
-  const insZam = db.prepare(`INSERT OR REPLACE INTO zamowienia (${KOLUMNY_ZAM.join(',')}, wczytano)
-    VALUES (${KOLUMNY_ZAM.map(() => '?').join(',')}, CURRENT_TIMESTAMP)`);
+  // pierwszy — kiedy job pierwszy raz zobaczył zamówienie (telefon „Live”: godzina wpływu dla kanałów bez UUID).
+  // Wiersz już znany zachowuje swoją wartość, także NULL sprzed kolumny (nie udajemy, że wpłynął w chwili wdrożenia).
+  const insZam = db.prepare(`INSERT OR REPLACE INTO zamowienia (${KOLUMNY_ZAM.join(',')}, wczytano, pierwszy)
+    VALUES (${KOLUMNY_ZAM.map(() => '?').join(',')}, CURRENT_TIMESTAMP,
+      CASE WHEN EXISTS (SELECT 1 FROM zamowienia WHERE id = ?) THEN (SELECT pierwszy FROM zamowienia WHERE id = ?) ELSE CURRENT_TIMESTAMP END)`);
   const insPoz = db.prepare('INSERT INTO pozycje (zam_id, tw_id, rodzaj, szt, netto, wysylka, cena_wal, koszt, zysk) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
   const insSkl = db.prepare('INSERT INTO skladniki (zam_id, zestaw_id, tw_id, szt) VALUES (?, ?, ?, ?)');
   const insZw = db.prepare('INSERT INTO zwroty (kfs_id, fs_id, numer, data, kanal, tw_id, szt, netto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
@@ -269,7 +272,7 @@ function zapisz({ zamowienia, pozycje, skladniki, zwroty }, { od, doDnia }) {
     // ZK bez FS: z okna, których już nie ma w GT (anulowane, scalone), i wszystkie starsze niż ZK_BEZ_FS_DNI
     const stare = db.prepare("SELECT id FROM zamowienia WHERE status = 'zamowione' AND ((data_zk >= ? AND data_zk < ?) OR data_zk < ?)").all(od, doDnia, granicaZk());
     for (const { id } of stare) if (!nowe.has(id)) { delPoz.run(id); delSkl.run(id); delZam.run(id); }
-    for (const z of zamowienia) { delPoz.run(z.id); delSkl.run(z.id); insZam.run(...KOLUMNY_ZAM.map((k) => z[k] ?? null)); }
+    for (const z of zamowienia) { delPoz.run(z.id); delSkl.run(z.id); insZam.run(...KOLUMNY_ZAM.map((k) => z[k] ?? null), z.id, z.id); }
     for (const p of pozycje) insPoz.run(p.zam_id, p.tw_id, p.rodzaj, p.szt, p.netto, p.wysylka ?? 0, p.cena_wal, p.koszt, p.zysk);
     for (const s of skladniki) insSkl.run(s.zam_id, s.zestaw_id, s.tw_id, s.szt);
     db.prepare('DELETE FROM zwroty WHERE data >= ? AND data < ?').run(od, doDnia);

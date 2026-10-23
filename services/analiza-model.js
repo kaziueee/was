@@ -68,6 +68,16 @@ function dataZamowienia({ uuid, dataZk, dataFs }) {
   return { dzien: z, godz: null, zrodlo: dataZk ? 'zk' : 'fs' };
 }
 
+// Godzina zamówienia na telefonie („Live”): Allegro — z UUID (prawdziwa godzina złożenia), reszta — kiedy job
+// pierwszy raz zobaczył zamówienie w GT (`pierwszy`, UTC; do 15 min po wpłynięciu), ale tylko gdy to ten sam dzień, co
+// dzień wpływu: zamówienie wczytane później (historia, przerwa joba) dostałoby godzinę wczytania, a nie wpływu.
+function godzinaZamowienia({ godz_zam: godz, data_zam: dataZam, data_zk: dataZk, data_fs: dataFs, pierwszy }) {
+  if (godz) return { dzien: dataZam, godz, zrodlo: 'uuid' };
+  const dzien = dataZk || dataFs || dataZam;
+  const p = pierwszy ? dzienICzasPl(new Date(String(pierwszy).replace(' ', 'T') + 'Z')) : null;
+  return p && p.dzien === dzien ? { dzien, godz: p.godz, zrodlo: 'wms' } : { dzien, godz: null, zrodlo: null };
+}
+
 // Flagi towaru (decyzje usera 2026-10-20). tempo = sztuk dziennie; zapas liczony ze stanu K4+K4G.
 //   nowosc  — pierwsze przyjęcie (PZ/PW) mniej niż 30 dni temu
 //   konczy  — zapas < 30 dni przy tempie z 30 dni
@@ -145,7 +155,7 @@ function dniBezStanuWOknie(przedzialy, od, doDnia) {
 }
 
 module.exports = {
-  dniNietypowe, dniZakresu, przedzialyBezStanu, dniBezStanuWOknie,
+  dniNietypowe, dniZakresu, przedzialyBezStanu, dniBezStanuWOknie, godzinaZamowienia,
   ROK_TEMU_DNI, ZAKRESY, PROGI, dodajDni, rokTemu, zakres, kursDokumentu, czasZUuidV1, dzienICzasPl, dataZamowienia,
   flagiTowaru, dniZapasu, zwrotZPozycji,
 };

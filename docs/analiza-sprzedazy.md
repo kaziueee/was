@@ -343,12 +343,13 @@ Dni bez stanu odtwarza wstecz z dokumentów `analiza-dane.odtworzBezStanu` (meto
 joba z nowym „wczoraj” — w wątku analiz; po nim Trendy przeliczają się od razu. Własne zdjęcia stanów są dopiero od
 20.10, więc bez rekonstrukcji filtr nie miałby z czego liczyć.
 
-Pomiar 2026-10-23 na produkcji (okno 30 dni 23.09–22.10 vs poprzednie 30): spadek trendu 271 → 52 z dniami bez stanu
-(50 kończy okno z zerem), zgasły 45 → 21 (wszystkie z zerem na koniec). Przestoje są długie: w filtrze 125 × 30 dni,
+Na produkcji po wdrożeniu 2026-10-23 (okno 30 dni 23.09–22.10 vs poprzednie 30): spadek trendu 271 → 234, zgasły
+45 → 26, zakończonych 334 (okno 7 dni: 95 → 89, 14 → 11, 78). Pierwszy pomiar przed wdrożeniem dawał 52 i 21 —
+liczył też zestawy, które mają własny stan 0 zawsze (dlatego są pomijane). Przestoje są długie: w filtrze 125 × 30 dni,
 112 × 15–29, 65 × 7–14, 16 × 3–6, 18 × 1–2. GT: 173 tys. wierszy ruchów, 1,3 s zapytania + 0,65 s liczenia. Kontrola
 metody: z 1 798 produktów ze sprzedażą w oknie tylko 1 sprzedawał się przy braku stanu przez całe okno (NERE9533U —
-wariant „u”). Do rozważenia: lustrzany przypadek w „Trendujących” (brak towaru w oknie porównania zawyża wzrost) —
-dziś widać go tylko w dymku znaczka.
+wariant „u”). Lustrzany przypadek w „Trendujących” (brak towaru w oknie porównania zawyża wzrost) zostaje bez zmian — decyzja
+usera 23.10: to trendująca sprzedaż nowości.
 
 ### Karta produktu = zarządzanie ceną — zrobione 2026-10-22 (desktop)
 

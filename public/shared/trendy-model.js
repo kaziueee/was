@@ -23,8 +23,8 @@
   }
 
   // „Zakończone w okresie” (decyzja usera 2026-10-23): w oknie choć jeden dzień bez stanu — towaru nie było, więc
-  // gorzej się sprzedawał i nie należy do „Spadku trendu” ani „Zgasłych”. Pomiar 2026-10-23 (30 dni): 52 z 271 spadków
-  // i 21 z 45 zgasłych, przestoje zwykle długie (15–30 dni), krótkie 1–2 dni prawie się nie zdarzają.
+  // gorzej się sprzedawał i nie należy do „Spadku trendu” ani „Zgasłych”. Produkcja 2026-10-23 (30 dni): spadek
+  // 271 → 234, zgasły 45 → 26; przestoje zwykle długie (15–30 dni), krótkie 1–2 dni prawie się nie zdarzają.
   const zakonczony = (w) => w.bz != null && w.bz.a > 0;
 
   // [klucz, nazwa, warunek(w, o) — o = { prog (%), baza (szt.) }, domyślne sortowanie ('+' = rosnąco)]

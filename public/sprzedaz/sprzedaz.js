@@ -148,15 +148,19 @@
   const cena = (x, w) => (x == null ? '—' : `${Number(x).toLocaleString('pl-PL', { minimumFractionDigits: w === 'HUF' ? 0 : 2, maximumFractionDigits: w === 'HUF' ? 0 : 2 })} ${WALUTY[w] || w || 'zł'}`);
   function zamowienieHtml(z, nowe) {
     const godz = z.godz ? (z.godz_zrodlo === 'uuid' ? z.godz : '≈' + z.godz) : '—';
-    const zysk = z.zysk == null ? '' : ` · <span class="${z.zysk < 0 ? 'sw-minus' : ''}">zysk ${z.zysk_handlowy ? '≈' : ''}${W.zl(z.zysk)}</span>`;
+    // marża i zysk zamówienia (przychód netto z wysyłką klienta — jak w całym module); „≈” = marża handlowa
+    const przybl = z.zysk_handlowy ? '≈' : '';
+    const wynik = z.zysk == null ? '<span class="sw-brak">zysk —</span>'
+      : `<span class="${z.zysk < 0 ? 'sw-minus' : ''}">marża ${przybl}${W.pct(W.marza(z))} · zysk ${przybl}${W.zl(z.zysk)}</span>`;
     const poz = z.pozycje.map((p) => `<div class="l-poz">
         <div class="l-foto" data-tw="${p.tw_id}"><img src="/api/produkty/${p.tw_id}/zdjecie?rozmiar=mini" alt="" loading="lazy" onerror="this.parentNode.classList.add('l-bez')"></div>
         <div class="l-tekst"><div class="l-sku">${W.esc(p.symbol || p.tw_id)}${p.zestaw ? '<span class="sw-tag">zestaw</span>' : ''}</div>
           <div class="l-nazwa">${W.esc(p.nazwa || '')}</div>
-          <div class="l-cena"><b>${W.szt(p.szt)} × ${cena(p.cena_wal, z.waluta)}</b> <span class="sw-brak">stan ${p.dostepne == null ? '—' : W.szt(p.dostepne)}</span></div></div></div>`).join('');
+          <div class="l-cena"><b>${W.szt(p.szt)} × ${cena(p.cena_wal, z.waluta)}</b> <span class="sw-brak">stan ${p.dostepne == null ? '—' : W.szt(p.dostepne)}${p.dni_zapasu == null ? '' : ` · zapas ~${W.szt(p.dni_zapasu)} dni`}</span></div>
+          ${p.flagi.length ? `<div class="l-flagi">${W.flagi(p.flagi)}</div>` : ''}</div></div>`).join('');
     return `<div class="l-zam${nowe ? ' l-nowe' : ''}" data-id="${z.id}">
       <div class="l-nag"><span class="l-godz" title="${z.godz_zrodlo === 'uuid' ? 'godzina złożenia (Allegro)' : z.godz ? `kiedy WMS pierwszy raz zobaczył zamówienie (do ${lCoMin} min po wpłynięciu)` : 'godzina nieznana'}">${godz}</span>
-        <span class="l-kan">${W.esc(z.kanal_nazwa)}</span><span class="l-war">${W.zl(z.netto)}${zysk}</span></div>
+        <span class="l-kan">${W.esc(z.kanal_nazwa)}</span><span class="l-war">${wynik}</span></div>
       ${poz || '<div class="sw-brak">bez pozycji towarowych</div>'}
       <div class="l-st">${W.esc(z.numer || '')}${z.status === 'zamowione' ? ' · jeszcze bez faktury' : ''}${z.dzien !== z.wplyw ? ` · zamówione ${W.dzienTxt(z.dzien, false)}` : ''}</div>
     </div>`;

@@ -124,3 +124,4 @@ button { font: inherit; }
 .l-cena { font-size: 13px; margin-top: 2px; }
 .l-st { font-size: 11px; color: var(--szary); margin-top: 6px; }
 .l-wiecej { display: block; width: calc(100% - 20px); margin: 4px 10px 8px; padding: 10px; border: 1px solid var(--linia); border-radius: 10px; background: #fff; font-size: 14px; color: var(--granat); }
+.l-flagi { margin-top: 3px; }

@@ -206,7 +206,9 @@ function live({ przed = null, limit = 40 } = {}) {
       (poz.get(p.zam_id) || poz.set(p.zam_id, []).get(p.zam_id)).push(p);
     }
   }
-  const stany = stanyTowarow([...new Set([...poz.values()].flat().map((p) => p.tw_id))]);
+  // stan, zapas w dniach i flagi (kończy się / nowość / nadmiar / zalega) — ta sama karta towaru co przegląd produktów
+  const tow = new Map(uzupelnijTowary([...new Set([...poz.values()].flat().map((p) => p.tw_id))].map((tw_id) => ({ tw_id })), { zRepricerem: false })
+    .produkty.map((t) => [t.tw_id, t]));
   const ost = zam[zam.length - 1];
   return {
     zamowienia: zam.map((z) => {
@@ -216,7 +218,8 @@ function live({ przed = null, limit = 40 } = {}) {
         wplyw: z.k_dzien, dzien: g.dzien, godz: g.godz, godz_zrodlo: g.zrodlo, szt: z.szt, netto: z.netto + (z.wysylka_netto || 0), zysk: z.zysk,
         zysk_handlowy: /^handlowa/.test(z.zysk_zrodlo || ''),
         pozycje: (poz.get(z.id) || []).map((p) => ({ tw_id: p.tw_id, symbol: p.symbol, nazwa: p.nazwa, zestaw: p.rodzaj === 8, szt: p.szt,
-          cena_wal: p.cena_wal, netto: p.netto + (p.wysylka || 0), zysk: p.zysk, dostepne: dostepneZeStanu(stany.get(p.tw_id)) })) };
+          cena_wal: p.cena_wal, netto: p.netto + (p.wysylka || 0), zysk: p.zysk, dostepne: tow.get(p.tw_id)?.stan?.dostepne ?? null,
+          dni_zapasu: tow.get(p.tw_id)?.dni_zapasu ?? null, flagi: tow.get(p.tw_id)?.flagi || [] })) };
     }),
     kursor: zam.length === limit && ost ? `${ost.k_dzien}|${ost.k_zk}|${ost.k_fs}` : null,
     dane_z: meta.get('biezacy')?.wartosc || null, co_min: JOB_MIN,

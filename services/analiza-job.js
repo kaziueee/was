@@ -5,7 +5,9 @@
 //     FS do zamówienia sprzed 3 dni wpada w dzisiejsze okno i zastępuje jego wiersz) i ZK jeszcze bez FS, plus stany
 //     sprzedawanych towarów. Zmierzone 2026-10-20: ~0,6 s zapytań do GT (okno 4 dni: 1,8 s),
 //   nocny (raz na dobę, pierwszy przebieg po 2:00): ostatnie 14 dni na nowo (korekty, FS z cofniętą datą, ZK, które
-//     zniknęły), kartoteka towarów aktywnych i nowych, zdjęcie stanów wszystkich towarów ze stanem.
+//     zniknęły), kartoteka towarów aktywnych i nowych, zdjęcie stanów wszystkich towarów ze stanem,
+//   raz na dobę (pierwszy przebieg z nowym „wczoraj”): dni bez stanu odtworzone wstecz z dokumentów (~2 s, Trendy).
+//     Trendy liczą się po przebiegu, więc filtr „Zakończone” ma świeże dni bez stanu od pierwszego przeliczenia dnia.
 // Historię sprzed startu wczytuje raz scripts/analiza-wczytaj.js. Tylko SELECT-y do GT.
 //   raport mailem (services/analiza-raport.js): raz dziennie od ANALIZA_RAPORT_GODZINA (7:00) za wczoraj, do
 //     ANALIZA_RAPORT_DO, przez Gmail API z zakresem tylko do wysyłania; najwyżej 3 próby dziennie. Bez konfiguracji
@@ -38,8 +40,9 @@ async function biezacy() {
   // zapasu nie potrzebują dokładności co kwadrans
   const ostatnie = meta.get('tempa')?.czas;
   if (!ostatnie || Date.now() - new Date(ostatnie.replace(' ', 'T') + 'Z').getTime() > 3600e3) { dane.przeliczTempa(dzis); meta.set('tempa', dzis); }
+  const bz = await dane.bezStanuJesliTrzeba(dzis);          // raz na dobę — pierwszy przebieg po północy albo po starcie
   meta.set('biezacy', new Date().toISOString());
-  return { zamowien: w.zamowienia.length, towarow: tw.length };
+  return { zamowien: w.zamowienia.length, towarow: tw.length, ...(bz ? { bez_stanu: bz } : {}) };
 }
 
 async function nocny() {
@@ -54,9 +57,10 @@ async function nocny() {
   await dane.odswiezTowary(tw);
   dane.przeliczTempa(dzis);
   meta.set('tempa', dzis);
+  const bz = await dane.bezStanuJesliTrzeba(dzis);
   meta.set('nocny', dzis);
   meta.set('biezacy', new Date().toISOString());
-  return { zamowien: w.zamowienia.length, towarow: tw.length, stany };
+  return { zamowien: w.zamowienia.length, towarow: tw.length, stany, ...(bz ? { bez_stanu: bz } : {}) };
 }
 
 // Raport za wczoraj, jeśli jest pora i jeszcze nie poszedł. Licznik prób per dzień: błąd Gmaila (np. odwołana zgoda)
@@ -93,7 +97,7 @@ async function przebieg(teraz = new Date()) {
     }
     // Trendy z tego, co już jest w bazie (dni zamknięte) — padnięte GT ich nie blokuje
     try {
-      const t = require('./analiza-trendy').odswiezJesliTrzeba(teraz);
+      const t = require('./analiza-trendy').odswiezJesliTrzeba(teraz, { wymus: !!wynik?.bez_stanu });
       if (t) console.log(`[analiza] trendy policzone (${t.ms} ms, ${t.kb} KB, gzip ${t.gzKb} KB)`);
     } catch (e) { awarie.blad('analiza-trendy', e.message); }
     // raport osobno: padnięte GT nie blokuje maila z tego, co już jest w bazie, a błąd Gmaila — dosypywania danych

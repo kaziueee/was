@@ -91,3 +91,27 @@ test('dni nietypowe: sezonowy wzrost (2× w miesiąc) to nie przestój; dzisiejs
   liczby.set('2025-12-20', 80);                                                                        // dziś, po południu
   assert.deepStrictEqual(m.dniNietypowe(liczby, ['2025-12-19', '2025-12-20'], { dzis: '2025-12-20' }), []);
 });
+
+// Dni bez stanu wstecz: stan na koniec dnia = stan teraz − ruchy po tym dniu (docs/analiza-sprzedazy.md).
+test('przedziały bez stanu: rekonstrukcja wstecz, dzisiejsze ruchy cofnięte', () => {
+  // dziś 10.10, stan teraz 5 (dziś przyszła dostawa +5), 08.10 sprzedano 2 (z 2 do 0), 06.10 dostawa +2
+  const ruchy = new Map([['2026-10-10', 5], ['2026-10-08', -2], ['2026-10-06', 2]]);
+  const p = m.przedzialyBezStanu({ stanTeraz: 5, ruchy, dzis: '2026-10-10', od: '2026-10-01' });
+  // koniec 09.10: 0, 08.10: 0, 07.10: 2, 06.10: 2, 05.10 i wcześniej: 0
+  assert.deepStrictEqual(p, [['2026-10-01', '2026-10-05'], ['2026-10-08', '2026-10-09']]);
+  assert.strictEqual(m.dniBezStanuWOknie(p, '2026-10-01', '2026-10-09'), 7);
+  assert.strictEqual(m.dniBezStanuWOknie(p, '2026-10-06', '2026-10-07'), 0);
+  assert.strictEqual(m.dniBezStanuWOknie(p, '2026-10-04', '2026-10-08'), 3, 'przecięcie z oknem, końce włącznie');
+});
+
+test('przedziały bez stanu: stan cały czas > 0 albo cały czas 0', () => {
+  assert.deepStrictEqual(m.przedzialyBezStanu({ stanTeraz: 3, ruchy: new Map(), dzis: '2026-10-10', od: '2026-10-01' }), []);
+  assert.deepStrictEqual(m.przedzialyBezStanu({ stanTeraz: 0, ruchy: new Map(), dzis: '2026-10-10', od: '2026-10-01' }), [['2026-10-01', '2026-10-09']]);
+  assert.strictEqual(m.dniBezStanuWOknie([], '2026-10-01', '2026-10-09'), 0);
+});
+
+test('przedziały bez stanu: ujemny stan (błąd metody) liczy się jako brak, bez obcinania wcześniejszych dni', () => {
+  // dziś 10.10 stan 0; 09.10 rozchód 3 → koniec 08.10 = 3; koniec 09.10 = 0. Gdyby GT miało stan −1, dni z −1 też zero.
+  const p = m.przedzialyBezStanu({ stanTeraz: -1, ruchy: new Map([['2026-10-09', -3]]), dzis: '2026-10-10', od: '2026-10-07' });
+  assert.deepStrictEqual(p, [['2026-10-09', '2026-10-09']], '08.10: −1 + 3 = 2 > 0');
+});

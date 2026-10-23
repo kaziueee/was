@@ -116,8 +116,36 @@ function dniNietypowe(liczby, dni, { dzis = null } = {}) {
 }
 const dniZakresu = ([od, doDnia]) => { const w = []; for (let d = od; d <= doDnia; d = dodajDni(d, 1)) w.push(d); return w; };
 
+// Dni bez stanu odtworzone wstecz z dokumentów (docs/analiza-sprzedazy.md „Stany wstecz”): stan na koniec dnia D =
+// stan teraz − ruchy po D. stanTeraz — suma st_Stan na magazynach Razem (z ruchami z dzisiaj); ruchy — Map(dzień →
+// suma ruchów tego dnia na tych magazynach, + przychód, − rozchód); dzis — dzisiejszy dzień (jego ruchy cofamy, bo okna
+// to dni zamknięte). Zwraca przedziały [od, do] dni z `od`…wczoraj, w których stan na koniec dnia ≤ 0. Ujemny stan to
+// błąd metody (K4 0,008% dni w teście rocznym) — liczy się jako brak stanu, a dalej idziemy bez obcinania, bo obcięcie
+// przesunęłoby wszystkie wcześniejsze dni.
+function przedzialyBezStanu({ stanTeraz, ruchy, dzis, od }) {
+  const wynik = [];
+  let s = (stanTeraz || 0) - (ruchy.get(dzis) || 0), koniec = null;
+  for (let d = dodajDni(dzis, -1); d >= od; d = dodajDni(d, -1)) {
+    if (s <= 1e-6) { if (!koniec) koniec = d; } else if (koniec) { wynik.push([dodajDni(d, 1), koniec]); koniec = null; }
+    s -= ruchy.get(d) || 0;
+  }
+  if (koniec) wynik.push([od, koniec]);
+  return wynik.reverse();
+}
+
+// Ile dni okna [od, do] (włącznie) leży w przedziałach bez stanu.
+function dniBezStanuWOknie(przedzialy, od, doDnia) {
+  const dzien = (x) => Date.parse(x + 'T12:00:00Z') / 864e5;
+  let n = 0;
+  for (const [a, b] of przedzialy || []) {
+    const lo = a > od ? a : od, hi = b < doDnia ? b : doDnia;
+    if (lo <= hi) n += Math.round(dzien(hi) - dzien(lo)) + 1;
+  }
+  return n;
+}
+
 module.exports = {
-  dniNietypowe, dniZakresu,
+  dniNietypowe, dniZakresu, przedzialyBezStanu, dniBezStanuWOknie,
   ROK_TEMU_DNI, ZAKRESY, PROGI, dodajDni, rokTemu, zakres, kursDokumentu, czasZUuidV1, dzienICzasPl, dataZamowienia,
   flagiTowaru, dniZapasu, zwrotZPozycji,
 };

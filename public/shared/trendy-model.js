@@ -8,24 +8,34 @@
   const BRAK_INFO = (id) => [String(id), '', '(bez grupy)', 0, null, null, 0];
 
   // por: 'prev' (poprzednie okno tej samej długości) | 'rok' (te same dni rok temu)
+  // bz — dni bez stanu w oknie (`a`) i w oknie porównania (`b`), odtworzone wstecz z dokumentów GT
+  // (services/analiza-trendy.js `P.bz`); null = nie wiemy (brak rekonstrukcji, zestaw — leżą składniki, nie on).
   function wiersze(X, okno, por) {
     const P = X.produkty[okno];
     return P.w.map((r) => {
       const [id, cs, cn, cz, ps, pn, pz, rs, rn, rz] = r, inf = X.info[id] || BRAK_INFO(id);
       const b = por === 'prev' ? { s: ps, n: pn, z: pz } : { s: rs, n: rn, z: rz };
-      return { id, sym: inf[0], nazwa: inf[1], grupa: inf[2], nowosc: !!inf[3], dost: inf[4], dni: inf[5], zestaw: !!inf[6],
+      const t = P.bz ? P.bz[id] || [0, 0, 0] : null;
+      const bz = t && !inf[6] ? { a: t[0], b: por === 'prev' ? t[1] : t[2] } : null;
+      return { id, sym: inf[0], nazwa: inf[1], grupa: inf[2], nowosc: !!inf[3], dost: inf[4], dni: inf[5], zestaw: !!inf[6], bz, okno,
         a: { s: cs, n: cn, z: cz }, b, prev: { s: ps, n: pn }, dn: cn - b.n, dz: cz - b.z, dp: b.n > 0 ? (cn / b.n - 1) * 100 : null };
     });
   }
+
+  // „Zakończone w okresie” (decyzja usera 2026-10-23): w oknie choć jeden dzień bez stanu — towaru nie było, więc
+  // gorzej się sprzedawał i nie należy do „Spadku trendu” ani „Zgasłych”. Pomiar 2026-10-23 (30 dni): 52 z 271 spadków
+  // i 21 z 45 zgasłych, przestoje zwykle długie (15–30 dni), krótkie 1–2 dni prawie się nie zdarzają.
+  const zakonczony = (w) => w.bz != null && w.bz.a > 0;
 
   // [klucz, nazwa, warunek(w, o) — o = { prog (%), baza (szt.) }, domyślne sortowanie ('+' = rosnąco)]
   const FILTRY = [
     ['wszystkie', 'Wszystkie ze sprzedażą', (w) => w.a.s > 0, 'n'],
     ['hity', 'Hity', null, 'n'],
     ['trend', 'Trendujące', (w, o) => Math.max(w.a.s, w.b.s) >= o.baza && (w.b.n <= 0 ? w.a.s >= o.baza : w.dp >= o.prog), 'dn'],
-    ['spadek', 'Spadek trendu', (w, o) => Math.max(w.a.s, w.b.s) >= o.baza && w.b.n > 0 && w.dp <= -o.prog, 'dn+'],
+    ['spadek', 'Spadek trendu', (w, o) => Math.max(w.a.s, w.b.s) >= o.baza && w.b.n > 0 && w.dp <= -o.prog && !zakonczony(w), 'dn+'],
     ['strata', 'Ze stratą', (w) => w.a.s > 0 && w.a.z < 0, 'z+'],
-    ['zgasl', 'Zgasły', (w, o) => w.prev.s >= o.baza && w.a.s === 0, 'pn'],
+    ['zgasl', 'Zgasły', (w, o) => w.prev.s >= o.baza && w.a.s === 0 && !zakonczony(w), 'pn'],
+    ['zakonczone', 'Zakończone w okresie', (w) => zakonczony(w) && (w.a.s > 0 || w.b.s > 0), 'bn'],
     ['nowe', 'Nowości', (w) => w.nowosc && w.a.s > 0, 'n'],
   ];
 
@@ -42,7 +52,7 @@
     return lista.filter((w) => def[2](w, o));
   }
   const klucz = (w, k) => ({ sym: w.sym, as: w.a.s, bs: w.b.s, n: w.a.n, bn: w.b.n, dn: w.dn, dp: w.dp, z: w.a.z, dz: w.dz,
-    m: w.a.n ? w.a.z / w.a.n : null, dost: w.dost, dni: w.dni, pn: w.prev.n }[k]);
+    m: w.a.n ? w.a.z / w.a.n : null, dost: w.dost, dni: w.dni, pn: w.prev.n, bz: w.bz ? w.bz.a : null }[k]);
   // sortuje w miejscu; sort/kier = wybór użytkownika albo null (domyślne filtra). Zwraca [klucz, kierunek].
   function sortuj(lista, f, sort = null, kier = -1) {
     const def = FILTRY.find((x) => x[0] === f) || FILTRY[0];
@@ -83,6 +93,9 @@
       dodaj('bez_stanu', 'uwaga', `Brak towaru (Razem 0 w GT), a w oknie sprzedało się ${w.a.s} szt. — ustaw cenę albo włącz automat teraz, zadziałają po dostawie`,
         oferty.filter((o) => !o.tylko_odczyt), true);
     }
+    if (zakonczony(w)) {
+      dodaj('bez_stanu_okno', 'info', `W oknie ${w.bz.a} z ${w.okno} dni bez stanu — sprzedaż niższa z braku towaru, nie z ceny`, [], true);
+    }
     if (w.dni != null && w.dni > ZALEGA_DNI && w.dp != null && w.dp <= ZALEGA_SPADEK) {
       dodaj('zalega', 'info', `Zalega: zapas na ~${w.dni} dni, przychód ${Math.round(w.dp)}% — rozważ obniżkę albo strategię wyprzedaży`, zeStanem, true);
     }
@@ -100,7 +113,7 @@
     return out;
   }
 
-  const api = { wiersze, FILTRY, hity, filtruj, klucz, sortuj, oznaczenia, KONCZY_DNI };
+  const api = { wiersze, FILTRY, hity, filtruj, klucz, sortuj, oznaczenia, zakonczony, KONCZY_DNI };
   if (typeof module === 'object' && module.exports) module.exports = api;   // testy (node --test)
   else window.TrendyModel = api;
 })();

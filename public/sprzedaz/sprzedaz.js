@@ -137,7 +137,7 @@
   // ---------- „Zmiany” ----------
   const M = window.TrendyModel;
   const ZOPCJE = { okno: [['7', '7 dni'], ['30', '30 dni']], por: [['prev', 'vs poprzedni'], ['rok', 'vs rok temu']] };
-  const KOLEJNOSC = ['trend', 'spadek', 'zgasl', 'strata', 'hity', 'nowe', 'wszystkie'];   // na telefonie zmiany najpierw
+  const KOLEJNOSC = ['trend', 'spadek', 'zgasl', 'zakonczone', 'strata', 'hity', 'nowe', 'wszystkie'];   // na telefonie zmiany najpierw
   const PROGI = { prog: 30, baza: 5 };
   const PARTIA = 40;
   const zs = { okno: pamiec('z-okno', '7'), por: pamiec('z-por', 'prev'), filtr: pamiec('z-filtr', 'trend') };
@@ -207,7 +207,8 @@
     const kan = ((X.kanaly[zs.okno] || {})[w.id] || []).map((k) => ({ nazwa: k[0], s: k[1], n: k[2], bs: k[1 + off], bn: k[2 + off], klucz: k[10] }))
       .filter((k) => k.s || k.bs).sort((a, b) => b.n - a.n || b.bn - a.bn).slice(0, 8);
     const znaki = [w.dost === 0 ? '<span class="z-znak zly">stan 0</span>' : '', w.dost > 0 && w.dni != null && w.dni < 14 ? `<span class="z-znak uwaga">zapas ${w.dni} dni</span>` : '',
-      w.nowosc ? '<span class="z-znak dobry">nowość</span>' : '', w.a.s > 0 && w.a.z < 0 ? '<span class="z-znak zly">strata</span>' : ''].join('');
+      w.nowosc ? '<span class="z-znak dobry">nowość</span>' : '', w.a.s > 0 && w.a.z < 0 ? '<span class="z-znak zly">strata</span>' : '',
+      M.zakonczony(w) ? `<span class="z-znak uwaga">bez stanu ${w.bz.a} z ${w.okno} dni</span>` : ''].join('');
     const zm = (a, b) => (b > 0 ? W.zmiana(a, b) : a > 0 ? '<span class="sw-plus">nowy</span>' : '—');
     return `<div class="sw-karta" data-tw="${w.id}">
       ${W.fotoKarty(w.id)}

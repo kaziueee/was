@@ -3,7 +3,7 @@
 // Oznaczenia na karcie produktu w Trendach (public/shared/trendy-model.js) — bez GT, bez bazy.
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { oznaczenia, filtruj } = require('../public/shared/trendy-model');
+const { oznaczenia, filtruj, wiersze: wierszeX } = require('../public/shared/trendy-model');
 
 const wiersz = (nad = {}) => ({ id: 1, dost: 40, dni: 60, dp: 10, a: { s: 20, n: 1000, z: 200 }, b: { s: 18, n: 900, z: 180 }, prev: { s: 18, n: 900 }, ...nad });
 const oferta = (nad = {}) => ({ id: 7, kanal_nazwa: 'Amazon DE', ilosc: 10, auto: 1, tylko_odczyt: false, bez_konkurencji: false,
@@ -83,4 +83,40 @@ test('bez stanu: pewne zero z GT przy sprzedaży w oknie — oznaczenie towaru, 
   assert.deepStrictEqual(o.oferty, [7], 'tylko kanały, na których da się coś ustawić');
   assert.ok(!kody(oznaczenia(wiersz({ dost: null }), of, { razemGt: null })).includes('bez_stanu'), 'GT nie odpowiada = nie wiemy, nie zero');
   assert.ok(!kody(oznaczenia(wiersz({ a: { s: 0, n: 0, z: 0 } }), of, { razemGt: 0 })).includes('bez_stanu'), 'bez sprzedaży w oknie — nic pilnego');
+});
+
+// „Zakończone w okresie” (decyzja usera 2026-10-23): dni bez stanu w oknie wyciągają produkt ze spadku i zgasłych.
+test('wiersze: dni bez stanu z P.bz — zestaw i brak rekonstrukcji = nie wiemy (null)', () => {
+  const X = { info: { 1: ['A', '', 'g', 0, 0, null, 0], 2: ['B', '', 'g', 0, 5, 10, 0], 3: ['Z', '', 'g', 0, 0, null, 1] },
+    produkty: { 30: { w: [[1, 2, 100, 10, 20, 1000, 100, 5, 500, 50], [2, 10, 500, 50, 10, 500, 50, 0, 0, 0], [3, 1, 50, 5, 9, 450, 45, 0, 0, 0]],
+      bz: { 1: [20, 0, 3], 3: [30, 30, 30] } } } };
+  const w = wierszeX(X, 30, 'prev');
+  assert.deepStrictEqual(w[0].bz, { a: 20, b: 0 });
+  assert.deepStrictEqual(w[1].bz, { a: 0, b: 0 }, 'brak wpisu = cały czas na stanie');
+  assert.strictEqual(w[2].bz, null, 'zestaw — nie wiemy');
+  assert.deepStrictEqual(wierszeX(X, 30, 'rok')[0].bz, { a: 20, b: 3 }, 'porównanie rok temu bierze trzecią liczbę');
+  delete X.produkty[30].bz;
+  assert.strictEqual(wierszeX(X, 30, 'prev')[0].bz, null, 'bez rekonstrukcji — nie wiemy');
+});
+
+test('filtry: zakończone poza spadkiem i zgasłymi, z własnym filtrem', () => {
+  const o = { prog: 30, baza: 5 };
+  const spada = wiersz({ id: 1, a: { s: 5, n: 250, z: 20 }, b: { s: 20, n: 1000, z: 100 }, prev: { s: 20, n: 1000 }, dp: -75 });
+  const zgasl = wiersz({ id: 2, a: { s: 0, n: 0, z: 0 }, b: { s: 8, n: 400, z: 40 }, prev: { s: 8, n: 400 }, dp: -100 });
+  const ids = (l) => l.map((x) => x.id);
+  // bez danych o stanach — jak dotąd
+  assert.deepStrictEqual(ids(filtruj([{ ...spada, bz: null }, { ...zgasl, bz: null }], 'spadek', o)), [1, 2]);
+  assert.deepStrictEqual(ids(filtruj([{ ...spada, bz: null }, { ...zgasl, bz: null }], 'zakonczone', o)), []);
+  // dni bez stanu w oknie — przechodzą do „Zakończone”
+  const l = [{ ...spada, bz: { a: 18, b: 0 } }, { ...zgasl, bz: { a: 30, b: 2 } }];
+  assert.deepStrictEqual(ids(filtruj(l, 'spadek', o)), []);
+  assert.deepStrictEqual(ids(filtruj(l, 'zgasl', o)), []);
+  assert.deepStrictEqual(ids(filtruj(l, 'zakonczone', o)), [1, 2]);
+  // na stanie cały okres — zostają, gdzie były
+  const ok = [{ ...spada, bz: { a: 0, b: 5 } }, { ...zgasl, bz: { a: 0, b: 0 } }];
+  assert.deepStrictEqual(ids(filtruj(ok, 'spadek', o)), [1, 2]);
+  assert.deepStrictEqual(ids(filtruj(ok, 'zgasl', o)), [2]);
+  assert.deepStrictEqual(ids(filtruj(ok, 'zakonczone', o)), []);
+  // bez sprzedaży w obu oknach — nic do pokazania
+  assert.deepStrictEqual(ids(filtruj([wiersz({ a: { s: 0, n: 0, z: 0 }, b: { s: 0, n: 0, z: 0 }, bz: { a: 30, b: 30 } })], 'zakonczone', o)), []);
 });

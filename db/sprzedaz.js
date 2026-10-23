@@ -111,6 +111,15 @@ CREATE TABLE IF NOT EXISTS stany (
   PRIMARY KEY (tw_id, dzien)
 );
 
+-- dni bez stanu Razem odtworzone wstecz z dokumentów GT (analiza-dane.odtworzBezStanu, raz na dobę) — przedziały
+-- [od, do] włącznie, tylko dla towarów sprzedawanych w oknie rekonstrukcji (bez zestawów); zasięg w meta 'bez_stanu'
+CREATE TABLE IF NOT EXISTS bez_stanu (
+  tw_id     INTEGER NOT NULL,
+  od        TEXT NOT NULL,
+  do        TEXT NOT NULL,
+  PRIMARY KEY (tw_id, od)
+);
+
 CREATE TABLE IF NOT EXISTS tempa (
   tw_id     INTEGER PRIMARY KEY,
   szt30     REAL NOT NULL DEFAULT 0,

@@ -123,6 +123,13 @@ function policz(dzis) {
   // bieżący miesiąc rok temu do tego samego dnia — r/r niepełnego miesiąca
   const miesiacRokTemu = sumy(`${+koniec.slice(0, 4) - 1}${koniec.slice(4, 8)}01`, `${+koniec.slice(0, 4) - 1}${koniec.slice(4)}`);
 
+  // dni bez stanu (odtworzone wstecz z dokumentów — analiza-dane.odtworzBezStanu). Zasięg „od|do”: okno sięgające poza
+  // niego nie ma danych (null), zamiast udawać, że towar był cały czas na stanie.
+  const [bzOd, bzDo] = (meta.get('bez_stanu')?.wartosc || '|').split('|');
+  const przedzialy = new Map();
+  if (bzOd) for (const x of db.prepare('SELECT tw_id, od, do FROM bez_stanu').all()) (przedzialy.get(x.tw_id) || przedzialy.set(x.tw_id, []).get(x.tw_id)).push([x.od, x.do]);
+  const znamBezStanu = (od, doDnia) => !!bzOd && od >= bzOd && doDnia <= bzDo;
+
   const produkty = {}, kanaly = {}, wszystkie = new Set();
   for (const dl of OKNA) {
     const od = D(koniec, -dl + 1);
@@ -131,6 +138,18 @@ function policz(dzis) {
     const v = (m, id) => { const x = m.get(id); return x ? [R(x.szt), R(x.netto), R(x.zysk)] : [0, 0, 0]; };
     const ids = new Set([...cur.keys(), ...prev.keys(), ...rok.keys()]);
     produkty[dl] = { ...P, w: [...ids].map((id) => { wszystkie.add(id); return [id, ...v(cur, id), ...v(prev, id), ...v(rok, id)]; }) };
+    // bz: { tw_id: [dni bez stanu teraz, w poprzednim oknie, rok temu] } — tylko niezerowe; null w trójce = poza zasięgiem
+    if (znamBezStanu(P.od, P.do)) {
+      const zakres = [[P.od, P.do], [P.prevOd, P.prevDo], [P.rokOd, P.rokDo]];
+      const bz = {};
+      for (const id of ids) {
+        const p = przedzialy.get(id);
+        if (!p) continue;
+        const t = zakres.map(([a, b]) => (znamBezStanu(a, b) ? am.dniBezStanuWOknie(p, a, b) : null));
+        if (t.some((x) => x > 0)) bz[id] = t;
+      }
+      produkty[dl].bz = bz;
+    }
     kanaly[dl] = kanalyProduktow(P);
   }
 
@@ -165,7 +184,7 @@ function policz(dzis) {
     }
   }
   return { dzis, koniec, ostatniaNiedz: niedziela, kafle: kafle(koniec), tygodnie: tyg, miesiace, miesiacRokTemu,
-    produkty, kanaly, info, grTyg, tygodnie13, tygProd, wygenerowano: new Date().toISOString() };
+    produkty, kanaly, info, grTyg, tygodnie13, tygProd, bezStanu: bzOd ? { od: bzOd, do: bzDo } : null, wygenerowano: new Date().toISOString() };
 }
 
 // --- gotowy wynik (wątek analiz liczy, API podaje) -------------------------------------------------------------
@@ -181,10 +200,11 @@ function odswiez(dzis = dzisLokalnie()) {
 }
 
 // Woła job (w wątku analiz) po każdym przebiegu: liczy, gdy brak wyniku, zmienił się dzień albo minęła godzina.
-function odswiezJesliTrzeba(teraz = new Date()) {
+// wymus — przelicz mimo świeżego wyniku (job właśnie odtworzył dni bez stanu, filtr „Zakończone” ich potrzebuje)
+function odswiezJesliTrzeba(teraz = new Date(), { wymus = false } = {}) {
   const dzis = dzisLokalnie(teraz), g = db.prepare("SELECT dzien, czas FROM gotowe WHERE klucz = 'trendy'").get();
   const wiek = g ? teraz.getTime() - new Date(g.czas.replace(' ', 'T') + 'Z').getTime() : Infinity;
-  if (g && g.dzien === dzis && wiek < ODSWIEZ_CO_MS) return null;
+  if (!wymus && g && g.dzien === dzis && wiek < ODSWIEZ_CO_MS) return null;
   return odswiez(dzis);
 }
 

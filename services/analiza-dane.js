@@ -358,6 +358,59 @@ async function zdjecieStanow(dzien, twIds = null) {
   return m.size;
 }
 
+// Dni bez stanu wstecz (Trendy: filtr „Zakończone w okresie” — produkt, którego nie było, gorzej się sprzedaje, więc
+// nie należy do „Spadku trendu” ani „Zgasłych”; decyzja usera 2026-10-23). GT nie trzyma stanów wstecz, a własne
+// zdjęcia stanów są od 2026-10-20 — odtwarzamy z dokumentów: stan na koniec dnia = st_Stan − ruchy po tym dniu
+// (MM/PZ/WZ/PW/RW, magazyny Razem; metoda i test roczny w docs/analiza-sprzedazy.md „Stany wstecz”). Tylko towary
+// sprzedawane w tym czasie i bez zestawów (zestaw nie ma własnego stanu — leżą składniki). Okno: 400 dni, tyle sięga
+// „rok temu” dla okna 30 dni. Pomiar 2026-10-23 na OKITRADE: 173 tys. wierszy ruchów, 1,3 s GT + 0,7 s liczenia —
+// raz na dobę, w wątku analiz. Zapis: przedziały [od, do], cała tabela na nowo; zasięg w meta 'bez_stanu' = „od|do”.
+const BEZ_STANU_DNI = 400;
+async function odtworzBezStanu(dzis) {
+  const od = am.dodajDni(dzis, -BEZ_STANU_DNI), wczoraj = am.dodajDni(dzis, -1);
+  const magi = MAGAZYNY_RAZEM.map((k) => MAGAZYN_GT_ID[k]).join(',');
+  const towary = db.prepare(`SELECT DISTINCT p.tw_id FROM pozycje p JOIN zamowienia z ON z.id = p.zam_id LEFT JOIN towary t ON t.tw_id = p.tw_id
+    WHERE z.data_zam >= ? AND (t.rodzaj IS NULL OR t.rodzaj <> 8)`).all(od).map((x) => x.tw_id);
+  const r = await query(`
+    WITH r AS (
+      SELECT p.ob_TowId tw, m.dok_MagId mag, CONVERT(char(10), m.dok_DataWyst, 23) dzien,
+             CASE WHEN m.dok_Typ IN (10, 12) THEN 1 ELSE -1 END * p.ob_Znak * p.ob_Ilosc il
+        FROM dok_Pozycja p JOIN dok__Dokument m ON m.dok_Id = p.ob_DokMagId
+       WHERE m.dok_Typ IN (10, 11, 12, 13) AND m.dok_Status = 1 AND m.dok_DataWyst >= @od
+      UNION ALL
+      SELECT p.ob_TowId, m.dok_MagId, CONVERT(char(10), m.dok_DataWyst, 23), -p.ob_Ilosc
+        FROM dok_Pozycja p JOIN dok__Dokument m ON m.dok_Id = p.ob_DokMagId
+       WHERE m.dok_Typ = 9 AND m.dok_Status = 1 AND m.dok_DataWyst >= @od
+      UNION ALL
+      SELECT p.ob_TowId, m.dok_OdbiorcaId, CONVERT(char(10), m.dok_DataWyst, 23), p.ob_Ilosc
+        FROM dok_Pozycja p JOIN dok__Dokument m ON m.dok_Id = p.ob_DokMagId
+       WHERE m.dok_Typ = 9 AND m.dok_Status = 1 AND m.dok_DataWyst >= @od
+    )
+    SELECT tw, dzien, SUM(il) il FROM r WHERE mag IN (${magi}) GROUP BY tw, dzien`, { od });
+  const st = await query(`SELECT st_TowId tw, SUM(st_Stan) stan FROM tw_Stan WHERE st_MagId IN (${magi}) GROUP BY st_TowId`);
+  const teraz = new Map(st.recordset.map((x) => [x.tw, Number(x.stan) || 0]));
+  const ruchy = new Map();
+  for (const x of r.recordset) (ruchy.get(x.tw) || ruchy.set(x.tw, new Map()).get(x.tw)).set(x.dzien, Number(x.il) || 0);
+  const ins = db.prepare('INSERT INTO bez_stanu (tw_id, od, do) VALUES (?, ?, ?)');
+  let przedzialow = 0;
+  db.exec('BEGIN');
+  try {
+    db.exec('DELETE FROM bez_stanu');
+    for (const tw of towary) {
+      for (const [a, b] of am.przedzialyBezStanu({ stanTeraz: teraz.get(tw), ruchy: ruchy.get(tw) || new Map(), dzis, od })) { ins.run(tw, a, b); przedzialow++; }
+    }
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+  meta.set('bez_stanu', `${od}|${wczoraj}`);
+  return { towarow: towary.length, przedzialow };
+}
+
+// Raz na dobę: gdy zasięg nie sięga wczoraj (pierwszy przebieg po północy, po wdrożeniu, po padnięciu GT).
+async function bezStanuJesliTrzeba(dzis) {
+  const zasieg = meta.get('bez_stanu')?.wartosc?.split('|')[1] || '';
+  return zasieg >= am.dodajDni(dzis, -1) ? null : odtworzBezStanu(dzis);
+}
+
 // Tempo sprzedaży na towar (do dni zapasu i flag): FS z K4 (bez paragonów Sklepu — K4 obsługuje internet) plus
 // zużycie składników w sprzedanych zestawach, bo to też schodzi z półki. Jedno zapytanie po indeksie dat FS
 // zamiast liczenia przy każdym otwarciu ekranu (tam to było ~1 s na 360 towarów).
@@ -378,4 +431,4 @@ function przeliczTempa(dzis) {
   return db.prepare('SELECT COUNT(*) n FROM tempa').get().n;
 }
 
-module.exports = { ZK_BEZ_FS_DNI, przeliczTempa, wczytajOkno, zlozZamowienia, policzZysk, rynekKanalu, odswiezTowary, zdjecieStanow, pobierzOkno, meta };
+module.exports = { ZK_BEZ_FS_DNI, BEZ_STANU_DNI, odtworzBezStanu, bezStanuJesliTrzeba, przeliczTempa, wczytajOkno, zlozZamowienia, policzZysk, rynekKanalu, odswiezTowary, zdjecieStanow, pobierzOkno, meta };

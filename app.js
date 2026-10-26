@@ -33,6 +33,7 @@ const strefyWGtJob = require('./services/strefy-w-gt-job');
 const rozmontowaniaJob = require('./services/rozmontowania');
 const kartotekaJob = require('./services/kartoteka');
 const backupJob = require('./services/backup-watek');   // backup w osobnym watku (zasada 7)
+const hurtPlnJob = require('./services/sellasist-hurt-pln');   // Hurt_PLN w Sellasist = Hurt EUR × NBP, o 3:00
 const analizaWatek = require('./services/analiza-watek');
 const reconciliacjaMM = require('./services/reconciliacja-mm');
 const watek = require('./services/watek');
@@ -118,6 +119,7 @@ setTimeout(() => strefyWGtJob.start(), 3 * 60 * 1000).unref();
 setTimeout(() => rozmontowaniaJob.start(), 6 * 60 * 1000).unref();
 kartotekaJob.start();   // odswiezanie kopii kartoteki GT (symbol/nazwa/EAN) w stany_lokalizacji
 backupJob.start();
+hurtPlnJob.start();
 analizaWatek.start();   // analiza sprzedazy w osobnym watku (nie blokuje Zebry): FS/ZK z GT do db/sprzedaz.db co 15 min, nocny przebieg, Trendy
 reconciliacjaMM.start();
 watek.uruchom(require.resolve('./services/pulpit-snapshot'), 'pulpit');   // migawka pulpitu w osobnym watku (zasada 7)

@@ -294,6 +294,15 @@ Miniatura produktu na Zebrze — nagłówek kroku wyboru w **Ruchu**, karta w **
 - **Cache na dysku `db/zdjecia/`** (poza repo): meta `{url, sprawdzono, pliki}` + bajty per rozmiar, ważność 3 dni (zdjęcie) / 1 dzień (brak zdjęcia). Sellasist nie odpowiada → oddajemy ostatnią kopię, nawet starą. Czysta logika w `services/zdjecia-model.js` (testy `test/zdjecia-model.test.js`).
 - Wymaga `SELLASIST_ACCOUNT` / `SELLASIST_API_KEY` w `.env`; bez nich endpoint zwraca 503, a ekrany po prostu nie pokazują zdjęć.
 
+## Sellasist: cena Hurt_PLN (2026-10-26)
+
+Pole ceny **Hurt_PLN** (`pricesfield_id` 6) w Sellasist = **Hurt × średni kurs NBP EUR** (tabela A), do grosza. „Hurt” w Subiekcie to poziom ceny 5 w **EUR** (`twp_WalutaCeny5`), a do Sellasist przechodzi sama liczba — Sellasist traktuje ją jak PLN, więc jego własne przeliczenie `prices.EUR` pola Hurt jest bez sensu. Czytamy `value` wprost jako EUR.
+
+- Pierwsze uzupełnienie 2026-10-26 kursem 4,4026 (208/A/NBP/2026): **11 273 produkty**, 525 bez ceny Hurt.
+- **Job o 3:00** (`services/sellasist-hurt-pln.js`, `SELLASIST_HURT_PLN_WYLACZ=1` wyłącza): ostatni kurs NBP, przepisuje tylko to, co odjechało o **> 1%** (`TOLERANCJA`) — inaczej codzienny ruch kursu przepisywałby cały asortyment. Piszemy wyłącznie `pricesfieldsvalues` Hurt_PLN przez `PUT /products_bulk` (1000 na żądanie).
+- **Podejrzane = wynik > 2× ceny w Sellasist** (`MAX_WZGLEDEM_DETALU`) — wypisywane, ale **zapisywane** (decyzja usera 2026-10-26, „na razie wszędzie”). 116 takich 2026-10-26: 22 × Siku z Hurtem = detal co do grosza (cena w PLN wpisana w poziom EUR — SIK1015: 20,99 → 92,41 zł, do poprawy w Subiekcie), ~80 wariantów (U/P/ZE/części zestawów: Hurt pełnego produktu, tańsza cena), kilkanaście zwykłych 2–3×. Po poprawce w Subiekcie job przepisze je sam (różnica > 1%).
+- Ręcznie: `node scripts/sellasist-hurt-pln.js` (podgląd; `--zapisz`, `--kurs`, `--wszystko`, `--tylko SYM`, `--lista`). Czysta logika i testy: `services/sellasist-hurt-pln-model.js`, `test/sellasist-hurt-pln-model.test.js`.
+
 ## Analiza sprzedaży — moduł (etap 1, 2026-10-20)
 
 Zakładka desktopu **Sprzedaż → Dzień** (`#sprzedaz`, zadanie sprzedażowe przeszło pod `#sprzedaz/sprzedaz-zadanie`) i strona na telefon **`/sprzedaz/`** (PWA, Tailscale): podsumowanie dnia / 7 dni / miesiąca / roku vs ten sam zakres sprzed **364 dni**, kanały (Allegro rozbite na kraje, małe kanały w „Inne”), produkty ze zdjęciem, sztukami, marżą, zyskiem na sztuce i zyskiem per kanał, stanem, dniami zapasu, flagami i stanem repricera. Projekt i decyzje usera: `docs/analiza-sprzedazy.md`. Zastępuje ERP Dashboard (Metabase + widoki w OKITRADE).

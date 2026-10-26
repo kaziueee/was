@@ -470,8 +470,7 @@
         sel.disabled = true;
         try {
           const r = await cenyPost('/api/ceny/przebicie', { oferta_id: o.id, przebicie: wartosc });
-          const x = r.przebicie.wlasne, wal = cenyWaluta(o), dz = wal === 'Ft' ? 0 : 2;
-          komunikatKarty(`${cenyKanal(o)} ${o.sku}: przebicie ${x == null ? `domyślne (o ${cenyLiczba(r.przebicie.domyslne, dz)} ${wal})` : x === 0 ? 'remis — ta sama cena co konkurent' : `o ${cenyLiczba(x, dz)} ${wal}`}. Automat użyje go w najbliższym przebiegu.`, 'ok');
+          komunikatKarty(`${cenyKanal(o)} ${o.sku}: przebicie ${cenyPrzebicieOpis(r.przebicie.wlasne, r.przebicie.domyslne, cenyWaluta(o))}. Automat użyje go w najbliższym przebiegu.`, 'ok');
           wczytajCeny(id, w);
         } catch (e) { komunikatKarty(e.message, 'blad'); sel.disabled = false; }
       };

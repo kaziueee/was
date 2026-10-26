@@ -5095,6 +5095,7 @@ async function odswiezCenyKarta() {
     });
     box.querySelectorAll('[data-ceny-reczne]').forEach((sek) => cenyPodepnijReczne(sek, oferty.find((x) => String(x.id) === sek.dataset.cenyReczne)));
     box.querySelectorAll('[data-ceny-konk]').forEach((f) => cenyPodepnijKonk(f, oferty.find((x) => String(x.id) === f.dataset.cenyKonk)));
+    box.querySelectorAll('[data-ceny-przeb]').forEach((f) => cenyPodepnijPrzebicie(f, oferty.find((x) => String(x.id) === f.dataset.cenyPrzeb)));
     el('ceny-karta-wroc').addEventListener('click', () => { cenyPokazWidok('macierz'); odswiezCeny(); });
     if (cenyKartaRynek) box.querySelector(`[data-ceny-rynek="${cenyKartaRynek}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   } catch (err) {
@@ -5204,7 +5205,46 @@ function cenyReczneHtml(o) {
       <div class="ceny-reczne-wiersz">min <input type="text" inputmode="decimal" name="min" autocomplete="off" value="${cenyDoPola(g.min_reczne)}" placeholder="${g.kalk_min != null ? cenyLiczba(g.kalk_min) : '—'}" aria-label="Ręczne minimum">
         max <input type="text" inputmode="decimal" name="max" autocomplete="off" value="${cenyDoPola(g.max_reczne)}" placeholder="${g.kalk_max != null ? cenyLiczba(g.kalk_max) : '—'}" aria-label="Ręczne maksimum"> ${w}
         <button class="btn btn-small">Zapisz</button>${reczne ? '<button type="button" class="btn btn-small" data-ceny-kalk title="Usuń ręczne granice — min i max z kalkulatora">↺ z kalkulatora</button>' : ''}</div>
-      <span class="ceny-m">Puste pole = ${kalk}.</span></form></div>`;
+      <span class="ceny-m">Puste pole = ${kalk}.</span></form>${cenyPrzebicieHtml(o)}</div>`;
+}
+
+// Przebicie automatu przy ofercie (decyzja usera 2026-10-26: „czy o ile przebijać, czy remisować — wygrywaj o zero”),
+// każdy kanał poza tylko-odczyt; to samo co na karcie produktu w Sprzedaży (POST /api/ceny/przebicie). Allegro ma to
+// pole w ustawieniach Niezbędnika (cenyKonkUstawieniaHtml, ta sama kolumna) — tam zostaje, bez drugiego formularza.
+const cenyPrzebicieOpis = (x, dom, w) => {
+  const dz = w === 'Ft' ? 0 : 2;
+  return x == null ? `domyślne (o ${cenyLiczba(dom, dz)} ${w})` : x === 0 ? 'remis — ta sama cena co konkurent' : `o ${cenyLiczba(x, dz)} ${w}`;
+};
+function cenyPrzebicieHtml(o) {
+  const p = o.przebicie;
+  if (!p || o.tylko_odczyt || o.platforma === 'allegro') return '';
+  const w = cenyWaluta(o), dz = w === 'Ft' ? 0 : 2, x = p.wlasne, kw = x != null && x !== 0;
+  return `<form class="ceny-przebicie" data-ceny-przeb="${o.id}" novalidate><span class="ceny-et">Przebicie automatu${x != null ? ' · <b>własne</b>' : ''}</span>
+      <div class="ceny-reczne-wiersz"><select name="tryb" aria-label="O ile automat przebija konkurenta ${cenyEsc(cenyKanal(o))}">
+        <option value=""${x == null ? ' selected' : ''}>o ${cenyLiczba(p.domyslne, dz)} ${w} (domyślnie)</option>
+        <option value="0"${x === 0 ? ' selected' : ''}>remis — wygrywaj o zero</option>
+        <option value="kwota"${kw ? ' selected' : ''}>kwota…</option></select>
+        <input type="text" inputmode="decimal" name="kwota" autocomplete="off" class="${kw ? '' : 'hidden'}" value="${kw ? cenyLiczba(x, dz) : ''}" placeholder="0,50" aria-label="Kwota przebicia"> <span class="${kw ? '' : 'hidden'}" data-wal>${w}</span>
+        <button class="btn btn-small">Zapisz</button></div>
+      <span class="ceny-m">Pod zwycięzcę Buy Boxa i pod następnego konkurenta przy podwyżce; remis = ta sama cena.</span></form>`;
+}
+function cenyPodepnijPrzebicie(f, o) {
+  if (!f || !o) return;
+  const tryb = f.querySelector('[name=tryb]'), pole = f.querySelector('[name=kwota]'), wal = f.querySelector('[data-wal]');
+  tryb.addEventListener('change', () => { const kw = tryb.value === 'kwota'; pole.classList.toggle('hidden', !kw); wal.classList.toggle('hidden', !kw); if (kw) pole.focus(); });
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = f.querySelector('button');
+    btn.disabled = true;
+    try {
+      const przebicie = tryb.value === 'kwota' ? pole.value.trim() : tryb.value;
+      if (tryb.value === 'kwota' && !przebicie) throw new Error('Wpisz kwotę przebicia');
+      const r = await cenyPost('/api/ceny/przebicie', { oferta_id: o.id, przebicie });
+      pokazKomunikat(`${cenyKanal(o)} ${o.sku}: przebicie ${cenyPrzebicieOpis(r.przebicie.wlasne, r.przebicie.domyslne, cenyWaluta(o))}. Automat użyje go w najbliższym przebiegu.`, 'ok');
+      odswiezCenyKarta();
+    } catch (err) { pokazKomunikat(err.message, 'blad'); }
+    finally { btn.disabled = false; }
+  });
 }
 
 const cenyPost = (url, body) => api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, operator: operator() }) });

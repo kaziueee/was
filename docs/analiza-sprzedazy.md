@@ -367,7 +367,8 @@ to samo `/api/analiza/live`), a karta produktu z Trendów otwiera się z tabel D
   zapisuje kolumnę `oferty.konk_przebicie` (ta sama co przebicie Allegro z Niezbędnikiem) — worker bierze ją jako krok
   decyzji na KAŻDYM kanale (wcześniej tylko Allegro); puste = krok kanału (`kolumny.js reguly.krok`, eMAG HU 1 Ft).
   Krok działa w obie strony (pricing/model.js): pod zwycięzcę Buy Boxa i pod następnego konkurenta przy podwyżce —
-  remis = ta sama cena. Zmiana trafia do logu (`zmiany`, akcja `przebicie`).
+  remis = ta sama cena. Zmiana trafia do logu (`zmiany`, akcja `przebicie`). To samo pole jest na karcie SKU w Cenach
+  (rząd z ręczną ceną i granicami); Allegro ma je w ustawieniach Niezbędnika (ta sama kolumna, jeden formularz).
 
 ### Filtr „Zakończone w okresie” — zrobione 2026-10-23 (desktop i telefon)
 

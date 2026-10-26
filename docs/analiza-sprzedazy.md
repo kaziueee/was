@@ -349,6 +349,20 @@ przewijana lista zamiast grupowania po produkcie, z tymi samymi danymi (zdjęcie
   bieżący to ~0,6 s zapytań do GT w wątku analiz).
 - Bez paragonów Sklepu (przegląd = internet).
 
+### Live na desktopie + karta produktu z Dnia i Live — zrobione 2026-10-26
+
+**[decyzja usera 26.10]** „Live” także na desktopie (podzakładka Sprzedaż → Live, `public/desktop/sprzedaz-live.js`,
+to samo `/api/analiza/live`), a karta produktu z Trendów otwiera się z tabel Dzień i Live „tak samo jak w Trendach”.
+
+- Desktop = tabela: wiersz = pozycja, dane zamówienia (godzina, kanał, numer, marża i zysk) przy pierwszej pozycji
+  (rowspan), separator dnia wpływu. Co minutę nowe zamówienia na górę (tylko gdy panel jest na ekranie), starsze
+  doczytywane na dole (kursor jak na telefonie). Klik w komórki zamówienia nic nie robi — to nie jest konkretny towar.
+- Karta: `window.sprzedazOtworzProdukt(tw_id, lista, opis)` w `sprzedaz-trendy.js` — ta sama karta (kanały, ceny ofert
+  z edycją, akcje grupowe, strategia). Liczby na karcie są z okna Trendów (7/30 zamkniętych dni do wczoraj), ← → idzie
+  po liście widoku, z którego weszliśmy (nagłówek karty: „3 z 113 na liście »Dzień …«”). Dane Trendów doczytuje sama,
+  gdy ich jeszcze nie ma (najwyżej co 30 min). Towar bez sprzedaży w oknach Trendów (nowość z dzisiejszego zamówienia)
+  dostaje wiersz z zerami — kanały puste, ceny ofert działają.
+
 ### Filtr „Zakończone w okresie” — zrobione 2026-10-23 (desktop i telefon)
 
 **[decyzja usera 23.10]** Zera trzeba wyciągnąć do osobnego filtru — produkt, którego nie ma, gorzej się sprzedaje,

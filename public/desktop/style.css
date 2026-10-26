@@ -1609,6 +1609,18 @@ img.tr-min { width: 64px; height: 64px; object-fit: contain; border-radius: 4px;
 .tr-statki b { display: block; font-size: 16px; color: var(--tr-ink); }
 @media (max-width: 1100px) { #panel-sprzedaz-trendy .tr-kafle { grid-template-columns: repeat(3, 1fr); } #panel-sprzedaz-trendy .tr-dwie { grid-template-columns: 1fr; } }
 #panel-sprzedaz-dzien th.sd-sort { cursor: pointer; user-select: none; }
+/* Dzień i Live: wiersz produktu otwiera kartę produktu z Trendów */
+.sd-tabela tr.sd-klik, .sl-tabela tr.sl-klik { cursor: pointer; }
+/* === Sprzedaż → Live (sprzedaz-live.js): wiersz = pozycja, dane zamówienia (rowspan) przy pierwszej === */
+.sl-tabela td { vertical-align: top; }
+.sl-tabela .sd-min { width: 48px; height: 48px; }
+.sl-tabela td.sl-zcel { white-space: nowrap; }
+.sl-tabela tr.sl-pierwsza td { border-top: 2px solid #e3e5e8; }
+.sl-tabela tr.sl-dzien td { background: #f6f7f9; font-weight: 700; color: #1d3557; border-top: 2px solid #d6d9de; }
+.sl-tabela tr.sl-nowe td { background: #fff8d6; }
+.sl-nr { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.sl-tabela .sw-flaga { white-space: nowrap; }
+.sl-dol { margin-top: 10px; text-align: center; }
 #panel-sprzedaz-dzien th.sd-sort:hover { text-decoration: underline; }
 .tr-okno .tr-tab a { color: #1d4ed8; text-decoration: none; } .tr-okno .tr-tab a:hover { text-decoration: underline; }
 /* Karta produktu w Trendach = zarządzanie ceną (2026-10-22): tabela ofert z edycją ceny ⇄ marży. Okna potwierdzeń

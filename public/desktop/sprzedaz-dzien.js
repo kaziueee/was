@@ -123,15 +123,20 @@ function sdRysujProdukty(d, pod) {
     return (typeof a === 'string' ? a.localeCompare(b) : a - b) * sdKol.kier;
   });
   const wg = sdKol.k ? SD_KOLUMNY.find((c) => c[1] === sdKol.k)[0].toLowerCase() : SD_OPCJE.sort.find((o) => o[0] === sdStan.sort)[1];
-  el('sd-prod-tyt').textContent = `Produkty: ${W.zakresTxt(pod.okresy.cur)} — ${W.szt(d.razem)} towarów${d.razem > lista.length ? `, pokazane ${W.szt(lista.length)}` : ''}, wg: ${wg}`;
+  el('sd-prod-tyt').textContent = `Produkty: ${W.zakresTxt(pod.okresy.cur)} — ${W.szt(d.razem)} towarów${d.razem > lista.length ? `, pokazane ${W.szt(lista.length)}` : ''}, wg: ${wg} · klik w produkt = karta produktu`;
   el('sd-prod').innerHTML = '<thead><tr>' + SD_KOLUMNY.map(([t, k, num]) => `<th class="${num ? 'num ' : ''}${k ? 'sd-sort' : ''}" data-k="${k || ''}"${k ? ' title="sortuj"' : ''}>${t}${k && k === sdKol.k ? (sdKol.kier > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('') + '</tr></thead><tbody>'
-    + lista.map((p) => `<tr><td><img class="sd-min" src="/api/produkty/${p.tw_id}/zdjecie?rozmiar=mini" alt="" loading="lazy" onerror="this.remove()"></td>`
+    + lista.map((p) => `<tr class="sd-klik" data-id="${p.tw_id}"><td><img class="sd-min" src="/api/produkty/${p.tw_id}/zdjecie?rozmiar=mini" alt="" loading="lazy" onerror="this.remove()"></td>`
       + `<td><b>${W.esc(p.symbol || p.tw_id)}</b> <span class="sd-nz" title="${W.esc(p.nazwa)}">${W.esc(p.nazwa || '')}</span></td>`
       + `<td class="num">${W.szt(p.szt)}</td><td class="num">${W.zl(p.netto)}</td><td class="num">${W.pct(p.netto ? p.zysk / p.netto * 100 : null)}</td>`
       + `<td class="num">${W.naSzt(p.zysk, p.szt)}</td><td class="num">${W.zl(p.zysk)}</td>`
       + `<td class="sd-kan">${p.kanaly.map((c) => W.esc(d.nazwy[c.k] || c.k) + ' ' + W.szt(c.szt)).join(', ')}</td>`
       + `<td class="num">${p.stan ? W.szt(p.stan.dostepne) : '—'}</td><td class="num">${p.dni_zapasu == null ? '—' : W.szt(p.dni_zapasu) + ' dni'}</td>`
       + `<td>${W.flagi(p.flagi)}</td></tr>`).join('') + '</tbody>';
+  // klik w produkt = karta z Trendów (ceny ofert, kanały, strategia — decyzja usera 2026-10-26), ← → po tej liście
+  el('sd-prod').querySelector('tbody').onclick = (e) => {
+    const tr = e.target.closest('tr.sd-klik'); if (!tr) return;
+    window.sprzedazOtworzProdukt(+tr.dataset.id, lista.map((p) => ({ id: p.tw_id, sym: p.symbol, nazwa: p.nazwa })), `Dzień ${W.zakresTxt(pod.okresy.cur)}`);
+  };
   el('sd-prod').querySelector('thead').onclick = (e) => {
     const th = e.target.closest('th.sd-sort'); if (!th) return;
     const k = th.dataset.k;

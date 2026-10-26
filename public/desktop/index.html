@@ -65,6 +65,7 @@
     </nav>
     <nav id="podzakladki-sprzedaz" class="podzakladki hidden">
       <a href="#sprzedaz" class="podzakladka" data-pod="sprzedaz">Dzień</a>
+      <a href="#sprzedaz/sprzedaz-live" class="podzakladka" data-pod="sprzedaz-live">Live</a>
       <a href="#sprzedaz/sprzedaz-trendy" class="podzakladka" data-pod="sprzedaz-trendy">Trendy</a>
       <a href="#sprzedaz/sprzedaz-zadanie" class="podzakladka" data-pod="sprzedaz-zadanie">Zadanie sprzedażowe</a>
     </nav>
@@ -895,6 +896,19 @@
       <div id="tr-tresc"></div>
     </section>
 
+    <!-- Panel Sprzedaz → Live (tylko admin): ostatnie zamowienia po kolei, GET /api/analiza/live — jak „Live” na telefonie,
+         tylko tabela. Rysuje public/desktop/sprzedaz-live.js; klik w pozycje = karta produktu z Trendow. -->
+    <section id="panel-sprzedaz-live" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Sprzedaż — live</h2>
+        <span class="hint-inline" id="sl-stopka"></span>
+      </div>
+      <p class="hint">Najnowsze na górze, w kolejności wpływu; nowe dochodzą same co minutę. Godzina: Allegro dokładna, pozostałe „≈” — kiedy WMS zobaczył zamówienie. Marża i zysk całego zamówienia (≈ = marża handlowa). Klik w pozycję = karta produktu.</p>
+      <p class="hint hidden" id="sl-blad"></p>
+      <div class="tabela-wrapper"><table class="tabela sd-tabela sl-tabela" id="sl-tabela"></table></div>
+      <div class="sl-dol"><button type="button" class="btn btn-small hidden" id="sl-wiecej">Starsze zamówienia</button></div>
+    </section>
+
     <!-- Panel Sprzedaz → Dzien (tylko admin): analiza sprzedazy z db/sprzedaz.db (docs/analiza-sprzedazy.md).
          Ten sam widok na telefon: /sprzedaz/ (Tailscale). Rysuje public/desktop/sprzedaz-dzien.js. -->
     <section id="panel-sprzedaz-dzien" class="panel hidden">
@@ -1123,6 +1137,7 @@
   <script src="/shared/auth.js"></script>
   <script src="/shared/sprzedaz-wspolne.js"></script>
   <script src="sprzedaz-dzien.js"></script>
+  <script src="sprzedaz-live.js"></script>
   <script src="/shared/trendy-model.js"></script>
   <script src="sprzedaz-trendy.js"></script>
   <script src="ceny-pulpit.js"></script>

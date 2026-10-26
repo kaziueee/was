@@ -63,6 +63,7 @@
   const os = (L, R, W, y, tk, H) => tk.map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="${kolor('--tr-grid')}"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="${kolor('--tr-muted')}">${kompakt(v)}</text>`).join('');
 
   let X = null;                    // dane z API
+  let wczytanoX = 0;               // kiedy (Date.now()) — karta z Dnia/Live nie pyta o świeżo wczytane
   let ladowanie = null;
 
   const SZKIELET = `
@@ -677,8 +678,10 @@
   }
 
   let ostatnieKanaly = [];
+  // Lista ← → karty: produkty Trendów albo widok, z którego weszliśmy (Dzień, Live — sprzedazOtworzProdukt niżej).
+  let kontekstKarty = null;
   function otworzProdukt(id) {
-    const lista = ostatniaLista, i = lista.findIndex((w) => w.id === id), w = lista[i] || wiersze().find((q) => q.id === id);
+    const lista = kontekstKarty?.lista || ostatniaLista, i = lista.findIndex((w) => w.id === id), w = lista[i] || wiersze().find((q) => q.id === id);
     if (!w) return;
     const P = X.produkty[st.okno], porTxt = st.por === 'prev' ? `poprzednie ${st.okno} dni` : 'rok temu', off = st.por === 'prev' ? 3 : 6;
     const kan = ((X.kanaly[st.okno] || {})[id] || []).map((k) => ({ nazwa: k[0], s: k[1], n: k[2], z: k[3], bs: k[1 + off], bn: k[2 + off], klucz: k[10] }))
@@ -691,7 +694,7 @@
       ['Zapas', w.dni == null ? '—' : szt(w.dni) + ' dni', '<span class="tr-sz">tempo 30 dni</span>']];
     const t = okno(), wyk = wykresWlaczony();
     document.getElementById('tr-okno').dataset.id = String(id);
-    document.getElementById('tr-okno').innerHTML = `<div class="tr-nav"><span class="tr-opis" style="margin-right:auto">${i >= 0 ? `${i + 1} z ${nf0.format(lista.length)} na liście · ← → przewijanie` : ''}</span>
+    document.getElementById('tr-okno').innerHTML = `<div class="tr-nav"><span class="tr-opis" style="margin-right:auto">${i >= 0 ? `${i + 1} z ${nf0.format(lista.length)} na liście${kontekstKarty ? ` „${esc(kontekstKarty.opis)}”` : ''} · ← → przewijanie` : ''}</span>
         <button type="button" class="btn btn-small" id="tr-ok-wykres">${wyk ? '📈 schowaj wykres' : '📈 wykres tygodniowy'}</button>
         <button type="button" class="btn btn-small" id="tr-ok-wstecz" ${i > 0 ? '' : 'disabled'}>‹ poprzedni</button><button type="button" class="btn btn-small" id="tr-ok-dalej" ${i >= 0 && i < lista.length - 1 ? '' : 'disabled'}>następny ›</button>
         <button type="button" class="btn btn-small" id="tr-ok-x">✕ zamknij</button></div>
@@ -738,7 +741,7 @@
     $('pr-grupa').onchange = (e) => wybierzGrupe(e.target.value, false);
     $('pr-filtry').onclick = (e) => { const c = e.target.closest('.tr-chip'); if (!c) return; st.filtr = c.dataset.f; st.sort = null; rysujProd(); };
     $('produkty').onclick = (e) => {
-      const tr = e.target.closest('tr.tr-klik'); if (tr) { otworzProdukt(+tr.dataset.id); return; }
+      const tr = e.target.closest('tr.tr-klik'); if (tr) { kontekstKarty = null; otworzProdukt(+tr.dataset.id); return; }
       const t = e.target.closest('th.tr-sort'); if (!t) return;
       const k = t.dataset.k;
       if (st.sort === k) st.kier = -st.kier; else { st.sort = k; st.kier = k === 'sym' ? 1 : -1; }
@@ -759,6 +762,7 @@
     ladowanie = (async () => {
       try {
         X = await api('/api/analiza/trendy');
+        wczytanoX = Date.now();
         rysujKafle(); rysujTyg(); rysujMies(); rysujKan(); rysujGrupy(); rysujProd();
         document.getElementById('tr-wczytanie').textContent = `policzone ${new Date(X.wygenerowano).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}`;
       } catch (e) {
@@ -769,4 +773,31 @@
     return ladowanie;
   }
   window.odswiezSprzedazTrendy = odswiezSprzedazTrendy;
+
+  // ---------- karta produktu z innych widoków Sprzedaży ----------
+  // Dzień i Live otwierają tę samą kartę co Trendy (decyzja usera 2026-10-26): kanały, ceny ofert z edycją, akcje
+  // grupowe, strategia. Liczby na karcie są z okna Trendów (7/30 zamkniętych dni do wczoraj), ← → idzie po liście
+  // widoku, z którego weszliśmy. Towar bez sprzedaży w oknach Trendów (np. nowość z dzisiejszego zamówienia) dostaje
+  // wiersz z zerami — karta i ceny ofert działają, kanały sprzedaży są puste.
+  async function daneTrendow() {
+    if (ladowanie) await ladowanie;
+    if (X && Date.now() - wczytanoX < 30 * 60_000) return;
+    X = await api('/api/analiza/trendy');
+    wczytanoX = Date.now();
+  }
+  function wierszBezSprzedazy(p) {
+    const inf = X.info[p.id], zero = { s: 0, n: 0, z: 0 };
+    return { id: p.id, sym: inf?.[0] || p.sym || String(p.id), nazwa: inf?.[1] || p.nazwa || '', grupa: inf?.[2] || '', nowosc: !!inf?.[3],
+      dost: inf?.[4] ?? null, dni: inf?.[5] ?? null, zestaw: !!inf?.[6], bz: null, okno: st.okno, a: zero, b: zero, prev: zero, dn: 0, dz: 0, dp: null };
+  }
+  // pozycje: [{ id: tw_id, sym, nazwa }] w kolejności widoku (powtórzenia — np. ten sam towar w kilku zamówieniach — pomijamy)
+  async function sprzedazOtworzProdukt(id, pozycje = [], opis = '') {
+    try { await daneTrendow(); } catch (e) { pokazKomunikat(`Karta produktu: ${e.message}`, 'blad'); return; }
+    const mapa = new Map(wiersze().map((w) => [w.id, w])), byly = new Set();
+    const lista = (pozycje.length ? pozycje : [{ id }]).filter((p) => !byly.has(p.id) && byly.add(p.id))
+      .map((p) => mapa.get(p.id) || wierszBezSprzedazy(p));
+    kontekstKarty = { lista, opis };
+    otworzProdukt(id);
+  }
+  window.sprzedazOtworzProdukt = sprzedazOtworzProdukt;
 })();

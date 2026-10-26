@@ -1622,6 +1622,11 @@ img.tr-min { width: 64px; height: 64px; object-fit: contain; border-radius: 4px;
 .sl-tabela .sw-flaga { white-space: nowrap; }
 .sl-dol { margin-top: 10px; text-align: center; }
 #panel-sprzedaz-dzien th.sd-sort:hover { text-decoration: underline; }
+.tr-okno .tr-przeb { margin-top: 4px; font-size: 12px; color: var(--tr-ink2); white-space: nowrap; }
+.tr-okno .tr-przeb select { font-size: 12px; max-width: 12.5rem; }
+.tr-okno .tr-przeb-kw { display: inline-flex; gap: 4px; align-items: center; margin-left: 4px; }
+.tr-okno .tr-przeb-kw[hidden] { display: none; }
+.tr-okno .tr-przeb-kw input { width: 52px; text-align: right; font-size: 12px; }
 .tr-okno .tr-tab a { color: #1d4ed8; text-decoration: none; } .tr-okno .tr-tab a:hover { text-decoration: underline; }
 /* Karta produktu w Trendach = zarządzanie ceną (2026-10-22): tabela ofert z edycją ceny ⇄ marży. Okna potwierdzeń
    ceny i automatu (wspólne z Cenami) muszą stać NAD kartą (.tr-tlo 9500), a pod ekranem wyboru profilu (100000). */

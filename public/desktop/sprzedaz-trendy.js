@@ -446,6 +446,43 @@
     const zr = (z) => (z && z !== 'kalkulator' ? ` <span class="tr-znak uwaga">${esc(cenyZrodlo(z))}</span>` : '');
     return `${cenyLiczba(g.min)}${zr(g.zrodlo_min)} – ${cenyLiczba(g.max)}${zr(g.zrodlo_max)} ${wal}`;
   }
+  // O ile automat przebija konkurenta (decyzja usera 2026-10-26: „czy o ile przebijać, czy remisować — wygrywaj o
+  // zero”): domyślny krok kanału, remis (ta sama cena) albo własna kwota. Zapis od razu, worker bierze go w
+  // najbliższym przebiegu (POST /api/ceny/przebicie). Działa w obie strony: pod zwycięzcę BB i pod następnego przy podwyżce.
+  function przebicieHtml(o, wal) {
+    const p = o.przebicie;
+    if (!p || o.tylko_odczyt) return '';
+    const w = p.wlasne, kw = w != null && w !== 0, dz = wal === 'Ft' ? 0 : 2;   // forinty bez groszy
+    return `<div class="tr-przeb" data-przeb="${o.id}" title="O ile automat schodzi pod zwycięzcę Buy Boxa (i o ile zostaje pod następnym konkurentem przy podwyżce)">przebicie
+      <select class="tr-pole" aria-label="Przebicie automatu ${esc(cenyKanal(o))} ${esc(o.sku)}">
+        <option value=""${w == null ? ' selected' : ''}>o ${cenyLiczba(p.domyslne, dz)} ${wal} (domyślnie)</option>
+        <option value="0"${w === 0 ? ' selected' : ''}>remis — wygrywaj o zero</option>
+        ${kw ? `<option value="${w}" selected>o ${cenyLiczba(w, dz)} ${wal}</option>` : ''}
+        <option value="kwota">inna kwota…</option></select>
+      <span class="tr-przeb-kw" hidden><input class="tr-pole" inputmode="decimal" autocomplete="off" placeholder="0,50" aria-label="Kwota przebicia"> ${wal}
+        <button type="button" class="btn btn-small">OK</button></span></div>`;
+  }
+  function podepnijPrzebicie(box, d, id, w) {
+    box.querySelectorAll('[data-przeb]').forEach((el) => {
+      const o = d.oferty.find((x) => String(x.id) === el.dataset.przeb);
+      const sel = el.querySelector('select'), kw = el.querySelector('.tr-przeb-kw'), pole = kw.querySelector('input');
+      const zapisz = async (wartosc) => {
+        sel.disabled = true;
+        try {
+          const r = await cenyPost('/api/ceny/przebicie', { oferta_id: o.id, przebicie: wartosc });
+          const x = r.przebicie.wlasne, wal = cenyWaluta(o), dz = wal === 'Ft' ? 0 : 2;
+          komunikatKarty(`${cenyKanal(o)} ${o.sku}: przebicie ${x == null ? `domyślne (o ${cenyLiczba(r.przebicie.domyslne, dz)} ${wal})` : x === 0 ? 'remis — ta sama cena co konkurent' : `o ${cenyLiczba(x, dz)} ${wal}`}. Automat użyje go w najbliższym przebiegu.`, 'ok');
+          wczytajCeny(id, w);
+        } catch (e) { komunikatKarty(e.message, 'blad'); sel.disabled = false; }
+      };
+      sel.addEventListener('change', () => {
+        if (sel.value === 'kwota') { kw.hidden = false; pole.focus(); return; }
+        kw.hidden = true; zapisz(sel.value);
+      });
+      kw.querySelector('button').addEventListener('click', () => { if (pole.value.trim()) zapisz(pole.value.trim()); else pole.focus(); });
+      pole.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); kw.querySelector('button').click(); } });
+    });
+  }
   function edycjaHtml(o, wal) {
     if (!o.reczna_cena) return `<span class="tr-sz">${o.aktywna === 0 ? 'oferta zakończona — cenę zmienisz po jej wznowieniu' : o.tylko_odczyt ? 'tylko odczyt' : `z ekranu jeszcze niedostępne (${esc(cenyKanal(o))})`}</span>`;
     return `<form class="tr-cena" data-of="${o.id}" novalidate>
@@ -488,7 +525,7 @@
         const cena = o.cena == null ? '<span class="tr-sz">—</span>'
           : `<b>${cenyLiczba(o.cena)} ${wal}</b>${o.czeka ? `<div class="tr-sz">wysłano ${esc(cenyGodzina(o.dec_czas))} — czeka na potwierdzenie</div>` : ''}${o.wysylka ? `<div class="tr-sz">+ wysyłka ${cenyLiczba(o.wysylka)}</div>` : ''}`;
         const auto = o.tylko_odczyt ? '<span class="tr-sz">tylko odczyt</span>'
-          : `<span data-auto="${o.id}"></span>${o.wysylka_wstrzymana ? ' <span title="Automat liczy, ale wysyłka cen na ten kanał jest wstrzymana">⏸</span>' : ''}${zeStanem ? '' : '<div class="tr-sz">bez stanu — zadziała po dostawie</div>'}`;
+          : `<span data-auto="${o.id}"></span>${o.wysylka_wstrzymana ? ' <span title="Automat liczy, ale wysyłka cen na ten kanał jest wstrzymana">⏸</span>' : ''}${zeStanem ? '' : '<div class="tr-sz">bez stanu — zadziała po dostawie</div>'}${przebicieHtml(o, wal)}`;
         // zaznaczone domyślnie: oferty ze stanem, na których coś da się zrobić — reszta jednym kliknięciem „wszystkie”
         const zazn = `<input type="checkbox" class="tr-zazn" data-zazn="${o.id}" ${zeStanem && !o.tylko_odczyt ? 'checked' : ''} aria-label="Zaznacz ${esc(cenyKanal(o))} ${esc(o.sku)}">`;
         return `<tr class="${zeStanem ? '' : 'tr-of-bez'}${podsw.has(o.id) ? ' tr-of-uwaga' : ''}">
@@ -657,6 +694,7 @@
       slot.appendChild(cenyPrzelacznikOferty(o, cenyKanal(o), opcje));
     });
     box.querySelectorAll('form.tr-cena').forEach((f) => podepnijCene(f, d.oferty.find((x) => String(x.id) === f.dataset.of), id, w));
+    podepnijPrzebicie(box, d, id, w);
     podepnijGrupowe(d, id, w);
     const linki = {};
     for (const o of d.oferty) if (o.linki?.produkt) (linki[o.kolumna] ||= []).push({ produkt: o.linki.produkt, oferty: o.linki.oferty || null, sku: o.sku, auto: !!o.auto });

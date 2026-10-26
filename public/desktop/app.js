@@ -4510,7 +4510,7 @@ const CENY_AKCJE = {
   powiazanie: 'powiązał z innym towarem GT', powiazanie_potw: 'potwierdził powiązanie z GT', powiazanie_usun: 'usunął powiązanie z GT',
   wysylanie_wl: 'włączył WYSYŁANIE cen na Amazona', wysylanie_wyl: 'wyłączył wysyłanie cen',
   korekta_ceny: 'zmienił cenę ręcznie', granice: 'zmienił granice automatu',
-  konkurencja: 'zmienił sprawdzanie konkurencji', raport_top_allegro: 'wgrał raport Top ofert Allegro',
+  konkurencja: 'zmienił sprawdzanie konkurencji', przebicie: 'zmienił przebicie automatu', raport_top_allegro: 'wgrał raport Top ofert Allegro',
 };
 // Wybrany kanał (marketplace) pamiętamy w przeglądarce — wygoda jednego stanowiska, nie stan systemu.
 let cenyKanalWybor = (() => { try { return localStorage.getItem('wms-ceny-kanal') || ''; } catch { return ''; } })();
@@ -5172,7 +5172,7 @@ function cenyKartaRynekHtml(o) {
 // --- Ręczna cena i ręczne granice (karta SKU) ---------------------------------------------------
 // Backend (routes/ceny.js + pricing/granice.js) liczy zysk, pilnuje granic i odrzuca cenę z ostrzeżeniami
 // bez potwierdzenia — tu tylko podgląd i okno. Ręczna cena wyłącza automat na ofercie (decyzja usera 2026-10-16).
-const CENY_AKCJE_Z_OPISEM = ['korekta_ceny', 'granice', 'automat_wyl',   // automat_wyl: „ręczna zmiana ceny”
+const CENY_AKCJE_Z_OPISEM = ['korekta_ceny', 'granice', 'automat_wyl', 'przebicie',   // automat_wyl: „ręczna zmiana ceny”
   'strategia_nowa', 'strategia_zmiana', 'strategia_aktywna', 'strategia_podglad', 'strategia_usun', 'strategia_przypisz', 'strategia_zdejmij', 'strategia_koniec'];
 const cenyZrodlo = (z) => (z === 'reczne' ? 'ręczne' : z === 'z_min' ? 'ręczne min × 1,5' : z === 'strategia' ? 'strategia' : 'kalkulator');
 const cenyDoPola = (v) => (v == null ? '' : String(v).replace('.', ','));

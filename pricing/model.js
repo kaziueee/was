@@ -48,7 +48,7 @@
 //     to nie pewny Top: 21.10 na 70 produktach dwie nasze oferty miały naraz „OK”, a Top na stronie jest jeden.
 
 const DOMYSLNE_REGULY = {
-  krok: 0.01,          // o ile schodzimy pod konkurenta
+  krok: 0.01,          // o ile schodzimy pod konkurenta; 0 = remis — ta sama cena (przebicie przy ofercie, worker)
   progPodwyzki: 0.5,   // podnosimy dopiero, gdy zysk na cenie ≥ tyle (w walucie rynku) — bez drgań
   maxSpadekPct: 5,     // największa obniżka w jednym przebiegu, % obecnej ceny
   blokadaPodwyzekH: 24, // po cofnięciu podwyżki (utrata BB) tyle godzin bez kolejnych podwyżek
@@ -158,7 +158,7 @@ function decyzja(obs, pas, reguly = {}, kontekstWe = {}) {
       return zostaw('top_blokada', `mamy Buy Box; podwyżki wstrzymane po niedawnej utracie BB (${r.blokadaPodwyzekH} h)`);
     }
     if (cel - cena >= r.progPodwyzki) {
-      return ustaw(cel, 'podwyzka', `mamy Buy Box, następny konkurent ${nast} (z wysyłką) — podnosimy pod niego`);
+      return ustaw(cel, 'podwyzka', `mamy Buy Box, następny konkurent ${nast} (z wysyłką) — podnosimy ${r.krok ? 'pod niego' : 'do jego ceny (remis)'}`);
     }
     return zostaw('top', 'mamy Buy Box, cena już tuż pod konkurentem albo na maksimum');
   }
@@ -185,7 +185,7 @@ function decyzja(obs, pas, reguly = {}, kontekstWe = {}) {
       if (cena > min + 0.005) return obnizka(min, 'na_min', `Buy Box ${obs.bbCena} poniżej naszej podłogi — schodzimy na minimum ${min}`);
       return zostaw('pod_podloga', `Buy Box ${obs.bbCena} poniżej naszej podłogi ${min} — stoimy na minimum`);
     }
-    if (cel < cena - 0.005) return obnizka(cel, 'obnizka', `Buy Box ${obs.bbCena} (z wysyłką) — schodzimy o ${r.krok} niżej`);
+    if (cel < cena - 0.005) return obnizka(cel, 'obnizka', `Buy Box ${obs.bbCena} (z wysyłką) — ${r.krok ? `schodzimy o ${r.krok} niżej` : 'schodzimy do tej samej ceny (remis)'}`);
     // Jesteśmy tańsi albo równi, a Buy Boxa i tak nie mamy — cena nie jest powodem.
     return zostaw('przegrana_nie_cena', 'nasza cena nie wyższa niż Buy Box — przegrywamy z innego powodu niż cena');
   }

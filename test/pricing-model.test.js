@@ -208,3 +208,20 @@ test('szukanie nie dotyczy jedynej oferty ani ceny pod minimum', () => {
   assert.strictEqual(decyzja(obs({ cena: 25, wysylka: 0, bbNasz: true, ofert: 1 }), pas).kod, 'top_bez_konkurencji');
   assert.strictEqual(decyzja(obs({ cena: 18, wysylka: 0, bbNasz: true, konkurencjaNieznana: true }), pas).kod, 'pod_min');
 });
+
+test('przebicie 0 = remis: schodzimy do ceny zwycięzcy, przy Buy Boxie podnosimy do ceny następnego (2026-10-26)', () => {
+  // bez BB: zwycięzca 28,49 z wysyłką, nasza wysyłka 4,99 → towar 23,50 (landed = 28,49, ta sama cena)
+  const dol = decyzja(obs({ cena: 24, bbNasz: false, bbCena: 28.49 }), pas, { krok: 0 });
+  assert.strictEqual(dol.kod, 'obnizka');
+  assert.strictEqual(dol.cena, 23.5);
+  assert.match(dol.powod, /remis/);
+  // po remisie nie schodzimy dalej — ta sama cena to już nie „za drogo”
+  assert.strictEqual(decyzja(obs({ cena: 23.5, bbNasz: false, bbCena: 28.49 }), pas, { krok: 0 }).zmiana, false);
+  // z BB: następny konkurent 32,99 z wysyłką → cel 28,00 (krok 0,01 dałby 27,99)
+  const gora = decyzja(obs({ cena: 25, bbNasz: true, najtanszaInna: 32.99 }), pas, { krok: 0 });
+  assert.strictEqual(gora.cel, 28);
+  assert.match(gora.powod, /remis/);
+  assert.strictEqual(decyzja(obs({ cena: 25, bbNasz: true, najtanszaInna: 32.99 }), pas).cel, 27.99);
+  // kwota: 0,50 pod zwycięzcę
+  assert.strictEqual(decyzja(obs({ cena: 24, bbNasz: false, bbCena: 28.49 }), pas, { krok: 0.5 }).cena, 23);
+});

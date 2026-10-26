@@ -30,6 +30,7 @@
 //   POST /api/ceny/powiaz/potwierdz { sku }                            potwierdź obecne dopasowanie jako ręczne
 //   POST /api/ceny/powiaz/usun   { sku }                               usuń ręczne powiązanie
 //   POST /api/ceny/allegro-top   (plik xlsx w treści)                  raport Allegro „Czynniki Top oferty” → allegro_top
+//   POST /api/ceny/przebicie   { oferta_id, przebicie }               o ile automat przebija konkurenta (0 = remis, puste = krok kanału)
 //   POST /api/ceny/konkurencja { oferta_id, co_h, przebicie }         Allegro: jak często Niezbędnik sprawdza konkurencję
 //        (1–4 h, null = 4 h) i o ile przebijamy (zł, 0 = remis, null = 1 gr) — pricing/konkurencja-allegro.js
 
@@ -50,6 +51,9 @@ const filtry = require('../pricing/filtry-cen');
 const { czytajXlsx } = require('../services/xlsx-czytnik');
 const allegroTop = require('../pricing/allegro-top');
 const konkurencja = require('../pricing/konkurencja-allegro');
+const { DOMYSLNE_REGULY } = require('../pricing/model');
+// Krok przebicia kanału, gdy oferta nie ma własnego (pricing/worker.js: Allegro — domyślne Niezbędnika).
+const krokKanalu = (platforma, k) => (platforma === 'allegro' ? konkurencja.DOMYSLNE.przebicie : k?.reguly?.krok ?? DOMYSLNE_REGULY.krok);
 const { pasOferty } = require('../pricing/pas');
 const granice = require('../pricing/granice');
 const reczna = require('../pricing/reczna-cena');
@@ -101,6 +105,8 @@ const zKanalem = (o) => {
   return { ...o, kolumna: kluczKolumny(o.platforma, o.rynek), kanal_nazwa: k.nazwa || `${o.platforma} ${o.rynek}`,
     waluta: k.waluta || '', tylko_odczyt: !!k.tylkoOdczyt, bez_konkurencji: !!k.bezKonkurencji, linki: linki(o),
     reczna_cena: reczna.obslugiwana(o.platforma, o.aktywna !== 0), wysylka_wstrzymana: wysylkaWstrzymana(k),
+    // o ile automat przebija konkurenta: własne przy ofercie (0 = remis) albo null = krok kanału (POST /przebicie)
+    przebicie: { wlasne: o.konk_przebicie ?? null, domyslne: krokKanalu(o.platforma, k) },
     // Allegro: ustawienia sprawdzania konkurencji (Niezbędnik) i ostatni wynik dla EAN-u towaru.
     ...(o.platforma === 'allegro' ? { konkurencja: {
       co_h: konkurencja.coH(o.konk_co_h), przebicie: konkurencja.przebicie(o.konk_przebicie), wlasne: o.konk_co_h != null || o.konk_przebicie != null,
@@ -523,6 +529,28 @@ router.post('/allegro-top', (req, res, next) => { req.kto = req.body?.operator |
     try { raport = allegroTop.raportTopOferty(czytajXlsx(req.body)); } catch (e) { return res.status(400).json({ blad: e.message }); }
     try { res.json({ ok: true, ...allegroTop.zapiszRaport(raport, req.kto) }); } catch (e) { res.status(400).json({ blad: e.message }); }
   });
+
+// Przebicie automatu przy ofercie — każdy kanał (decyzja usera 2026-10-26: „czy o ile przebijać, czy remisować —
+// wygrywaj o zero”). Ta sama kolumna co przebicie Allegro z Niezbędnikiem (POST /konkurencja); worker bierze ją jako
+// krok decyzji (pricing/model.js: pod zwycięzcę BB i pod następnego konkurenta przy podwyżce). null = krok kanału.
+router.post('/przebicie', (req, res) => {
+  const o = ofertaPoId(req.body?.oferta_id);
+  if (!o) return res.status(404).json({ blad: 'Nie ma takiej oferty' });
+  const k = kolumna(o.platforma, o.rynek) || {}, wal = k.waluta || 'zł';
+  if (k.tylkoOdczyt) return res.status(400).json({ blad: `${k.nazwa || o.platforma}: repricer tylko obserwuje — przebicie nic tu nie zmieni` });
+  const p = req.body?.przebicie == null || req.body.przebicie === '' ? null : granice.liczba(req.body.przebicie);
+  if (p !== null && !(p >= 0 && p <= konkurencja.PRZEBICIE_MAX)) {
+    return res.status(400).json({ blad: `Przebicie od 0 (remis) do ${konkurencja.PRZEBICIE_MAX} ${wal}` });
+  }
+  const przeb = p == null ? null : Math.round(p * 100) / 100, bylo = o.konk_przebicie ?? null, dom = krokKanalu(o.platforma, k);
+  if (przeb !== bylo) {
+    db.prepare('UPDATE oferty SET konk_przebicie = ? WHERE id = ?').run(przeb, o.id);
+    const t = (x) => (x == null ? `${granice.pl(dom)} ${wal} (domyślnie)` : x === 0 ? 'remis' : `${granice.pl(x)} ${wal}`);
+    db.prepare("INSERT INTO zmiany (kto, oferta_id, akcja, opis) VALUES (?, ?, 'przebicie', ?)")
+      .run(req.body.operator || null, o.id, `${kluczKolumny(o.platforma, o.rynek)} ${o.sku}: przebicie ${t(bylo)} → ${t(przeb)}`);
+  }
+  res.json({ ok: true, przebicie: { wlasne: przeb, domyslne: dom } });
+});
 
 // Allegro: ustawienia sprawdzania konkurencji przy ofercie (pricing/konkurencja-allegro.js). null = domyślne.
 router.post('/konkurencja', (req, res) => {

@@ -350,10 +350,12 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
     const ob = obs.get(o.id);
     if (!ob) { kody.brak_odpowiedzi = (kody.brak_odpowiedzi || 0) + 1; continue; }
     const pas = zGranicami((pasy.get(o.tw_id) || {})[kluczKolumny(o.platforma, o.rynek)] || null, o);
-    // Allegro: przebicie ustawiane przy ofercie (remis / 1 gr / kwota); z listą konkurentów z Niezbędnika cel
-    // wybiera doModelu — najtańszy konkurent, którego da się przebić nad minimum (pricing/konkurencja-allegro.js).
-    const reguly = o.platforma === 'allegro' ? { ...(kolumna(o.platforma, o.rynek)?.reguly || {}), krok: konkurencja.przebicie(o.konk_przebicie) }
-      : kolumna(o.platforma, o.rynek)?.reguly || {};
+    // Przebicie ustawiane przy ofercie (remis / kwota — kolumna konk_przebicie): od 2026-10-26 na każdym kanale
+    // (decyzja usera: „czy o ile przebijać, czy remisować — wygrywaj o zero”); puste = krok kanału (kolumny.js
+    // `reguly.krok`, domyślnie 0,01). Allegro z listą konkurentów z Niezbędnika: cel wybiera doModelu — najtańszy
+    // konkurent, którego da się przebić nad minimum (pricing/konkurencja-allegro.js).
+    const reguly = { ...(kolumna(o.platforma, o.rynek)?.reguly || {}) };
+    if (o.platforma === 'allegro' || o.konk_przebicie != null) reguly.krok = konkurencja.przebicie(o.konk_przebicie);
     const obM = ob.konkurenci ? konkurencja.doModelu(ob, pas?.min, reguly.krok) : ob;
     const d = decyzja(obM, pas || {}, reguly, {
       ostatniaPodwyzka: ostPodwyzka.get(o.id, okno) || null,

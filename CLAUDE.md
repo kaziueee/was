@@ -385,6 +385,7 @@ Wpisy jobów podpisują się `uzytkownik: 'system:<job>'` (np. `system:rozjazdy`
 - GT < WMS w K4 → auto korekta (1 lokalizacja)
 - GT < WMS w K4gora → ekran "rozjazdy", magazynier decyduje
 - Job detekcji co **10 min** (domyślnie; `ROZJAZDY_INTERWAL_MIN` w `.env`) w `services/rozjazdy.js` — auto-korekta K4 ściąga kopię WMS do stanu GT, więc częstszy przebieg = mniejsze okno rozjazdu na K4
+- **Zapisy całego przebiegu = jedna transakcja** (`services/rozjazdy-przebieg.js`, 2026-10-27). Każda korekta to 3 zapisy (półka, rozjazd, audyt); jako osobne commity kosztowały na SRV ~70 ms głównego wątku na korektę, czyli w dzień 0,5–3,9 s przestoju Zebr co 10 min (41 korekt = 2,9 s). Przy okazji półka, rozjazd i wpis audytu zapisują się razem albo wcale. Każdy przebieg pisze jedną linię do `logs/rozjazdy-*.log`: sumy WMS / GT / zapis w ms + liczby.
 
 ## Interwały jobów: minuty z `.env` zawsze przez `interwalMsZMinut`
 

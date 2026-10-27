@@ -85,28 +85,56 @@ const brutto = (netto, vatId, kraj = 'RO') => {
 };
 
 // Surowa oferta z API → wiersz `oferty` (cena BRUTTO, jak w kalkulatorze i na stronie eMAG).
+// aktywna = status 1 I eMAG pozwala ją kupić; status 1 ze wstrzymaną sprzedażą = `wstrzymana` (patrz blokadaSprzedazy).
 function doOferty(o) {
   const stan = Number(o.general_stock ?? o.stock?.[0]?.value ?? 0) || 0;
+  const blokada = blokadaSprzedazy(o);
+  const wlaczona = Number(o.status) === 1;
   return {
     sku: String(o.part_number || '').trim(),
     pnk: o.part_number_key || null,
     nazwa: o.name || null,
     cena: brutto(Number(o.sale_price), o.vat_id, krajOferty(o)),
     ilosc: stan,
-    aktywna: Number(o.status) === 1,
+    aktywna: wlaczona && !blokada,
+    wstrzymana: wlaczona && !!blokada,
     genius: Number(o.genius_computed) > 0 ? 1 : 0,
-    blokada: blokadaCeny(o),
+    blokada,
+    walidacja: opisWalidacji(o),
   };
 }
 
-// offer_validation_status 2 = „Invalid price” — eMAG wstrzymuje sprzedaż, bo cena odstaje od innych
-// (15.10: 21 z 1115 aktywnych ofert, np. „Price seems to be too low compared to other prices”).
-// Oferta jest wtedy aktywna, ale się nie sprzedaje — pokazujemy to na ekranie Ceny.
-function blokadaCeny(o) {
-  let w = o.offer_validation_status;
-  if (typeof w === 'string') { try { w = JSON.parse(w); } catch { w = null; } }
-  if (!w || Number(w.value) !== 2) return null;
-  return [w.description || 'Invalid price', w.errors].filter(Boolean).join(': ');
+// Pola walidacji przychodzą jako obiekt / tablica albo (rzadko) tekst JSON.
+const zJson = (w) => {
+  if (typeof w !== 'string') return w;
+  try { return JSON.parse(w); } catch { return null; }
+};
+const walidacjeProduktu = (o) => [].concat(zJson(o.validation_status) || []).filter((v) => v && v.value != null);
+
+// Oferta z status 1, której eMAG nie sprzedaje — powód albo null. Pomiar 2026-10-27 (RO/HU/BG, 5686 ofert):
+//   offer_validation_status 2 „Invalid price” — cena odstaje od innych („Price seems to be too low…”,
+//     „Offer was rejected based on price criteria”): RO 22, HU 46, BG 47;
+//   validation_status 10 „Blocked” — produkt zablokowany (powodu API nie podaje): RO 1, HU 9, BG 18;
+//   validation_status 0 „Draft” — produkt bez zdjęcia lub opisu: RO 22.
+// Wąsko celowo: „EAN validation pending” (3) i oczekujące aktualizacje (4, 11) stoją obok „Approved documentation”
+// i oferty się z nimi sprzedają — nie wstrzymujemy ich na domysł.
+function blokadaSprzedazy(o) {
+  const w = zJson(o.offer_validation_status);
+  if (w && Number(w.value) === 2) return [w.description || 'Invalid price', w.errors].filter(Boolean).join(': ');
+  const produkt = walidacjeProduktu(o);
+  if (produkt.some((v) => Number(v.value) === 10)) return 'Blocked: produkt zablokowany w eMAG';
+  if (produkt.some((v) => Number(v.value) === 0)) return 'Draft: produkt bez zdjęcia lub opisu';
+  return null;
+}
+
+// Surowe statusy do zapisu i podglądu („oferta 1 Saleable · produkt 9 Approved documentation / 3 EAN validation pending”).
+function opisWalidacji(o) {
+  const w = zJson(o.offer_validation_status);
+  const produkt = walidacjeProduktu(o);
+  const czesci = [];
+  if (w && w.value != null) czesci.push(`oferta ${w.value} ${w.description || ''}`.trim());
+  if (produkt.length) czesci.push(`produkt ${produkt.map((v) => `${v.value} ${v.description || ''}`.trim()).join(' / ')}`);
+  return czesci.join(' · ') || null;
 }
 
 // Surowa oferta z API → obserwacja w kształcie pricing/model.js. Porównujemy ceny TOWARU (bez

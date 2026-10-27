@@ -119,8 +119,14 @@ CREATE TABLE IF NOT EXISTS stan (
 const kolOferty = db.prepare('PRAGMA table_info(oferty)').all().map((k) => k.name);
 if (!kolOferty.includes('dopasowanie')) db.exec('ALTER TABLE oferty ADD COLUMN dopasowanie TEXT');
 if (!kolOferty.includes('genius')) db.exec('ALTER TABLE oferty ADD COLUMN genius INTEGER');
-// Powód, dla którego platforma wstrzymała ofertę przez cenę (eMAG „Invalid price”); NULL = sprzedaje się.
+// Powód, dla którego platforma wstrzymała ofertę (eMAG „Invalid price” / Blocked / Draft, Kaufland — cena do
+// sprawdzenia); NULL = sprzedaje się.
 if (!kolOferty.includes('blokada')) db.exec('ALTER TABLE oferty ADD COLUMN blokada TEXT');
+// eMAG: oferta włączona (status 1), ale platforma jej nie sprzedaje (Invalid price / Blocked / Draft) — wtedy
+// aktywna = 0 (bez automatu i obserwacji), a wstrzymana = 1, żeby Ceny dalej ją pokazywały. `walidacja` = surowe
+// offer_validation_status + validation_status z API (pricing/emag.js opisWalidacji).
+if (!kolOferty.includes('wstrzymana')) db.exec('ALTER TABLE oferty ADD COLUMN wstrzymana INTEGER NOT NULL DEFAULT 0');
+if (!kolOferty.includes('walidacja')) db.exec('ALTER TABLE oferty ADD COLUMN walidacja TEXT');
 // Stawka prowizji platformy dla TEJ oferty (eMAG: commission/estimate, % od ceny bez VAT) i kiedy pobrana.
 if (!kolOferty.includes('prowizja')) db.exec('ALTER TABLE oferty ADD COLUMN prowizja REAL');
 if (!kolOferty.includes('prowizja_czas')) db.exec('ALTER TABLE oferty ADD COLUMN prowizja_czas TEXT');

@@ -4,7 +4,10 @@
 // i GT (ceny zmienia worker, nie synchronizacja). Te same zasady co Amazon (pricing/sync-oferty.js): nowe oferty wchodzą z automatem
 // wyłączonym, ręczne powiązanie wygrywa z automatycznym dopasowaniem, oferta znikająca z listy
 // dostaje aktywna = 0 (historia zostaje). Różnica: eMAG oddaje też oferty nieaktywne (status 0) —
-// zapisujemy je z aktywna = 0, żeby karta SKU pokazała, że oferta istnieje, choć nie sprzedaje.
+// zapisujemy je z aktywna = 0, żeby karta SKU pokazała, że oferta istnieje, choć nie sprzedaje. Oferta włączona,
+// której eMAG nie sprzedaje (Invalid price / Blocked / Draft), też ma aktywna = 0 (automat jej nie rusza), ale
+// wstrzymana = 1 — Ceny pokazują ją z powodem, żeby dało się ją naprawić. `aktywne` w wyniku = sprzedawalne,
+// `blokady` = wstrzymane.
 //
 // `surowe` = wynik emag.wszystkieOferty(), gdy worker już go ma (obserwacja czyta tę samą listę).
 //
@@ -21,13 +24,13 @@ async function synchronizujEmag(surowe = null, kraj = 'RO') {
     .map((p) => [String(p.sku).trim().toUpperCase(), p]));
 
   const upsert = db.prepare(`
-    INSERT INTO oferty (platforma, rynek, sku, asin, tw_id, symbol_gt, dopasowanie, nazwa, cena, ilosc, kanal, genius, aktywna, blokada, widziana)
-    VALUES ('emag', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO oferty (platforma, rynek, sku, asin, tw_id, symbol_gt, dopasowanie, nazwa, cena, ilosc, kanal, genius, aktywna, wstrzymana, blokada, walidacja, widziana)
+    VALUES ('emag', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT (platforma, rynek, sku) DO UPDATE SET
       asin = excluded.asin, tw_id = excluded.tw_id, symbol_gt = excluded.symbol_gt, dopasowanie = excluded.dopasowanie, nazwa = excluded.nazwa,
-      cena = excluded.cena, ilosc = excluded.ilosc, genius = excluded.genius, aktywna = excluded.aktywna, blokada = excluded.blokada,
-      widziana = CURRENT_TIMESTAMP`);
-  const wygas = db.prepare(`UPDATE oferty SET aktywna = 0 WHERE platforma = 'emag' AND rynek = ? AND widziana < ?`);
+      cena = excluded.cena, ilosc = excluded.ilosc, genius = excluded.genius, aktywna = excluded.aktywna, wstrzymana = excluded.wstrzymana,
+      blokada = excluded.blokada, walidacja = excluded.walidacja, widziana = CURRENT_TIMESTAMP`);
+  const wygas = db.prepare(`UPDATE oferty SET aktywna = 0, wstrzymana = 0 WHERE platforma = 'emag' AND rynek = ? AND widziana < ?`);
 
   const start = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%S','now','-1 second') AS t").get().t;
   let aktywne = 0, dopasowane = 0, blokady = 0;
@@ -38,13 +41,11 @@ async function synchronizujEmag(surowe = null, kraj = 'RO') {
       const o = emag.doOferty(surowa);
       if (!o.sku) continue;
       const t = przypisz(o.sku, mapa, reczne);
-      if (o.aktywna) {
-        aktywne++;
-        if (o.blokada) blokady++;
-        if (t) dopasowane++; else brak.push(o.sku);
-      }
+      if (o.aktywna) aktywne++;
+      if (o.wstrzymana) blokady++;
+      if (o.aktywna || o.wstrzymana) { if (t) dopasowane++; else brak.push(o.sku); }
       upsert.run(kraj, o.sku, o.pnk, t ? t.tw_Id : null, t ? t.tw_Symbol : null, t ? t.dopasowanie : null,
-        o.nazwa, o.cena, o.ilosc, o.genius, o.aktywna ? 1 : 0, o.blokada);
+        o.nazwa, o.cena, o.ilosc, o.genius, o.aktywna ? 1 : 0, o.wstrzymana ? 1 : 0, o.blokada, o.walidacja);
     }
     // Pusta lista = najpewniej awaria po stronie eMAG, nie „wszystko zniknęło" — nie wygaszamy.
     const wygasle = lista.length ? wygas.run(kraj, start).changes : 0;

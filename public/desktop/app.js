@@ -4761,8 +4761,12 @@ function cenyPoWyslaniu(o) {
   return { ...o, cena: o.cena_nowa, marza: o.marza_nowa, zysk: o.zysk_nowa, kod: 'wyslano', kod_dec: o.kod, czeka: true };
 }
 
-// Platforma wstrzymała ofertę przez cenę (eMAG „Invalid price”) — oferta aktywna, ale się nie sprzedaje.
-const cenyBlokadaHtml = (o) => (o.blokada ? `<div class="ceny-dec dol" title="${cenyEsc(o.blokada)}">⚠ ${o.platforma === 'emag' ? 'eMAG' : o.platforma === 'kaufland' ? 'Kaufland' : 'platforma'} wstrzymał ofertę: ${/too low/i.test(o.blokada) ? 'cena zbyt niska' : /price_check_needed/.test(o.blokada) ? 'cena do sprawdzenia' : 'cena odrzucona'}</div>` : '');
+// Platforma wstrzymała ofertę: eMAG „Invalid price” / produkt Blocked / Draft, Kaufland — cena do sprawdzenia. Oferta
+// eMAG wstrzymana (`wstrzymana`) wypada z automatu i obserwacji do czasu, aż eMAG ją zwolni — stąd dopisek.
+const cenyPowodBlokady = (b) => (/^Blocked/.test(b) ? 'produkt zablokowany — powód w panelu eMAG'
+  : /^Draft/.test(b) ? 'produkt w szkicu — brak zdjęcia lub opisu'
+  : /too low/i.test(b) ? 'cena zbyt niska' : /price_check_needed/.test(b) ? 'cena do sprawdzenia' : 'cena odrzucona');
+const cenyBlokadaHtml = (o) => (o.blokada ? `<div class="ceny-dec dol" title="${cenyEsc([o.blokada, o.walidacja].filter(Boolean).join('\n'))}">⚠ ${o.platforma === 'emag' ? 'eMAG' : o.platforma === 'kaufland' ? 'Kaufland' : 'platforma'} wstrzymał ofertę: ${cenyPowodBlokady(o.blokada)}${o.wstrzymana ? ' · automat stoi, dopóki nie zwolni' : ''}</div>` : '');
 
 // Allegro: cena Top oferty z raportu „Czynniki Top oferty” (wgrywany z ekranu, pricing/allegro-top.js).
 // Różnicę liczymy od naszej ceny TERAZ: cena Top to cena konkurenta, nasza mogła się od raportu zmienić.

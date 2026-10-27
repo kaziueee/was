@@ -104,7 +104,7 @@
     const strata = zeStanem.filter((o) => o.zysk != null && o.zysk < 0);
     if (strata.length) dodaj('strata', 'uwaga', `Strata na sztuce: ${strata.map((o) => `${o.kanal_nazwa} ${zl(o.zysk)} zł`).join(', ')}`, strata);
     const blok = oferty.filter((o) => o.blokada);
-    if (blok.length) dodaj('blokada', 'uwaga', `Platforma wstrzymała ofertę przez cenę: ${nazwy(blok)}`, blok);
+    if (blok.length) dodaj('blokada', 'uwaga', `Platforma wstrzymała ofertę (cena albo produkt): ${nazwy(blok)}`, blok);
     // Buy Box u obcego — nie liczymy naszej drugiej oferty ani kanałów, które nie mówią, kto ma najlepszą ofertę.
     const bb = zeStanem.filter((o) => o.cena != null && !o.bez_konkurencji && !o.bb_nasz && !o.bb_nasza_inna && o.bb_cena != null);
     if (bb.length) dodaj('bb_inny', 'info', `Buy Box ma ktoś inny: ${nazwy(bb)}`, bb);

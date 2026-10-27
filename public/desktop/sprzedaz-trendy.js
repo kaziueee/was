@@ -529,7 +529,7 @@
         const zazn = `<input type="checkbox" class="tr-zazn" data-zazn="${o.id}" ${zeStanem && !o.tylko_odczyt ? 'checked' : ''} aria-label="Zaznacz ${esc(cenyKanal(o))} ${esc(o.sku)}">`;
         return `<tr class="${zeStanem ? '' : 'tr-of-bez'}${podsw.has(o.id) ? ' tr-of-uwaga' : ''}">
           ${j === 0 ? sprzedazHtml(k, lista.length) : ''}
-          <td><label class="tr-oferta">${zazn}<span>${oferta}<span class="tr-sz tr-blok">${o.aktywna === 0 ? '<span class="tr-znak">nieaktywna</span> ' : ''}stan ${o.ilosc}${o.auto ? ' · automat' : ' · ręczna'}</span>${o.blokada ? `<span class="tr-down tr-blok" title="${esc(o.blokada)}">⚠ wstrzymana przez platformę</span>` : ''}</span></label></td>
+          <td><label class="tr-oferta">${zazn}<span>${oferta}<span class="tr-sz tr-blok">${o.aktywna === 0 && !o.wstrzymana ? '<span class="tr-znak">nieaktywna</span> ' : ''}stan ${o.ilosc}${o.auto ? ' · automat' : ' · ręczna'}</span>${o.blokada ? `<span class="tr-down tr-blok" title="${esc(o.blokada)}">⚠ wstrzymana przez platformę</span>` : ''}</span></label></td>
           <td class="n">${cena}</td>
           <td>${konkurencjaHtml(o, wal)}</td>
           <td class="n ${o.zysk != null && o.zysk < 0 ? 'tr-down' : ''}">${o.marza != null ? pct(o.marza) : '—'}<div class="tr-sz">${zl2(o.zysk)}</div></td>

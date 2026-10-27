@@ -121,9 +121,12 @@ const zKanalem = (o) => {
 
 // Filtry macierzy: zakres × sytuacja — pricing/filtry-cen.js (czyste, z testami).
 
+// Macierz pokazuje oferty aktywne i wstrzymane przez platformę (eMAG Invalid price / Blocked / Draft: aktywna = 0,
+// wstrzymana = 1) — te drugie bez automatu i obserwacji, ale z powodem, żeby dało się je naprawić (filtr „Zablokowane”).
+const WIDOCZNA = '(o.aktywna = 1 OR o.wstrzymana = 1)';
 // Ostatnia obserwacja i ostatnia decyzja każdej oferty — jedno zapytanie, korelowane po max(id).
 const SQL_OFERTY = `
-  SELECT o.id, o.platforma, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.aktywna, o.dopasowanie, o.genius, o.blokada,
+  SELECT o.id, o.platforma, o.rynek, o.sku, o.asin, o.tw_id, o.symbol_gt, o.nazwa, o.ilosc, o.auto, o.aktywna, o.wstrzymana, o.walidacja, o.dopasowanie, o.genius, o.blokada,
          o.prowizja, o.min_reczne, o.max_reczne, o.kategoria, o.kategoria_nazwa, o.ean, o.ean_zrodlo, o.konk_co_h, o.konk_przebicie,
          b.czas AS obs_czas, COALESCE(b.widziana, b.czas) AS obs_widziana, b.cena, b.wysylka, b.bb_nasz, b.bb_cena, b.bb_fba, b.najtansza_inna, b.ofert, b.bb_nasza_inna,
          d.kod, d.cena_nowa, d.powod, d.min, d.max, d.zysk, d.marza, d.zysk_nowa,
@@ -134,7 +137,7 @@ const SQL_OFERTY = `
     LEFT JOIN obserwacje b ON b.id = (SELECT MAX(id) FROM obserwacje WHERE oferta_id = o.id)
     LEFT JOIN decyzje d    ON d.id = (SELECT MAX(id) FROM decyzje WHERE oferta_id = o.id)
     LEFT JOIN allegro_top t ON o.platforma = 'allegro' AND t.konto = o.rynek AND t.oferta = o.asin
-   WHERE o.aktywna = 1 AND o.tw_id IS NOT NULL AND o.ilosc > 0`;
+   WHERE ${WIDOCZNA} AND o.tw_id IS NOT NULL AND o.ilosc > 0`;
 
 // Filtr kanału (marketplace): platforma = wszystkie jej kolumny, klucz = jedna kolumna. Wybór zawęża
 // i wiersze (towar musi mieć ofertę w kanale), i komórki — więc filtry „Szansa”, „Do podwyżki” i ich
@@ -259,7 +262,8 @@ router.get('/pulpit', asyncH(async (req, res) => {
   const klucze = new Set(KOLUMNY.map((k) => k.klucz));
   const pokazane = [...towaryMacierzy().values()].flatMap(filtry.ofertyTowaru);
   const kohorta = pulpit.kohortaAutomatu();
-  const { stan: stanTeraz, wiersze } = pulpit.stanTeraz(teraz, pokazane, kohorta.ids);
+  // Buy Box „teraz” tylko z ofert, które platforma sprzedaje — wstrzymana nie jest obserwowana, jej BB byłby nieaktualny.
+  const { stan: stanTeraz, wiersze } = pulpit.stanTeraz(teraz, pokazane.filter((o) => !o.wstrzymana), kohorta.ids);
   const wczesniej = (h) => { const T = new Date(teraz.getTime() - h * 3600e3); return pm.stanNaChwile(pulpit.wierszeNaChwile(T, kohorta.ids), T); };
   const stan24 = wczesniej(24), stan7 = wczesniej(7 * 24);
   const akt = pm.aktywnosc(pulpit.wysylki(teraz), teraz);
@@ -316,7 +320,7 @@ router.get('/pulpit', asyncH(async (req, res) => {
 // najczęściej stan 0 — eMAG, Empik i Kaufland wyłączają wtedy ofertę), bo i na nich da się włączyć automat (zadziała,
 // gdy wróci stan) i zmienić cenę; towar bez żadnej oferty = pusta lista zamiast 404, plus kanały repricera, żeby
 // ekran mógł powiedzieć, gdzie oferty nie ma.
-const SQL_OFERTY_WSZYSTKIE = SQL_OFERTY.replace('AND o.ilosc > 0', '').replace('o.aktywna = 1 AND ', '');
+const SQL_OFERTY_WSZYSTKIE = SQL_OFERTY.replace('AND o.ilosc > 0', '').replace(`${WIDOCZNA} AND `, '');
 router.get('/towar/:tw_id', asyncH(async (req, res) => {
   const twId = Number(req.params.tw_id);
   const nieaktywne = req.query.nieaktywne === '1';

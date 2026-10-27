@@ -127,6 +127,30 @@ test('eMAG: „Invalid price” z offer_validation_status → blokada z opisem e
   assert.strictEqual(emag.doOferty(surowa()).blokada, null);
 });
 
+test('eMAG: oferta włączona, której eMAG nie sprzedaje → nieaktywna, ale wstrzymana (Invalid price / Blocked / Draft)', () => {
+  const zatwierdzony = [{ value: 9, description: 'Approved documentation', errors: null }];
+  const invalid = emag.doOferty(surowa({ offer_validation_status: { value: 2, description: 'Invalid price', errors: 'Offer was rejected based on price criteria' },
+    validation_status: zatwierdzony }));
+  assert.deepStrictEqual([invalid.aktywna, invalid.wstrzymana], [false, true]);
+  assert.strictEqual(invalid.walidacja, 'oferta 2 Invalid price · produkt 9 Approved documentation');
+
+  const blocked = emag.doOferty(surowa({ offer_validation_status: { value: 1, description: 'Saleable' }, validation_status: [{ value: 10, description: 'Blocked' }] }));
+  assert.deepStrictEqual([blocked.aktywna, blocked.wstrzymana, blocked.blokada.startsWith('Blocked')], [false, true, true]);
+  const draft = emag.doOferty(surowa({ validation_status: JSON.stringify([{ value: 0, description: 'Draft' }]) }));
+  assert.deepStrictEqual([draft.aktywna, draft.wstrzymana, draft.blokada.startsWith('Draft')], [false, true, true]);
+
+  // EAN w weryfikacji obok zatwierdzonej dokumentacji — sprzedaje się, nie wstrzymujemy
+  const ean = emag.doOferty(surowa({ offer_validation_status: { value: 1, description: 'Saleable' },
+    validation_status: [...zatwierdzony, { value: 3, description: 'EAN validation pending' }] }));
+  assert.deepStrictEqual([ean.aktywna, ean.wstrzymana, ean.blokada], [true, false, null]);
+  assert.strictEqual(ean.walidacja, 'oferta 1 Saleable · produkt 9 Approved documentation / 3 EAN validation pending');
+
+  // status 0 (wyłączona, stan 0) z „Invalid price” — zwykła nieaktywna, nie wstrzymana
+  const wyl = emag.doOferty(surowa({ status: 0, offer_validation_status: { value: 2, description: 'Invalid price' } }));
+  assert.deepStrictEqual([wyl.aktywna, wyl.wstrzymana], [false, false]);
+  assert.strictEqual(emag.doOferty(surowa()).walidacja, null, 'brak pól walidacji = brak opisu');
+});
+
 test('pas eMAG: stawka prowizji oferty z eMAG nadpisuje domyślne 16% (tylko kolumna eMAG)', () => {
   const w = { koszt: 23.13, waga: 1.18, docinalny: false, genius: true };
   const zwykly = pasyZWyceny(w, { genius: true });

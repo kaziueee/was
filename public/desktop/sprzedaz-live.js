@@ -26,7 +26,8 @@
     // marża i zysk zamówienia (przychód netto z wysyłką klienta — jak w całym module); „≈” = marża handlowa
     const przybl = z.zysk_handlowy ? '≈' : '';
     const wynik = z.zysk == null ? '<span class="sw-brak">—</span>'
-      : `<span class="${z.zysk < 0 ? 'sw-minus' : ''}">${przybl}${W.pct(W.marza(z))}<br>${przybl}${W.zl(z.zysk)}</span>`;
+      : `<span class="${z.zysk < 0 ? 'sw-minus' : ''}">${przybl}${W.pct(W.marza(z))}<br>${przybl}${W.zl(z.zysk)}</span>`
+        + (z.doplata ? `<div class="sw-brak" title="Allegro Ceny / AlleObniżka: dopłata Allegro do ceny oferty, poza fakturą (netto) — w przychodzie i zysku">z dopłatą Allegro ${W.zl(z.doplata)}</div>` : '');
     const poz = z.pozycje.length ? z.pozycje : [null];
     const rs = poz.length > 1 ? ` rowspan="${poz.length}"` : '';
     const zam = [

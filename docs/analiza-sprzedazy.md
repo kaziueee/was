@@ -61,6 +61,28 @@ Sklep poza sumą [decyzja 20.10]** — jego wahania (19.10: −83% r/r) nie mies
 Metabase sprawdzona: 19.10.2026 914 FS / 91 038,77 zł (Metabase 91 039,44 — zaokrąglenia pozycji vs nagłówek) vs
 929 / 97 537,60 → −6,66%; 20.10 432 / 433 FS, −3,73% — co do procenta jak `Dashboard_Faktury_Dzien`.
 
+**Dopłata Allegro do ceny [decyzja usera 2026-10-30: doliczać i pokazywać, na żywo]:** w programie Allegro Ceny
+(i AlleObniżce) klient płaci mniej niż cena oferty, a różnicę dopłaca Allegro — wpisem billingu, nie na fakturze.
+HASF1460 NaTropie (10.2026): oferta 129,99, FS 113,85, billing **PS1** „Rabat transakcyjny w programie Allegro Ceny”
++16,14, prowizja 18,40 = 14,15% × **129,99** (od pełnej kwoty). Bez tego przychód i zysk takich zamówień były zaniżone
+(tu 2,49 zł zamiast ~13 zł). Skala: ~7,4 tys. zł brutto w 30 dni (PS1 ekajtek ~5,3 tys., NaTropie ~1,3 tys., PSA ~1,2 tys.).
+- Typy: **PS1**, **PSA** („Rabat AlleObniżka z oznaczeniem”), **PSO** („Rabat AlleObniżka”, do 09.2025). 97% wpisów
+  przychodzi w ciągu 15 min od prowizji zamówienia (1798 z 1851 od 1.09).
+- Źródła, łączone po numerze wpisu billingu (`services/analiza-doplaty.js`): **WMS-Pricing co 5 min**
+  (`pricing/doplaty-allegro.js` → `pricing.db` `allegro_doplaty`; `PRICING_DOPLATY_MIN`) i **Rozliczenia raz na
+  dobę** (03:00, `allegro_billing_wpis` + `allegro_order_payment`, historia od 01.2025). WMS-Pricing wymaga w
+  aplikacji „WMS Price” uprawnień `allegro:api:billing:read` i `allegro:api:orders:read` + ponownej autoryzacji obu kont
+  (`node pricing/allegro-autoryzuj.js EKAJTEK` / `NATROPIE`) — bez nich 403 i dopłaty przychodzą z Rozliczeń, czyli
+  następnego dnia. Klucz łączenia: ZK trzyma **identyfikator płatności** (`pwd_Tekst05`/uwagi), billing —
+  **zamówienia**; most z `GET /order/checkout-forms/{id}` (raz na zamówienie).
+- Liczenie (`config/rynki.js` `wycenaZamowienia`, `doplata`): przychód netto i podstawa prowizji = zapłacone + dopłata;
+  dopłata Smart zostaje od zapłaconej kwoty (nie sprawdzone, jak liczy ją Allegro). Netto = brutto / 1,23. Na pozycje
+  wg wartości (jak wysyłka) — w zamówieniu z kilkoma towarami to przybliżenie: billing wie, której oferty dotyczy
+  dopłata, my tego nie zapisujemy. Kolumny `zamowienia.doplata_netto`, `pozycje.doplata`.
+- **Przychód przestaje się równać fakturom** (i ERP Dashboard) o kwotę dopłat — ekrany pokazują „w tym dopłata
+  Allegro”. Koszt odczytu Rozliczeń: pełny przegląd billingu ~150 ms na przebieg joba (bez indeksu po typie), w wątku analiz.
+- Historia: `node scripts/analiza-wczytaj.js --od 2025-01-01 --zapisz` przelicza zamówienia razem z dopłatami z Rozliczeń.
+
 **Data dnia [decyzja: „oba na razie”].** Każda pozycja ma dwie daty: **zamówienia** (ZK) i **faktury** (FS).
 Ekrany mają przełącznik „wg zamówienia / wg faktury”. Po co obie: faktura powstaje tego samego dnia w 37%
 przypadków, następnego w 48%, po 2 dniach w 9%, po 3 w 5%, a w weekend wcale (poniedziałek 12.10 = 936 FS). Wg

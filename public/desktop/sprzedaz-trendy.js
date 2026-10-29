@@ -721,7 +721,7 @@
     const lista = kontekstKarty?.lista || ostatniaLista, i = lista.findIndex((w) => w.id === id), w = lista[i] || wiersze().find((q) => q.id === id);
     if (!w) return;
     const P = X.produkty[st.okno], porTxt = st.por === 'prev' ? `poprzednie ${st.okno} dni` : 'rok temu', off = st.por === 'prev' ? 3 : 6;
-    const kan = ((X.kanaly[st.okno] || {})[id] || []).map((k) => ({ nazwa: k[0], s: k[1], n: k[2], z: k[3], bs: k[1 + off], bn: k[2 + off], klucz: k[10] }))
+    const kan = ((X.kanaly[st.okno] || {})[id] || []).map((k) => ({ nazwa: k[0], s: k[1], n: k[2], z: k[3], bs: k[1 + off], bn: k[2 + off], klucz: k[10], d: k[11] || 0 }))
       .filter((k) => k.s || k.bs).sort((a, b) => b.n - a.n || b.bn - a.bn);
     ostatnieKanaly = kan;
     const marza = (z, n) => (n ? pct(z / n * 100) : '—'), przed = st.por === 'prev' ? 'przed' : 'rok temu';
@@ -743,7 +743,7 @@
       <div class="tr-wykres" id="tr-ok-tyg" ${wyk ? '' : 'hidden'}></div>
       <h3 style="font-size:15px;margin:14px 0 6px">Kanały sprzedaży <span class="tr-opis" style="font-weight:400">— nazwa kanału otwiera ofertę na platformie</span></h3>
       <table class="tr-tab"><tr><th>Kanał</th><th class="n">Szt.</th><th class="n">Przychód</th><th class="n">Zysk</th><th class="n">Marża</th><th class="n">Zysk na szt.</th><th class="n">Szt. ${przed}</th><th class="n">Przychód ${przed}</th><th class="n">Zmiana</th></tr>
-      ${kan.map((k, j) => `<tr><td data-kan="${j}">${kanalHtml(k, null)}</td><td class="n">${szt(k.s)}</td><td class="n">${zl(k.n)}</td><td class="n">${zl(k.z)}</td><td class="n">${marza(k.z, k.n)}</td><td class="n">${k.s ? zl(k.z / k.s) : '—'}</td><td class="n tr-sz">${szt(k.bs)}</td><td class="n tr-sz">${zl(k.bn)}</td><td class="n">${k.bn > 0 ? zmiana(k.n, k.bn) : k.n > 0 ? '<span class="tr-up">nowy kanał</span>' : '<span class="tr-down">zniknął</span>'}</td></tr>`).join('')
+      ${kan.map((k, j) => `<tr><td data-kan="${j}">${kanalHtml(k, null)}</td><td class="n">${szt(k.s)}</td><td class="n">${zl(k.n)}${k.d ? `<div class="tr-sz" title="Allegro Ceny / AlleObniżka: klient zapłacił mniej, Allegro dopłaciło do ceny oferty — faktura tego nie zna">w tym dopłata Allegro ${zl(k.d)}</div>` : ''}</td><td class="n">${zl(k.z)}</td><td class="n">${marza(k.z, k.n)}</td><td class="n">${k.s ? zl(k.z / k.s) : '—'}</td><td class="n tr-sz">${szt(k.bs)}</td><td class="n tr-sz">${zl(k.bn)}</td><td class="n">${k.bn > 0 ? zmiana(k.n, k.bn) : k.n > 0 ? '<span class="tr-up">nowy kanał</span>' : '<span class="tr-down">zniknął</span>'}</td></tr>`).join('')
         || '<tr><td colspan="9" class="tr-sz">Brak sprzedaży w obu okresach.</td></tr>'}
       <tr class="tr-razem"><td><b>Razem</b></td><td class="n"><b>${szt(w.a.s)}</b></td><td class="n"><b>${zl(w.a.n)}</b></td><td class="n"><b>${zl(w.a.z)}</b></td><td class="n">${marza(w.a.z, w.a.n)}</td><td class="n">${w.a.s ? zl(w.a.z / w.a.s) : '—'}</td><td class="n tr-sz">${szt(w.b.s)}</td><td class="n tr-sz">${zl(w.b.n)}</td><td class="n">${zmiana(w.a.n, w.b.n)}</td></tr></table>
       <div class="tr-ceny-nag"><h3 style="font-size:15px;margin:0">Ceny ofert</h3><div id="tr-ok-strat" class="tr-opis"></div></div>

@@ -46,14 +46,14 @@
   // osobnym wierszem „poza sumą” — decyzja usera 2026-10-20: jego wahania nie mają mieszać trendu internetu.
   const POZA_SUMA = ['SKLEP'];
   function sumy(kanaly) {
-    const s = { zam: 0, szt: 0, netto: 0, zysk: 0, handl: 0, zamowione: 0 };
+    const s = { zam: 0, szt: 0, netto: 0, zysk: 0, handl: 0, zamowione: 0, doplata: 0 };
     for (const [k, g] of Object.entries(kanaly || {})) { if (POZA_SUMA.includes(k)) continue; for (const p of Object.keys(s)) s[p] += g[p] || 0; }
     return s;
   }
 
   // Wiersze tabeli kanałów: kanał z dziećmi (Allegro → kraje) i grupa „Inne”, posortowane po przychodzie.
   function wierszeKanalow(cur, prev, nazwy) {
-    const pusty = { zam: 0, szt: 0, netto: 0, zysk: 0, handl: 0, rynki: {} };
+    const pusty = { zam: 0, szt: 0, netto: 0, zysk: 0, handl: 0, doplata: 0, rynki: {} };
     const klucze = [...new Set([...Object.keys(cur || {}), ...Object.keys(prev || {})])];
     const inne = { k: '_INNE', nazwa: 'Inne kanały', cur: { ...pusty }, prev: { ...pusty }, dzieci: [] };
     const lista = [], osobno = [];
@@ -62,7 +62,7 @@
       if (POZA_SUMA.includes(k)) { w.pozaSuma = true; osobno.push(w); continue; }
       if (INNE.includes(k)) {
         inne.dzieci.push(w);
-        for (const o of ['cur', 'prev']) for (const p of ['zam', 'szt', 'netto', 'zysk', 'handl']) inne[o][p] += w[o][p] || 0;
+        for (const o of ['cur', 'prev']) for (const p of ['zam', 'szt', 'netto', 'zysk', 'handl', 'doplata']) inne[o][p] += w[o][p] || 0;
         continue;
       }
       if (k.startsWith('ALLEGRO')) {

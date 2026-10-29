@@ -21,7 +21,7 @@ const { dostepneZeStanu } = require('./analiza-zapytania');
 
 const D = am.dodajDni;
 const R = (x) => Math.round(x || 0);
-const NETTO = 'z.netto + IFNULL(z.wysylka_netto, 0)';
+const NETTO = 'z.netto + IFNULL(z.wysylka_netto, 0) + IFNULL(z.doplata_netto, 0)';
 const INTERNET = "z.status != 'paragon'";
 const OKNA = [7, 30];
 const TYGODNIE_GRUP = 13;
@@ -61,26 +61,29 @@ function tygodnie(start, niedziela) {
 }
 
 function okno(od, doDnia) {
-  return new Map(db.prepare(`SELECT p.tw_id, SUM(p.szt) szt, SUM(p.netto + IFNULL(p.wysylka, 0)) netto, SUM(p.zysk) zysk
+  return new Map(db.prepare(`SELECT p.tw_id, SUM(p.szt) szt, SUM(p.netto + IFNULL(p.wysylka, 0) + IFNULL(p.doplata, 0)) netto, SUM(p.zysk) zysk
     FROM pozycje p JOIN zamowienia z ON z.id = p.zam_id WHERE ${INTERNET} AND z.data_zam BETWEEN ? AND ? GROUP BY p.tw_id`)
     .all(od, doDnia).map((x) => [x.tw_id, x]));
 }
 
-// Kanały produktu: [nazwa, szt, netto, zysk] × (teraz, poprzednie okno, rok temu), na końcu klucz kanału (do linku)
+// Kanały produktu: [nazwa, szt, netto, zysk] × (teraz, poprzednie okno, rok temu), klucz kanału (do linku), dopłata Allegro
+// teraz (część netto; services/analiza-doplaty.js)
 function kanalyProduktow(P) {
   const m = new Map();
   const zbierz = (od, doDnia, off) => {
-    for (const x of db.prepare(`SELECT p.tw_id, z.kanal, z.rynek, SUM(p.szt) szt, SUM(p.netto + IFNULL(p.wysylka, 0)) netto, SUM(p.zysk) zysk
+    for (const x of db.prepare(`SELECT p.tw_id, z.kanal, z.rynek, SUM(p.szt) szt, SUM(p.netto + IFNULL(p.wysylka, 0) + IFNULL(p.doplata, 0)) netto, SUM(p.zysk) zysk,
+        SUM(IFNULL(p.doplata, 0)) doplata
         FROM pozycje p JOIN zamowienia z ON z.id = p.zam_id WHERE ${INTERNET} AND z.data_zam BETWEEN ? AND ?
         GROUP BY p.tw_id, z.kanal, z.rynek`).all(od, doDnia)) {
       const nazwa = nazwaKanalu(x.kanal, x.rynek), k = `${x.tw_id}|${nazwa}`;
-      const w = m.get(k) || m.set(k, [x.tw_id, nazwa, 0, 0, 0, 0, 0, 0, 0, 0, 0, x.kanal]).get(k);
+      const w = m.get(k) || m.set(k, [x.tw_id, nazwa, 0, 0, 0, 0, 0, 0, 0, 0, 0, x.kanal, 0]).get(k);
       w[2 + off] += x.szt; w[3 + off] += x.netto; w[4 + off] += x.zysk;
+      if (off === 0) w[12] += x.doplata || 0;
     }
   };
   zbierz(P.od, P.do, 0); zbierz(P.prevOd, P.prevDo, 3); zbierz(P.rokOd, P.rokDo, 6);
   const po = {};
-  for (const w of m.values()) (po[w[0]] ||= []).push([w[1], ...w.slice(2, 11).map(R), w[11]]);
+  for (const w of m.values()) (po[w[0]] ||= []).push([w[1], ...w.slice(2, 11).map(R), w[11], ...(w[12] ? [R(w[12])] : [])]);
   return po;
 }
 
@@ -170,7 +173,7 @@ function policz(dzis) {
   const tygodnie13 = Array.from({ length: TYGODNIE_GRUP }, (_, i) => D(od13, i * 7));
   const grTyg = {};
   for (const x of db.prepare(`SELECT IFNULL(NULLIF(t.grupa, ''), '(bez grupy)') g, date(z.data_zam, 'weekday 0', '-6 days') pon,
-      SUM(p.netto + IFNULL(p.wysylka, 0)) netto FROM pozycje p JOIN zamowienia z ON z.id = p.zam_id LEFT JOIN towary t ON t.tw_id = p.tw_id
+      SUM(p.netto + IFNULL(p.wysylka, 0) + IFNULL(p.doplata, 0)) netto FROM pozycje p JOIN zamowienia z ON z.id = p.zam_id LEFT JOIN towary t ON t.tw_id = p.tw_id
       WHERE ${INTERNET} AND z.data_zam BETWEEN ? AND ? GROUP BY g, pon`).all(od13, niedziela)) (grTyg[x.g] ||= {})[x.pon] = R(x.netto);
   const tygProd = {};
   const idx = (pon, od) => Math.round((new Date(pon + 'T12:00:00Z') - new Date(od + 'T12:00:00Z')) / (7 * 864e5));

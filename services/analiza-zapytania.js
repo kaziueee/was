@@ -2,7 +2,8 @@
 
 // Moduł analiz sprzedaży — zapytania do db/sprzedaz.db wspólne dla API (routes/analiza.js) i raportu mailem
 // (services/analiza-raport.js): jedna definicja liczb dla ekranu i maila. Nigdy GT; pricing.db best-effort.
-//   przychód netto = cała faktura (towary + wysyłka klienta), suma na górze = internet (Sklep poza sumą — robi to
+//   przychód netto = cała faktura (towary + wysyłka klienta) + dopłata Allegro do ceny (poza fakturą,
+//   services/analiza-doplaty.js), suma na górze = internet (Sklep poza sumą — robi to
 //   wyświetlanie, tu zwracamy wszystkie kanały), rok temu = −364 dni (docs/analiza-sprzedazy.md).
 
 const { db, meta } = require('../db/sprzedaz');
@@ -37,18 +38,20 @@ function stanWczytania() {
 }
 
 function kanalyZakresu({ kol, warunek }, [od, doDnia]) {
-  // netto = przychód netto CAŁEJ faktury: towary + wysyłka zapłacona przez klienta (jak FS i ERP Dashboard)
-  const wiersze = db.prepare(`SELECT kanal, rynek, COUNT(*) zam, SUM(szt) szt, SUM(netto + IFNULL(wysylka_netto, 0)) netto, SUM(zysk) zysk,
-      SUM(CASE WHEN zysk_zrodlo LIKE 'handlowa%' THEN netto + IFNULL(wysylka_netto, 0) ELSE 0 END) handl,
+  // netto = przychód netto CAŁEJ faktury: towary + wysyłka zapłacona przez klienta (jak FS i ERP Dashboard) + dopłata
+  // Allegro do ceny, której faktura nie zna (services/analiza-doplaty.js; `doplata` = ile z tego to dopłata)
+  const wiersze = db.prepare(`SELECT kanal, rynek, COUNT(*) zam, SUM(szt) szt, SUM(netto + IFNULL(wysylka_netto, 0) + IFNULL(doplata_netto, 0)) netto, SUM(zysk) zysk,
+      SUM(IFNULL(doplata_netto, 0)) doplata,
+      SUM(CASE WHEN zysk_zrodlo LIKE 'handlowa%' THEN netto + IFNULL(wysylka_netto, 0) + IFNULL(doplata_netto, 0) ELSE 0 END) handl,
       SUM(CASE WHEN status = 'zamowione' THEN 1 ELSE 0 END) zamowione
     FROM zamowienia WHERE ${kol} BETWEEN ? AND ? AND ${warunek} GROUP BY kanal, rynek`).all(od, doDnia);
   const kanaly = {};
   for (const w of wiersze) {
-    const k = kanaly[w.kanal] ||= { zam: 0, szt: 0, netto: 0, zysk: 0, handl: 0, zamowione: 0, rynki: {} };
-    for (const p of ['zam', 'szt', 'netto', 'zysk', 'handl', 'zamowione']) k[p] += Number(w[p]) || 0;
+    const k = kanaly[w.kanal] ||= { zam: 0, szt: 0, netto: 0, zysk: 0, handl: 0, zamowione: 0, doplata: 0, rynki: {} };
+    for (const p of ['zam', 'szt', 'netto', 'zysk', 'handl', 'zamowione', 'doplata']) k[p] += Number(w[p]) || 0;
     if (w.rynek) {
-      const r = k.rynki[w.rynek] ||= { zam: 0, szt: 0, netto: 0, zysk: 0 };
-      for (const p of ['zam', 'szt', 'netto', 'zysk']) r[p] += Number(w[p]) || 0;
+      const r = k.rynki[w.rynek] ||= { zam: 0, szt: 0, netto: 0, zysk: 0, doplata: 0 };
+      for (const p of ['zam', 'szt', 'netto', 'zysk', 'doplata']) r[p] += Number(w[p]) || 0;
     }
   }
   const zw = db.prepare('SELECT SUM(szt) szt, SUM(netto) netto FROM zwroty WHERE data BETWEEN ? AND ?').get(od, doDnia);
@@ -57,7 +60,7 @@ function kanalyZakresu({ kol, warunek }, [od, doDnia]) {
 
 // Suma kanałów bez tych „poza sumą” (internet).
 function sumaInternetu(kanaly) {
-  const s = { zam: 0, szt: 0, netto: 0, zysk: 0, handl: 0, zamowione: 0 };
+  const s = { zam: 0, szt: 0, netto: 0, zysk: 0, handl: 0, zamowione: 0, doplata: 0 };
   for (const [k, g] of Object.entries(kanaly)) { if (POZA_SUMA.includes(k)) continue; for (const p of Object.keys(s)) s[p] += g[p] || 0; }
   return s;
 }
@@ -165,16 +168,16 @@ function uzupelnijTowary(lista_, { zRepricerem = true } = {}) {
 // Przegląd produktów = tylko sprzedaż z K4 (FS i ZK) — bez paragonów Sklepu z MAG (decyzja usera 2026-10-20).
 // Sklep zostaje osobnym wierszem w tabeli kanałów („poza sumą”), ale nie miesza listy produktów.
 function produkty(p, { sort = 'zysk', limit = 500, zRepricerem = true } = {}) {
-  const wiersze = db.prepare(`SELECT x.tw_id, z.kanal, SUM(x.szt) szt, SUM(x.netto + IFNULL(x.wysylka, 0)) netto, SUM(x.zysk) zysk,
-      MAX(CASE WHEN z.zysk_zrodlo LIKE 'handlowa%' THEN 1 ELSE 0 END) handl
+  const wiersze = db.prepare(`SELECT x.tw_id, z.kanal, SUM(x.szt) szt, SUM(x.netto + IFNULL(x.wysylka, 0) + IFNULL(x.doplata, 0)) netto, SUM(x.zysk) zysk,
+      SUM(IFNULL(x.doplata, 0)) doplata, MAX(CASE WHEN z.zysk_zrodlo LIKE 'handlowa%' THEN 1 ELSE 0 END) handl
     FROM pozycje x JOIN zamowienia z ON z.id = x.zam_id
     WHERE z.${p.kol} BETWEEN ? AND ? AND ${p.warunek.replace('status', 'z.status')} AND z.status != 'paragon'
     GROUP BY x.tw_id, z.kanal`).all(...p.zakres.cur);
   const tw = new Map();
   for (const w of wiersze) {
-    const t = tw.get(w.tw_id) || tw.set(w.tw_id, { tw_id: w.tw_id, szt: 0, netto: 0, zysk: 0, kanaly: [] }).get(w.tw_id);
-    t.szt += w.szt; t.netto += w.netto; t.zysk += w.zysk || 0;
-    t.kanaly.push({ k: w.kanal, szt: w.szt, netto: w.netto, zysk: w.zysk, handl: !!w.handl });
+    const t = tw.get(w.tw_id) || tw.set(w.tw_id, { tw_id: w.tw_id, szt: 0, netto: 0, zysk: 0, doplata: 0, kanaly: [] }).get(w.tw_id);
+    t.szt += w.szt; t.netto += w.netto; t.zysk += w.zysk || 0; t.doplata += w.doplata || 0;
+    t.kanaly.push({ k: w.kanal, szt: w.szt, netto: w.netto, zysk: w.zysk, handl: !!w.handl, doplata: w.doplata || 0 });
   }
   const wszystkie = [...tw.values()].sort((a, b) => b[sort] - a[sort]);
   const { rok, produkty: lista_ } = uzupelnijTowary(wszystkie.slice(0, limit), { zRepricerem });
@@ -195,13 +198,13 @@ function live({ przed = null, limit = 40 } = {}) {
   // dzień <= kursora pozwala indeksowi zacząć od właściwego miejsca; krotka rozstrzyga w obrębie dnia
   const warunek = kursor ? `AND ${KLUCZ_LIVE[0]} <= ? AND (${KLUCZ_LIVE.join(', ')}) < (?, ?, ?)` : '';
   const zam = db.prepare(`SELECT z.id, z.numer, z.status, z.kanal, z.rynek, z.waluta, z.data_zam, z.godz_zam, z.data_zk, z.data_fs, z.pierwszy,
-      z.szt, z.netto, z.wysylka_netto, z.zysk, z.zysk_zrodlo, ${KLUCZ_LIVE[0]} k_dzien, ${KLUCZ_LIVE[1]} k_zk, ${KLUCZ_LIVE[2]} k_fs
+      z.szt, z.netto, z.wysylka_netto, z.doplata_netto, z.zysk, z.zysk_zrodlo, ${KLUCZ_LIVE[0]} k_dzien, ${KLUCZ_LIVE[1]} k_zk, ${KLUCZ_LIVE[2]} k_fs
     FROM zamowienia z WHERE z.status != 'paragon' ${warunek}
     ORDER BY ${KLUCZ_LIVE.map((x) => x + ' DESC').join(', ')} LIMIT ?`).all(...(kursor ? [kursor[0], ...kursor] : []), limit);
   const ids = zam.map((z) => z.id);
   const poz = new Map();
   if (ids.length) {
-    for (const p of db.prepare(`SELECT p.zam_id, p.tw_id, p.szt, p.netto, p.wysylka, p.cena_wal, p.zysk, t.symbol, t.nazwa, t.rodzaj
+    for (const p of db.prepare(`SELECT p.zam_id, p.tw_id, p.szt, p.netto, p.wysylka, p.doplata, p.cena_wal, p.zysk, t.symbol, t.nazwa, t.rodzaj
         FROM pozycje p LEFT JOIN towary t ON t.tw_id = p.tw_id WHERE p.zam_id IN (${lista(ids)}) ORDER BY p.netto DESC`).all(...ids)) {
       (poz.get(p.zam_id) || poz.set(p.zam_id, []).get(p.zam_id)).push(p);
     }
@@ -215,10 +218,11 @@ function live({ przed = null, limit = 40 } = {}) {
       const g = am.godzinaZamowienia(z);
       // wplyw — dzień w kolejności listy (dzień ZK); dzien — dzień zamówienia (Allegro z UUID bywa dzień wcześniej)
       return { id: z.id, numer: z.numer, status: z.status, kanal: z.kanal, kanal_nazwa: nazwaKanalu(z.kanal, z.rynek), waluta: z.waluta,
-        wplyw: z.k_dzien, dzien: g.dzien, godz: g.godz, godz_zrodlo: g.zrodlo, szt: z.szt, netto: z.netto + (z.wysylka_netto || 0), zysk: z.zysk,
+        wplyw: z.k_dzien, dzien: g.dzien, godz: g.godz, godz_zrodlo: g.zrodlo, szt: z.szt, netto: z.netto + (z.wysylka_netto || 0) + (z.doplata_netto || 0), zysk: z.zysk,
+        doplata: z.doplata_netto || 0,
         zysk_handlowy: /^handlowa/.test(z.zysk_zrodlo || ''),
         pozycje: (poz.get(z.id) || []).map((p) => ({ tw_id: p.tw_id, symbol: p.symbol, nazwa: p.nazwa, zestaw: p.rodzaj === 8, szt: p.szt,
-          cena_wal: p.cena_wal, netto: p.netto + (p.wysylka || 0), zysk: p.zysk, dostepne: tow.get(p.tw_id)?.stan?.dostepne ?? null,
+          cena_wal: p.cena_wal, netto: p.netto + (p.wysylka || 0) + (p.doplata || 0), zysk: p.zysk, dostepne: tow.get(p.tw_id)?.stan?.dostepne ?? null,
           dni_zapasu: tow.get(p.tw_id)?.dni_zapasu ?? null, flagi: tow.get(p.tw_id)?.flagi || [] })) };
     }),
     kursor: zam.length === limit && ost ? `${ost.k_dzien}|${ost.k_zk}|${ost.k_fs}` : null,

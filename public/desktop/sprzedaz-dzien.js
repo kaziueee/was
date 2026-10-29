@@ -59,7 +59,8 @@ function sdRysujPodsumowanie(d) {
   el('sd-vs').textContent = `${W.zakresTxt(o.cur)} vs ${W.zakresTxt(o.prev)} (−364 dni)`;
   const mc = W.marza(sc), mp = W.marza(sp);
   const kafle = [
-    ['Przychód netto (internet)', W.zl(sc.netto), W.zl(sp.netto), W.zmiana(sc.netto, sp.netto)],
+    ['Przychód netto (internet)', W.zl(sc.netto), W.zl(sp.netto), W.zmiana(sc.netto, sp.netto)
+      + (sc.doplata ? ` · <span title="Allegro Ceny / AlleObniżka: klient zapłacił mniej, Allegro dopłaciło do ceny oferty — faktura tego nie zna">w tym dopłata Allegro ${W.zl(sc.doplata)}</span>` : '')],
     ['Marża', W.pct(mc), W.pct(mp), mc == null || mp == null ? '' : `<span class="${mc >= mp ? 'sw-plus' : 'sw-minus'}">${mc >= mp ? '+' : ''}${W.nf1.format(mc - mp)} pp</span>`],
     ['Zysk na sztuce', W.naSzt(sc.zysk, sc.szt), W.naSzt(sp.zysk, sp.szt), W.zmiana(sc.szt ? sc.zysk / sc.szt : null, sp.szt ? sp.zysk / sp.szt : null)],
     ['Zysk po kosztach kanału', W.zl(sc.zysk), W.zl(sp.zysk), W.zmiana(sc.zysk, sp.zysk)],
@@ -85,7 +86,7 @@ function sdRysujKanaly(d) {
   const wiersz = (w, klasa = '', id = '') => `<tr class="${klasa}"${id ? ` data-id="${id}"` : ''}><td>${W.esc(w.nazwa)}`
     + `${w.k === 'SKLEP' ? '<span class="sw-tag">paragony z MAG, poza sumą</span>' : ''}${w.k === '_INNE' ? `<span class="sw-tag">${w.dzieci.length}</span>` : ''}</td>`
     + `<td class="num">${klasa.includes('sd-dziecko') && w.k.length === 2 ? '' : W.szt(w.cur.zam)}</td><td class="num">${W.szt(w.cur.szt)}</td>`
-    + `<td class="num">${W.zl(w.cur.netto)}</td><td class="num">${W.zmiana(w.cur.netto, w.prev.netto)}</td>`
+    + `<td class="num">${W.zl(w.cur.netto)}${w.cur.doplata >= 0.5 ? `<div class="sw-brak" title="dopłata Allegro do ceny (Allegro Ceny / AlleObniżka) — poza fakturą">w tym dopłata ${W.zl(w.cur.doplata)}</div>` : ''}</td><td class="num">${W.zmiana(w.cur.netto, w.prev.netto)}</td>`
     + `<td class="num">${W.pct(W.marza(w.cur))}</td><td class="num">${W.naSzt(w.cur.zysk, w.cur.szt)}</td><td class="num">${W.zyskTxt(w.cur)}</td>`
     + `<td class="num">${W.pct(sc.netto ? w.cur.netto / sc.netto * 100 : null)}</td></tr>`;
   let html = `<thead><tr><th>Kanał</th><th class="num">${d.baza === 'zam' ? 'Zamówienia' : 'Faktury'}</th><th class="num">Szt.</th>`

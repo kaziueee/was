@@ -227,3 +227,20 @@ test('Amazon PL: minimum przy marży 20% z prowizji 6,15% i stałej opłaty Easy
   // Easy Ship to stała opłata — waga (inaczej niż DHL na Amazon DE) minimum nie zmienia
   assert.strictEqual(rynki.policzRynek(50, r, { ...g, waga: 25 }).cena, w.cena);
 });
+
+test('dopłata Allegro Ceny: przychód i prowizja od pełnej kwoty, Smart od zapłaconej (HASF1460 NaTropie)', () => {
+  const a = rynek('Allegro');
+  const bez = rynki.wycenaZamowienia(a, g, { pozycje: [{ koszt: 68.94, cena: 113.85, szt: 1 }] });
+  const z = rynki.wycenaZamowienia(a, g, { pozycje: [{ koszt: 68.94, cena: 113.85, szt: 1 }], doplata: 16.14 });
+  const dwa = rynki.wycenaZamowienia(a, g, { pozycje: [{ koszt: 68.94, cena: 113.85, szt: 1 }], doplata: 32.28 });
+  const przyrost = z.zysk - bez.zysk;
+  assert.ok(przyrost > 0 && przyrost < 16.14 / 1.23, `dopłata netto minus prowizja od niej: ${przyrost}`);
+  assert.ok(Math.abs(dwa.zysk - bez.zysk - 2 * przyrost) < 1e-9, 'liniowo — bez progów zależnych od dopłaty');
+  assert.ok(Math.abs(z.przychodNetto - 129.99 / 1.23) < 1e-9, 'przychód netto = pełna cena oferty bez VAT');
+  assert.strictEqual(z.detal.dostawaSmart, bez.detal.dostawaSmart);
+  assert.strictEqual(z.detal.doplata, 16.14);
+  // inne rynki dopłaty nie znają
+  const e = rynek('Empik');
+  assert.strictEqual(rynki.wycenaZamowienia(e, g, { pozycje: [{ koszt: 40, cena: 99.99, szt: 1 }], doplata: 10 }).zysk,
+    rynki.wycenaZamowienia(e, g, { pozycje: [{ koszt: 40, cena: 99.99, szt: 1 }] }).zysk);
+});

@@ -687,6 +687,21 @@ if (require.main === module) {
     });
     tik();
     setInterval(tik, ms);
+    // Dopłaty Allegro do ceny (pricing/doplaty-allegro.js) — POZA kolejką: sam odczyt API i zapis do własnej tabeli,
+    // a analiza sprzedaży ma je widzieć w minutach, nie po 6–18-minutowym pełnym przebiegu.
+    if (PLATFORMY.has('allegro')) {
+      const { pobierzDoplaty } = require('./doplaty-allegro');
+      const DOPLATY_MS = interwalMsZMinut(process.env.PRICING_DOPLATY_MIN, 5, 'PRICING_DOPLATY_MIN');
+      let doplatyTrwa = false;
+      const doplaty = async () => {
+        if (doplatyTrwa) return;
+        doplatyTrwa = true;
+        try { await pobierzDoplaty(); } catch (e) { console.error(new Date().toISOString(), '[pricing] dopłaty Allegro:', e.message); }
+        finally { doplatyTrwa = false; }
+      };
+      setTimeout(doplaty, 30_000);
+      setInterval(doplaty, DOPLATY_MS);
+    }
     // Ręczne korekty z ekranu i nowy raport Top ofert Allegro — co minutę, gdy kolejka wolna.
     setInterval(() => kolejka.jesliWolne(async () => {
       let lista = [];

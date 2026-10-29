@@ -36,15 +36,16 @@ const zl = (x) => Math.round(x).toLocaleString('pl-PL');
     let w;
     try { w = await dane.wczytajOkno(od, doDnia, { zapiszDoBazy: ZAPISZ }); }
     catch (e) { console.error(`${od}: BŁĄD ${e.message}`); process.exitCode = 1; continue; }
-    // przychód = cała faktura (towary + wysyłka klienta), jak na ekranach modułu
-    const netto = w.zamowienia.reduce((s, z) => s + z.netto + (z.wysylka_netto || 0), 0), zysk = w.zamowienia.reduce((s, z) => s + (z.zysk || 0), 0);
-    const przychod = (z) => z.netto + (z.wysylka_netto || 0);
+    // przychód = cała faktura (towary + wysyłka klienta) + dopłata Allegro, jak na ekranach modułu
+    const przychod = (z) => z.netto + (z.wysylka_netto || 0) + (z.doplata_netto || 0);
+    const netto = w.zamowienia.reduce((s, z) => s + przychod(z), 0), zysk = w.zamowienia.reduce((s, z) => s + (z.zysk || 0), 0);
+    const doplata = w.zamowienia.reduce((s, z) => s + (z.doplata_netto || 0), 0);
     const reg = {}, handl = w.zamowienia.filter((z) => String(z.zysk_zrodlo).startsWith('handlowa')).reduce((s, z) => s + przychod(z), 0);
     for (const z of w.zamowienia) reg[z.kanal_regula] = (reg[z.kanal_regula] || 0) + przychod(z);
     const zastepcze = Object.entries(reg).filter(([r]) => !/^(zrodlo_fs|zrodlo_zk|kategoria_fs|kategoria_zk|paragon)$/.test(r))
       .sort((a, b) => b[1] - a[1]).map(([r, v]) => `${r} ${(100 * v / (netto || 1)).toFixed(1)}%`).join(', ');
     console.log(`${od.slice(0, 7)}: ${w.zamowienia.length} zam., ${zl(netto)} zł netto, zysk ${zl(zysk)} zł (${(100 * zysk / (netto || 1)).toFixed(1)}%)`
-      + ` · marża handlowa ${(100 * handl / (netto || 1)).toFixed(1)}% obrotu · reguły zastępcze: ${zastepcze || '—'} · zwrotów ${w.zwroty.length}`
+      + ` · dopłaty Allegro ${zl(doplata)} zł · marża handlowa ${(100 * handl / (netto || 1)).toFixed(1)}% obrotu · reguły zastępcze: ${zastepcze || '—'} · zwrotów ${w.zwroty.length}`
       + ` · ${((Date.now() - t0) / 1000).toFixed(1)} s`);
     sumy.zam += w.zamowienia.length; sumy.netto += netto; sumy.zysk += zysk;
     for (const p of w.pozycje) tw.add(p.tw_id);

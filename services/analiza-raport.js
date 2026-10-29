@@ -58,7 +58,7 @@ function konczySie(limit = 12) {
 
 // Sprzedaż ze stratą danego dnia (wg zamówienia): pozycje z zyskiem po kosztach kanału poniżej zera.
 function strata(dzien, limit = 10) {
-  const r = db.prepare(`SELECT x.tw_id, z.kanal, SUM(x.szt) szt, SUM(x.netto + IFNULL(x.wysylka, 0)) netto, SUM(x.zysk) zysk, MIN(x.koszt) koszt
+  const r = db.prepare(`SELECT x.tw_id, z.kanal, SUM(x.szt) szt, SUM(x.netto + IFNULL(x.wysylka, 0) + IFNULL(x.doplata, 0)) netto, SUM(x.zysk) zysk, MIN(x.koszt) koszt
     FROM pozycje x JOIN zamowienia z ON z.id = x.zam_id
     WHERE z.data_zam = ? AND x.zysk < 0 AND z.zysk_zrodlo NOT LIKE '%bez_kosztu' AND z.status != 'paragon'
     GROUP BY x.tw_id, z.kanal ORDER BY SUM(x.zysk) LIMIT ?`).all(dzien, limit);
@@ -209,7 +209,7 @@ ${sekcja('Top 10 produktów dnia (wg zysku)', `<table width="100%" cellpadding="
 ${sekcja('Kończy się zapas', konczy, `Sprzedaje się (≥ ${KONCZY_MIN_SZT30} szt. w 30 dni), a stanu dostępnego (Razem − rezerwacje, zestaw — ze składników) zostało na mniej niż ${KONCZY_DNI} dni.`)}
 ${sekcja('Sprzedaż ze stratą', strata, 'Zamówienia z tego dnia z zyskiem po kosztach kanału poniżej zera (koszt = rzeczywisty rozchód dostaw z GT) — do sprawdzenia: ręczna cena albo za niska podłoga.')}
 <tr><td style="padding:18px 16px 16px;font-size:11px;color:#6b7280;line-height:1.5;border-top:1px solid #eef0f2">
-  Zysk po kosztach kanału = kalkulator repricera liczony na całe zamówienie (wysyłka raz na paczkę, kurs z faktury). Przychód = cała faktura netto (towary + wysyłka klienta).
+  Zysk po kosztach kanału = kalkulator repricera liczony na całe zamówienie (wysyłka raz na paczkę, kurs z faktury). Przychód = cała faktura netto (towary + wysyłka klienta) + dopłata Allegro do ceny (Allegro Ceny / AlleObniżka), której faktura nie zna.
   Wygenerowano ${godz} z bazy modułu analiz WMS. Pełny widok: <a href="${ADRES_TELEFON}" style="color:#1d4ed8">${ADRES_TELEFON}</a> (Tailscale).
 </td></tr>
 </table></td></tr></table></body></html>`;

@@ -24,6 +24,7 @@ const { doZlozeniaMapa } = require('./gt-zestawy');
 const am = require('./analiza-model');
 const { db, meta } = require('../db/sprzedaz');
 const { dzisLokalnie } = require('./sprzedaz-model');
+const { doplatyOd } = require('./analiza-doplaty');
 
 const ZK_BEZ_FS_DNI = 14;
 const granicaZk = () => am.dodajDni(dzisLokalnie(), -ZK_BEZ_FS_DNI);
@@ -112,7 +113,8 @@ function rynekKanalu(kanal) {
 
 // Zysk zamówienia: po kosztach kanału z kalkulatora (wycenaZamowienia), a dla kanałów bez reguł — marża handlowa.
 // Paczka = największy towar zamówienia (jak w analizie kartonów, decyzja usera 2026-09-23). Kurs = kurs dokumentu.
-function policzZysk(z, poz, wyceny) {
+// doplata — dopłata Allegro do ceny, brutto PLN (services/analiza-doplaty.js); tylko Allegro PL z kalkulatorem.
+function policzZysk(z, poz, wyceny, doplata = 0) {
   const handlowa = () => {
     for (const p of poz) p.zysk = p.netto - p.szt * (p.koszt || 0);
     return { zysk: poz.reduce((s, p) => s + p.zysk, 0), zrodlo: 'handlowa' };
@@ -133,10 +135,11 @@ function policzZysk(z, poz, wyceny) {
   // per zamówienie nie zna nikt (Rozliczenia: billing API tylko allegro-pl), więc oznaczamy źródło osobno.
   const wejscie = poz.map((p) => ({ koszt: p.koszt || 0, szt: p.szt,
     cena: allegroZagranica ? p.netto / p.szt * 1.23 : p.cena / bgn }));
-  const r = rynki.wycenaZamowienia(rk.def, g, { pozycje: wejscie, wysylkaKlienta: allegroZagranica ? null : z.wysylka_klienta / bgn });
+  const D = rk.def.typ === 'allegro' && !allegroZagranica ? Math.max(0, Number(doplata) || 0) : 0;
+  const r = rynki.wycenaZamowienia(rk.def, g, { pozycje: wejscie, wysylkaKlienta: allegroZagranica ? null : z.wysylka_klienta / bgn, doplata: D });
   if (r.blad) return handlowa();
   r.pozycje.forEach((x, i) => { poz[i].zysk = x.zysk; });
-  return { zysk: r.zysk, zrodlo: allegroZagranica ? 'kalkulator_pl' : 'kalkulator' };
+  return { zysk: r.zysk, zrodlo: allegroZagranica ? 'kalkulator_pl' : 'kalkulator', doplataNetto: D / (1 + (Number(rk.def.vat) || 0) / 100) };
 }
 
 function pozycjeDokumentu(lista) {
@@ -147,9 +150,10 @@ function pozycjeDokumentu(lista) {
 
 // Z surowych wierszy GT → { zamowienia, pozycje, skladniki, zwroty } gotowe do zapisu.
 // koszty — Map 'zamId|tw_id' → koszt zapisany przy pierwszym wczytaniu (dla ZK bez rozchodu).
-function zlozZamowienia(surowe, wyceny, sklady, koszty) {
+// doplaty — Map UUID płatności → dopłata Allegro brutto PLN (services/analiza-doplaty.js).
+function zlozZamowienia(surowe, wyceny, sklady, koszty, doplaty = new Map()) {
   const zamowienia = [], pozycje = [], skladniki = [], zwroty = [];
-  const dodaj = (z, wiersze, kanal) => {
+  const dodaj = (z, wiersze, kanal, uuid = null) => {
     const poz = [];
     let wysylka = 0, wysylkaNetto = 0;
     for (const p of wiersze) {
@@ -171,7 +175,10 @@ function zlozZamowienia(surowe, wyceny, sklady, koszty) {
     z.wysylka_netto = wysylkaNetto;
     for (const p of poz) p.wysylka = z.netto > 0 ? wysylkaNetto * p.netto / z.netto : 0;
     const zy = z.status === 'paragon' ? (() => { for (const p of poz) p.zysk = p.netto - p.szt * (p.koszt || 0); return { zysk: poz.reduce((s, p) => s + p.zysk, 0), zrodlo: 'handlowa' }; })()
-      : policzZysk(z, poz, wyceny);
+      : policzZysk(z, poz, wyceny, kanal.kanal.startsWith('ALLEGRO') && uuid ? doplaty.get(uuid) : 0);
+    // dopłata Allegro = przychód poza fakturą; na pozycje wg wartości (jak wysyłka), żeby suma produktów = suma kanałów
+    z.doplata_netto = zy.doplataNetto > 0 ? zy.doplataNetto : null;
+    for (const p of poz) p.doplata = z.doplata_netto && z.netto > 0 ? z.doplata_netto * p.netto / z.netto : null;
     z.zysk = zy.zysk; z.zysk_zrodlo = poz.some((p) => !(p.koszt > 0)) ? zy.zrodlo + '_bez_kosztu' : zy.zrodlo;
     zamowienia.push(z);
     for (const p of poz) {
@@ -187,7 +194,7 @@ function zlozZamowienia(surowe, wyceny, sklady, koszty) {
     const data = am.dataZamowienia({ uuid: kanal.kanal.startsWith('ALLEGRO') ? d.uuid : null, dataZk: d.data_zk, dataFs: d.data_fs });
     dodaj({ id: d.zk_id ? `Z${d.zk_id}` : `F${d.fs_id}`, zk_id: d.zk_id || null, fs_id: d.fs_id, numer: d.numer, status: 'zafakturowane',
       data_zam: data.dzien, godz_zam: data.godz, data_zam_zrodlo: data.zrodlo, data_zk: d.data_zk || null, data_fs: d.data_fs,
-      waluta: d.waluta, kurs }, fsPoz.get(d.fs_id) || [], kanal);
+      waluta: d.waluta, kurs }, fsPoz.get(d.fs_id) || [], kanal, uuidDokumentu(d));
   }
   const zkPoz = pozycjeDokumentu(surowe.zkPoz);
   for (const d of surowe.zk) {
@@ -196,7 +203,7 @@ function zlozZamowienia(surowe, wyceny, sklady, koszty) {
     const data = am.dataZamowienia({ uuid: kanal.kanal.startsWith('ALLEGRO') ? d.uuid : null, dataZk: d.data_zk });
     dodaj({ id: `Z${d.zk_id}`, zk_id: d.zk_id, fs_id: null, numer: d.numer, status: 'zamowione', data_zam: data.dzien, godz_zam: data.godz,
       data_zam_zrodlo: data.zrodlo, data_zk: d.data_zk, data_fs: null, waluta: d.waluta, kurs: am.kursDokumentu(d.waluta, d.kurs) },
-    zkPoz.get(d.zk_id) || [], kanal);
+    zkPoz.get(d.zk_id) || [], kanal, uuidDokumentu(d));
   }
   const paPoz = pozycjeDokumentu(surowe.paPoz);
   for (const d of surowe.pa) {
@@ -250,7 +257,7 @@ function kosztyZapisane(ids) {
 }
 
 const KOLUMNY_ZAM = ['id', 'zk_id', 'fs_id', 'numer', 'status', 'data_zam', 'godz_zam', 'data_zam_zrodlo', 'data_zk', 'data_fs',
-  'kanal', 'rynek', 'kanal_regula', 'waluta', 'kurs', 'szt', 'netto', 'wysylka_netto', 'wysylka_klienta', 'zysk', 'zysk_zrodlo'];
+  'kanal', 'rynek', 'kanal_regula', 'waluta', 'kurs', 'szt', 'netto', 'wysylka_netto', 'wysylka_klienta', 'zysk', 'zysk_zrodlo', 'doplata_netto'];
 
 // Zapis jednego okna: zamówienia z okna zastępują swoje stare wersje; ZK „zamówione” z okna, których GT już nie
 // zwraca (dostały FS z datą spoza okna albo zniknęły), są kasowane, żeby nie liczyły się podwójnie.
@@ -260,7 +267,7 @@ function zapisz({ zamowienia, pozycje, skladniki, zwroty }, { od, doDnia }) {
   const insZam = db.prepare(`INSERT OR REPLACE INTO zamowienia (${KOLUMNY_ZAM.join(',')}, wczytano, pierwszy)
     VALUES (${KOLUMNY_ZAM.map(() => '?').join(',')}, CURRENT_TIMESTAMP,
       CASE WHEN EXISTS (SELECT 1 FROM zamowienia WHERE id = ?) THEN (SELECT pierwszy FROM zamowienia WHERE id = ?) ELSE CURRENT_TIMESTAMP END)`);
-  const insPoz = db.prepare('INSERT INTO pozycje (zam_id, tw_id, rodzaj, szt, netto, wysylka, cena_wal, koszt, zysk) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  const insPoz = db.prepare('INSERT INTO pozycje (zam_id, tw_id, rodzaj, szt, netto, wysylka, cena_wal, koszt, zysk, doplata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
   const insSkl = db.prepare('INSERT INTO skladniki (zam_id, zestaw_id, tw_id, szt) VALUES (?, ?, ?, ?)');
   const insZw = db.prepare('INSERT INTO zwroty (kfs_id, fs_id, numer, data, kanal, tw_id, szt, netto) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
   const delPoz = db.prepare('DELETE FROM pozycje WHERE zam_id = ?');
@@ -273,7 +280,7 @@ function zapisz({ zamowienia, pozycje, skladniki, zwroty }, { od, doDnia }) {
     const stare = db.prepare("SELECT id FROM zamowienia WHERE status = 'zamowione' AND ((data_zk >= ? AND data_zk < ?) OR data_zk < ?)").all(od, doDnia, granicaZk());
     for (const { id } of stare) if (!nowe.has(id)) { delPoz.run(id); delSkl.run(id); delZam.run(id); }
     for (const z of zamowienia) { delPoz.run(z.id); delSkl.run(z.id); insZam.run(...KOLUMNY_ZAM.map((k) => z[k] ?? null), z.id, z.id); }
-    for (const p of pozycje) insPoz.run(p.zam_id, p.tw_id, p.rodzaj, p.szt, p.netto, p.wysylka ?? 0, p.cena_wal, p.koszt, p.zysk);
+    for (const p of pozycje) insPoz.run(p.zam_id, p.tw_id, p.rodzaj, p.szt, p.netto, p.wysylka ?? 0, p.cena_wal, p.koszt, p.zysk, p.doplata ?? null);
     for (const s of skladniki) insSkl.run(s.zam_id, s.zestaw_id, s.tw_id, s.szt);
     db.prepare('DELETE FROM zwroty WHERE data >= ? AND data < ?').run(od, doDnia);
     for (const w of zwroty) insZw.run(w.kfs_id, w.fs_id, w.numer, w.data, w.kanal, w.tw_id, w.szt, w.netto);
@@ -290,7 +297,8 @@ async function wczytajOkno(od, doDnia, { zapiszDoBazy = true } = {}) {
   const zestawy = [...new Set([...surowe.fsPoz, ...surowe.zkPoz, ...surowe.paPoz].filter((p) => p.rodzaj === 8).map((p) => p.tw_id))];
   const [wyceny, sklady] = await Promise.all([wycenaHurtem(twIds), skladZestawow(zestawy)]);
   const ids = [...surowe.fs.map((d) => (d.zk_id ? `Z${d.zk_id}` : `F${d.fs_id}`)), ...surowe.zk.map((d) => `Z${d.zk_id}`), ...surowe.pa.map((d) => `P${d.pa_id}`)];
-  const wynik = zlozZamowienia(surowe, wyceny, sklady, kosztyZapisane(ids));
+  // dopłaty Allegro: wpis billingu powstaje przy zakupie, a ZK bywa do ZK_BEZ_FS_DNI starsze niż FS z okna — zapas 30 dni
+  const wynik = zlozZamowienia(surowe, wyceny, sklady, kosztyZapisane(ids), doplatyOd(am.dodajDni(od, -30)));
   if (zapiszDoBazy) zapisz(wynik, { od, doDnia });
   return wynik;
 }

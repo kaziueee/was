@@ -445,9 +445,15 @@ function wycenaPrzyCenie(kosztPLN, rynek, g, cena) {
 //   wysylkaKlienta — ile klient zapłacił za dostawę (brutto, waluta rynku, z FS); null = jak kalkulator (r.wysKlient).
 //                    Allegro nie bierze jej pod uwagę, tak jak kalkulator (koszt dostawy = dopłata Smart).
 //   g              — parametry PACZKI (waga, paczka, genius, docinanie) i kursy; analiza podaje kurs dokumentu.
+//   doplata        — Allegro: dopłata Allegro do ceny (billing PS1 „Rabat transakcyjny w programie Allegro Ceny”, PSA
+//                    „Rabat AlleObniżka”), brutto PLN na całe zamówienie. Klient płaci mniej, Allegro dopłaca różnicę
+//                    do ceny oferty, a PROWIZJĘ liczy od pełnej kwoty (HASF1460 NaTropie: 113,85 + 16,14 = 129,99,
+//                    prowizja 18,40 = 14,15% × 129,99 — billing 2026-10). Wchodzi więc do przychodu i do podstawy
+//                    prowizji; dopłata Smart zostaje od tego, co zapłacił klient (nie sprawdzone, czy Allegro liczy
+//                    próg Smart od ceny z dopłatą). Inne rynki ignorują.
 // Zysk rozkładamy na pozycje: przychód po kosztach kanału dzielony proporcjonalnie do wartości brutto pozycji,
 // minus jej własny koszt zakupu — gratis (cena 0) ma więc zysk = −koszt, a nie udział w cudzej marży.
-function wycenaZamowienia(rynek, g, { pozycje = [], wysylkaKlienta = null } = {}) {
+function wycenaZamowienia(rynek, g, { pozycje = [], wysylkaKlienta = null, doplata = 0 } = {}) {
   const r = profilRynku(rynek, g);
   const poz = pozycje.map((x) => ({ koszt: +x.koszt || 0, cena: +x.cena || 0, szt: +x.szt || 0 })).filter((x) => x.szt > 0);
   const T = poz.reduce((s, x) => s + x.cena * x.szt, 0);           // towar brutto, waluta rynku
@@ -457,10 +463,10 @@ function wycenaZamowienia(rynek, g, { pozycje = [], wysylkaKlienta = null } = {}
   let kurs, zyskWal, pnWal, detal;
   if (r.typ === 'allegro') {
     kurs = 1;
-    const p = oplatyAllegro(r, g), dost = doplataSmartAllegro(T);
-    zyskWal = T * (1 / (1 + v) - p) - (K + dost + obs);
-    pnWal = T / (1 + v);
-    detal = { dostawaSmart: dost };
+    const p = oplatyAllegro(r, g), dost = doplataSmartAllegro(T), D = Math.max(0, +doplata || 0);
+    zyskWal = (T + D) * (1 / (1 + v) - p) - (K + dost + obs);
+    pnWal = (T + D) / (1 + v);
+    detal = { dostawaSmart: dost, doplata: D };
   } else {
     const S = wysylkaKlienta != null ? +wysylkaKlienta || 0 : +r.wysKlient || 0;
     let kosztWys, p, opl = 0;

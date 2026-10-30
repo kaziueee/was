@@ -105,6 +105,17 @@ function cenaStartowa(min, cenaRynek) {
 const ODRZUCENIE_MARKI = /risc|risk|document/i;
 const odrzucenieMarki = (komunikat) => ODRZUCENIE_MARKI.test(String(komunikat || ''));
 
+// Błąd zapisu oferty eMAG → 'marka' (odrzucona marka wysokiego ryzyka — oferta NIE powstała), 'siec' (timeout / brak
+// połączenia / HTTP 5xx — nie wiadomo, czy powstała) albo 'odmowa' (inna merytoryczna odmowa — nie powstała).
+// Marka PRZED siecią: treść odrzucenia zawiera link https://…, a wcześniejszy test /HTTP/i brał ją za błąd sieci
+// (NERF4178, 30.10 — „nie wiadomo, czy powstała” i marka nieoznaczona).
+const BLAD_SIECI = /\bHTTP [45]\d\d\b|timeout|timed out|fetch failed|aborted|ECONN|ETIMEDOUT|socket/i;
+function rodzajBleduEmag(komunikat) {
+  const k = String(komunikat || '');
+  if (odrzucenieMarki(k)) return 'marka';
+  return BLAD_SIECI.test(k) ? 'siec' : 'odmowa';
+}
+
 // Dlaczego towar NIE jest kandydatem na rynku (null = jest). `k` = wiersz katalogu, `mamyOferte` = oferta w bazie
 // repricera (aktywna albo wstrzymana), `stan` = stan dostępny (Razem − rezerwacje; null = GT nie odpowiedział).
 function powodBraku(k, { mamyOferte = false, stan = null } = {}) {
@@ -117,4 +128,4 @@ function powodBraku(k, { mamyOferte = false, stan = null } = {}) {
   return null;
 }
 
-module.exports = { RYNKI_KATALOGU, kluczRynku, normalizujEan, paczki, zEmagFindByEans, zEmpikP31, wybierzAsin, cenaRynkuKaufland, cenaRynkuEmpik, cenaStartowa, odrzucenieMarki, powodBraku };
+module.exports = { RYNKI_KATALOGU, kluczRynku, rodzajBleduEmag, normalizujEan, paczki, zEmagFindByEans, zEmpikP31, wybierzAsin, cenaRynkuKaufland, cenaRynkuEmpik, cenaStartowa, odrzucenieMarki, powodBraku };

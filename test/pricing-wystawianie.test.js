@@ -168,3 +168,11 @@ test('Amazon: EAN na kilku ASIN-ach — wygrywa model z symbolu, potem karta z j
   assert.deepStrictEqual(km.wybierzAsin([hw], 'X'), { ...hw, wieloznaczny: false });
   assert.strictEqual(km.wybierzAsin([], 'X'), null);
 });
+
+test('błąd zapisu eMAG: marka przed siecią (treść z linkiem https), sieć, inna odmowa', () => {
+  const marka = 'eMAG product_offer/save: ERROR: Pentru a putea comercializa produse din acest brand, este necesar să trimiti documentele specifice prin intermediul Mesageriei … "Categorii cu risc crescut".Acceseaza pagina https://marketplace.emag.ro/infocenter/lista-categorii-cu-risc-ridicat/ - Product id: 9000010';
+  assert.strictEqual(km.rodzajBleduEmag(marka), 'marka');
+  assert.strictEqual(km.rodzajBleduEmag('eMAG product_offer/save: HTTP 502'), 'siec');
+  assert.strictEqual(km.rodzajBleduEmag('eMAG product_offer/save: The operation was aborted due to timeout'), 'siec');
+  assert.strictEqual(km.rodzajBleduEmag('eMAG product_offer/save: ERROR: Invalid sale price'), 'odmowa');
+});

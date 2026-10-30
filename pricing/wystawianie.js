@@ -14,7 +14,7 @@ const { db, stan } = require('./db');
 const emag = require('./emag');
 const wm = require('./wystawianie-model');
 const { oznaczMarke } = require('./katalogi');
-const { odrzucenieMarki } = require('./katalogi-model');
+const { rodzajBleduEmag } = require('./katalogi-model');
 const { kolumna } = require('./kolumny');
 const { pewneDopasowanie } = require('./powiazania');
 
@@ -52,8 +52,9 @@ async function wystawEmag(p, kto) {
     await emag.api('product_offer', 'save', [o.oferta], 1, p.rynek);
   } catch (e) {
     const opis = e.message.replace(/^eMAG product_offer\/save: /, '');
-    if (/HTTP|timeout|fetch|abort/i.test(e.message)) return { status: 'blad', opis: `nie wiadomo, czy oferta ${id} powstała — sprawdź w panelu eMAG: ${opis}`, id_platformy: id };
-    if (odrzucenieMarki(opis)) {
+    const rodzaj = rodzajBleduEmag(e.message);
+    if (rodzaj === 'siec') return { status: 'blad', opis: `nie wiadomo, czy oferta ${id} powstała — sprawdź w panelu eMAG: ${opis}`, id_platformy: id };
+    if (rodzaj === 'marka') {
       const n = oznaczMarke('emag', p.rynek, p.katalog.marka, opis);
       return { status: 'odrzucone', opis: `${opis} (marka ${p.katalog.marka} oznaczona na ${n} towarach)`, id_platformy: id };
     }

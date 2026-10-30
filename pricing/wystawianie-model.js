@@ -68,24 +68,30 @@ function wymiaryMm(r) {
   return { length: Math.round(r.dlugosc * 10), width: Math.round(r.szerokosc * 10), height: Math.round(r.wysokosc * 10) };
 }
 
-// Pozycja do wystawienia: { platforma, rynek, tw_id, sku, ean, cena (brutto), ilosc, katalog, waga, wymiary, pas, marka_ograniczona }
-// → { blokady: [tekst], ostrzezenia: [{kod, tekst}] }. Blokada = nie wyślemy wcale; ostrzeżenie = wymaga potwierdzenia.
+// Pozycja do wystawienia: { platforma, rynek, tw_id, sku, ean, cena (brutto), ilosc, katalog, waga, wymiary, pas }
+// → { blokady: [tekst], brakuje: [{pole, tekst}], ostrzezenia: [{kod, tekst}] }.
+//   brakuje  = dane towaru do uzupełnienia w GT (EAN, waga, wymiary) — pozycja ZOSTAJE na liście z komunikatem „dane do
+//              uzupełnienia” (decyzja usera 2026-10-30: nie ukrywać), ale wystawić się jej nie da;
+//   blokady  = pozostałe powody, dla których nie wyślemy wcale (rynek bez testu, brak produktu, marka, stan, cena);
+//   ostrzezenia = wymaga potwierdzenia.
 function ocenPozycje(p) {
-  const blokady = [], ostrzezenia = [];
+  const blokady = [], brakuje = [], ostrzezenia = [];
   const r = gotowyRynek(p.platforma, p.rynek);
   if (!r.gotowe) blokady.push(r.powod);
-  if (!p.ean) blokady.push('brak poprawnego EAN-u w GT');
+  if (!p.ean) brakuje.push({ pole: 'EAN', tekst: 'brak poprawnego EAN-u w GT' });
   if (!p.katalog?.produkt_id) blokady.push('brak produktu na rynku');
   if (p.platforma === 'emag' && !(p.katalog?.nazwa && p.katalog?.marka && p.katalog?.kategoria_id)) blokady.push('katalog eMAG bez nazwy / marki / kategorii — odśwież skan');
   if (p.katalog?.ograniczenie) blokady.push(p.katalog.ograniczenie);
-  const w = wagaGramy(p.waga); if (w.blad) blokady.push(w.blad);
-  const m = wymiaryMm(p.wymiary); if (m.blad) blokady.push(m.blad);
+  const w = wagaGramy(p.waga); if (w.blad) brakuje.push({ pole: 'waga', tekst: w.blad });
+  const m = wymiaryMm(p.wymiary); if (m.blad) brakuje.push({ pole: 'wymiary', tekst: m.blad });
   if (!(Number(p.ilosc) > 0)) blokady.push('brak stanu dostępnego');
   if (!(Number(p.cena) > 0)) blokady.push('brak ceny');
   else if (!p.pas?.min) ostrzezenia.push({ kod: 'bez_pasa', tekst: 'kalkulator nie policzył minimum — automat nie poprowadzi ceny, dopóki nie będzie pasa' });
   else if (p.cena < p.pas.min - 0.005) ostrzezenia.push({ kod: 'pod_minimum', tekst: `cena ${kwota(p.cena)} poniżej minimum ${kwota(p.pas.min)}` });
-  return { blokady, ostrzezenia };
+  return { blokady, brakuje, ostrzezenia };
 }
+// Wszystko, co zatrzymuje wysyłkę — braki danych i blokady razem (backend nie wyśle pozycji z czymkolwiek z tego).
+const powodyBlokady = (o) => [...o.blokady, ...(o.brakuje || []).map((b) => b.tekst)];
 
 // eMAG product_offer/save przy dopięciu do istniejącego PNK. Wymaga name/brand/category_id z katalogu (inaczej
 // „Product name should not be empty”); `ean` ZAWSZE w treści — pełny save bez niego kasuje EAN oferty.
@@ -128,5 +134,5 @@ function stanDostepny(stany, magazyny) {
 
 module.exports = {
   RYNKI_WYSTAWIANIA, gotowyRynek, EMAG_VAT, EMAG_ID_START, EMAG_STALE, EMAG_ZAKRES, MAX_NA_RAZ,
-  nettoZBrutto, wagaGramy, wymiaryMm, ocenPozycje, ofertaEmag, wymiaryEmag, stanDostepny,
+  nettoZBrutto, wagaGramy, wymiaryMm, ocenPozycje, powodyBlokady, ofertaEmag, wymiaryEmag, stanDostepny,
 };

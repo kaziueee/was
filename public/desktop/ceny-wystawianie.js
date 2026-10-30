@@ -6,7 +6,7 @@
 // Plik ładuje się PRZED app.js i używa jego funkcji (el, api, cenyEsc, cenyLiczba, cenyOknoPotwierdzenia, operator,
 // formatDatetime, pokazKomunikat) dopiero w chwili wywołania; app.js woła odswiezCenyWystawianie() z odswiezCeny().
 
-let cwDane = null, cwHistoria = [], cwNr = 0, cwRynek = 'emag:RO', cwSzukaj = '', cwSort = 'stan', cwZablokowane = false;
+let cwDane = null, cwHistoria = [], cwNr = 0, cwRynek = 'emag:RO', cwSzukaj = '', cwSort = 'stan', cwTylkoGotowe = false;
 const cwZaznaczone = new Set();          // klucze pozycji (tw_id|platforma|rynek)
 const cwCeny = new Map();                // klucz → cena wpisana ręcznie
 const CW_SORT = {
@@ -62,7 +62,7 @@ function cwWidoczne() {
   const q = cwSzukaj.trim().toUpperCase();
   return cwDane.pozycje
     .filter((x) => `${x.platforma}:${x.rynek}` === cwRynek)
-    .filter((x) => cwZablokowane || !x.blokady.length)
+    .filter((x) => !cwTylkoGotowe || !x.zablokowana)
     .filter((x) => !q || [x.sku, x.ean, x.nazwa, x.marka].some((v) => String(v || '').toUpperCase().includes(q)))
     .sort(CW_SORT[cwSort].f);
 }
@@ -77,7 +77,7 @@ function cwRenderuj() {
     <div class="ceny-rzad">
       <input type="search" id="cw-szukaj" placeholder="Szukaj SKU, EAN, nazwy, marki…" value="${cenyEsc(cwSzukaj)}" autocomplete="off">
       <span class="hint">Sortuj:</span>${Object.entries(CW_SORT).map(([k, s]) => `<button type="button" class="ceny-chip ${k === cwSort ? 'aktywny' : ''}" data-cw-sort="${k}">${s.nazwa}</button>`).join('')}
-      <label class="cw-auto-inline" title="Pozycje, których nie da się wystawić (brak wagi / wymiarów / EAN, marka z dokumentami)"><input type="checkbox" id="cw-zablokowane" ${cwZablokowane ? 'checked' : ''}> pokaż zablokowane</label>
+      <label class="cw-auto-inline" title="Ukryj pozycje z danymi do uzupełnienia albo blokadą"><input type="checkbox" id="cw-tylko-gotowe" ${cwTylkoGotowe ? 'checked' : ''}> tylko gotowe</label>
       <button type="button" class="btn btn-small" id="cw-odswiez" title="Policz od nowa ceny i stany (Subiekt)">↻ Odśwież</button>
       <button type="button" class="btn btn-small btn-primary" id="cw-wystaw" ${rynek?.gotowe ? '' : 'disabled'}>Wystaw zaznaczone (${cwZaznaczone.size})</button>
     </div>
@@ -87,7 +87,7 @@ function cwRenderuj() {
   el('cw-pasek').querySelectorAll('[data-cw-sort]').forEach((b) => b.addEventListener('click', () => { cwSort = b.dataset.cwSort; cwRenderuj(); }));
   el('cw-szukaj').addEventListener('input', (e) => { cwSzukaj = e.target.value; cwRenderujListe(); });
   el('cw-odswiez').addEventListener('click', () => odswiezCenyWystawianie({ odswiez: true }));
-  el('cw-zablokowane').addEventListener('change', (e) => { cwZablokowane = e.target.checked; cwRenderujListe(); });
+  el('cw-tylko-gotowe').addEventListener('change', (e) => { cwTylkoGotowe = e.target.checked; cwRenderujListe(); });
   el('cw-wystaw').addEventListener('click', cwWystaw);
   cwRenderujListe();
   cwRenderujHistorie();
@@ -96,15 +96,11 @@ function cwRenderuj() {
 function cwRenderujListe() {
   const lista = cwWidoczne();
   const rynek = cwDane.rynki.find((r) => r.klucz === cwRynek);
-  if (!lista.length) {
-    const ukryte = cwDane.pozycje.filter((x) => `${x.platforma}:${x.rynek}` === cwRynek && x.blokady.length).length;
-    el('cw-lista').innerHTML = `<p class="hint">${ukryte && !cwZablokowane ? `Nic gotowego do wystawienia — ${ukryte} zablokowanych (zwykle brak wagi albo wymiarów w GT); zaznacz „pokaż zablokowane”.` : 'Brak kandydatów na tym rynku.'}</p>`;
-    return;
-  }
+  if (!lista.length) { el('cw-lista').innerHTML = `<p class="hint">${cwTylkoGotowe ? 'Nic gotowego do wystawienia — odznacz „tylko gotowe”, żeby zobaczyć, czego brakuje.' : 'Brak kandydatów na tym rynku.'}</p>`; return; }
   const wiersz = (x) => {
-    const zablok = x.blokady.length > 0 || !rynek?.gotowe;
+    const zablok = x.zablokowana || !rynek?.gotowe;
     const link = cwLinkProduktu(x);
-    const uwagi = [...x.blokady.map((t) => `<div class="cw-blokada">⛔ ${cenyEsc(t)}</div>`), ...x.ostrzezenia.map((o) => `<div class="cw-ostrz">⚠ ${cenyEsc(o.tekst)}</div>`)].join('');
+    const uwagi = [cwBrakuje(x), ...x.blokady.map((t) => `<div class="cw-blokada">⛔ ${cenyEsc(t)}</div>`), ...x.ostrzezenia.map((o) => `<div class="cw-ostrz">⚠ ${cenyEsc(o.tekst)}</div>`)].join('');
     return `<tr class="${zablok ? 'cw-zablok' : ''}">
       <td><input type="checkbox" data-cw-zazn="${x.klucz}" ${cwZaznaczone.has(x.klucz) ? 'checked' : ''} ${zablok ? 'disabled' : ''}></td>
       <td><b>${cenyEsc(x.sku)}</b><div class="cs-sz">${cenyEsc(x.ean)}</div></td>
@@ -137,6 +133,10 @@ function cwRenderujListe() {
   el('cw-lista').querySelectorAll('[data-cw-cena]').forEach((i) => i.addEventListener('change', () => cwZmienCene(i.dataset.cwCena, i.value)));
   el('cw-lista').querySelectorAll('[data-cw-skan]').forEach((b) => b.addEventListener('click', () => cwSkan(Number(b.dataset.cwSkan), b)));
 }
+
+// Braki danych towaru (EAN, waga, wymiary) jednym komunikatem — szczegóły w podpowiedzi. Uzupełnia się je w GT
+// (desktop / Zebra → Parametry); pozycja zostaje na liście (decyzja usera 2026-10-30), tylko wystawić się jej nie da.
+const cwBrakuje = (x) => (x.brakuje?.length ? `<div class="cw-uzupelnij" title="${cenyEsc(x.brakuje.map((b) => b.tekst).join('\n'))}">📝 Dane do uzupełnienia: ${cenyEsc(x.brakuje.map((b) => b.pole).join(', '))}</div>` : '');
 
 const cwZKlucza = (klucz) => { const [tw, platforma, rynek] = klucz.split('|'); return { tw_id: Number(tw), platforma, rynek }; };
 
@@ -176,12 +176,12 @@ async function cwWystaw() {
   try {
     podglad = await api('/api/ceny/wystawianie/podglad', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pozycje }) });
   } catch (err) { return pokazKomunikat(err.message, 'blad'); }
-  const ok = podglad.pozycje.filter((x) => !x.blokady.length);
+  const ok = podglad.pozycje.filter((x) => !x.zablokowana);
   const tabela = `<table class="tabela cs-tabela"><thead><tr><th>SKU</th><th>Kanał</th><th>Cena</th><th>Marża</th><th>Zysk</th><th>Stan</th><th>Uwagi</th></tr></thead><tbody>
-    ${podglad.pozycje.map((x) => `<tr class="${x.blokady.length ? 'cw-zablok' : ''}"><td>${cenyEsc(x.sku)}</td><td>${cenyEsc(x.kanal_nazwa)}</td>
+    ${podglad.pozycje.map((x) => `<tr class="${x.zablokowana ? 'cw-zablok' : ''}"><td>${cenyEsc(x.sku)}</td><td>${cenyEsc(x.kanal_nazwa)}</td>
       <td class="num">${cenyLiczba(x.cena)} ${cenyEsc(x.waluta)}</td><td class="num">${x.marza == null ? '—' : `${cenyLiczba(x.marza, 1)}%`}</td>
       <td class="num">${x.zysk == null ? '—' : `${cenyLiczba(x.zysk)} zł`}</td><td class="num">${x.stan}</td>
-      <td>${[...x.blokady.map((t) => `⛔ ${cenyEsc(t)}`), ...x.ostrzezenia.map((o) => `⚠ ${cenyEsc(o.tekst)}`)].join('<br>')}</td></tr>`).join('')}
+      <td>${[cwBrakuje(x), ...x.blokady.map((t) => `⛔ ${cenyEsc(t)}`), ...x.ostrzezenia.map((o) => `⚠ ${cenyEsc(o.tekst)}`)].filter(Boolean).join('<br>')}</td></tr>`).join('')}
     ${(podglad.pominiete || []).map((x) => `<tr class="cw-zablok"><td colspan="7">pominięte: ${cenyEsc(x.powod)}</td></tr>`).join('')}
     </tbody></table>
     <label class="cw-auto"><input type="checkbox" id="cw-auto" checked> Włącz automat repricera, gdy oferta pojawi się w synchronizacji (eMAG ~30 min)</label>`;

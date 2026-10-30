@@ -1674,3 +1674,4 @@ img.tr-min { width: 64px; height: 64px; object-fit: contain; border-radius: 4px;
 .cw-auto { display: block; margin-top: 0.6rem; font-size: 0.85rem; }
 .cs-status.blad { color: #b3261e; border-color: #b3261e; background: #fdecea; }
 .cw-auto-inline { font-size: 0.85rem; display: inline-flex; gap: 0.25rem; align-items: center; }
+.cw-uzupelnij { color: #8a4b00; font-size: 0.78rem; font-weight: 600; cursor: help; }

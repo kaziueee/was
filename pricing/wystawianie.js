@@ -77,7 +77,7 @@ const WYSTAW = { emag: wystawEmag };
 async function wystaw(pozycje, { kto = null, auto = true } = {}) {
   const wyniki = [];
   for (const p of pozycje) {
-    const { blokady } = wm.ocenPozycje(p);
+    const blokady = wm.powodyBlokady(wm.ocenPozycje(p));
     let r;
     if (blokady.length) r = { status: 'odrzucone', opis: blokady.join('; ') };
     else if (!WYSTAW[p.platforma]) r = { status: 'odrzucone', opis: wm.gotowyRynek(p.platforma, p.rynek).powod };

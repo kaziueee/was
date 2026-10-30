@@ -76,7 +76,8 @@ module.exports = function wystawianieRouter({ asyncH }) {
         produkt_id: k.produkt_id, nazwa_platformy: k.nazwa, marka: k.marka, kategoria: k.kategoria, hotness: k.hotness,
         stan: p.ilosc, waga: p.waga, wymiary: a.wymiary ?? null, cena, min: pas?.min ?? null, max: pas?.max ?? null,
         strategia: pas?.strategia?.nazwa ?? null, zysk: przy?.zysk ?? null, marza: przy?.marza ?? null,
-        blokady: ocena.blokady, ostrzezenia: ocena.ostrzezenia, sprawdzono: k.sprawdzono,
+        blokady: ocena.blokady, brakuje: ocena.brakuje, ostrzezenia: ocena.ostrzezenia, sprawdzono: k.sprawdzono,
+        zablokowana: wm.powodyBlokady(ocena).length > 0,
         _pozycja: p,
       });
     }
@@ -103,8 +104,8 @@ module.exports = function wystawianieRouter({ asyncH }) {
       const r = wm.gotowyRynek(platforma, rynek);
       return { klucz, nazwa: kolumna(platforma, rynek)?.nazwa || klucz, gotowe: r.gotowe, powod: r.powod || null,
         n: cache.lista.filter((x) => kluczRynku(x.platforma, x.rynek) === klucz).length,
-        // bez blokad (EAN, waga, wymiary, marka) — pomiar 2026-10-30: komplet wagi i wymiarów ma ~2,3 tys. z ~12,3 tys. towarów ze stanem
-        gotowych: cache.lista.filter((x) => kluczRynku(x.platforma, x.rynek) === klucz && !x.blokady.length).length };
+        // bez blokad i braków danych — pomiar 2026-10-30: komplet wagi i wymiarów ma ~2,3 tys. z ~12,3 tys. towarów ze stanem
+        gotowych: cache.lista.filter((x) => kluczRynku(x.platforma, x.rynek) === klucz && !x.zablokowana).length };
     });
     let pozycje = cache.lista;
     if (filtrRynku) pozycje = pozycje.filter((x) => kluczRynku(x.platforma, x.rynek) === filtrRynku);
@@ -149,8 +150,8 @@ module.exports = function wystawianieRouter({ asyncH }) {
     if (wiersze.length > wm.MAX_NA_RAZ) return blad(res, 400, `Najwyżej ${wm.MAX_NA_RAZ} pozycji naraz`);
     let poz;
     try { poz = await zbuduj(wiersze, ceny); } catch (e) { return blad(res, 503, `Subiekt GT nie odpowiada: ${e.message}`); }
-    const zablokowane = poz.filter((x) => x.blokady.length);
-    const doWyslania = poz.filter((x) => !x.blokady.length);
+    const zablokowane = poz.filter((x) => x.zablokowana);
+    const doWyslania = poz.filter((x) => !x.zablokowana);
     if (!doWyslania.length) return blad(res, 400, 'Żadna pozycja nie przeszła sprawdzenia', { zablokowane: zablokowane.map(bezWnetrza), pominiete });
     const ostrzezenia = doWyslania.flatMap((x) => x.ostrzezenia.map((o) => ({ ...o, tekst: `${x.sku} (${x.kanal_nazwa}): ${o.tekst}` })));
     if (ostrzezenia.length && b.potwierdz !== true) {

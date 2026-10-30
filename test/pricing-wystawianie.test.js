@@ -75,10 +75,13 @@ const pozycja = (z = {}) => ({
   waga: '0,112', wymiary: { dlugosc: 13, szerokosc: 10, wysokosc: 6 }, pas: { min: 59.99, max: 89.99 }, ...z,
 });
 
-test('ocena pozycji: komplet przechodzi, braki blokują, cena pod minimum ostrzega', () => {
-  assert.deepStrictEqual(wm.ocenPozycje(pozycja()), { blokady: [], ostrzezenia: [] });
-  const b = wm.ocenPozycje(pozycja({ ean: null, waga: '112', wymiary: null, ilosc: 0 })).blokady.join(' | ');
-  assert.match(b, /EAN/); assert.match(b, /bez przecinka/); assert.match(b, /wymiarów/); assert.match(b, /stanu/);
+test('ocena pozycji: komplet przechodzi, braki danych osobno („do uzupełnienia”), cena pod minimum ostrzega', () => {
+  assert.deepStrictEqual(wm.ocenPozycje(pozycja()), { blokady: [], brakuje: [], ostrzezenia: [] });
+  const o = wm.ocenPozycje(pozycja({ ean: null, waga: '112', wymiary: null, ilosc: 0 }));
+  assert.deepStrictEqual(o.brakuje.map((b) => b.pole), ['EAN', 'waga', 'wymiary']);
+  assert.match(o.brakuje[1].tekst, /bez przecinka/);
+  assert.deepStrictEqual(o.blokady, ['brak stanu dostępnego']);
+  assert.strictEqual(wm.powodyBlokady(o).length, 4);              // braki danych też zatrzymują wysyłkę
   assert.strictEqual(wm.ocenPozycje(pozycja({ cena: 50 })).ostrzezenia[0].kod, 'pod_minimum');
   assert.match(wm.ocenPozycje(pozycja({ rynek: 'HU' })).blokady[0], /czeka na test/);
   assert.match(wm.ocenPozycje(pozycja({ platforma: 'amazon', rynek: 'DE' })).blokady[0], /Amazon/);

@@ -17,7 +17,7 @@ const RYNKI_WYSTAWIANIA = {
   'emag:HU': { gotowe: false, powod: 'eMAG HU — czeka na test pierwszej oferty' },
   'emag:BG': { gotowe: false, powod: 'eMAG BG — czeka na test pierwszej oferty' },
   'kaufland:DE': { gotowe: false, powod: 'Kaufland — czeka na test pierwszej oferty (POST /units)' },
-  'empik:PL': { gotowe: false, powod: 'Empik — czeka na test pierwszej oferty (import OF01)' },
+  'empik:PL': { gotowe: true },     // test 30.10: MGA592822 import 268622431 → oferta 251330550 aktywna, klasa 2
 };
 const gotowyRynek = (platforma, rynek) => {
   const r = RYNKI_WYSTAWIANIA[`${platforma}:${rynek}`];

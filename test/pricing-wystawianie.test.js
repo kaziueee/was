@@ -136,7 +136,7 @@ test('Empik OF01: wiersz po EAN, cena brutto z kropką, tryb update; plik CSV ze
   assert.strictEqual(plik[0], '"sku";"product-id";"product-id-type";"price";"quantity";"state";"logistic-class";"leadtime-to-ship";"update-delete"');
   assert.strictEqual(plik[1], '"HASF9703-G1700";"5010996304018";"EAN";"123.90";"5";"11";"2";"1";"update"');
   assert.ok(wm.ofertaEmpik(pozycja({ platforma: 'empik', waga: '112' })).blad);
-  assert.match(wm.ocenPozycje(pozycja({ platforma: 'empik', rynek: 'PL' })).blokady[0], /Empik/);
+  assert.deepStrictEqual(wm.ocenPozycje(pozycja({ platforma: 'empik', rynek: 'PL' })).blokady, []);
 });
 
 test('Empik OF03: raport błędów → SKU → treść', () => {

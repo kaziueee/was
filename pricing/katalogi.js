@@ -126,6 +126,22 @@ async function kauflandPoEan(eany, kraj) {
   return mapa;
 }
 
+// ---------- Empik ----------
+// P31 po 100 EAN-ów (product_references), ~0,2 s na zapytanie. Limitu P31 Empik nie podaje (P11 = 5/min), więc
+// 2 s odstępu — cały asortyment (~125 zapytań) w ~5 min. 429 obsługuje empik.api (Retry-After).
+async function empikPoEan(eany) {
+  const empik = require('./empik');
+  const mapa = new Map();
+  const paczki = m.paczki(eany, 100);
+  for (const [i, paczka] of paczki.entries()) {
+    const j = await empik.api('products', { query: { product_references: paczka.map((e) => `EAN|${e}`).join(',') } });
+    for (const [ean, w] of m.zEmpikP31(j?.dane?.products ?? j?.products)) mapa.set(ean, w);
+    if ((i + 1) % 20 === 0) log(`Empik: ${i + 1}/${paczki.length} zapytań`);
+    await sleep(2000);
+  }
+  return mapa;
+}
+
 // ---------- zapis ----------
 // Wynik skanu jednego rynku → katalog. `ograniczenie` przeżywa skan (to wiedza z odrzuconych wystawień i restrictions),
 // chyba że skan przynosi własne (Amazon). Towar, którego platforma nie zna, dostaje wiersz z produkt_id NULL.
@@ -176,10 +192,12 @@ const SZUKAJ = {
   emag: (eany, rynek) => emagPoEan(eany, rynek),
   amazon: (eany, rynek) => amazonPoEan(eany, rynek),
   kaufland: (eany, rynek) => kauflandPoEan(eany, rynek),
+  empik: (eany) => empikPoEan(eany),
 };
 const skonfigurowana = (platforma) => {
   if (platforma === 'emag') return require('./emag').skonfigurowany();
   if (platforma === 'kaufland') return require('./kaufland').skonfigurowany();
+  if (platforma === 'empik') return require('./empik').skonfigurowany();
   if (platforma === 'amazon') return !!(process.env.SPAPI_CLIENT_ID && process.env.SPAPI_CLIENT_SECRET && process.env.SPAPI_REFRESH_TOKEN);
   return false;
 };
@@ -222,7 +240,7 @@ function oznaczMarke(platforma, rynek, marka, opis) {
     .run(`marka wymaga dokumentów: ${String(opis).slice(0, 200)}`, platforma, rynek, marka).changes;
 }
 
-module.exports = { skanuj, towaryDoSkanu, oznaczMarke, emagPoEan, amazonPoEan, kauflandPoEan };
+module.exports = { skanuj, towaryDoSkanu, oznaczMarke, emagPoEan, amazonPoEan, kauflandPoEan, empikPoEan };
 
 if (require.main === module) {
   const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : null; };

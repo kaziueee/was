@@ -106,3 +106,41 @@ test('wymiary eMAG w mm i g', () => {
   assert.deepStrictEqual(wm.wymiaryEmag(pozycja(), 9000010).pomiar, { id: 9000010, length: 130, width: 100, height: 60, weight: 112 });
   assert.ok(wm.wymiaryEmag(pozycja({ waga: '' }), 1).blad);
 });
+
+test('Empik P31: kluczem produktu product_sku, EAN normalizowany, inne typy referencji pomijane', () => {
+  const m = km.zEmpikP31([
+    { category_code: '15-2-10-2-6-3', category_label: 'Dzikie', product_id: '4059433552262', product_id_type: 'EAN', product_sku: '1359986823', product_title: 'Schleich, figurka' },
+    { product_id: '196214111172', product_id_type: 'EAN', product_sku: '1605015406', product_title: 'Karty Pokémon' },
+    { product_id: '4059433552262', product_id_type: 'EAN', product_sku: 'DRUGI' },           // duplikat EAN — pierwszy wygrywa
+    { product_id: 'X1', product_id_type: 'SHOP_SKU', product_sku: 'NIE' },
+  ]);
+  assert.strictEqual(m.size, 2);
+  assert.deepStrictEqual(m.get('4059433552262'), { produkt_id: '1359986823', nazwa: 'Schleich, figurka', marka: null, kategoria: 'Dzikie',
+    kategoria_id: '15-2-10-2-6-3', dodac: null, mamy: 0, hotness: null });
+  assert.strictEqual(m.get('0196214111172').produkt_id, '1605015406');
+  assert.ok(km.RYNKI_KATALOGU.some((r) => r.platforma === 'empik' && r.rynek === 'PL'));
+});
+
+test('Empik: klasa logistyczna 2, gdy mieści się w paczkomacie C, inaczej 3', () => {
+  assert.strictEqual(wm.klasaLogistycznaEmpik({ dlugosc: 46, szerokosc: 31, wysokosc: 31 }, 900), '2');
+  assert.strictEqual(wm.klasaLogistycznaEmpik({ dlugosc: 76.5, szerokosc: 28.6, wysokosc: 8 }, 900), '3');   // NERE8875 — za długi
+  assert.strictEqual(wm.klasaLogistycznaEmpik({ dlugosc: 40, szerokosc: 40, wysokosc: 40 }, 900), '3');
+  assert.strictEqual(wm.klasaLogistycznaEmpik({ dlugosc: 30, szerokosc: 20, wysokosc: 10 }, 26000), '3');    // > 25 kg
+});
+
+test('Empik OF01: wiersz po EAN, cena brutto z kropką, tryb update; plik CSV ze średnikami', () => {
+  const o = wm.ofertaEmpik(pozycja({ platforma: 'empik', rynek: 'PL', cena: 123.9 }));
+  assert.deepStrictEqual(o.wiersz, { sku: 'HASF9703-G1700', 'product-id': '5010996304018', 'product-id-type': 'EAN', price: '123.90', quantity: 5,
+    state: '11', 'logistic-class': '2', 'leadtime-to-ship': 1, 'update-delete': 'update' });
+  const plik = wm.plikOfertEmpik([o.wiersz]).split('\n');
+  assert.strictEqual(plik[0], '"sku";"product-id";"product-id-type";"price";"quantity";"state";"logistic-class";"leadtime-to-ship";"update-delete"');
+  assert.strictEqual(plik[1], '"HASF9703-G1700";"5010996304018";"EAN";"123.90";"5";"11";"2";"1";"update"');
+  assert.ok(wm.ofertaEmpik(pozycja({ platforma: 'empik', waga: '112' })).blad);
+  assert.match(wm.ocenPozycje(pozycja({ platforma: 'empik', rynek: 'PL' })).blokady[0], /Empik/);
+});
+
+test('Empik OF03: raport błędów → SKU → treść', () => {
+  const r = wm.bledyImportuEmpik('"sku";"product-id";"error-line";"error-message"\n"ab-1";"590";"2";"Produkt nie istnieje"\n"X;2";"1";"3";"Cena ""zero"""\n');
+  assert.strictEqual(r.get('AB-1'), 'Produkt nie istnieje');
+  assert.strictEqual(r.get('X;2'), 'Cena "zero"');
+});

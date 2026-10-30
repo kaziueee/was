@@ -60,7 +60,7 @@ const { ustawCene } = require('./amazon');
 const { pewneDopasowanie } = require('./powiazania');
 const { interwalMsZMinut } = require('../services/interwal');
 const { utworzKolejke } = require('./kolejka-workera');
-const { dopnijWystawione } = require('./wystawianie');
+const { dopnijWystawione, sprawdzImportyEmpik } = require('./wystawianie');
 const katalogi = require('./katalogi');
 
 const PELNY_MS = interwalMsZMinut(process.env.PRICING_PELNY_MIN, 360, 'PRICING_PELNY_MIN');
@@ -238,6 +238,12 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
   // Oferty wystawione z ekranu Ceny → „Do wystawienia”, które sync właśnie zobaczył: status `widoczna` i automat
   // (pricing/wystawianie.js — te same warunki co POST /api/ceny/automat). Przed wyborem ofert, żeby nowa oferta z
   // automatem dostała decyzję już w tym przebiegu.
+  if (platformy.has('empik')) {
+    try {
+      const e = await sprawdzImportyEmpik();
+      if (e.odrzucone) wynik.wystawione_empik = e;
+    } catch (e) { console.error(new Date().toISOString(), '[pricing] importy Empik:', e.message); }
+  }
   try {
     const d = dopnijWystawione();
     if (d.widoczne) wynik.wystawione = d;

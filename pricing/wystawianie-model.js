@@ -17,7 +17,7 @@ const RYNKI_WYSTAWIANIA = {
   'emag:HU': { gotowe: false, powod: 'eMAG HU — czeka na test pierwszej oferty' },
   'emag:BG': { gotowe: false, powod: 'eMAG BG — czeka na test pierwszej oferty' },
   'kaufland:DE': { gotowe: false, powod: 'Kaufland — czeka na test pierwszej oferty (POST /units)' },
-  'empik:PL': { gotowe: false, powod: 'Empik — czeka na test importu OF01' },
+  'empik:PL': { gotowe: false, powod: 'Empik — czeka na test pierwszej oferty (import OF01)' },
 };
 const gotowyRynek = (platforma, rynek) => {
   const r = RYNKI_WYSTAWIANIA[`${platforma}:${rynek}`];
@@ -34,6 +34,13 @@ const EMAG_STALE = { handling_time: 1, supply_lead_time: 14, warranty: 0 };
 // Zakres min/max zapisywany NA OFERCIE w eMAG (eMAG odrzuci każdą cenę spoza niego, także automatu). Szeroko, żeby
 // nie blokował repricera: od 90% minimum pasa do 2,5× ceny startowej (nie mniej niż maksimum pasa).
 const EMAG_ZAKRES = { minUlamek: 0.9, maxMnoznik: 2.5 };
+// Empik (Mirakl) import ofert OF01: stan „11” = nowy (jak wszystkie nasze oferty), realizacja 1 dzień.
+// Klasa logistyczna decyduje o metodach i cenie dostawy: nasze oferty mają „2” (średnie, wszystkie metody; próbka
+// 45 ofert 30.10), „3” (bardzo duże, tylko kurier) ma towar, który nie wchodzi do paczkomatu — XSH36830.
+// Reguła WMS: nie mieści się w paczkomacie C (64×41×38 cm, ≤ 25 kg) → 3, inaczej 2. Klasy 1 nie używamy.
+const EMPIK_STALE = { stan: '11', realizacja: 1 };
+const PACZKOMAT_C = { wymiary: [64, 41, 38], kg: 25 };
+
 // Ile pozycji naraz z ekranu (każda to 2 zapytania do eMAG + sprawdzenie id).
 const MAX_NA_RAZ = 50;
 
@@ -125,6 +132,48 @@ function wymiaryEmag(p, id) {
   return { pomiar: { id, ...m, weight: w.g } };
 }
 
+function klasaLogistycznaEmpik(wymiary, gramy) {
+  const w = [wymiary?.dlugosc, wymiary?.szerokosc, wymiary?.wysokosc].map(Number).sort((a, b) => b - a);
+  const c = [...PACZKOMAT_C.wymiary].sort((a, b) => b - a);
+  const miesci = w.every((x, i) => x > 0 && x <= c[i]) && Number(gramy) <= PACZKOMAT_C.kg * 1000;
+  return miesci ? '2' : '3';
+}
+
+// Wiersz pliku OF01. Produkt wskazujemy EAN-em (P31 potwierdził, że Empik zna go pod tym EAN-em), cena BRUTTO w zł.
+// `update-delete` = update: dodaje albo aktualizuje TĘ ofertę; tryb importu zawsze NORMAL (REPLACE skasowałby
+// wszystkie oferty spoza pliku — pricing/wystawianie.js).
+function ofertaEmpik(p) {
+  const w = wagaGramy(p.waga);
+  if (w.blad) return { blad: w.blad };
+  const cena = zaokr(Number(p.cena));
+  if (!(cena > 0)) return { blad: `niepoprawna cena: ${p.cena}` };
+  return {
+    wiersz: {
+      sku: p.sku, 'product-id': p.ean, 'product-id-type': 'EAN', price: cena.toFixed(2), quantity: Math.floor(Number(p.ilosc) || 0),
+      state: EMPIK_STALE.stan, 'logistic-class': klasaLogistycznaEmpik(p.wymiary, w.g), 'leadtime-to-ship': EMPIK_STALE.realizacja,
+      'update-delete': 'update',
+    },
+  };
+}
+const KOLUMNY_EMPIK = ['sku', 'product-id', 'product-id-type', 'price', 'quantity', 'state', 'logistic-class', 'leadtime-to-ship', 'update-delete'];
+const csvPole = (v) => `"${String(v).replace(/"/g, '""')}"`;
+const plikOfertEmpik = (wiersze) => [KOLUMNY_EMPIK.map(csvPole).join(';'), ...wiersze.map((w) => KOLUMNY_EMPIK.map((k) => csvPole(w[k])).join(';'))].join('\n') + '\n';
+
+// Raport błędów importu OF03: CSV z kolumnami pliku + „error-line” / „error-message”. → Map(SKU wielkimi → treść).
+function bledyImportuEmpik(tekst) {
+  const linie = String(tekst || '').split(/\r?\n/).filter((l) => l.trim());
+  if (linie.length < 2) return new Map();
+  const pola = (l) => (l.match(/("([^"]|"")*"|[^;]*)(;|$)/g) || []).map((x) => x.replace(/;$/, '').replace(/^"|"$/g, '').replace(/""/g, '"'));
+  const nag = pola(linie[0]).map((x) => x.trim().toLowerCase());
+  const iSku = nag.indexOf('sku'), iBlad = nag.findIndex((x) => x === 'error-message' || x === 'errors' || x === 'error');
+  const mapa = new Map();
+  for (const l of linie.slice(1)) {
+    const p = pola(l);
+    if (iSku >= 0 && p[iSku]) mapa.set(p[iSku].trim().toUpperCase(), (iBlad >= 0 ? p[iBlad] : l).trim() || 'błąd bez opisu');
+  }
+  return mapa;
+}
+
 // Stan do wystawienia = dostępny (Razem − rezerwacje na tych samych magazynach), jak na ekranach analizy sprzedaży.
 // stany = wpis z services/gt-produkty.js pobierzStanyGt ({ K4: {ilosc, rezerwacja}, … }), magazyny = MAGAZYNY_RAZEM.
 function stanDostepny(stany, magazyny) {
@@ -133,6 +182,7 @@ function stanDostepny(stany, magazyny) {
 }
 
 module.exports = {
-  RYNKI_WYSTAWIANIA, gotowyRynek, EMAG_VAT, EMAG_ID_START, EMAG_STALE, EMAG_ZAKRES, MAX_NA_RAZ,
+  RYNKI_WYSTAWIANIA, gotowyRynek, EMAG_VAT, EMAG_ID_START, EMAG_STALE, EMAG_ZAKRES, EMPIK_STALE, MAX_NA_RAZ,
   nettoZBrutto, wagaGramy, wymiaryMm, ocenPozycje, powodyBlokady, ofertaEmag, wymiaryEmag, stanDostepny,
+  klasaLogistycznaEmpik, ofertaEmpik, plikOfertEmpik, bledyImportuEmpik,
 };

@@ -22,7 +22,8 @@ const CW_STATUS = {
 const cwLinkProduktu = (x) => (x.platforma === 'emag' && x.produkt_id
   ? `https://www.emag.${x.rynek.toLowerCase()}/-/pd/${encodeURIComponent(x.produkt_id)}/`
   : x.platforma === 'amazon' && x.produkt_id ? `https://www.amazon.${{ DE: 'de', FR: 'fr', IT: 'it', ES: 'es', NL: 'nl', PL: 'pl' }[x.rynek] || 'de'}/dp/${encodeURIComponent(x.produkt_id)}`
-    : x.platforma === 'kaufland' && x.produkt_id ? `https://www.kaufland.de/product/${encodeURIComponent(x.produkt_id)}/` : null);
+    : x.platforma === 'kaufland' && x.produkt_id ? `https://www.kaufland.de/product/${encodeURIComponent(x.produkt_id)}/`
+    : x.platforma === 'empik' && /^\d+$/.test(x.produkt_id || '') ? `https://www.empik.com/-,p${x.produkt_id},zabawki-p` : null);
 
 async function odswiezCenyWystawianie({ odswiez = false } = {}) {
   const nr = ++cwNr;

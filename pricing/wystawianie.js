@@ -70,16 +70,55 @@ async function wystawEmag(p, kto) {
   return { status: 'wyslane', opis, id_platformy: id };
 }
 
+// Empik (Mirakl): jeden import OF01 na całą paczkę z ekranu — import jest asynchroniczny, Empik przetwarza go kilka
+// minut i liczy limity na importy, nie na oferty. Wynik od razu = „plik przyjęty” (`wyslane`, id_platformy = numer
+// importu); odrzucone linie dociąga worker (sprawdzImportyEmpik, raport OF03), a ofertę widoczną — sync (OF52).
+// Tryb importu ZAWSZE NORMAL: REPLACE usunąłby z Empiku wszystkie nasze oferty spoza pliku.
+async function wystawEmpikHurt(pozycje) {
+  const empik = require('./empik');
+  if (!empik.skonfigurowany()) return pozycje.map(() => ({ status: 'odrzucone', opis: 'brak EMPIK_API_KEY w .env tej maszyny' }));
+  const oferty = pozycje.map((p) => wm.ofertaEmpik(p));
+  const doWyslania = oferty.filter((o) => !o.blad).map((o) => o.wiersz);
+  if (!doWyslania.length) return oferty.map((o) => ({ status: 'odrzucone', opis: o.blad }));
+  const form = new FormData();
+  form.append('file', new Blob([wm.plikOfertEmpik(doWyslania)], { type: 'text/csv' }), 'oferty-wms.csv');
+  form.append('import_mode', 'NORMAL');
+  let importId = null, blad = null;
+  try {
+    // proby: 1 — ponowiony POST mógłby wysłać import drugi raz
+    const { dane } = await empik.api('offers/imports', { metoda: 'POST', body: form, proby: 1 });
+    importId = dane?.import_id ?? null;
+    if (importId == null) blad = `Empik nie zwrócił numeru importu: ${JSON.stringify(dane).slice(0, 200)}`;
+  } catch (e) { blad = e.message; }
+  return oferty.map((o) => {
+    if (o.blad) return { status: 'odrzucone', opis: o.blad };
+    if (blad) return { status: /HTTP 4\d\d/.test(blad) ? 'odrzucone' : 'blad', opis: `import OF01: ${blad}` };
+    return { status: 'wyslane', opis: `import ${importId}, klasa logistyczna ${o.wiersz['logistic-class']} — Empik przetwarza import kilka minut`,
+      id_platformy: `import:${importId}` };
+  });
+}
+
 const WYSTAW = { emag: wystawEmag };
+const WYSTAW_HURT = { empik: wystawEmpikHurt };
 
 // pozycje = już ocenione i potwierdzone przez routes/ceny-wystawianie.js (wm.ocenPozycje bez blokad).
 // Po kolei, z przerwą — eMAG liczy limity na konto, a wystawienie to 3 zapytania.
 async function wystaw(pozycje, { kto = null, auto = true } = {}) {
+  // Platformy z importem hurtowym: najpierw jeden plik na platformę dla wszystkich pozycji bez blokad.
+  const zHurtu = new Map();
+  for (const [platforma, fn] of Object.entries(WYSTAW_HURT)) {
+    const tu = pozycje.filter((p) => p.platforma === platforma && !wm.powodyBlokady(wm.ocenPozycje(p)).length);
+    if (!tu.length) continue;
+    let rr;
+    try { rr = await fn(tu); } catch (e) { rr = tu.map(() => ({ status: 'blad', opis: e.message })); }
+    tu.forEach((p, i) => zHurtu.set(p, rr[i]));
+  }
   const wyniki = [];
   for (const p of pozycje) {
     const blokady = wm.powodyBlokady(wm.ocenPozycje(p));
     let r;
     if (blokady.length) r = { status: 'odrzucone', opis: blokady.join('; ') };
+    else if (zHurtu.has(p)) r = zHurtu.get(p);
     else if (!WYSTAW[p.platforma]) r = { status: 'odrzucone', opis: wm.gotowyRynek(p.platforma, p.rynek).powod };
     else {
       try { r = await WYSTAW[p.platforma](p, kto); } catch (e) { r = { status: 'blad', opis: e.message }; }
@@ -122,4 +161,32 @@ function dopnijWystawione() {
   return { widoczne, automat };
 }
 
-module.exports = { wystaw, dopnijWystawione, wolneIdEmag };
+// Worker: wynik importów OF01 (Empik). Import COMPLETE z błędnymi liniami → raport OF03, odrzucone pozycje dostają
+// treść błędu (wracają na listę kandydatów); FAILED → całe odrzucone. Linie przyjęte zostają `wyslane` do czasu, aż
+// sync zobaczy ofertę (dopnijWystawione). Sprawdzamy importy z ostatnich 2 dni, nie młodsze niż 3 min.
+async function sprawdzImportyEmpik() {
+  const czekajace = db.prepare(`SELECT id, sku, id_platformy FROM wystawienia WHERE platforma = 'empik' AND status = 'wyslane'
+      AND id_platformy LIKE 'import:%' AND czas <= datetime('now', '-3 minutes') AND czas >= datetime('now', '-2 days')`).all();
+  if (!czekajace.length) return { importy: 0, odrzucone: 0 };
+  const empik = require('./empik');
+  const ustaw = db.prepare("UPDATE wystawienia SET status = 'odrzucone', opis = ? WHERE id = ?");
+  const poImporcie = new Map();
+  for (const w of czekajace) poImporcie.set(w.id_platformy.slice(7), [...(poImporcie.get(w.id_platformy.slice(7)) || []), w]);
+  let odrzucone = 0;
+  for (const [id, wiersze] of poImporcie) {
+    const { dane: imp } = await empik.api(`offers/imports/${encodeURIComponent(id)}`);
+    if (imp?.status === 'FAILED') {
+      for (const w of wiersze) { ustaw.run(`import ${id} nieudany: ${imp.reason_status || 'FAILED'}`, w.id); odrzucone++; }
+      continue;
+    }
+    if (imp?.status !== 'COMPLETE' || !(Number(imp.lines_in_error) > 0)) continue;
+    const raport = wm.bledyImportuEmpik((await empik.api(`offers/imports/${encodeURIComponent(id)}/error_report`)).tekst);
+    for (const w of wiersze) {
+      const b = raport.get(String(w.sku).toUpperCase());
+      if (b) { ustaw.run(`Empik odrzucił: ${b}`, w.id); odrzucone++; }
+    }
+  }
+  return { importy: poImporcie.size, odrzucone };
+}
+
+module.exports = { wystaw, dopnijWystawione, wolneIdEmag, sprawdzImportyEmpik };

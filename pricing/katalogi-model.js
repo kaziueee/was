@@ -8,6 +8,7 @@ const RYNKI_KATALOGU = [
   { platforma: 'emag', rynek: 'RO' }, { platforma: 'emag', rynek: 'HU' }, { platforma: 'emag', rynek: 'BG' },
   { platforma: 'kaufland', rynek: 'DE' },
   ...['DE', 'FR', 'IT', 'ES', 'NL', 'PL'].map((rynek) => ({ platforma: 'amazon', rynek })),
+  { platforma: 'empik', rynek: 'PL' },
 ];
 const kluczRynku = (platforma, rynek) => `${platforma}:${rynek}`;
 
@@ -47,6 +48,21 @@ function zEmagFindByEans(results) {
   return mapa;
 }
 
+// Empik (Mirakl) P31 `GET /api/products?product_references=EAN|…`: products = [{ product_id: EAN, product_sku,
+// product_title, category_code, category_label }] (sprawdzone na SRV 2026-10-30; marki P31 nie podaje). Kluczem
+// produktu w Empiku jest product_sku — to on idzie do importu ofert. Zwraca Map(ean → wpis) jak zEmagFindByEans.
+function zEmpikP31(products) {
+  const mapa = new Map();
+  for (const p of products || []) {
+    if (p?.product_id_type && p.product_id_type !== 'EAN') continue;
+    const ean = normalizujEan(p?.product_id);
+    if (!ean || !p.product_sku || mapa.has(ean)) continue;
+    mapa.set(ean, { produkt_id: String(p.product_sku), nazwa: p.product_title || null, marka: null,
+      kategoria: p.category_label || null, kategoria_id: p.category_code || null, dodac: null, mamy: 0, hotness: null });
+  }
+  return mapa;
+}
+
 // Odrzucenie wystawienia przez eMAG z powodu marki („kategorii cu risc ridicat” — trzeba wysłać dokumenty przez
 // Mesagerie). Taka marka nie przejdzie na tym rynku dla ŻADNEGO towaru, więc oznaczamy wszystkie (pricing/wystawianie.js).
 const ODRZUCENIE_MARKI = /risc|risk|document/i;
@@ -64,4 +80,4 @@ function powodBraku(k, { mamyOferte = false, stan = null } = {}) {
   return null;
 }
 
-module.exports = { RYNKI_KATALOGU, kluczRynku, normalizujEan, paczki, zEmagFindByEans, odrzucenieMarki, powodBraku };
+module.exports = { RYNKI_KATALOGU, kluczRynku, normalizujEan, paczki, zEmagFindByEans, zEmpikP31, odrzucenieMarki, powodBraku };

@@ -1539,7 +1539,7 @@ a.btn { display: inline-block; text-decoration: none; }   /* link wyglądający 
 /* === Sprzedaż → Trendy (sprzedaz-trendy.js) — zawężone do panelu i okna produktu ===
    Kolory serii: referencyjna paleta dataviz (6 kanałów w stałej kolejności, sprawdzona walidatorem CVD);
    „rok temu” = neutralny szary. Trzy kolory mają kontrast < 3:1 na jasnym tle — stąd tabela pod wykresem kanałów. */
-#panel-sprzedaz-trendy, .tr-tlo {
+#panel-sprzedaz-trendy, #panel-sprzedaz-stan, .tr-tlo {
   --tr-surface: #fcfcfb; --tr-ink: #0b0b0b; --tr-ink2: #52514e; --tr-muted: #898781; --tr-grid: #e1e0d9; --tr-axis: #c3c2b7;
   --tr-ring: rgba(11,11,11,0.10); --tr-wash: #f0efec; --tr-plus: #006300; --tr-minus: #c62828; --tr-rok: #a8a69f;
   --tr-s1: #2a78d6; --tr-s2: #eb6834; --tr-s3: #1baf7a; --tr-s4: #eda100; --tr-s5: #e87ba4; --tr-s6: #008300;
@@ -1598,6 +1598,29 @@ img.tr-min { width: 64px; height: 64px; object-fit: contain; border-radius: 4px;
 #panel-sprzedaz-trendy .tr-stopka { color: var(--tr-muted); font-size: 12px; line-height: 1.5; margin-top: 8px; }
 #panel-sprzedaz-trendy .tr-grupaNag { background: var(--tr-wash); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; font-size: 13px; display: none; }
 #panel-sprzedaz-trendy .tr-grupaNag .tr-chip { margin-left: 8px; }
+
+/* === Sprzedaż → Stan (sprzedaz-stan.js) — kolory (zmienne --tr-*) i tabela (.tr-tab) z Trendów === */
+#panel-sprzedaz-stan .ss-kafle { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 12px; }
+#panel-sprzedaz-stan .ss-kafel { text-align: left; font: inherit; color: var(--tr-ink); cursor: pointer; display: flex; flex-direction: column; gap: 2px;
+  border: 1px solid var(--tr-grid); border-left: 4px solid var(--ss-k, var(--tr-axis)); border-radius: 10px; padding: 9px 11px; background: var(--tr-surface); }
+#panel-sprzedaz-stan .ss-kafel:hover { background: var(--tr-wash); }
+#panel-sprzedaz-stan .ss-kafel.wl { background: #fff; box-shadow: 0 0 0 2px #1d3557; }
+#panel-sprzedaz-stan .ss-kafel b { font-size: 19px; font-variant-numeric: tabular-nums; }
+#panel-sprzedaz-stan .ss-kafel span { font-size: 12px; color: var(--tr-ink2); }
+#panel-sprzedaz-stan .ss-kafel .ss-kn { font-weight: 600; font-size: 13px; color: var(--tr-ink); }
+#panel-sprzedaz-stan .ss-kafel .ss-ko { color: var(--tr-muted); font-size: 11px; }
+#panel-sprzedaz-stan .ss-brak { --ss-k: var(--tr-minus); } #panel-sprzedaz-stan .ss-konczy { --ss-k: #eda100; }
+#panel-sprzedaz-stan .ss-ok { --ss-k: var(--tr-plus); } #panel-sprzedaz-stan .ss-wolna { --ss-k: #8fb8e6; }
+#panel-sprzedaz-stan .ss-nadmiar { --ss-k: #eb6834; } #panel-sprzedaz-stan .ss-lezak { --ss-k: #7a2e2e; }
+#panel-sprzedaz-stan .ss-nowosc { --ss-k: #2a78d6; } #panel-sprzedaz-stan .ss-wszystko { --ss-k: #1d3557; }
+#panel-sprzedaz-stan .ss-ster { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+#panel-sprzedaz-stan .ss-ster input[type=search] { min-width: 220px; }
+#panel-sprzedaz-stan .ss-seg { display: inline-flex; border: 1px solid var(--tr-grid); border-radius: 8px; overflow: hidden; background: #fff; }
+#panel-sprzedaz-stan .ss-seg button { border: 0; background: transparent; color: var(--tr-ink); padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+#panel-sprzedaz-stan .ss-seg button + button { border-left: 1px solid var(--tr-grid); }
+#panel-sprzedaz-stan .ss-seg button.wl { background: #1d3557; color: #fff; }
+#panel-sprzedaz-stan .tr-sz { color: var(--tr-muted); font-size: 11px; }
+#panel-sprzedaz-stan .ss-def { margin-top: 10px; line-height: 1.5; color: var(--tr-ink2); font-size: 12px; }
 .tr-tlo { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: flex-start; justify-content: center; z-index: 9500; overflow: auto; padding: 30px 16px; }
 .tr-okno { background: #fff; color: var(--tr-ink); border-radius: 14px; width: min(1280px, 100%); padding: 18px 20px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
 .tr-okno h3 { margin: 0 0 2px; font-size: 18px; }

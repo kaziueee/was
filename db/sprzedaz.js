@@ -150,6 +150,9 @@ if (!kolumny('pozycje').includes('wysylka')) db.exec('ALTER TABLE pozycje ADD CO
 // Stan dostępny (decyzja usera 2026-10-21: na ekranach „Razem minus rezerwacje”, zestaw po składnikach jak repricer)
 if (!kolumny('stany').includes('rez')) db.exec('ALTER TABLE stany ADD COLUMN rez REAL');
 if (!kolumny('stany').includes('dostepne')) db.exec('ALTER TABLE stany ADD COLUMN dostepne REAL');
+// Wartość stanu Razem w cenie zakupu (Sprzedaż → Stan, 2026-10-30): warstwy dostaw leżące na magazynach Razem, ta sama
+// średnia dostaw co Cennik i repricer (services/cennik.js). Zł netto; NULL = zdjęcie sprzed kolumny.
+if (!kolumny('stany').includes('wartosc')) db.exec('ALTER TABLE stany ADD COLUMN wartosc REAL');
 // gotowy wynik także skompresowany (gzip liczy wątek analiz — główny wątek tylko wysyła; Trendy 1,4 MB → ~0,2 MB)
 if (!kolumny('gotowe').includes('gz')) db.exec('ALTER TABLE gotowe ADD COLUMN gz BLOB');
 // Telefon → „Live” (2026-10-24): kiedy job PIERWSZY raz zobaczył zamówienie (GT nie trzyma godziny ZK — tylko dzień), a

@@ -8,6 +8,7 @@
 //   GET /api/analiza/podsumowanie?dzien=&zakres=&baza=         kanały: bieżący zakres vs ten sam sprzed 364 dni
 //   GET /api/analiza/produkty?dzien=&zakres=&baza=&sort=&limit= towary z kanałami, stanem, flagami i repricerem
 //   GET /api/analiza/trendy                                    Sprzedaż → Trendy: dni zamknięte do wczoraj (services/analiza-trendy.js)
+//   GET /api/analiza/stan-towaru                              Sprzedaż → Stan: leżaki / nadmiar / kończy się (services/analiza-stan.js)
 //   GET /api/analiza/live?przed=&limit=                        telefon „Live”: ostatnie zamówienia po kolei (kursor „dzień|zk|fs”)
 //   GET /api/analiza/oferty/:tw_id                             linki do ofert towaru na platformach (karta produktu w Trendach)
 //   GET /api/analiza/raport?dzien=&tydzien=1                   podgląd maila (HTML) — to, co wyśle job
@@ -40,6 +41,17 @@ router.get('/trendy', (req, res) => {
   let g = t.gotowe({ gz });
   if (gz && g && !g.dane) g = t.gotowe();             // wynik sprzed kolumny gz — wysyłamy zwykły
   if (!g?.dane) return res.status(503).json({ blad: 'Trendy jeszcze się liczą (pierwsze ~2 minuty po starcie WMS) — odśwież za chwilę.' });
+  res.set('Vary', 'Accept-Encoding').type('application/json');
+  if (Buffer.isBuffer(g.dane) || g.dane instanceof Uint8Array) res.set('Content-Encoding', 'gzip').send(Buffer.from(g.dane));
+  else res.send(g.dane);
+});
+
+// Stan towaru liczy wątek analiz (services/analiza-stan.js) — tu tylko gotowy JSON, jak Trendy
+router.get('/stan-towaru', (req, res) => {
+  const t = require('../services/analiza-stan');
+  const gz = /\bgzip\b/.test(req.get('accept-encoding') || '');
+  const g = t.gotowe({ gz });
+  if (!g?.dane) return res.status(503).json({ blad: 'Analiza stanu jeszcze się liczy (pierwsze ~2 minuty po starcie WMS) — odśwież za chwilę.' });
   res.set('Vary', 'Accept-Encoding').type('application/json');
   if (Buffer.isBuffer(g.dane) || g.dane instanceof Uint8Array) res.set('Content-Encoding', 'gzip').send(Buffer.from(g.dane));
   else res.send(g.dane);

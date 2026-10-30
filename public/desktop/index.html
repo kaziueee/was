@@ -67,6 +67,7 @@
       <a href="#sprzedaz" class="podzakladka" data-pod="sprzedaz">Dzień</a>
       <a href="#sprzedaz/sprzedaz-live" class="podzakladka" data-pod="sprzedaz-live">Live</a>
       <a href="#sprzedaz/sprzedaz-trendy" class="podzakladka" data-pod="sprzedaz-trendy">Trendy</a>
+      <a href="#sprzedaz/sprzedaz-stan" class="podzakladka" data-pod="sprzedaz-stan">Stan</a>
       <a href="#sprzedaz/sprzedaz-zadanie" class="podzakladka" data-pod="sprzedaz-zadanie">Zadanie sprzedażowe</a>
     </nav>
 
@@ -907,6 +908,25 @@
       <div id="tr-tresc"></div>
     </section>
 
+    <!-- Panel Sprzedaz → Stan (tylko admin): analiza stanu towaru — lezaki, nadmiar, konczy sie. GET /api/analiza/stan-towaru
+         (liczy watek analiz). Rysuje public/desktop/sprzedaz-stan.js; klik w towar = karta produktu z Trendow. -->
+    <section id="panel-sprzedaz-stan" class="panel hidden">
+      <div class="panel-naglowek">
+        <h2>Sprzedaż — stan towaru</h2>
+        <span class="hint-inline" id="ss-wczytanie"></span>
+      </div>
+      <div class="sd-ostrz hidden" id="ss-blad"></div>
+      <div class="ss-kafle" id="ss-kafle"></div>
+      <div class="ss-ster">
+        <div class="ss-seg" id="ss-mag"></div>
+        <select id="ss-grupa"></select>
+        <input type="search" id="ss-szukaj" placeholder="Szukaj SKU lub nazwy">
+        <button type="button" class="btn btn-small" id="ss-csv">⬇ CSV</button>
+      </div>
+      <div class="tabela-wrapper"><table class="tr-tab" id="ss-tabela"></table></div>
+      <p class="tr-opis ss-def" id="ss-def"></p>
+    </section>
+
     <!-- Panel Sprzedaz → Live (tylko admin): ostatnie zamowienia po kolei, GET /api/analiza/live — jak „Live” na telefonie,
          tylko tabela. Rysuje public/desktop/sprzedaz-live.js; klik w pozycje = karta produktu z Trendow. -->
     <section id="panel-sprzedaz-live" class="panel hidden">
@@ -1151,6 +1171,7 @@
   <script src="sprzedaz-live.js"></script>
   <script src="/shared/trendy-model.js"></script>
   <script src="sprzedaz-trendy.js"></script>
+  <script src="sprzedaz-stan.js"></script>
   <script src="ceny-pulpit.js"></script>
   <script src="ceny-strategie.js"></script>
   <script src="ceny-wystawianie.js"></script>

@@ -13,6 +13,7 @@
 //     ANALIZA_RAPORT_DO, przez Gmail API z zakresem tylko do wysyłania; najwyżej 3 próby dziennie. Bez konfiguracji
 //     (adresaci + GMAIL_*) — nic nie wysyła.
 //   Trendy (services/analiza-trendy.js): po każdym przebiegu, gdy brak wyniku, zmienił się dzień albo minęła godzina.
+//   Stan towaru (services/analiza-stan.js, Sprzedaż → Stan): jak Trendy, a po nocnym zdjęciu stanów od razu.
 // Chodzi w osobnym wątku (services/analiza-watek.js) — ZASADA usera: w ciągu dnia nic nie może przeszkadzać Zebrom.
 // ANALIZA_WYLACZ=1 wyłącza job (np. lokalny WMS na kopii Z_KAJTEK, żeby nie mieszał danych w bazie modułu).
 
@@ -100,6 +101,11 @@ async function przebieg(teraz = new Date()) {
       const t = require('./analiza-trendy').odswiezJesliTrzeba(teraz, { wymus: !!wynik?.bez_stanu });
       if (t) console.log(`[analiza] trendy policzone (${t.ms} ms, ${t.kb} KB, gzip ${t.gzKb} KB)`);
     } catch (e) { awarie.blad('analiza-trendy', e.message); }
+    // Sprzedaż → Stan: po nocnym zdjęciu stanów od razu (nowe wartości, towary, które zeszły do zera), inaczej co godzinę
+    try {
+      const s = require('./analiza-stan').odswiezJesliTrzeba(teraz, { wymus: wynik?.stany != null });
+      if (s) console.log(`[analiza] stan towaru policzony (${s.ms} ms, ${s.kb} KB, gzip ${s.gzKb} KB)`);
+    } catch (e) { awarie.blad('analiza-stan', e.message); }
     // raport osobno: padnięte GT nie blokuje maila z tego, co już jest w bazie, a błąd Gmaila — dosypywania danych
     try { await raportJesliPora(teraz); } catch (e) {
       awarie.blad('analiza-raport', e.message);

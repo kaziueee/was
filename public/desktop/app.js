@@ -110,6 +110,7 @@ const panele = {
   sprzedaz: { sekcja: 'panel-sprzedaz-dzien', zaladowano: false, odswiez: () => odswiezSprzedazDzien() },   // sprzedaz-dzien.js
   'sprzedaz-trendy': { sekcja: 'panel-sprzedaz-trendy', zaladowano: false, odswiez: () => odswiezSprzedazTrendy() },   // sprzedaz-trendy.js
   'sprzedaz-live': { sekcja: 'panel-sprzedaz-live', zaladowano: false, odswiez: () => odswiezSprzedazLive() },   // sprzedaz-live.js
+  'sprzedaz-stan': { sekcja: 'panel-sprzedaz-stan', zaladowano: false, odswiez: () => odswiezSprzedazStan() },   // sprzedaz-stan.js
   'sprzedaz-zadanie': { sekcja: 'panel-sprzedaz', zaladowano: false, odswiez: odswiezSprzedaz },
   ceny: { sekcja: 'panel-ceny', zaladowano: false, odswiez: () => odswiezCeny() },
 };
@@ -126,7 +127,7 @@ const GRUPY = {
   ruchy: { domyslny: 'uzupelnienia', panele: ['uzupelnienia', 'dostawy', 'do-sprawdzenia', 'rozjazdy', 'mm'] },
   lokalizacje: { domyslny: 'lokalizacje', panele: ['lokalizacje', 'zajetosc'] },
   // Sprzedaz: #sprzedaz = analiza dnia (domyslna), trendy i zadanie sprzedazowe jako podzakladki
-  sprzedaz: { domyslny: 'sprzedaz', panele: ['sprzedaz', 'sprzedaz-live', 'sprzedaz-trendy', 'sprzedaz-zadanie'] },
+  sprzedaz: { domyslny: 'sprzedaz', panele: ['sprzedaz', 'sprzedaz-live', 'sprzedaz-trendy', 'sprzedaz-stan', 'sprzedaz-zadanie'] },
 };
 
 // panel -> grupa, do zaznaczania wlasciwej zakladki glownej i pokazania paska podzakladek
@@ -1933,14 +1934,14 @@ function pokazZakladkeAdmina() {
   // Sprzedaż → Dzień i Trendy (analiza: zysk, marża, koszt) tylko admin (decyzja usera 2026-10-21; zamek: /api/analiza
   // w app.js). Biuro wchodzi w Sprzedaż prosto na zadanie sprzedażowe.
   const analiza = !window.WMS || rola === 'admin';
-  for (const pod of ['sprzedaz', 'sprzedaz-live', 'sprzedaz-trendy']) {
+  for (const pod of ['sprzedaz', 'sprzedaz-live', 'sprzedaz-trendy', 'sprzedaz-stan']) {
     const a = document.querySelector(`#podzakladki-sprzedaz [data-pod="${pod}"]`);
     if (a) a.style.display = analiza ? '' : 'none';
   }
   GRUPY.sprzedaz.domyslny = analiza ? 'sprzedaz' : 'sprzedaz-zadanie';
   // panel mógł się narysować przed rozpoznaniem roli — biuro na analizie przenosimy na zadanie (zamek: backend)
   const [glowna, pod] = decodeURIComponent(location.hash.replace(/^#/, '')).split('/');
-  if (!analiza && ((glowna === 'sprzedaz' && pod !== 'sprzedaz-zadanie') || glowna === 'sprzedaz-trendy')) location.hash = '#sprzedaz/sprzedaz-zadanie';
+  if (!analiza && ((glowna === 'sprzedaz' && pod !== 'sprzedaz-zadanie') || glowna === 'sprzedaz-trendy' || glowna === 'sprzedaz-stan')) location.hash = '#sprzedaz/sprzedaz-zadanie';
 }
 if (window.WMS) WMS.gotowe.then(pokazZakladkeAdmina);
 window.addEventListener('wms-zalogowano', pokazZakladkeAdmina);

@@ -347,6 +347,13 @@ async function zdjecieStanow(dzien, twIds = null) {
     : `s.st_TowId IN (SELECT st_TowId FROM tw_Stan WHERE st_MagId IN (${magi}) AND st_Stan > 0)`;
   const r = await query(`SELECT s.st_TowId tw, s.st_MagId mag, s.st_Stan stan, s.st_StanRez rez FROM tw_Stan s
     WHERE s.st_MagId IN (${magi}) AND ${filtr}`);
+  // Wartość stanu w cenie zakupu: warstwy dostaw na magazynach Razem (mr_Pozostalo × ostatnia wycena serii) — ta sama
+  // średnia dostaw co Cennik (services/cennik.js). Suma warstw = st_Stan (pomiar 2026-10-21), więc to wartość Razem.
+  // Pomiar 2026-10-30 na OKITRADE: wszystkie towary ze stanem w jednym zapytaniu, 8,3 mln zł na 12,8 tys. towarów.
+  const wart = await query(`SELECT m.mr_TowId tw, SUM(m.mr_Pozostalo * ISNULL(w.mw_Cena, m.mr_Cena)) wart
+    FROM dok_MagRuch m OUTER APPLY (SELECT TOP 1 mw.mw_Cena FROM dok_MagWart mw WHERE mw.mw_SeriaId = m.mr_SeriaId ORDER BY mw.mw_Data DESC) w
+    WHERE m.mr_MagId IN (${magi}) AND m.mr_Pozostalo > 0 AND ${filtr.replace(/s\.st_TowId/g, 'm.mr_TowId')} GROUP BY m.mr_TowId`);
+  const wartosc = new Map(wart.recordset.map((x) => [x.tw, Number(x.wart) || 0]));
   const pusty = () => ({ k4: 0, k4g: 0, mag: 0, ls: 0, rez_k4: 0, rez: 0 });
   const m = new Map();
   for (const x of r.recordset) {
@@ -359,17 +366,17 @@ async function zdjecieStanow(dzien, twIds = null) {
     : db.prepare('SELECT t.tw_id FROM towary t JOIN tempa p ON p.tw_id = t.tw_id WHERE t.rodzaj = 8 AND p.szt365 > 0').all().map((x) => x.tw_id);
   const zestawy = await doZlozeniaMapa(kandydaci);          // wpis tylko dla zestawów; null = skład nieokreślony w GT
   for (const id of zestawy.keys()) if (!m.has(id)) m.set(id, pusty());
-  const ins = db.prepare(`INSERT INTO stany (tw_id, dzien, k4, k4g, mag, ls, rez_k4, razem, rez, dostepne, czas)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  const ins = db.prepare(`INSERT INTO stany (tw_id, dzien, k4, k4g, mag, ls, rez_k4, razem, rez, dostepne, wartosc, czas)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(tw_id, dzien) DO UPDATE SET k4 = excluded.k4, k4g = excluded.k4g, mag = excluded.mag, ls = excluded.ls,
-      rez_k4 = excluded.rez_k4, razem = excluded.razem, rez = excluded.rez, dostepne = excluded.dostepne, czas = excluded.czas`);
+      rez_k4 = excluded.rez_k4, razem = excluded.razem, rez = excluded.rez, dostepne = excluded.dostepne, wartosc = excluded.wartosc, czas = excluded.czas`);
   db.exec('BEGIN');
   try {
     for (const [tw, w] of m) {
       const razem = MAGAZYNY_RAZEM.reduce((s, k) => s + (w[kody[k]] || 0), 0);
       const zestaw = zestawy.get(tw);
       const dostepne = zestaw != null ? zestaw : Math.max(0, razem - w.rez);
-      ins.run(tw, dzien, w.k4, w.k4g, w.mag, w.ls, w.rez_k4, razem, w.rez, dostepne);
+      ins.run(tw, dzien, w.k4, w.k4g, w.mag, w.ls, w.rez_k4, razem, w.rez, dostepne, wartosc.get(tw) ?? 0);
     }
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }

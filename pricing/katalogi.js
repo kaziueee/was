@@ -115,7 +115,11 @@ async function kauflandPoEan(eany, kraj) {
         const p = j?.data || j;
         if (p?.id_product) mapa.set(e, { produkt_id: String(p.id_product), nazwa: p.title || null, marka: p.manufacturer || null,
           kategoria: p.category?.title || null, kategoria_id: p.category?.id_category != null ? String(p.category.id_category) : null, dodac: null, mamy: 0, hotness: null });
-      } catch (err) { if (err.status !== 404) throw err; }
+      } catch (err) {
+        // 404 = Kaufland nie zna EAN-u, 400 = „Invalid EAN provided” (np. wewnętrzne kody 200…) — oba znaczą „brak
+        // produktu” dla TEGO towaru; rzucenie zatrzymywało cały rynek (pierwszy skan 30.10: Kaufland DE pusty).
+        if (err.status !== 404 && err.status !== 400) throw err;
+      }
     }
   };
   await Promise.all(Array.from({ length: 4 }, watek));

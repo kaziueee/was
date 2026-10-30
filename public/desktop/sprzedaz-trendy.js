@@ -80,7 +80,10 @@
       <section class="tr-karta"><div class="tr-nag"><div><h3>Kanały — udział w przychodzie</h3><div class="tr-opis">Tygodniowo, 26 pełnych tygodni. Który kanał rośnie kosztem którego.</div></div></div>
         <div class="tr-legenda" id="tr-kan-leg"></div><div class="tr-wykres" id="tr-kan"></div><table class="tr-tab" id="tr-kan-tab" style="margin-top:8px"></table></section>
     </div>
-    <section class="tr-karta" id="tr-sek-grupy"><div class="tr-nag"><div><h3>Grupy towarów — top 30</h3><div class="tr-opis" id="tr-gr-opis"></div></div>
+    <section class="tr-karta tr-kanal" id="tr-sek-kanal"><div class="tr-nag"><div><h3>Porównanie po kanałach</h3><div class="tr-opis">Wybierz kanał albo całą platformę — grupy towarów i produkty niżej liczą się wtedy wyłącznie z niego (spadki kategorii na Amazon DE, eMAG RO…). Klik w kanał w tabeli „Kanały” robi to samo.</div></div>
+      <div class="tr-ster"><select class="tr-pole" id="tr-kanal"></select></div></div>
+      <div class="tr-kanalNag" id="tr-kanal-nag"></div></section>
+    <section class="tr-karta" id="tr-sek-grupy"><div class="tr-nag"><div><h3 id="tr-gr-tyt">Grupy towarów — top 30</h3><div class="tr-opis" id="tr-gr-opis"></div></div>
       <div class="tr-ster"><span class="tr-seg" id="tr-gr-okno"></span><span class="tr-seg" id="tr-gr-por"></span><span class="tr-seg" id="tr-gr-ile"></span></div></div>
       <div class="tr-przewin" style="max-height:560px"><table class="tr-tab" id="tr-grupy"></table></div>
       <div class="tr-stopka">Klik w grupę = lista jej produktów niżej (te same filtry). Grupy z kartoteki GT.</div></section>
@@ -218,15 +221,17 @@
     const sum = (lista, k) => lista.reduce((a, t) => a + (t.kan[k] || 0), 0);
     const tot = (lista) => KAN.reduce((a, k) => a + sum(lista, k), 0) || 1;
     $('kan-tab').innerHTML = '<tr><th>Kanał (4 pełne tygodnie)</th><th class="n">Przychód</th><th class="n">Udział</th><th class="n">rok temu</th><th class="n">r/r</th></tr>'
-      + KAN.map((k, j) => `<tr><td><i class="tr-kw" style="background:var(${KOL[j]})"></i>${k}</td><td class="n">${zl(sum(ost, k))}</td><td class="n">${pct(sum(ost, k) / tot(ost) * 100)}</td><td class="n">${pct(sum(rok, k) / tot(rok) * 100)}</td><td class="n">${zmiana(sum(ost, k), sum(rok, k))}</td></tr>`).join('');
+      + KAN.map((k, j) => `<tr class="tr-klik" data-p="${k}" title="porównanie: ${k} — grupy i produkty niżej"><td><i class="tr-kw" style="background:var(${KOL[j]})"></i>${k}</td><td class="n">${zl(sum(ost, k))}</td><td class="n">${pct(sum(ost, k) / tot(ost) * 100)}</td><td class="n">${pct(sum(rok, k) / tot(rok) * 100)}</td><td class="n">${zmiana(sum(ost, k), sum(rok, k))}</td></tr>`).join('');
   }
 
   // ---------- produkty: model ----------
-  const st = { okno: 30, por: 'prev', filtr: 'wszystkie', grupa: '', szukaj: '', prog: 30, baza: 5, sort: null, kier: -1 };
+  // kanal: '' | 'k:<nazwa kanału>' | 'p:<platforma>' (TrendyModel.wiersze) — porównanie po kanałach
+  const st = { okno: 30, por: 'prev', filtr: 'wszystkie', grupa: '', szukaj: '', prog: 30, baza: 5, sort: null, kier: -1, kanal: '' };
   let ostatniaLista = [];
   // wiersze, filtry i sortowanie — wspólne z telefonem (public/shared/trendy-model.js)
   const M = window.TrendyModel;
-  const wiersze = () => M.wiersze(X, st.okno, st.por);
+  const wiersze = () => M.wiersze(X, st.okno, st.por, st.kanal);
+  const wierszeWszystkie = () => M.wiersze(X, st.okno, st.por);
   const FILTRY = M.FILTRY;
   const filtruj = (lista, f) => M.filtruj(lista, f, { prog: st.prog, baza: st.baza });
   const KOLUMNY = [['', null], ['SKU / nazwa', 'sym'], ['Szt.', 'as', 1], ['Szt. przed', 'bs', 1], ['Przychód', 'n', 1], ['Przychód przed', 'bn', 1],
@@ -235,7 +240,7 @@
   function rysujProd() {
     const P = X.produkty[st.okno], przed = st.por === 'prev' ? 'przed' : 'rok temu';
     const porTxt = st.por === 'prev' ? `poprzednie ${st.okno} dni (${dd(P.prevOd)}–${dd(P.prevDo)})` : `te same dni rok temu (${dd(P.rokOd)}–${dd(P.rokDo)}.${P.rokDo.slice(0, 4)})`;
-    $('pr-opis').innerHTML = `${st.okno} zamkniętych dni ${dd(P.od)}–${dd(P.do)} vs ${porTxt}. Bez limitu pozycji — zawężają filtry. Klik w produkt = kanały sprzedaży.`;
+    $('pr-opis').innerHTML = `${st.kanal ? `<b>${esc(M.nazwaWyboru(st.kanal))}</b> · ` : ''}${st.okno} zamkniętych dni ${dd(P.od)}–${dd(P.do)} vs ${porTxt}. Bez limitu pozycji — zawężają filtry. Klik w produkt = kanały sprzedaży.`;
     let baza = wiersze();
     if (st.grupa) baza = baza.filter((w) => w.grupa === st.grupa);
     if (st.szukaj) { const q = st.szukaj.toLowerCase(); baza = baza.filter((w) => w.sym.toLowerCase().includes(q) || w.nazwa.toLowerCase().includes(q)); }
@@ -272,8 +277,18 @@
     }
     return [...g.values()].filter((x) => x.n > 0 || x.bn > 0).sort((a, b) => b.n - a.n);
   }
+  // seria tygodniowa grupy — przy wybranym kanale z X.grTygKan (platforma = suma jej kanałów)
+  function tygGrupy(g) {
+    if (!st.kanal) return X.grTyg[g] || {};
+    const typ = st.kanal.slice(0, 2), v = st.kanal.slice(2), out = {};
+    for (const [n, gr] of Object.entries(X.grTygKan || {})) {
+      if (typ === 'p:' ? (X.platformy || {})[n] !== v : n !== v) continue;
+      for (const [pon, x] of Object.entries(gr[g] || {})) out[pon] = (out[pon] || 0) + x;
+    }
+    return out;
+  }
   function iskra(g) {
-    const t = X.grTyg[g] || {}, v = X.tygodnie13.map((p) => t[p] || 0), max = Math.max(...v, 1), W = 96, H = 26, n = v.length;
+    const t = tygGrupy(g), v = X.tygodnie13.map((p) => t[p] || 0), max = Math.max(...v, 1), W = 96, H = 26, n = v.length;
     const pts = v.map((x, i) => [2 + i * (W - 8) / (n - 1), H - 3 - x / max * (H - 8)]);
     const k = pts[n - 1];
     return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><polyline points="${pts.map((p) => p.join(',')).join(' ')}" fill="none" stroke="var(--tr-s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${k[0]}" cy="${k[1]}" r="3.5" fill="var(--tr-s1)" stroke="#fff" stroke-width="2"/></svg>`;
@@ -283,7 +298,8 @@
     const ile = stGr.ile === 0 ? g.length : stGr.ile, top = g.slice(0, ile), reszta = g.slice(ile);
     const porTxt = st.por === 'prev' ? `poprzednie ${st.okno} dni` : 'te same dni rok temu';
     const udzialTop = top.reduce((a, x) => a + x.n, 0) / suma * 100;
-    $('gr-opis').innerHTML = `${st.okno} zamkniętych dni ${dd(P.od)}–${dd(P.do)} vs ${porTxt}. ${g.length} grup ze sprzedażą; top ${Math.min(ile, g.length)} = ${pct(udzialTop)} przychodu.`;
+    $('gr-tyt').textContent = st.kanal ? `Grupy towarów — ${M.nazwaWyboru(st.kanal)}` : 'Grupy towarów — top 30';
+    $('gr-opis').innerHTML = `${st.kanal ? `<b>Tylko ${esc(M.nazwaWyboru(st.kanal))}.</b> ` : ''}${st.okno} zamkniętych dni ${dd(P.od)}–${dd(P.do)} vs ${porTxt}. ${g.length} grup ze sprzedażą; top ${Math.min(ile, g.length)} = ${pct(udzialTop)} przychodu.`;
     const wiersz = (x, i, klik = true) => `<tr class="${klik ? 'tr-klik' : ''} ${x.grupa === st.grupa ? 'tr-wybrana' : ''}" data-g="${klik ? esc(x.grupa) : ''}"><td class="n tr-sz">${i ?? ''}</td>
       <td><b>${esc(x.grupa)}</b></td>
       <td class="n"><b>${zl(x.n)}</b></td><td class="n tr-sz">${pct(x.n / suma * 100)}</td><td class="n">${zmianaZl(x.n - x.bn)}</td><td class="n">${zmiana(x.n, x.bn)}</td>
@@ -293,6 +309,36 @@
     $('grupy').innerHTML = '<tr><th></th><th>Grupa</th><th class="n">Przychód</th><th class="n">Udział</th><th class="n">Zmiana zł</th><th class="n">Zmiana %</th><th class="n">Zysk</th><th class="n">Zmiana zysku</th><th class="n">Marża</th><th class="n">Szt.</th><th class="n">SKU</th><th>13 tygodni</th></tr>'
       + top.map((x, i) => wiersz(x, i + 1)).join('') + (reszta.length ? wiersz(rz, null, false) : '');
     $('pr-grupa').innerHTML = '<option value="">wszystkie grupy</option>' + g.map((x) => `<option ${x.grupa === st.grupa ? 'selected' : ''}>${esc(x.grupa)}</option>`).join('');
+  }
+  // ---------- porównanie po kanałach ----------
+  function rysujKanal() {
+    const pl = M.kanalyDoWyboru(X, 30);
+    const opt = (v, t) => `<option value="${esc(v)}" ${v === st.kanal ? 'selected' : ''}>${esc(t)}</option>`;
+    $('kanal').innerHTML = opt('', 'Wszystkie kanały') + pl.map((p) => `<optgroup label="${esc(p.platforma)}">`
+      + (p.kanaly.length > 1 || st.kanal === 'p:' + p.platforma ? opt('p:' + p.platforma, `${p.platforma} — wszystkie rynki`) : '')
+      + p.kanaly.map((k) => opt('k:' + k.nazwa, k.nazwa)).join('') + '</optgroup>').join('');
+    const nag = $('kanal-nag');
+    if (!st.kanal) { nag.innerHTML = ''; nag.style.display = 'none'; return; }
+    const P = X.produkty[st.okno], w = wiersze(), wsz = wierszeWszystkie();
+    const suma = (l, f) => l.reduce((a, x) => a + f(x), 0);
+    const n = suma(w, (x) => x.a.n), bn = suma(w, (x) => x.b.n), z = suma(w, (x) => x.a.z), bz = suma(w, (x) => x.b.z), s = suma(w, (x) => x.a.s), bs = suma(w, (x) => x.b.s);
+    const nAll = suma(wsz, (x) => x.a.n), bnAll = suma(wsz, (x) => x.b.n);
+    const g = grupyDane(), spadki = g.filter((x) => x.n - x.bn < 0).sort((a, b) => (a.n - a.bn) - (b.n - b.bn)).slice(0, 5);
+    const porTxt = st.por === 'prev' ? `poprzednie ${st.okno} dni` : 'rok temu';
+    nag.style.display = 'block';
+    nag.innerHTML = `<div class="tr-kanalLiczby"><div><div class="tr-sz">Przychód ${st.okno} dni (${dd(P.od)}–${dd(P.do)})</div><b>${zl(n)}</b> ${zmiana(n, bn)} <span class="tr-sz">vs ${porTxt} ${zl(bn)}</span></div>
+      <div><div class="tr-sz">Zysk</div><b>${zl(z)}</b> ${zmiana(z, bz)}</div><div><div class="tr-sz">Sztuki</div><b>${szt(s)}</b> ${zmiana(s, bs)}</div>
+      <div><div class="tr-sz">Udział w całym internecie</div><b>${pct(nAll ? n / nAll * 100 : null)}</b> ${zmiana(nAll ? n / nAll * 100 : null, bnAll ? bn / bnAll * 100 : null, { pp: true })}</div>
+      <div><div class="tr-sz">Cały internet</div>${zmiana(nAll, bnAll)} <span class="tr-sz">— dla porównania</span></div></div>`
+      + (spadki.length ? `<div class="tr-kanalSpadki">Największe spadki grup: ${spadki.map((x) => `<span class="tr-chip" data-g="${esc(x.grupa)}">${esc(x.grupa)} ${zmianaZl(x.n - x.bn)}</span>`).join(' ')}</div>` : '')
+      + '<button type="button" class="tr-chip" id="tr-kanal-x">× wszystkie kanały</button>';
+    $('kanal-x').onclick = () => wybierzKanal('');
+  }
+  function wybierzKanal(k, przewin = false) {
+    st.kanal = k; st.grupa = ''; st.filtr = 'wszystkie'; st.sort = null;
+    $('pr-grupa-nag').style.display = 'none';
+    rysujKanal(); rysujGrupy(); rysujProd();
+    if (przewin) $('sek-kanal').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   function syncSeg() {
     for (const [id, v] of [['pr-okno', st.okno], ['gr-okno', st.okno], ['pr-por', st.por], ['gr-por', st.por]]) $(id).querySelectorAll('button').forEach((b) => b.classList.toggle('wl', b.dataset.v === String(v)));
@@ -718,7 +764,9 @@
   // Lista ← → karty: produkty Trendów albo widok, z którego weszliśmy (Dzień, Live — sprzedazOtworzProdukt niżej).
   let kontekstKarty = null;
   function otworzProdukt(id) {
-    const lista = kontekstKarty?.lista || ostatniaLista, i = lista.findIndex((w) => w.id === id), w = lista[i] || wiersze().find((q) => q.id === id);
+    const lista = kontekstKarty?.lista || ostatniaLista, i = lista.findIndex((w) => w.id === id);
+    // kafle karty = cały towar (wszystkie kanały), także gdy lista jest z porównania po kanale — kanały są niżej osobno
+    const w = (st.kanal ? wierszeWszystkie().find((q) => q.id === id) : null) || lista[i] || wierszeWszystkie().find((q) => q.id === id);
     if (!w) return;
     const P = X.produkty[st.okno], porTxt = st.por === 'prev' ? `poprzednie ${st.okno} dni` : 'rok temu', off = st.por === 'prev' ? 3 : 6;
     const kan = ((X.kanaly[st.okno] || {})[id] || []).map((k) => ({ nazwa: k[0], s: k[1], n: k[2], z: k[3], bs: k[1 + off], bn: k[2 + off], klucz: k[10], d: k[11] || 0 }))
@@ -767,11 +815,11 @@
     seg($('tyg-zakres'), [[13, '13 tyg.'], [26, '26 tyg.'], [52, '52 tyg.'], [104, '2 lata']], stTyg.ile, (v) => { stTyg.ile = +v; rysujTyg(); });
     seg($('mies-miara'), [['netto', 'Przychód'], ['zysk', 'Zysk']], stMies.miara, (v) => { stMies.miara = v; rysujMies(); });
     const okna = [[7, '7 dni'], [30, '30 dni']], por = (krotko) => [['prev', krotko ? 'vs poprzedni' : 'vs poprzedni okres'], ['rok', 'vs rok temu']];
-    seg($('gr-okno'), okna, st.okno, (v) => { st.okno = +v; rysujGrupy(); rysujProd(); syncSeg(); });
-    seg($('gr-por'), por(true), st.por, (v) => { st.por = v; rysujGrupy(); rysujProd(); syncSeg(); });
+    seg($('gr-okno'), okna, st.okno, (v) => { st.okno = +v; rysujGrupy(); rysujProd(); rysujKanal(); syncSeg(); });
+    seg($('gr-por'), por(true), st.por, (v) => { st.por = v; rysujGrupy(); rysujProd(); rysujKanal(); syncSeg(); });
     seg($('gr-ile'), [[30, 'top 30'], [0, 'wszystkie']], stGr.ile, (v) => { stGr.ile = +v; rysujGrupy(); });
-    seg($('pr-okno'), okna, st.okno, (v) => { st.okno = +v; rysujProd(); rysujGrupy(); syncSeg(); });
-    seg($('pr-por'), por(false), st.por, (v) => { st.por = v; rysujProd(); rysujGrupy(); syncSeg(); });
+    seg($('pr-okno'), okna, st.okno, (v) => { st.okno = +v; rysujProd(); rysujGrupy(); rysujKanal(); syncSeg(); });
+    seg($('pr-por'), por(false), st.por, (v) => { st.por = v; rysujProd(); rysujGrupy(); rysujKanal(); syncSeg(); });
     $('pr-prog').oninput = (e) => { st.prog = +e.target.value || 30; rysujProd(); };
     $('pr-baza').oninput = (e) => { st.baza = +e.target.value || 1; rysujProd(); };
     $('pr-szukaj').oninput = (e) => { st.szukaj = e.target.value.trim(); rysujProd(); };
@@ -784,6 +832,9 @@
       if (st.sort === k) st.kier = -st.kier; else { st.sort = k; st.kier = k === 'sym' ? 1 : -1; }
       rysujProd();
     };
+    $('kanal').onchange = (e) => wybierzKanal(e.target.value);
+    $('kanal-nag').onclick = (e) => { const c = e.target.closest('.tr-chip[data-g]'); if (c) wybierzGrupe(c.dataset.g, true); };
+    $('kan-tab').onclick = (e) => { const tr = e.target.closest('tr[data-p]'); if (tr) wybierzKanal('p:' + tr.dataset.p, true); };
     $('grupy').onclick = (e) => { const tr = e.target.closest('tr.tr-klik'); if (tr?.dataset.g) wybierzGrupe(tr.dataset.g, true); };
     let tm;
     window.addEventListener('resize', () => { clearTimeout(tm); tm = setTimeout(() => { if (X && !document.getElementById('panel-sprzedaz-trendy').classList.contains('hidden')) { rysujTyg(); rysujMies(); rysujKan(); } }, 150); });
@@ -800,7 +851,7 @@
       try {
         X = await api('/api/analiza/trendy');
         wczytanoX = Date.now();
-        rysujKafle(); rysujTyg(); rysujMies(); rysujKan(); rysujGrupy(); rysujProd();
+        rysujKafle(); rysujTyg(); rysujMies(); rysujKan(); rysujKanal(); rysujGrupy(); rysujProd();
         document.getElementById('tr-wczytanie').textContent = `policzone ${new Date(X.wygenerowano).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}`;
       } catch (e) {
         blad.textContent = e.message; blad.classList.remove('hidden');
@@ -830,7 +881,7 @@
   // pozycje: [{ id: tw_id, sym, nazwa }] w kolejności widoku (powtórzenia — np. ten sam towar w kilku zamówieniach — pomijamy)
   async function sprzedazOtworzProdukt(id, pozycje = [], opis = '') {
     try { await daneTrendow(); } catch (e) { pokazKomunikat(`Karta produktu: ${e.message}`, 'blad'); return; }
-    const mapa = new Map(wiersze().map((w) => [w.id, w])), byly = new Set();
+    const mapa = new Map(wierszeWszystkie().map((w) => [w.id, w])), byly = new Set();
     const lista = (pozycje.length ? pozycje : [{ id }]).filter((p) => !byly.has(p.id) && byly.add(p.id))
       .map((p) => mapa.get(p.id) || wierszBezSprzedazy(p));
     kontekstKarty = { lista, opis };

@@ -137,6 +137,11 @@ function kanalDokumentu(d) {
 }
 
 // Nazwa kanału do pokazania: Allegro poza Polską z krajem („Allegro ekajtek · CZ”) — Trendy i telefon „Live”.
+// Platforma kanału — zgrubny podział (≤ 6 grup): serie wykresu udziału w Trendach i wybór „cała platforma” w porównaniu
+// po kanałach (Dzień, Trendy). Kanały Amazona to same kody rynków (DE, FR, …).
+const grupaKanalu = (k) => (String(k).startsWith('ALLEGRO') ? 'Allegro' : ['DE', 'FR', 'IT', 'ES', 'NL', 'PL', 'AMAZON_EU'].includes(k) ? 'Amazon'
+  : String(k).startsWith('EMAG') ? 'eMAG' : String(k).startsWith('EMPIK') ? 'Empik' : String(k).startsWith('KAUFLAND') ? 'Kaufland' : 'Inne');
+
 const nazwaKanalu = (k, r) => (NAZWY_KANALOW[k] || k) + (String(k).startsWith('ALLEGRO') && r && r !== 'PL' ? ' · ' + r : '');
 
-module.exports = { kanalDokumentu, nazwaKanalu, NAZWY_KANALOW, KANALY_DODATKOWE, NUMER_AMAZONA };
+module.exports = { kanalDokumentu, nazwaKanalu, grupaKanalu, NAZWY_KANALOW, KANALY_DODATKOWE, NUMER_AMAZONA };

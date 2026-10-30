@@ -16,7 +16,7 @@ const { DatabaseSync } = require('node:sqlite');
 const { db, meta } = require('../db/sprzedaz');
 const am = require('./analiza-model');
 const { dzisLokalnie } = require('./sprzedaz-model');
-const { nazwaKanalu } = require('./analiza-kanal');
+const { nazwaKanalu, grupaKanalu } = require('./analiza-kanal');
 const { dostepneZeStanu } = require('./analiza-zapytania');
 
 const D = am.dodajDni;
@@ -30,8 +30,7 @@ const ODSWIEZ_CO_MS = 60 * 60 * 1000;
 const PRICING_DB = process.env.PRICING_DB || path.join(__dirname, '..', 'db', 'pricing.db');
 
 // Kanały w udziale tygodniowym — zgrubnie, żeby wykres miał ≤ 6 serii (stała kolejność kolorów na ekranie)
-const GRUPA_KANALU = (k) => (k.startsWith('ALLEGRO') ? 'Allegro' : ['DE', 'FR', 'IT', 'ES', 'NL', 'PL', 'AMAZON_EU'].includes(k) ? 'Amazon'
-  : k.startsWith('EMAG') ? 'eMAG' : k.startsWith('EMPIK') ? 'Empik' : k.startsWith('KAUFLAND') ? 'Kaufland' : 'Inne');
+const GRUPA_KANALU = grupaKanalu;
 const ostatniaNiedziela = (d) => { let x = d; while (new Date(x + 'T12:00:00Z').getUTCDay() !== 0) x = D(x, -1); return x; };
 
 function sumy(od, doDnia) {
@@ -171,10 +170,19 @@ function policz(dzis) {
   // grupy i produkty tygodniowo (13 pełnych tygodni + te same tygodnie rok temu)
   const od13 = D(niedziela, -TYGODNIE_GRUP * 7 + 1);
   const tygodnie13 = Array.from({ length: TYGODNIE_GRUP }, (_, i) => D(od13, i * 7));
-  const grTyg = {};
-  for (const x of db.prepare(`SELECT IFNULL(NULLIF(t.grupa, ''), '(bez grupy)') g, date(z.data_zam, 'weekday 0', '-6 days') pon,
+  // grTygKan — to samo per kanał (nazwa jak w `kanaly`): iskra grupy po wybraniu kanału w porównaniu po kanałach
+  const grTyg = {}, grTygKan = {};
+  for (const x of db.prepare(`SELECT IFNULL(NULLIF(t.grupa, ''), '(bez grupy)') g, date(z.data_zam, 'weekday 0', '-6 days') pon, z.kanal, z.rynek,
       SUM(p.netto + IFNULL(p.wysylka, 0) + IFNULL(p.doplata, 0)) netto FROM pozycje p JOIN zamowienia z ON z.id = p.zam_id LEFT JOIN towary t ON t.tw_id = p.tw_id
-      WHERE ${INTERNET} AND z.data_zam BETWEEN ? AND ? GROUP BY g, pon`).all(od13, niedziela)) (grTyg[x.g] ||= {})[x.pon] = R(x.netto);
+      WHERE ${INTERNET} AND z.data_zam BETWEEN ? AND ? GROUP BY g, pon, z.kanal, z.rynek`).all(od13, niedziela)) {
+    const g = (grTyg[x.g] ||= {}), k = ((grTygKan[nazwaKanalu(x.kanal, x.rynek)] ||= {})[x.g] ||= {});
+    g[x.pon] = (g[x.pon] || 0) + x.netto;
+    k[x.pon] = R((k[x.pon] || 0) + x.netto);
+  }
+  for (const g of Object.values(grTyg)) for (const pon of Object.keys(g)) g[pon] = R(g[pon]);
+  // kanał (nazwa) → platforma: wybór „cała platforma” (np. Amazon — wszystkie rynki) w porównaniu po kanałach
+  const platformy = {};
+  for (const lista of Object.values(kanaly)) for (const wiersze of Object.values(lista)) for (const w of wiersze) platformy[w[0]] ||= grupaKanalu(w[10]);
   const tygProd = {};
   const idx = (pon, od) => Math.round((new Date(pon + 'T12:00:00Z') - new Date(od + 'T12:00:00Z')) / (7 * 864e5));
   for (const [od, doDnia, off] of [[od13, niedziela, 0], [am.rokTemu(od13), am.rokTemu(niedziela), TYGODNIE_GRUP]]) {
@@ -186,7 +194,7 @@ function policz(dzis) {
     }
   }
   return { dzis, koniec, ostatniaNiedz: niedziela, kafle: kafle(koniec), tygodnie: tyg, miesiace, miesiacRokTemu,
-    produkty, kanaly, info, grTyg, tygodnie13, tygProd, bezStanu: bzOd ? { od: bzOd, do: bzDo } : null, wygenerowano: new Date().toISOString() };
+    produkty, kanaly, info, grTyg, grTygKan, platformy, tygodnie13, tygProd, bezStanu: bzOd ? { od: bzOd, do: bzDo } : null, wygenerowano: new Date().toISOString() };
 }
 
 // --- gotowy wynik (wątek analiz liczy, API podaje) -------------------------------------------------------------

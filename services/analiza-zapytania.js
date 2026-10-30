@@ -8,7 +8,7 @@
 
 const { db, meta } = require('../db/sprzedaz');
 const am = require('./analiza-model');
-const { NAZWY_KANALOW, nazwaKanalu } = require('./analiza-kanal');
+const { NAZWY_KANALOW, nazwaKanalu, grupaKanalu } = require('./analiza-kanal');
 const { dzisLokalnie } = require('./sprzedaz-model');
 const { interwalMsZMinut } = require('./interwal');
 const { KOLUMNY, kluczKolumny } = require('../pricing/kolumny');
@@ -80,7 +80,46 @@ function podsumowanie(p) {
   return {
     dzien: p.dzien, zakres: p.zakresNazwa, baza: p.baza, okresy: p.zakres, cur, prev, nietypowe,
     historia_pelna: !!(st.historia_od && st.historia_od <= p.zakres.prev[0]), wczytanie: st, nazwy: NAZWY_KANALOW,
+    platformy: Object.fromEntries(Object.keys(NAZWY_KANALOW).map((k) => [k, grupaKanalu(k)])),
   };
+}
+
+// --- porównanie po kanałach ---------------------------------------------------------------------------------------
+// kanal (decyzja usera 2026-10-30: „wybieram Amazon DE i widzę spadki na kategoriach”):
+//   ''                 wszystkie (internet)
+//   'k:DE'             jeden kanał (klucz z zamowienia.kanal)
+//   'k:ALLEGRO_X|CZ'   kanał Allegro na jednym rynku
+//   'p:Amazon'         cała platforma (analiza-kanal.grupaKanalu — wszystkie rynki Amazona)
+// → fragment SQL (alias z.) i argumenty; null = nieznany zapis (traktujemy jak „wszystkie”).
+const KANAL_RE = /^(k:[A-Z0-9_]+(\|[A-Z]{2})?|p:[A-Za-z]+)$/;
+function warunekKanalu(kanal) {
+  if (!kanal || !KANAL_RE.test(kanal)) return { sql: '', args: [], kanal: '' };
+  if (kanal.startsWith('p:')) {
+    const pl = kanal.slice(2);
+    // klucze ze słownika kanałów, nie SELECT DISTINCT po 400 tys. zamówień w wątku Zebr (kanalDokumentu zwraca tylko te)
+    const klucze = Object.keys(NAZWY_KANALOW).filter((k) => grupaKanalu(k) === pl);
+    return { sql: klucze.length ? ` AND z.kanal IN (${klucze.map(() => '?').join(',')})` : ' AND 0', args: klucze, kanal };
+  }
+  const [k, r] = kanal.slice(2).split('|');
+  return r ? { sql: ' AND z.kanal = ? AND z.rynek = ?', args: [k, r], kanal } : { sql: ' AND z.kanal = ?', args: [k], kanal };
+}
+
+// Grupy towarów (kartoteka GT) w zakresie vs ten sam zakres sprzed 364 dni, opcjonalnie w jednym kanale. Bez paragonów
+// Sklepu — jak przegląd produktów. Przychód z pozycji (towar + jego część wysyłki + dopłata), więc suma grup = suma
+// produktów, nie zamówień.
+function grupy(p, { kanal = '' } = {}) {
+  const w = warunekKanalu(kanal);
+  const zbierz = ([od, doDnia]) => new Map(db.prepare(`SELECT IFNULL(NULLIF(t.grupa, ''), '(bez grupy)') g, SUM(x.szt) szt,
+      SUM(x.netto + IFNULL(x.wysylka, 0) + IFNULL(x.doplata, 0)) netto, SUM(x.zysk) zysk, COUNT(DISTINCT x.tw_id) sku
+    FROM pozycje x JOIN zamowienia z ON z.id = x.zam_id LEFT JOIN towary t ON t.tw_id = x.tw_id
+    WHERE z.${p.kol} BETWEEN ? AND ? AND ${p.warunek.replace('status', 'z.status')} AND z.status != 'paragon'${w.sql}
+    GROUP BY g`).all(od, doDnia, ...w.args).map((x) => [x.g, x]));
+  const cur = zbierz(p.zakres.cur), prev = zbierz(p.zakres.prev), pusty = { szt: 0, netto: 0, zysk: 0, sku: 0 };
+  const lista = [...new Set([...cur.keys(), ...prev.keys()])].map((g) => {
+    const a = cur.get(g) || pusty, b = prev.get(g) || pusty;
+    return { grupa: g, cur: { szt: a.szt, netto: a.netto, zysk: a.zysk || 0, sku: a.sku }, prev: { szt: b.szt, netto: b.netto, zysk: b.zysk || 0, sku: b.sku } };
+  }).sort((a, b) => b.cur.netto - a.cur.netto);
+  return { dzien: p.dzien, zakres: p.zakresNazwa, baza: p.baza, okresy: p.zakres, kanal: w.kanal, grupy: lista };
 }
 
 // --- produkty --------------------------------------------------------------------------------------------------
@@ -167,12 +206,13 @@ function uzupelnijTowary(lista_, { zRepricerem = true } = {}) {
 
 // Przegląd produktów = tylko sprzedaż z K4 (FS i ZK) — bez paragonów Sklepu z MAG (decyzja usera 2026-10-20).
 // Sklep zostaje osobnym wierszem w tabeli kanałów („poza sumą”), ale nie miesza listy produktów.
-function produkty(p, { sort = 'zysk', limit = 500, zRepricerem = true } = {}) {
+function produkty(p, { sort = 'zysk', limit = 500, zRepricerem = true, kanal = '' } = {}) {
+  const wk = warunekKanalu(kanal);
   const wiersze = db.prepare(`SELECT x.tw_id, z.kanal, SUM(x.szt) szt, SUM(x.netto + IFNULL(x.wysylka, 0) + IFNULL(x.doplata, 0)) netto, SUM(x.zysk) zysk,
       SUM(IFNULL(x.doplata, 0)) doplata, MAX(CASE WHEN z.zysk_zrodlo LIKE 'handlowa%' THEN 1 ELSE 0 END) handl
     FROM pozycje x JOIN zamowienia z ON z.id = x.zam_id
-    WHERE z.${p.kol} BETWEEN ? AND ? AND ${p.warunek.replace('status', 'z.status')} AND z.status != 'paragon'
-    GROUP BY x.tw_id, z.kanal`).all(...p.zakres.cur);
+    WHERE z.${p.kol} BETWEEN ? AND ? AND ${p.warunek.replace('status', 'z.status')} AND z.status != 'paragon'${wk.sql}
+    GROUP BY x.tw_id, z.kanal`).all(...p.zakres.cur, ...wk.args);
   const tw = new Map();
   for (const w of wiersze) {
     const t = tw.get(w.tw_id) || tw.set(w.tw_id, { tw_id: w.tw_id, szt: 0, netto: 0, zysk: 0, doplata: 0, kanaly: [] }).get(w.tw_id);
@@ -181,7 +221,7 @@ function produkty(p, { sort = 'zysk', limit = 500, zRepricerem = true } = {}) {
   }
   const wszystkie = [...tw.values()].sort((a, b) => b[sort] - a[sort]);
   const { rok, produkty: lista_ } = uzupelnijTowary(wszystkie.slice(0, limit), { zRepricerem });
-  return { dzien: p.dzien, zakres: p.zakresNazwa, baza: p.baza, razem: wszystkie.length, nazwy: NAZWY_KANALOW, historia_rok: rok, produkty: lista_ };
+  return { dzien: p.dzien, zakres: p.zakresNazwa, baza: p.baza, kanal: wk.kanal, razem: wszystkie.length, nazwy: NAZWY_KANALOW, historia_rok: rok, produkty: lista_ };
 }
 
 // Telefon → „Live” (decyzja usera 2026-10-24): ostatnie zamówienia po kolei, w kolejności ich wpływu — bez grupowania po
@@ -232,5 +272,5 @@ function live({ przed = null, limit = 40 } = {}) {
   };
 }
 
-module.exports = { BAZY, POZA_SUMA, parametry, stanWczytania, kanalyZakresu, sumaInternetu, podsumowanie, produkty, live, uzupelnijTowary, tempa, stanyTowarow,
+module.exports = { BAZY, POZA_SUMA, parametry, warunekKanalu, grupy, stanWczytania, kanalyZakresu, sumaInternetu, podsumowanie, produkty, live, uzupelnijTowary, tempa, stanyTowarow,
   dostepneZeStanu };

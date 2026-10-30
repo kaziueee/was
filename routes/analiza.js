@@ -7,11 +7,13 @@
 //   GET /api/analiza/stan                                     kiedy wczytano, od kiedy jest historia
 //   GET /api/analiza/podsumowanie?dzien=&zakres=&baza=         kanały: bieżący zakres vs ten sam sprzed 364 dni
 //   GET /api/analiza/produkty?dzien=&zakres=&baza=&sort=&limit= towary z kanałami, stanem, flagami i repricerem
+//   GET /api/analiza/grupy?dzien=&zakres=&baza=&kanal=        grupy towarów vs rok temu, opcjonalnie w jednym kanale
 //   GET /api/analiza/trendy                                    Sprzedaż → Trendy: dni zamknięte do wczoraj (services/analiza-trendy.js)
 //   GET /api/analiza/stan-towaru                              Sprzedaż → Stan: leżaki / nadmiar / kończy się (services/analiza-stan.js)
 //   GET /api/analiza/live?przed=&limit=                        telefon „Live”: ostatnie zamówienia po kolei (kursor „dzień|zk|fs”)
 //   GET /api/analiza/oferty/:tw_id                             linki do ofert towaru na platformach (karta produktu w Trendach)
 //   GET /api/analiza/raport?dzien=&tydzien=1                   podgląd maila (HTML) — to, co wyśle job
+// kanal (grupy, produkty): '' | k:DE | k:ALLEGRO_EKAJTEK|CZ | p:Amazon (services/analiza-zapytania.js warunekKanalu)
 // zakres: dzien | t7 | mtd | ytd · baza: zam (data zamówienia) | fs (data faktury) · sort: zysk | szt | netto
 
 const express = require('express');
@@ -26,8 +28,10 @@ router.get('/podsumowanie', (req, res) => res.json(q.podsumowanie(q.parametry(re
 router.get('/produkty', (req, res) => {
   const sort = ['zysk', 'szt', 'netto'].includes(req.query.sort) ? req.query.sort : 'zysk';
   const limit = Math.min(Math.max(Number(req.query.limit) || 500, 1), 2000);
-  res.json(q.produkty(q.parametry(req.query), { sort, limit }));
+  res.json(q.produkty(q.parametry(req.query), { sort, limit, kanal: String(req.query.kanal || '') }));
 });
+
+router.get('/grupy', (req, res) => res.json(q.grupy(q.parametry(req.query), { kanal: String(req.query.kanal || '') })));
 
 router.get('/live', (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 40, 1), 100);

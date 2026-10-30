@@ -10,9 +10,12 @@
   // por: 'prev' (poprzednie okno tej samej długości) | 'rok' (te same dni rok temu)
   // bz — dni bez stanu w oknie (`a`) i w oknie porównania (`b`), odtworzone wstecz z dokumentów GT
   // (services/analiza-trendy.js `P.bz`); null = nie wiemy (brak rekonstrukcji, zestaw — leżą składniki, nie on).
-  function wiersze(X, okno, por) {
+  // kanal — porównanie po kanałach (decyzja usera 2026-10-30: „wybieram Amazon DE i widzę spadki na kategoriach”):
+  // '' = wszystkie, 'k:<nazwa kanału>' (jak w X.kanaly, np. „Amazon DE”), 'p:<platforma>' (X.platformy, np. „Amazon”).
+  // Liczby wiersza są wtedy wyłącznie z tego kanału; stan, zapas i dni bez stanu zostają towaru (są wspólne dla kanałów).
+  function wiersze(X, okno, por, kanal = '') {
     const P = X.produkty[okno];
-    return P.w.map((r) => {
+    return (kanal ? wierszeKanalu(X, okno, kanal) : P.w).map((r) => {
       const [id, cs, cn, cz, ps, pn, pz, rs, rn, rz] = r, inf = X.info[id] || BRAK_INFO(id);
       const b = por === 'prev' ? { s: ps, n: pn, z: pz } : { s: rs, n: rn, z: rz };
       const t = P.bz ? P.bz[id] || [0, 0, 0] : null;
@@ -21,6 +24,39 @@
         a: { s: cs, n: cn, z: cz }, b, prev: { s: ps, n: pn }, dn: cn - b.n, dz: cz - b.z, dp: b.n > 0 ? (cn / b.n - 1) * 100 : null };
     });
   }
+
+  // Wiersze produktów (format P.w) policzone z samego kanału: X.kanaly[okno][tw_id] = [[nazwa, 9 liczb jak P.w, klucz, dopłata?]].
+  function pasujeKanal(X, kanal) {
+    const typ = kanal.slice(0, 2), v = kanal.slice(2);
+    return typ === 'p:' ? (n) => (X.platformy || {})[n] === v : (n) => n === v;
+  }
+  function wierszeKanalu(X, okno, kanal) {
+    const pasuje = pasujeKanal(X, kanal), out = [];
+    for (const [id, lista] of Object.entries(X.kanaly[okno] || {})) {
+      let w = null;
+      for (const k of lista) {
+        if (!pasuje(k[0])) continue;
+        w ||= [Number(id), 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        for (let i = 1; i <= 9; i++) w[i] += k[i] || 0;
+      }
+      if (w) out.push(w);
+    }
+    return out;
+  }
+  // Lista do wyboru: kanały okna 30 dni (albo podanego) wg przychodu teraz, z platformą; platformy z > 1 kanałem
+  // dostają też pozycję „cała platforma”.
+  function kanalyDoWyboru(X, okno = 30) {
+    const suma = new Map();
+    for (const lista of Object.values(X.kanaly[okno] || {})) for (const k of lista) {
+      const x = suma.get(k[0]) || suma.set(k[0], { nazwa: k[0], platforma: (X.platformy || {})[k[0]] || 'Inne', n: 0, bn: 0 }).get(k[0]);
+      x.n += k[2] || 0; x.bn += Math.max(k[5] || 0, k[8] || 0);
+    }
+    const kanaly = [...suma.values()].filter((x) => x.n > 0 || x.bn > 0).sort((a, b) => b.n - a.n);
+    const platformy = new Map();
+    for (const x of kanaly) { const p = platformy.get(x.platforma) || platformy.set(x.platforma, { platforma: x.platforma, n: 0, kanaly: [] }).get(x.platforma); p.n += x.n; p.kanaly.push(x); }
+    return [...platformy.values()].sort((a, b) => b.n - a.n);
+  }
+  const nazwaWyboru = (kanal) => (!kanal ? 'wszystkie kanały' : kanal.startsWith('p:') ? `${kanal.slice(2)} — wszystkie rynki` : kanal.slice(2));
 
   // „Zakończone w okresie” (decyzja usera 2026-10-23): w oknie choć jeden dzień bez stanu — towaru nie było, więc
   // gorzej się sprzedawał i nie należy do „Spadku trendu” ani „Zgasłych”. Produkcja 2026-10-23 (30 dni): spadek
@@ -113,7 +149,7 @@
     return out;
   }
 
-  const api = { wiersze, FILTRY, hity, filtruj, klucz, sortuj, oznaczenia, zakonczony, KONCZY_DNI };
+  const api = { wiersze, wierszeKanalu, kanalyDoWyboru, nazwaWyboru, FILTRY, hity, filtruj, klucz, sortuj, oznaczenia, zakonczony, KONCZY_DNI };
   if (typeof module === 'object' && module.exports) module.exports = api;   // testy (node --test)
   else window.TrendyModel = api;
 })();

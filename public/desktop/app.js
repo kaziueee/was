@@ -4574,6 +4574,7 @@ const cenyEsc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;'
 async function odswiezCeny() {
   if (cenyWidok === 'pulpit') return odswiezCenyPulpit();   // public/desktop/ceny-pulpit.js
   if (cenyWidok === 'strategie') return odswiezCenyStrategie();   // public/desktop/ceny-strategie.js
+  if (cenyWidok === 'wystawianie') return odswiezCenyWystawianie();   // public/desktop/ceny-wystawianie.js
   if (cenyWidok === 'log') return odswiezCenyLog();
   if (cenyWidok === 'karta') return odswiezCenyKarta();
   if (cenyWidok === 'powiazania') return odswiezCenyPowiazania();
@@ -5030,7 +5031,7 @@ function cenyPokazWidok(widok) {
   cenyWidok = widok;
   el('panel-ceny').dataset.widok = widok;     // pulpit chowa filtry macierzy (style.css)
   document.querySelectorAll('[data-ceny-widok]').forEach((x) => x.classList.toggle('aktywny', x.dataset.cenyWidok === widok));
-  for (const v of ['pulpit', 'macierz', 'karta', 'strategie', 'log', 'powiazania']) el(`ceny-widok-${v}`).classList.toggle('hidden', widok !== v);
+  for (const v of ['pulpit', 'macierz', 'karta', 'strategie', 'wystawianie', 'log', 'powiazania']) el(`ceny-widok-${v}`).classList.toggle('hidden', widok !== v);
   el('ceny-filtry').classList.toggle('hidden', widok !== 'macierz');
   el('ceny-kanaly').classList.toggle('hidden', widok !== 'macierz');
   el('ceny-sytuacje').classList.toggle('hidden', widok !== 'macierz');

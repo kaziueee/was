@@ -20,6 +20,8 @@
 //   3. pas [min, max] i zysk z kalkulatora WMS (pricing/pas.js); ręczne min/max oferty z ekranu Ceny
 //      wygrywają z kalkulatorem (pricing/granice.js)
 //   4. decyzja (pricing/model.js) → tabela `decyzje`
+//   + oferty wystawione z ekranu Ceny → „Do wystawienia”, które sync zobaczył, dostają automat (pricing/wystawianie.js);
+//     katalogi platform skanowane raz na dobę w nocy poza kolejką (pricing/katalogi.js, PRICING_KATALOGI=0 wyłącza)
 //
 // Dwa tryby oferty (decyzja usera 2026-10-13 — tryb Próba zlikwidowany):
 //   - automat (auto = 1): decyzje ze zmianą ceny idą od razu na Amazona,
@@ -58,6 +60,8 @@ const { ustawCene } = require('./amazon');
 const { pewneDopasowanie } = require('./powiazania');
 const { interwalMsZMinut } = require('../services/interwal');
 const { utworzKolejke } = require('./kolejka-workera');
+const { dopnijWystawione } = require('./wystawianie');
+const katalogi = require('./katalogi');
 
 const PELNY_MS = interwalMsZMinut(process.env.PRICING_PELNY_MIN, 360, 'PRICING_PELNY_MIN');
 // Które platformy obsługuje ten proces (domyślnie wszystkie). Do testów na drugiej maszynie:
@@ -230,6 +234,14 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
       wynik.allegro = Object.fromEntries(Object.entries(podsum).map(([k, x]) => [k, x.aktywne]));
     }
   }
+
+  // Oferty wystawione z ekranu Ceny → „Do wystawienia”, które sync właśnie zobaczył: status `widoczna` i automat
+  // (pricing/wystawianie.js — te same warunki co POST /api/ceny/automat). Przed wyborem ofert, żeby nowa oferta z
+  // automatem dostała decyzję już w tym przebiegu.
+  try {
+    const d = dopnijWystawione();
+    if (d.widoczne) wynik.wystawione = d;
+  } catch (e) { console.error(new Date().toISOString(), '[pricing] wystawione:', e.message); }
 
   // Amazon i Empik: oferty z automatem co przebieg, cały katalog w pełnej obserwacji (limity API).
   // eMAG, Allegro i Kaufland: zawsze cały katalog — obserwacja czyta listę pobraną wyżej (Kaufland dokłada
@@ -702,6 +714,21 @@ if (require.main === module) {
       setTimeout(billing, 30_000);
       setInterval(billing, BILLING_MS);
     }
+    // Skan katalogów platform (pricing/katalogi.js → Ceny → „Do wystawienia”) raz na dobę w nocy, POZA kolejką:
+    // trwa ~1 h (eMAG find_by_eans ~25 s na 100 EAN × 3 rynki), a strażnik kolejki ubiłby proces po 60 min. Pisze
+    // tylko tabelę `katalog`, cen nie dotyka; z przebiegiem dzieli jedynie limity API (find_by_eans to inny zasób niż
+    // lista ofert). Okno 1:00–5:00 czasu lokalnego, poza backupem Windows (23:00–23:45).
+    let skanTrwa = false;
+    setInterval(() => {
+      const h = new Date().getHours();
+      if (skanTrwa || h < 1 || h >= 5 || process.env.PRICING_KATALOGI === '0' || !minelo('skan_katalogow_start', 20 * 3600e3)) return;
+      skanTrwa = true;
+      stan.set('skan_katalogow_start', new Date().toISOString());
+      katalogi.skanuj()
+        .then((w) => console.log(new Date().toISOString(), '[pricing] skan katalogów:', JSON.stringify(w)))
+        .catch((e) => { stan.set('blad_katalog', e.message); console.error(new Date().toISOString(), '[pricing] skan katalogów:', e.message); })
+        .finally(() => { skanTrwa = false; });
+    }, 10 * 60_000);
     // Ręczne korekty z ekranu i nowy raport Top ofert Allegro — co minutę, gdy kolejka wolna.
     setInterval(() => kolejka.jesliWolne(async () => {
       let lista = [];

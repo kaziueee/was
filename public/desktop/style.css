@@ -1661,3 +1661,16 @@ img.tr-min { width: 64px; height: 64px; object-fit: contain; border-radius: 4px;
 .tr-oferta input { margin-top: 3px; }
 .tr-blok { display: block; }
 .tr-ceny tr.tr-of-brak td:not(.tr-kan) { font-style: italic; }
+
+/* Ceny → Do wystawienia (public/desktop/ceny-wystawianie.js) */
+.cw-wstep { padding-left: 0; padding-right: 0; }
+.cw-pasek .ceny-rzad { margin-bottom: 0.4rem; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.cw-pasek #cw-szukaj { min-width: 16rem; }
+.cw-tabela tr.cw-zablok td { color: #777; }
+.cw-cena { width: 6.5rem; text-align: right; }
+.cw-blokada { color: #b3261e; font-size: 0.78rem; }
+.cw-ostrz { color: #9a6a00; font-size: 0.78rem; }
+.cw-opis { font-size: 0.78rem; max-width: 28rem; }
+.cw-auto { display: block; margin-top: 0.6rem; font-size: 0.85rem; }
+.cs-status.blad { color: #b3261e; border-color: #b3261e; background: #fdecea; }
+.cw-auto-inline { font-size: 0.85rem; display: inline-flex; gap: 0.25rem; align-items: center; }

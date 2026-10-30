@@ -11,6 +11,8 @@
 //   decyzje     — co repricer postanowił i czy wysłał (log „dlaczego ta cena")
 //   zmiany      — ręczne działania ludzi (włącz/wyłącz automat, ręczna cena, granice)
 //   stan        — znaczniki czasu workera
+//   katalog     — czy towar ma gotową kartę produktu na rynku (nocny skan, pricing/katalogi.js)
+//   wystawienia — oferty założone z ekranu Ceny → „Do wystawienia” (pricing/wystawianie.js)
 
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
@@ -18,11 +20,12 @@ const { DatabaseSync } = require('node:sqlite');
 const DB_PATH = process.env.PRICING_DB || path.join(__dirname, '..', 'db', 'pricing.db');
 
 const db = new DatabaseSync(DB_PATH);
-db.exec('PRAGMA journal_mode = WAL');
 // Bazę piszą trzy procesy: worker, WMS (przełącznik automatu na ekranie Ceny) i skrypty CLI. Bez
 // czasu oczekiwania drugi piszący dostaje „database is locked” od razu, gdy worker akurat zapisuje
-// przebieg (2026-10-15: emag-cena.js wysłał cenę BG, a wpis do logu przepadł).
+// przebieg (2026-10-15: emag-cena.js wysłał cenę BG, a wpis do logu przepadł). PRZED journal_mode —
+// przełączenie na WAL też bierze blokadę, a procesy startujące razem na świeżej bazie padały na nim.
 db.exec('PRAGMA busy_timeout = 15000');
+db.exec('PRAGMA journal_mode = WAL');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS oferty (
@@ -206,6 +209,54 @@ db.exec(`CREATE TABLE IF NOT EXISTS strategie_towarow (
   kto          TEXT,
   czas         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`);
+
+// Katalogi platform (pricing/katalogi.js, nocny skan w workerze): czy nasz towar ze stanem ma na danym rynku gotową
+// kartę produktu (eMAG PNK, ASIN, Kaufland id_product) — z tego ekran Ceny → „Do wystawienia” wybiera kandydatów.
+// Jeden wiersz na (towar, platforma, rynek); towar bez produktu na rynku też ma wiersz (produkt_id NULL), żeby było
+// wiadomo, że sprawdzony. `ograniczenie` = powód, dla którego platforma nie da nam wystawić (Amazon restrictions,
+// eMAG marka z kategorii wysokiego ryzyka — z odrzuconego wystawienia); NULL = wolno.
+db.exec(`CREATE TABLE IF NOT EXISTS katalog (
+  tw_id        INTEGER NOT NULL,
+  platforma    TEXT NOT NULL,
+  rynek        TEXT NOT NULL,
+  ean          TEXT NOT NULL,
+  produkt_id   TEXT,                       -- PNK / ASIN / id_product; NULL = platforma nie zna EAN-u
+  nazwa        TEXT,                       -- nazwa produktu NA PLATFORMIE (eMAG save jej wymaga)
+  marka        TEXT,
+  kategoria    TEXT,
+  kategoria_id TEXT,                       -- eMAG doc_category_id (save jej wymaga)
+  dodac        INTEGER,                    -- eMAG allowed_to_add_offer; NULL = platforma nie mówi
+  mamy         INTEGER,                    -- platforma twierdzi, że mamy już ofertę (eMAG vendor_has_offer)
+  hotness      TEXT,
+  ograniczenie TEXT,
+  sprawdzono   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (tw_id, platforma, rynek)
+)`);
+
+// Oferty założone przez WMS (Ceny → „Do wystawienia”, pricing/wystawianie.js) — każda próba, także odrzucona.
+// status: wyslane (platforma przyjęła, czekamy na sync) → widoczna (sync znalazł ofertę; gdy auto_po = 1 automat
+// już włączony) | odrzucone (platforma odmówiła — opis) | blad (nie wiemy, czy powstała — sprawdzić w panelu).
+// sellasist = 1, gdy user potwierdził podpięcie oferty w Sellasist (to on pilnuje potem stanu — decyzja 2026-10-30).
+db.exec(`CREATE TABLE IF NOT EXISTS wystawienia (
+  id           INTEGER PRIMARY KEY,
+  czas         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  kto          TEXT,
+  tw_id        INTEGER NOT NULL,
+  platforma    TEXT NOT NULL,
+  rynek        TEXT NOT NULL,
+  sku          TEXT NOT NULL,
+  ean          TEXT,
+  produkt_id   TEXT,
+  id_platformy TEXT,                       -- eMAG: nasze id oferty (vendor_ext_id)
+  cena         REAL,                       -- brutto, waluta rynku
+  ilosc        INTEGER,
+  status       TEXT NOT NULL,
+  opis         TEXT,
+  auto_po      INTEGER NOT NULL DEFAULT 1,
+  oferta_id    INTEGER,                    -- oferty.id po dopięciu przez sync
+  sellasist    INTEGER NOT NULL DEFAULT 0
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_wyst_status ON wystawienia(status, platforma, rynek)');
 
 const stan = {
   get: (k) => db.prepare('SELECT wartosc, czas FROM stan WHERE klucz = ?').get(k) || null,

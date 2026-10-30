@@ -810,6 +810,7 @@
           <button type="button" class="ceny-chip" data-ceny-widok="macierz">Macierz</button>
           <button type="button" class="ceny-chip" data-ceny-widok="karta">Karta SKU</button>
           <button type="button" class="ceny-chip" data-ceny-widok="strategie">Strategie</button>
+          <button type="button" class="ceny-chip" data-ceny-widok="wystawianie">Do wystawienia <b id="ceny-l-wystawianie"></b></button>
           <button type="button" class="ceny-chip" data-ceny-widok="log">Log decyzji</button>
           <button type="button" class="ceny-chip" data-ceny-widok="powiazania">Do powiązania <b id="ceny-l-powiazania"></b></button>
         </div>
@@ -874,6 +875,16 @@
         <div id="cs-lista"></div>
         <div id="cs-podglad"></div>
         <div id="cs-formularz" class="cs-formularz"></div>
+      </div>
+      <!-- Wystawianie ofert tam, gdzie towar ma kartę produktu (public/desktop/ceny-wystawianie.js, /api/ceny/wystawianie) -->
+      <div id="ceny-widok-wystawianie" class="hidden">
+        <p class="hint cw-wstep">Towary ze stanem, które na rynku mają gotową kartę produktu, a nie mają naszej oferty (katalogi skanowane co noc).
+          Cena startowa = minimum wg strategii towaru; po wystawieniu automat repricera prowadzi cenę dalej. Wystawiona oferta jest <b>poza Sellasist</b> —
+          stanu nikt nie aktualizuje, dopóki jej tam nie podepniesz (lista „Do podpięcia w Sellasist” niżej).</p>
+        <div id="cw-pasek" class="cw-pasek"></div>
+        <div id="cw-lista"></div>
+        <h3 class="ceny-h3">Wystawione <b id="cw-l-historia"></b></h3>
+        <div id="cw-historia"></div>
       </div>
       <div id="ceny-widok-log" class="hidden">
         <div class="tabela-wrapper">
@@ -1142,6 +1153,7 @@
   <script src="sprzedaz-trendy.js"></script>
   <script src="ceny-pulpit.js"></script>
   <script src="ceny-strategie.js"></script>
+  <script src="ceny-wystawianie.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -474,6 +474,8 @@ async function pasZeStrategia(w, o) {
 
 // Strategie cenowe per towar: biblioteka, przypisania, podgląd (routes/ceny-strategie.js).
 router.use('/strategie', require('./ceny-strategie')({ SQL_OFERTY, zKanalem, cenaTeraz, asyncH }));
+// Wystawianie ofert tam, gdzie towar ma kartę produktu, a nie ma naszej oferty (routes/ceny-wystawianie.js).
+router.use('/wystawianie', require('./ceny-wystawianie')({ asyncH }));
 
 async function ocenaRecznejCeny(o, cenaWe) {
   const c = granice.walidujCene(cenaWe);

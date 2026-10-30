@@ -451,9 +451,14 @@ function wycenaPrzyCenie(kosztPLN, rynek, g, cena) {
 //                    prowizja 18,40 = 14,15% × 129,99 — billing 2026-10). Wchodzi więc do przychodu i do podstawy
 //                    prowizji; dopłata Smart zostaje od tego, co zapłacił klient (nie sprawdzone, czy Allegro liczy
 //                    próg Smart od ceny z dopłatą). Inne rynki ignorują.
+//   oplaty         — Allegro: opłaty RZECZYWISTE z billingu (services/analiza-billing.js), brutto PLN na zamówienie,
+//                    dodatnie = koszt: { prowizja, dostawa, inne }. null przy składniku = szacunek kalkulatora (prowizja
+//                    % od pełnej kwoty, dostawa = dopłata Smart wg progu). Liczymy hybrydowo (decyzja usera 2026-10-30):
+//                    prowizja jest w billingu od razu, dostawa po 1–3 dniach. Ads (kampania, bez numeru zamówienia)
+//                    zostaje szacunkiem zawsze. VAT od opłat odliczamy jak w kalkulatorze (`vatOplat`).
 // Zysk rozkładamy na pozycje: przychód po kosztach kanału dzielony proporcjonalnie do wartości brutto pozycji,
 // minus jej własny koszt zakupu — gratis (cena 0) ma więc zysk = −koszt, a nie udział w cudzej marży.
-function wycenaZamowienia(rynek, g, { pozycje = [], wysylkaKlienta = null, doplata = 0 } = {}) {
+function wycenaZamowienia(rynek, g, { pozycje = [], wysylkaKlienta = null, doplata = 0, oplaty = null } = {}) {
   const r = profilRynku(rynek, g);
   const poz = pozycje.map((x) => ({ koszt: +x.koszt || 0, cena: +x.cena || 0, szt: +x.szt || 0 })).filter((x) => x.szt > 0);
   const T = poz.reduce((s, x) => s + x.cena * x.szt, 0);           // towar brutto, waluta rynku
@@ -463,10 +468,15 @@ function wycenaZamowienia(rynek, g, { pozycje = [], wysylkaKlienta = null, dopla
   let kurs, zyskWal, pnWal, detal;
   if (r.typ === 'allegro') {
     kurs = 1;
-    const p = oplatyAllegro(r, g), dost = doplataSmartAllegro(T), D = Math.max(0, +doplata || 0);
-    zyskWal = (T + D) * (1 / (1 + v) - p) - (K + dost + obs);
+    const D = Math.max(0, +doplata || 0), vo = 1 + (+r.vatOplat || 0) / 100, o = oplaty || {};
+    const prow = o.prowizja != null ? +o.prowizja / vo : (T + D) * (+r.prowizja || 0) / 100 / vo;
+    const ads = (T + D) * adsRynku(r, g) / 100 / vo;
+    const dost = o.dostawa != null ? +o.dostawa / vo : doplataSmartAllegro(T);
+    const inne = (+o.inne || 0) / vo;
+    zyskWal = (T + D) / (1 + v) - prow - ads - dost - inne - K - obs;
     pnWal = (T + D) / (1 + v);
-    detal = { dostawaSmart: dost, doplata: D };
+    detal = { dostawaSmart: dost, doplata: D, prowizja: prow, ads, inne,
+      rzeczywiste: { prowizja: o.prowizja != null, dostawa: o.dostawa != null } };
   } else {
     const S = wysylkaKlienta != null ? +wysylkaKlienta || 0 : +r.wysKlient || 0;
     let kosztWys, p, opl = 0;

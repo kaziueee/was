@@ -687,20 +687,20 @@ if (require.main === module) {
     });
     tik();
     setInterval(tik, ms);
-    // Dopłaty Allegro do ceny (pricing/doplaty-allegro.js) — POZA kolejką: sam odczyt API i zapis do własnej tabeli,
-    // a analiza sprzedaży ma je widzieć w minutach, nie po 6–18-minutowym pełnym przebiegu.
+    // Billing Allegro per zamówienie (pricing/billing-allegro.js: opłaty, dopłaty Allegro Ceny) — POZA kolejką: sam
+    // odczyt API i zapis do własnej tabeli, a analiza sprzedaży ma je widzieć w minutach, nie po 6–18-minutowym przebiegu.
     if (PLATFORMY.has('allegro')) {
-      const { pobierzDoplaty } = require('./doplaty-allegro');
-      const DOPLATY_MS = interwalMsZMinut(process.env.PRICING_DOPLATY_MIN, 5, 'PRICING_DOPLATY_MIN');
-      let doplatyTrwa = false;
-      const doplaty = async () => {
-        if (doplatyTrwa) return;
-        doplatyTrwa = true;
-        try { await pobierzDoplaty(); } catch (e) { console.error(new Date().toISOString(), '[pricing] dopłaty Allegro:', e.message); }
-        finally { doplatyTrwa = false; }
+      const { pobierzBilling } = require('./billing-allegro');
+      const BILLING_MS = interwalMsZMinut(process.env.PRICING_BILLING_MIN, 5, 'PRICING_BILLING_MIN');
+      let billingTrwa = false;
+      const billing = async () => {
+        if (billingTrwa) return;
+        billingTrwa = true;
+        try { await pobierzBilling(); } catch (e) { console.error(new Date().toISOString(), '[pricing] billing Allegro:', e.message); }
+        finally { billingTrwa = false; }
       };
-      setTimeout(doplaty, 30_000);
-      setInterval(doplaty, DOPLATY_MS);
+      setTimeout(billing, 30_000);
+      setInterval(billing, BILLING_MS);
     }
     // Ręczne korekty z ekranu i nowy raport Top ofert Allegro — co minutę, gdy kolejka wolna.
     setInterval(() => kolejka.jesliWolne(async () => {

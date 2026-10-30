@@ -244,3 +244,18 @@ test('dopłata Allegro Ceny: przychód i prowizja od pełnej kwoty, Smart od zap
   assert.strictEqual(rynki.wycenaZamowienia(e, g, { pozycje: [{ koszt: 40, cena: 99.99, szt: 1 }], doplata: 10 }).zysk,
     rynki.wycenaZamowienia(e, g, { pozycje: [{ koszt: 40, cena: 99.99, szt: 1 }] }).zysk);
 });
+
+test('Allegro hybrydowo: opłaty z billingu zastępują szacunek składnik po składniku', () => {
+  const a = rynek('Allegro');
+  const poz = [{ koszt: 68.94, cena: 113.85, szt: 1 }];
+  const szac = rynki.wycenaZamowienia(a, g, { pozycje: poz, doplata: 16.14 });
+  // pusty billing = dokładnie kalkulator
+  assert.ok(Math.abs(rynki.wycenaZamowienia(a, g, { pozycje: poz, doplata: 16.14, oplaty: { prowizja: null, dostawa: null, inne: 0 } }).zysk - szac.zysk) < 1e-9);
+  // prawdziwa prowizja 18,40 brutto zamiast % od 129,99; dostawa jeszcze szacowana
+  const z = rynki.wycenaZamowienia(a, g, { pozycje: poz, doplata: 16.14, oplaty: { prowizja: 18.40, dostawa: null, inne: 0 } });
+  assert.ok(Math.abs(z.zysk - (szac.zysk + szac.detal.prowizja - 18.40 / 1.23)) < 1e-9);
+  assert.deepStrictEqual(z.detal.rzeczywiste, { prowizja: true, dostawa: false });
+  // dostawa DPB 8,99 i zwrot kosztów (inne < 0 = uznanie)
+  const w = rynki.wycenaZamowienia(a, g, { pozycje: poz, doplata: 16.14, oplaty: { prowizja: 18.40, dostawa: 8.99, inne: -2 } });
+  assert.ok(Math.abs(w.zysk - (z.zysk + z.detal.dostawaSmart - 8.99 / 1.23 + 2 / 1.23)) < 1e-9);
+});

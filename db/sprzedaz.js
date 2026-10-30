@@ -157,7 +157,7 @@ if (!kolumny('gotowe').includes('gz')) db.exec('ALTER TABLE gotowe ADD COLUMN gz
 // lista idzie po nim od góry zamiast sortować 400 tys. zamówień w wątku Zebr (pomiar: 0,3 ms pierwsza strona).
 if (!kolumny('zamowienia').includes('pierwszy')) db.exec('ALTER TABLE zamowienia ADD COLUMN pierwszy TEXT');
 // Dopłata Allegro do ceny (Allegro Ceny / AlleObniżka, 2026-10-30): PLN netto, część przychodu i zysku — faktura jej nie
-// zna (services/analiza-doplaty.js). Na pozycje rozłożona wg wartości, jak wysyłka klienta.
+// zna (services/analiza-billing.js). Na pozycje rozłożona wg wartości, jak wysyłka klienta.
 if (!kolumny('zamowienia').includes('doplata_netto')) db.exec('ALTER TABLE zamowienia ADD COLUMN doplata_netto REAL');
 if (!kolumny('pozycje').includes('doplata')) db.exec('ALTER TABLE pozycje ADD COLUMN doplata REAL');
 db.exec('CREATE INDEX IF NOT EXISTS idx_zam_live ON zamowienia(COALESCE(data_zk, data_fs, data_zam), COALESCE(zk_id, 0), COALESCE(fs_id, 0))');

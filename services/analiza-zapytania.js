@@ -3,7 +3,7 @@
 // Moduł analiz sprzedaży — zapytania do db/sprzedaz.db wspólne dla API (routes/analiza.js) i raportu mailem
 // (services/analiza-raport.js): jedna definicja liczb dla ekranu i maila. Nigdy GT; pricing.db best-effort.
 //   przychód netto = cała faktura (towary + wysyłka klienta) + dopłata Allegro do ceny (poza fakturą,
-//   services/analiza-doplaty.js), suma na górze = internet (Sklep poza sumą — robi to
+//   services/analiza-billing.js), suma na górze = internet (Sklep poza sumą — robi to
 //   wyświetlanie, tu zwracamy wszystkie kanały), rok temu = −364 dni (docs/analiza-sprzedazy.md).
 
 const { db, meta } = require('../db/sprzedaz');
@@ -39,7 +39,7 @@ function stanWczytania() {
 
 function kanalyZakresu({ kol, warunek }, [od, doDnia]) {
   // netto = przychód netto CAŁEJ faktury: towary + wysyłka zapłacona przez klienta (jak FS i ERP Dashboard) + dopłata
-  // Allegro do ceny, której faktura nie zna (services/analiza-doplaty.js; `doplata` = ile z tego to dopłata)
+  // Allegro do ceny, której faktura nie zna (services/analiza-billing.js; `doplata` = ile z tego to dopłata)
   const wiersze = db.prepare(`SELECT kanal, rynek, COUNT(*) zam, SUM(szt) szt, SUM(netto + IFNULL(wysylka_netto, 0) + IFNULL(doplata_netto, 0)) netto, SUM(zysk) zysk,
       SUM(IFNULL(doplata_netto, 0)) doplata,
       SUM(CASE WHEN zysk_zrodlo LIKE 'handlowa%' THEN netto + IFNULL(wysylka_netto, 0) + IFNULL(doplata_netto, 0) ELSE 0 END) handl,
@@ -221,6 +221,8 @@ function live({ przed = null, limit = 40 } = {}) {
         wplyw: z.k_dzien, dzien: g.dzien, godz: g.godz, godz_zrodlo: g.zrodlo, szt: z.szt, netto: z.netto + (z.wysylka_netto || 0) + (z.doplata_netto || 0), zysk: z.zysk,
         doplata: z.doplata_netto || 0,
         zysk_handlowy: /^handlowa/.test(z.zysk_zrodlo || ''),
+        // opłaty Allegro: 'billing' = rzeczywiste, 'czesc' = dostawa jeszcze szacowana (przychodzi 1–3 dni po zamówieniu)
+        oplaty: /^billing_czesc/.test(z.zysk_zrodlo || '') ? 'czesc' : /^billing/.test(z.zysk_zrodlo || '') ? 'billing' : null,
         pozycje: (poz.get(z.id) || []).map((p) => ({ tw_id: p.tw_id, symbol: p.symbol, nazwa: p.nazwa, zestaw: p.rodzaj === 8, szt: p.szt,
           cena_wal: p.cena_wal, netto: p.netto + (p.wysylka || 0) + (p.doplata || 0), zysk: p.zysk, dostepne: tow.get(p.tw_id)?.stan?.dostepne ?? null,
           dni_zapasu: tow.get(p.tw_id)?.dni_zapasu ?? null, flagi: tow.get(p.tw_id)?.flagi || [] })) };

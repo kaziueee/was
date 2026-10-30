@@ -27,7 +27,8 @@
     const przybl = z.zysk_handlowy ? '≈' : '';
     const wynik = z.zysk == null ? '<span class="sw-brak">—</span>'
       : `<span class="${z.zysk < 0 ? 'sw-minus' : ''}">${przybl}${W.pct(W.marza(z))}<br>${przybl}${W.zl(z.zysk)}</span>`
-        + (z.doplata ? `<div class="sw-brak" title="Allegro Ceny / AlleObniżka: dopłata Allegro do ceny oferty, poza fakturą (netto) — w przychodzie i zysku">z dopłatą Allegro ${W.zl(z.doplata)}</div>` : '');
+        + (z.doplata ? `<div class="sw-brak" title="Allegro Ceny / AlleObniżka: dopłata Allegro do ceny oferty, poza fakturą (netto) — w przychodzie i zysku">z dopłatą Allegro ${W.zl(z.doplata)}</div>` : '')
+        + (z.oplaty ? `<div class="sw-brak" title="${z.oplaty === 'billing' ? 'prowizja i dostawa z billingu Allegro' : 'prowizja z billingu Allegro, dostawa jeszcze szacowana (Allegro nalicza ją 1–3 dni po zamówieniu)'}">${z.oplaty === 'billing' ? 'opłaty z billingu' : 'dostawa szacowana'}</div>` : '');
     const poz = z.pozycje.length ? z.pozycje : [null];
     const rs = poz.length > 1 ? ` rowspan="${poz.length}"` : '';
     const zam = [

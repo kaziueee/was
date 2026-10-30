@@ -152,7 +152,8 @@
     const przybl = z.zysk_handlowy ? '≈' : '';
     const wynik = z.zysk == null ? '<span class="sw-brak">zysk —</span>'
       : `<span class="${z.zysk < 0 ? 'sw-minus' : ''}">marża ${przybl}${W.pct(W.marza(z))} · zysk ${przybl}${W.zl(z.zysk)}</span>`
-        + (z.doplata ? ` <span class="sw-brak">· z dopłatą Allegro ${W.zl(z.doplata)}</span>` : '');
+        + (z.doplata ? ` <span class="sw-brak">· z dopłatą Allegro ${W.zl(z.doplata)}</span>` : '')
+        + (z.oplaty ? ` <span class="sw-brak">· ${z.oplaty === 'billing' ? 'opłaty z billingu' : 'dostawa szacowana'}</span>` : '');
     const poz = z.pozycje.map((p) => `<div class="l-poz">
         <div class="l-foto" data-tw="${p.tw_id}"><img src="/api/produkty/${p.tw_id}/zdjecie?rozmiar=mini" alt="" loading="lazy" onerror="this.parentNode.classList.add('l-bez')"></div>
         <div class="l-tekst"><div class="l-sku">${W.esc(p.symbol || p.tw_id)}${p.zestaw ? '<span class="sw-tag">zestaw</span>' : ''}</div>

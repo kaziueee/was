@@ -67,7 +67,7 @@ function okno(od, doDnia) {
 }
 
 // Kanały produktu: [nazwa, szt, netto, zysk] × (teraz, poprzednie okno, rok temu), klucz kanału (do linku), dopłata Allegro
-// teraz (część netto; services/analiza-doplaty.js)
+// teraz (część netto; services/analiza-billing.js)
 function kanalyProduktow(P) {
   const m = new Map();
   const zbierz = (od, doDnia, off) => {

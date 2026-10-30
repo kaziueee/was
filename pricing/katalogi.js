@@ -67,29 +67,36 @@ async function emagPoEan(eany, kraj) {
 }
 
 // ---------- Amazon ----------
-async function amazonPoEan(eany, kraj) {
+async function amazonPoEan(eany, kraj, symbole = new Map()) {
   const amazon = require('./amazon');
   const mp = amazon.RYNKI_AMAZON[kraj].id;
-  const mapa = new Map();
+  const kandydaci = new Map();                              // EAN → [karty z tym EAN-em]
   for (const cz of m.paczki(eany, 20)) {
-    const qs = new URLSearchParams({ identifiers: cz.join(','), identifiersType: 'EAN', marketplaceIds: mp, includedData: 'identifiers,summaries,productTypes', pageSize: '20' });
-    const j = await amazon.api('GET', `/catalog/2022-04-01/items?${qs}`);
-    for (const it of j.items || []) {
-      const s = (it.summaries || []).find((x) => x.marketplaceId === mp) || it.summaries?.[0] || {};
-      const typ = (it.productTypes || []).find((x) => x.marketplaceId === mp)?.productType || it.productTypes?.[0]?.productType || null;
-      for (const grupa of it.identifiers || []) {
-        for (const id of grupa.identifiers || []) {
-          if (id.identifierType !== 'EAN') continue;
-          const n = m.normalizujEan(id.identifier);
-          if (n && cz.includes(n) && !mapa.has(n)) {
-            mapa.set(n, { produkt_id: it.asin, nazwa: s.itemName || null, marka: s.brand || null,
-              kategoria: s.browseClassification?.displayName || null, kategoria_id: typ, dodac: null, mamy: 0, hotness: null });
-          }
-        }
+    let nextToken = null;
+    do {                                                    // jeden EAN bywa na kilku ASIN-ach — bez stronicowania część by przepadła
+      const qs = new URLSearchParams({ identifiers: cz.join(','), identifiersType: 'EAN', marketplaceIds: mp, includedData: 'identifiers,summaries,productTypes', pageSize: '20' });
+      if (nextToken) qs.set('pageToken', nextToken);
+      const j = await amazon.api('GET', `/catalog/2022-04-01/items?${qs}`);
+      for (const it of j.items || []) {
+        const s = (it.summaries || []).find((x) => x.marketplaceId === mp) || it.summaries?.[0] || {};
+        const typ = (it.productTypes || []).find((x) => x.marketplaceId === mp)?.productType || it.productTypes?.[0]?.productType || null;
+        const eanyKarty = [...new Set((it.identifiers || []).flatMap((g) => (g.identifiers || []).filter((i) => i.identifierType === 'EAN').map((i) => m.normalizujEan(i.identifier)).filter(Boolean)))];
+        const karta = { asin: it.asin, eany: eanyKarty, model: s.modelNumber || s.partNumber || null, nazwa: s.itemName || null, marka: s.brand || null,
+          kategoria: s.browseClassification?.displayName || null, typ };
+        for (const n of eanyKarty) if (cz.includes(n) && !(kandydaci.get(n) || []).some((k) => k.asin === it.asin)) kandydaci.set(n, [...(kandydaci.get(n) || []), karta]);
       }
-    }
-    await sleep(550);                                     // 2/s
+      nextToken = j.pagination?.nextToken || null;
+      await sleep(550);                                     // 2/s
+    } while (nextToken);
   }
+  const mapa = new Map();
+  let wieloznaczne = 0;
+  for (const [ean, lista] of kandydaci) {
+    const k = m.wybierzAsin(lista, symbole.get(ean));
+    if (k.wieloznaczny) wieloznaczne++;
+    mapa.set(ean, { produkt_id: k.asin, nazwa: k.nazwa, marka: k.marka, kategoria: k.kategoria, kategoria_id: k.typ, dodac: null, mamy: 0, hotness: null });
+  }
+  if (wieloznaczne) log(`Amazon ${kraj}: ${wieloznaczne} EAN-ów na kilku ASIN-ach — wybrany wg modelu z symbolu`);
   return mapa;
 }
 
@@ -220,7 +227,7 @@ async function cenyRynku(platforma, rynek, twIds) {
 
 const SZUKAJ = {
   emag: (eany, rynek) => emagPoEan(eany, rynek),
-  amazon: (eany, rynek) => amazonPoEan(eany, rynek),
+  amazon: (eany, rynek, symbole) => amazonPoEan(eany, rynek, symbole),
   kaufland: (eany, rynek) => kauflandPoEan(eany, rynek),
   empik: (eany) => empikPoEan(eany),
 };
@@ -238,6 +245,7 @@ async function skanuj({ rynki = null, twIds = null, symbol = null } = {}) {
   const t0 = Date.now();
   const towary = await towaryDoSkanu({ twIds, symbol });
   const eany = [...new Set(towary.map((t) => t.ean))];
+  const symbole = new Map(towary.map((t) => [t.ean, t.symbol]));
   const wynik = { towary: towary.length, rynki: {}, bledy: {} };
   if (!towary.length) return wynik;
   const filtr = twIds ? new Set(towary.map((t) => t.tw_id)) : null;
@@ -246,7 +254,7 @@ async function skanuj({ rynki = null, twIds = null, symbol = null } = {}) {
     if (rynki && !rynki.includes(klucz)) continue;
     if (!skonfigurowana(platforma)) { wynik.bledy[klucz] = 'brak kluczy API w .env'; continue; }
     try {
-      const mapa = await SZUKAJ[platforma](eany, rynek);
+      const mapa = await SZUKAJ[platforma](eany, rynek, symbole);
       wynik.rynki[klucz] = zapiszRynek(platforma, rynek, towary, mapa);
       if (platforma === 'amazon') wynik.rynki[`${klucz} ograniczenia`] = await ograniczeniaAmazon(rynek, filtr);
       if (platforma === 'kaufland' || platforma === 'empik') {

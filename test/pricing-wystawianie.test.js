@@ -158,3 +158,13 @@ test('cena startowa: rynek droższy → cena rynku, tańszy albo brak → minimu
   assert.strictEqual(km.cenaStartowa(78.99, null), 78.99);
   assert.strictEqual(km.cenaStartowa(null, 50), 50);
 });
+
+test('Amazon: EAN na kilku ASIN-ach — wygrywa model z symbolu, potem karta z jednym EAN-em', () => {
+  const motu = { asin: 'B0CBQTGDWZ', eany: ['0194735243563', '0194735262649'], model: 'HYC48' };
+  const hw = { asin: 'B0DMWGSC2L', eany: ['0194735262649'], model: 'JBL02' };
+  assert.strictEqual(km.wybierzAsin([motu, hw], 'HWHHBL96-JBL02').asin, 'B0DMWGSC2L');
+  assert.strictEqual(km.wybierzAsin([motu, hw], 'COS-INNEGO').asin, 'B0DMWGSC2L');      // jedyny EAN
+  assert.strictEqual(km.wybierzAsin([motu, hw], 'X').wieloznaczny, true);
+  assert.deepStrictEqual(km.wybierzAsin([hw], 'X'), { ...hw, wieloznaczny: false });
+  assert.strictEqual(km.wybierzAsin([], 'X'), null);
+});

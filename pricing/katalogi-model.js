@@ -63,6 +63,23 @@ function zEmpikP31(products) {
   return mapa;
 }
 
+// Amazon: jeden EAN bywa na KILKU ASIN-ach — także na cudzym produkcie, któremu ktoś dopisał nasz kod obok jego
+// własnego (HWHHBL96-JBL02, EAN 194735262649: właściwy B0DMWGSC2L Hot Wheels JBL02, a pierwszy z wyszukiwania był
+// B0CBQTGDWZ — figurka MOTU HYC48 z dwoma EAN-ami, marka z ograniczeniem, 30.10). Kolejność wyboru:
+//   1. numer modelu / części z karty zawiera się w naszym symbolu (JBL02 ↔ HWHHBL96-JBL02),
+//   2. karta ma TYLKO ten EAN (nie jest „cudzą” kartą z dopisanym kodem),
+//   3. pierwszy z wyszukiwania.
+// kandydaci = [{ asin, eany: [EAN-y karty], model, ... }] → najlepszy kandydat + `wieloznaczny` (było > 1 ASIN).
+const goly = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+function wybierzAsin(kandydaci, symbol) {
+  if (!kandydaci?.length) return null;
+  const sym = goly(symbol);
+  const ocena = (k) => ((k.model && goly(k.model).length >= 4 && sym.includes(goly(k.model))) ? 2 : 0) + ((k.eany || []).length === 1 ? 1 : 0);
+  let best = kandydaci[0];
+  for (const k of kandydaci.slice(1)) if (ocena(k) > ocena(best)) best = k;
+  return { ...best, wieloznaczny: new Set(kandydaci.map((k) => k.asin)).size > 1 };
+}
+
 // Ceny konkurencji (cena TOWARU, bez wysyłki — Empik Buy Box = najniższa cena produktu, Kaufland porównujemy tak samo,
 // bo naszą wysyłkę i tak dolicza oferta). Nasze oferty pomijamy. → { cena, ofert } albo null (nikt nie sprzedaje).
 const zaokr2 = (x) => Math.round(x * 100) / 100;
@@ -100,4 +117,4 @@ function powodBraku(k, { mamyOferte = false, stan = null } = {}) {
   return null;
 }
 
-module.exports = { RYNKI_KATALOGU, kluczRynku, normalizujEan, paczki, zEmagFindByEans, zEmpikP31, cenaRynkuKaufland, cenaRynkuEmpik, cenaStartowa, odrzucenieMarki, powodBraku };
+module.exports = { RYNKI_KATALOGU, kluczRynku, normalizujEan, paczki, zEmagFindByEans, zEmpikP31, wybierzAsin, cenaRynkuKaufland, cenaRynkuEmpik, cenaStartowa, odrzucenieMarki, powodBraku };

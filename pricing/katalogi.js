@@ -225,7 +225,7 @@ async function skanuj({ rynki = null, twIds = null, symbol = null } = {}) {
     }
   }
   wynik.sekund = Math.round((Date.now() - t0) / 1000);
-  if (!twIds && !symbol) {
+  if (!twIds && !symbol && !rynki) {                      // tylko pełny skan (ręczny skan jednego rynku nie nadpisuje)
     stan.set('skan_katalogow', JSON.stringify(wynik));
     if (Object.keys(wynik.bledy).length) stan.set('blad_katalog', JSON.stringify(wynik.bledy));
   }

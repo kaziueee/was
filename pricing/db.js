@@ -239,6 +239,10 @@ const kolKatalog = db.prepare('PRAGMA table_info(katalog)').all().map((k) => k.n
 if (!kolKatalog.includes('cena_rynek')) db.exec('ALTER TABLE katalog ADD COLUMN cena_rynek REAL');
 if (!kolKatalog.includes('ofert_rynek')) db.exec('ALTER TABLE katalog ADD COLUMN ofert_rynek INTEGER');
 if (!kolKatalog.includes('cena_rynek_czas')) db.exec('ALTER TABLE katalog ADD COLUMN cena_rynek_czas TEXT');
+// Skan pisze ceny rynku i ograniczenia PO produkt_id (klucz główny zaczyna się od tw_id, więc go nie używa). Bez
+// indeksu każdy UPDATE czytał całą tabelę (~98 tys. wierszy): 9,5 tys. cen Kauflandu w jednej transakcji trzymało
+// blokadę zapisu 128 s (2026-10-30) — ręczna cena i automat na ekranie dostawały „database is locked”.
+db.exec('CREATE INDEX IF NOT EXISTS idx_katalog_produkt ON katalog (platforma, rynek, produkt_id)');
 
 // Oferty założone przez WMS (Ceny → „Do wystawienia”, pricing/wystawianie.js) — każda próba, także odrzucona.
 // status: wyslane (platforma przyjęła, czekamy na sync) → widoczna (sync znalazł ofertę; gdy auto_po = 1 automat

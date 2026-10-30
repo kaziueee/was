@@ -63,6 +63,26 @@ function zEmpikP31(products) {
   return mapa;
 }
 
+// Ceny konkurencji (cena TOWARU, bez wysyłki — Empik Buy Box = najniższa cena produktu, Kaufland porównujemy tak samo,
+// bo naszą wysyłkę i tak dolicza oferta). Nasze oferty pomijamy. → { cena, ofert } albo null (nikt nie sprzedaje).
+const zaokr2 = (x) => Math.round(x * 100) / 100;
+function cenaRynkuKaufland(bb) {
+  const ceny = (bb?.units || []).filter((x) => x && x.price != null && x.id_unit == null && x.id_offer == null)
+    .map((x) => Number(x.price) / 100).filter((x) => x > 0);
+  return ceny.length ? { cena: zaokr2(Math.min(...ceny)), ofert: ceny.length } : null;
+}
+function cenaRynkuEmpik(oferty, naszSklep = '') {
+  const nasz = String(naszSklep || '').trim().toLowerCase();
+  const ceny = (oferty || []).filter((o) => o && o.active !== false && (!nasz || String(o.shop_name || '').trim().toLowerCase() !== nasz))
+    .map((o) => Number(o.applicable_pricing?.price ?? o.price)).filter((x) => x > 0);
+  return ceny.length ? { cena: zaokr2(Math.min(...ceny)), ofert: ceny.length } : null;
+}
+// Cena startowa: rynek droższy niż nasze minimum → cena rynku (nie oddajemy marży), inaczej minimum (pod nie nie schodzimy).
+function cenaStartowa(min, cenaRynek) {
+  if (!(min > 0)) return cenaRynek > 0 ? cenaRynek : null;
+  return cenaRynek > min ? cenaRynek : min;
+}
+
 // Odrzucenie wystawienia przez eMAG z powodu marki („kategorii cu risc ridicat” — trzeba wysłać dokumenty przez
 // Mesagerie). Taka marka nie przejdzie na tym rynku dla ŻADNEGO towaru, więc oznaczamy wszystkie (pricing/wystawianie.js).
 const ODRZUCENIE_MARKI = /risc|risk|document/i;
@@ -80,4 +100,4 @@ function powodBraku(k, { mamyOferte = false, stan = null } = {}) {
   return null;
 }
 
-module.exports = { RYNKI_KATALOGU, kluczRynku, normalizujEan, paczki, zEmagFindByEans, zEmpikP31, odrzucenieMarki, powodBraku };
+module.exports = { RYNKI_KATALOGU, kluczRynku, normalizujEan, paczki, zEmagFindByEans, zEmpikP31, cenaRynkuKaufland, cenaRynkuEmpik, cenaStartowa, odrzucenieMarki, powodBraku };

@@ -8,7 +8,7 @@
 // bierzemy tylko (tw_id, platforma, rynek, cena); blokady (brak EAN / wagi / wymiarów / stanu, rynek bez testu) nie
 // przechodzą nigdy, ostrzeżenia (cena pod minimum) tylko z potwierdzeniem. Logika: pricing/wystawianie-model.js.
 //
-//   GET  /api/ceny/wystawianie                    kandydaci (filtry ?rynek=emag:RO&szukaj=…)
+//   GET  /api/ceny/wystawianie                    kandydaci JEDNEGO rynku (?rynek=emag:RO&min_stan=4&szukaj=…)
 //   POST /api/ceny/wystawianie/podglad  { pozycje: [{tw_id, platforma, rynek, cena?}] }
 //   POST /api/ceny/wystawianie          { pozycje, potwierdz, auto }        wystawia (≤ MAX_NA_RAZ)
 //   GET  /api/ceny/wystawianie/historia            ostatnie próby + co czeka na podpięcie w Sellasist
@@ -18,7 +18,7 @@
 const express = require('express');
 const { db, stan } = require('../pricing/db');
 const wm = require('../pricing/wystawianie-model');
-const { RYNKI_KATALOGU, kluczRynku, powodBraku } = require('../pricing/katalogi-model');
+const { RYNKI_KATALOGU, kluczRynku, powodBraku, cenaStartowa } = require('../pricing/katalogi-model');
 const { kluczKolumny, kolumna } = require('../pricing/kolumny');
 const { pasyZWyceny } = require('../pricing/pas');
 const strategieDane = require('../pricing/strategie-dane');
@@ -43,16 +43,26 @@ module.exports = function wystawianieRouter({ asyncH }) {
 
   // Wiersze katalogu → pełne pozycje (stan, pas, waga, wymiary, ocena). ceny = Map(klucz → cena z klienta).
   // GT padnięte = wyjątek → 503 (nie pokazujemy „zera” ani ceny bez kosztu).
-  async function zbuduj(wiersze, ceny = new Map()) {
-    const twIds = [...new Set(wiersze.map((k) => k.tw_id))];
+  // minStan > 0: stan sprawdzamy NAJPIERW (jedno zapytanie) i dalej liczymy tylko towary z co najmniej tyloma sztukami —
+  // reszta (1–3 szt.) nie jest warta wystawienia, a cała lista rynku to ~8 tys. wierszy (lagowała ekran).
+  async function zbuduj(wiersze, ceny = new Map(), { minStan = 0 } = {}) {
+    let twIds = [...new Set(wiersze.map((k) => k.tw_id))];
     if (!twIds.length) return [];
-    const [wyceny, stany, atrybuty, strategie] = await Promise.all([
-      wycenaHurtem(twIds), pobierzStanyGt(twIds), pobierzAtrybuty(twIds),
+    const stany = await pobierzStanyGt(twIds);
+    if (minStan > 0) {
+      twIds = twIds.filter((id) => (wm.stanDostepny(stany.get(String(id)), MAGAZYNY_RAZEM) ?? 0) >= minStan);
+      const zostaja = new Set(twIds);
+      wiersze = wiersze.filter((k) => zostaja.has(k.tw_id));
+      if (!twIds.length) return [];
+    }
+    const [wyceny, atrybuty, strategie] = await Promise.all([
+      wycenaHurtem(twIds), pobierzAtrybuty(twIds),
       strategieDane.strategieDlaPasow(twIds).catch(() => ({ poTw: new Map() })),
     ]);
     const pasy = new Map();
     const out = [];
-    for (const k of wiersze) {
+    for (const [i, k] of wiersze.entries()) {
+      if (i && i % 300 === 0) await new Promise((r) => setImmediate(r));     // nie trzymamy pętli Zebr (zasada 7)
       const w = wyceny.get(k.tw_id);
       if (!w) continue;
       if (!pasy.has(k.tw_id)) pasy.set(k.tw_id, pasyZWyceny(w, { strategia: strategie.poTw.get(k.tw_id) }));
@@ -61,7 +71,7 @@ module.exports = function wystawianieRouter({ asyncH }) {
       const a = atrybuty.get(String(k.tw_id)) || {};
       const klucz = `${k.tw_id}|${k.platforma}|${k.rynek}`;
       const cenaKlienta = Number(ceny.get(klucz));
-      const cena = cenaKlienta > 0 ? Math.round(cenaKlienta * 100) / 100 : pas?.min ?? null;
+      const cena = cenaKlienta > 0 ? Math.round(cenaKlienta * 100) / 100 : cenaStartowa(pas?.min ?? null, k.cena_rynek);
       const p = {
         tw_id: k.tw_id, sku: w.sku, nazwa: w.nazwa, ean: k.ean, platforma: k.platforma, rynek: k.rynek,
         katalog: { produkt_id: k.produkt_id, nazwa: k.nazwa, marka: k.marka, kategoria: k.kategoria, kategoria_id: k.kategoria_id, ograniczenie: k.ograniczenie },
@@ -76,6 +86,7 @@ module.exports = function wystawianieRouter({ asyncH }) {
         produkt_id: k.produkt_id, nazwa_platformy: k.nazwa, marka: k.marka, kategoria: k.kategoria, hotness: k.hotness,
         stan: p.ilosc, waga: p.waga, wymiary: a.wymiary ?? null, cena, min: pas?.min ?? null, max: pas?.max ?? null,
         strategia: pas?.strategia?.nazwa ?? null, zysk: przy?.zysk ?? null, marza: przy?.marza ?? null,
+        cena_rynek: k.cena_rynek ?? null, ofert_rynek: k.ofert_rynek ?? null, cena_rynek_czas: k.cena_rynek_czas ?? null,
         blokady: ocena.blokady, brakuje: ocena.brakuje, ostrzezenia: ocena.ostrzezenia, sprawdzono: k.sprawdzono,
         zablokowana: wm.powodyBlokady(ocena).length > 0,
         _pozycja: p,
@@ -85,35 +96,45 @@ module.exports = function wystawianieRouter({ asyncH }) {
   }
   const bezWnetrza = (x) => { const { _pozycja, ...r } = x; return r; };
 
-  // Lista kandydatów jest droga (GT: wycena + stany + atrybuty dla ~tysiąca towarów) — trzymamy ją 2 min.
-  let cache = null;
+  // Lista kandydatów jest droga (GT: wycena + stany + atrybuty) — liczymy JEDEN rynek naraz i trzymamy go 2 min
+  // (klucz: rynek + próg stanu). Pozostałe rynki na chipach: liczba kandydatów z katalogu (SQL, bez GT), a „gotowych”
+  // z ostatniego policzenia tego rynku, jeśli było.
+  const cache = new Map();
+  const SQL_RYNKU = `${SQL_KANDYDACI} AND k.platforma = ? AND k.rynek = ?`;
   router.get('/', asyncH(async (req, res) => {
-    const filtrRynku = String(req.query.rynek || '');
+    const klucz = String(req.query.rynek || 'emag:RO');
+    const [platforma, rynek] = klucz.split(':');
+    const minStan = Math.max(0, Math.floor(Number(req.query.min_stan ?? 4)) || 0);
     const szukaj = String(req.query.szukaj || '').trim().toUpperCase();
-    if (!cache || Date.now() - cache.czas > 120_000 || req.query.odswiez === '1') {
+    const kc = `${klucz}|${minStan}`;
+    let c = cache.get(kc);
+    if (!c || Date.now() - c.czas > 120_000 || req.query.odswiez === '1') {
       let lista;
-      try { lista = await zbuduj(db.prepare(SQL_KANDYDACI).all()); } catch (e) {
+      try { lista = await zbuduj(db.prepare(SQL_RYNKU).all(platforma, rynek), new Map(), { minStan: Math.max(1, minStan) }); } catch (e) {
         console.error('[ceny/wystawianie] GT:', e.message);
         return blad(res, 503, 'Subiekt GT nie odpowiada — bez kosztu i stanu nie pokażemy cen do wystawienia');
       }
       // Bez stanu dostępnego to nie kandydat (towar w katalogu, ale całość zarezerwowana / zeszła od skanu).
-      cache = { czas: Date.now(), lista: lista.filter((x) => powodBraku({ produkt_id: x.produkt_id, ograniczenie: null }, { stan: x.stan }) == null).map(bezWnetrza) };
+      c = { czas: Date.now(), lista: lista.filter((x) => powodBraku({ produkt_id: x.produkt_id, ograniczenie: null }, { stan: x.stan }) == null).map(bezWnetrza) };
+      cache.set(kc, c);
     }
-    const rynki = RYNKI_KATALOGU.map(({ platforma, rynek }) => {
-      const klucz = kluczRynku(platforma, rynek);
-      const r = wm.gotowyRynek(platforma, rynek);
-      return { klucz, nazwa: kolumna(platforma, rynek)?.nazwa || klucz, gotowe: r.gotowe, powod: r.powod || null,
-        n: cache.lista.filter((x) => kluczRynku(x.platforma, x.rynek) === klucz).length,
-        // bez blokad i braków danych — pomiar 2026-10-30: komplet wagi i wymiarów ma ~2,3 tys. z ~12,3 tys. towarów ze stanem
-        gotowych: cache.lista.filter((x) => kluczRynku(x.platforma, x.rynek) === klucz && !x.zablokowana).length };
+    const licz = db.prepare(`SELECT k.platforma || ':' || k.rynek AS klucz, COUNT(*) AS n FROM (${SQL_KANDYDACI}) k GROUP BY 1`).all();
+    const nKat = new Map(licz.map((r) => [r.klucz, r.n]));
+    const rynki = RYNKI_KATALOGU.map((r) => {
+      const kl = kluczRynku(r.platforma, r.rynek);
+      const g = wm.gotowyRynek(r.platforma, r.rynek);
+      const pol = cache.get(`${kl}|${minStan}`);
+      return { klucz: kl, nazwa: kolumna(r.platforma, r.rynek)?.nazwa || kl, gotowe: g.gotowe, powod: g.powod || null,
+        n_katalog: nKat.get(kl) || 0,                 // wszyscy kandydaci z katalogu (bez progu stanu)
+        n: pol ? pol.lista.length : null,             // z progiem stanu — null, dopóki rynek nie był liczony
+        gotowych: pol ? pol.lista.filter((x) => !x.zablokowana).length : null };
     });
-    let pozycje = cache.lista;
-    if (filtrRynku) pozycje = pozycje.filter((x) => kluczRynku(x.platforma, x.rynek) === filtrRynku);
+    let pozycje = c.lista;
     if (szukaj) pozycje = pozycje.filter((x) => [x.sku, x.ean, x.nazwa, x.marka].some((v) => String(v || '').toUpperCase().includes(szukaj)));
     let skan = null;
     try { skan = stan.get('skan_katalogow') ? { ...JSON.parse(stan.get('skan_katalogow').wartosc), czas: stan.get('skan_katalogow').czas } : null; } catch { skan = null; }
     const doSellasist = db.prepare("SELECT COUNT(*) AS n FROM wystawienia WHERE status IN ('wyslane', 'widoczna') AND sellasist = 0").get().n;
-    res.json({ pozycje, rynki, skan, do_sellasist: doSellasist, max_na_raz: wm.MAX_NA_RAZ, lista_czas: new Date(cache.czas).toISOString() });
+    res.json({ rynek: klucz, min_stan: minStan, pozycje, rynki, skan, do_sellasist: doSellasist, max_na_raz: wm.MAX_NA_RAZ, lista_czas: new Date(c.czas).toISOString() });
   }));
 
   // Pozycje z klienta → wiersze katalogu (tylko te, które wciąż są kandydatami) + ceny z klienta.
@@ -157,7 +178,7 @@ module.exports = function wystawianieRouter({ asyncH }) {
     if (ostrzezenia.length && b.potwierdz !== true) {
       return blad(res, 409, `Wymaga potwierdzenia: ${ostrzezenia.map((o) => o.tekst).join('; ')}`, { ostrzezenia, potwierdzenie: true });
     }
-    cache = null;
+    cache.clear();
     const wyniki = await require('../pricing/wystawianie').wystaw(doWyslania.map((x) => x._pozycja), { kto: b.operator || null, auto: b.auto !== false });
     res.json({ ok: true, wyniki, zablokowane: zablokowane.map(bezWnetrza), pominiete });
   }));
@@ -195,7 +216,7 @@ module.exports = function wystawianieRouter({ asyncH }) {
     if (!Number.isInteger(tw) || tw <= 0) return blad(res, 400, 'Podaj tw_id');
     try {
       const w = await require('../pricing/katalogi').skanuj({ twIds: [tw] });
-      cache = null;
+      cache.clear();
       res.json({ ok: true, ...w });
     } catch (e) { blad(res, 502, e.message); }
   }));

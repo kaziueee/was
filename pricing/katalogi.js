@@ -188,6 +188,36 @@ async function ograniczeniaAmazon(rynek, twIds) {
   return sprawdzone;
 }
 
+// Ceny konkurencji dla kandydatów (produkt znany, nie mamy oferty) — tylko Kaufland i Empik (eMAG nie podaje cen
+// cudzych ofert). Kaufland: /buybox per produkt (6 równolegle); Empik: P11 po 100 produktów co 13 s (limit 5/min).
+async function cenyRynku(platforma, rynek, twIds) {
+  const wiersze = db.prepare(`SELECT k.tw_id, k.produkt_id FROM katalog k
+      WHERE k.platforma = ? AND k.rynek = ? AND k.produkt_id IS NOT NULL AND COALESCE(k.mamy, 0) = 0
+        AND NOT EXISTS (SELECT 1 FROM oferty o WHERE o.platforma = k.platforma AND o.rynek = k.rynek AND o.tw_id = k.tw_id
+                         AND o.widziana >= datetime('now', '-3 days'))`).all(platforma, rynek).filter((w) => !twIds || twIds.has(w.tw_id));
+  if (!wiersze.length) return 0;
+  const ceny = new Map();                                   // produkt_id → { cena, ofert } | null
+  if (platforma === 'kaufland') {
+    const bb = await require('./kaufland').buyboxyHurtem(wiersze.map((w) => ({ rynek, idProduktu: w.produkt_id })));
+    for (const w of wiersze) {
+      const d = bb.get(`${rynek}|${w.produkt_id}`);
+      if (d !== undefined) ceny.set(w.produkt_id, m.cenaRynkuKaufland(d));
+    }
+  } else if (platforma === 'empik') {
+    const empik = require('./empik');
+    const sklep = await empik.sklep().catch(() => ({}));
+    const oferty = await empik.ofertyProduktow(wiersze.map((w) => w.produkt_id));
+    for (const w of wiersze) if (oferty.has(String(w.produkt_id))) ceny.set(w.produkt_id, m.cenaRynkuEmpik(oferty.get(String(w.produkt_id)), sklep.nazwa));
+  } else return 0;
+  const ustaw = db.prepare('UPDATE katalog SET cena_rynek = ?, ofert_rynek = ?, cena_rynek_czas = CURRENT_TIMESTAMP WHERE platforma = ? AND rynek = ? AND produkt_id = ?');
+  db.exec('BEGIN');
+  try {
+    for (const [id, c] of ceny) ustaw.run(c?.cena ?? null, c?.ofert ?? 0, platforma, rynek, id);
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+  return ceny.size;
+}
+
 const SZUKAJ = {
   emag: (eany, rynek) => emagPoEan(eany, rynek),
   amazon: (eany, rynek) => amazonPoEan(eany, rynek),
@@ -219,6 +249,9 @@ async function skanuj({ rynki = null, twIds = null, symbol = null } = {}) {
       const mapa = await SZUKAJ[platforma](eany, rynek);
       wynik.rynki[klucz] = zapiszRynek(platforma, rynek, towary, mapa);
       if (platforma === 'amazon') wynik.rynki[`${klucz} ograniczenia`] = await ograniczeniaAmazon(rynek, filtr);
+      if (platforma === 'kaufland' || platforma === 'empik') {
+        try { wynik.rynki[`${klucz} ceny`] = await cenyRynku(platforma, rynek, filtr); } catch (e) { log(`${klucz} ceny rynku: ${e.message}`); }
+      }
     } catch (e) {
       wynik.bledy[klucz] = e.message;
       log(`${klucz}: ${e.message}`);
@@ -240,7 +273,7 @@ function oznaczMarke(platforma, rynek, marka, opis) {
     .run(`marka wymaga dokumentów: ${String(opis).slice(0, 200)}`, platforma, rynek, marka).changes;
 }
 
-module.exports = { skanuj, towaryDoSkanu, oznaczMarke, emagPoEan, amazonPoEan, kauflandPoEan, empikPoEan };
+module.exports = { skanuj, towaryDoSkanu, oznaczMarke, emagPoEan, amazonPoEan, kauflandPoEan, empikPoEan, cenyRynku };
 
 if (require.main === module) {
   const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : null; };

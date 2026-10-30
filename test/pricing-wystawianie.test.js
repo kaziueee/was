@@ -144,3 +144,17 @@ test('Empik OF03: raport błędów → SKU → treść', () => {
   assert.strictEqual(r.get('AB-1'), 'Produkt nie istnieje');
   assert.strictEqual(r.get('X;2'), 'Cena "zero"');
 });
+
+test('cena rynku: Kaufland bez naszych ofert, w centach → zł; Empik bez naszego sklepu', () => {
+  assert.deepStrictEqual(km.cenaRynkuKaufland({ units: [{ price: 2499 }, { price: 1999, id_unit: 5 }, { price: 2199 }] }), { cena: 21.99, ofert: 2 });
+  assert.strictEqual(km.cenaRynkuKaufland({ units: [{ price: 1999, id_offer: 'X' }] }), null);
+  const of = [{ shop_name: 'Poszukiwacze Frajdy', price: 70 }, { shop_name: 'Yupi', applicable_pricing: { price: 84.5 }, price: 90 }, { shop_name: 'Inny', price: 99.99, active: false }];
+  assert.deepStrictEqual(km.cenaRynkuEmpik(of, 'Poszukiwacze Frajdy'), { cena: 84.5, ofert: 1 });
+});
+
+test('cena startowa: rynek droższy → cena rynku, tańszy albo brak → minimum', () => {
+  assert.strictEqual(km.cenaStartowa(78.99, 99.99), 99.99);
+  assert.strictEqual(km.cenaStartowa(78.99, 60), 78.99);
+  assert.strictEqual(km.cenaStartowa(78.99, null), 78.99);
+  assert.strictEqual(km.cenaStartowa(null, 50), 50);
+});

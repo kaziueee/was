@@ -233,6 +233,13 @@ db.exec(`CREATE TABLE IF NOT EXISTS katalog (
   PRIMARY KEY (tw_id, platforma, rynek)
 )`);
 
+// Najniższa cena TOWARU konkurencji na rynku (bez wysyłki, brutto w walucie rynku) — do propozycji ceny startowej.
+// Kaufland /buybox, Empik P11; eMAG nie podaje cen cudzych ofert w API. Pisze nocny skan (pricing/katalogi.js).
+const kolKatalog = db.prepare('PRAGMA table_info(katalog)').all().map((k) => k.name);
+if (!kolKatalog.includes('cena_rynek')) db.exec('ALTER TABLE katalog ADD COLUMN cena_rynek REAL');
+if (!kolKatalog.includes('ofert_rynek')) db.exec('ALTER TABLE katalog ADD COLUMN ofert_rynek INTEGER');
+if (!kolKatalog.includes('cena_rynek_czas')) db.exec('ALTER TABLE katalog ADD COLUMN cena_rynek_czas TEXT');
+
 // Oferty założone przez WMS (Ceny → „Do wystawienia”, pricing/wystawianie.js) — każda próba, także odrzucona.
 // status: wyslane (platforma przyjęła, czekamy na sync) → widoczna (sync znalazł ofertę; gdy auto_po = 1 automat
 // już włączony) | odrzucone (platforma odmówiła — opis) | blad (nie wiemy, czy powstała — sprawdzić w panelu).

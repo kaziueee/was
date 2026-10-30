@@ -6,12 +6,13 @@
 // Plik ładuje się PRZED app.js i używa jego funkcji (el, api, cenyEsc, cenyLiczba, cenyOknoPotwierdzenia, operator,
 // formatDatetime, pokazKomunikat) dopiero w chwili wywołania; app.js woła odswiezCenyWystawianie() z odswiezCeny().
 
-let cwDane = null, cwHistoria = [], cwNr = 0, cwRynek = 'emag:RO', cwSzukaj = '', cwSort = 'stan', cwTylkoGotowe = false;
+let cwDane = null, cwHistoria = [], cwNr = 0, cwRynek = 'emag:RO', cwSzukaj = '', cwSort = 'stan', cwTylkoGotowe = false, cwMinStan = 4, cwLimit = 200;
 const cwZaznaczone = new Set();          // klucze pozycji (tw_id|platforma|rynek)
 const cwCeny = new Map();                // klucz → cena wpisana ręcznie
 const CW_SORT = {
   stan: { nazwa: 'Stan', f: (a, b) => (b.stan || 0) - (a.stan || 0) },
   zysk: { nazwa: 'Zysk/szt.', f: (a, b) => (b.zysk ?? -1e9) - (a.zysk ?? -1e9) },
+  rynek: { nazwa: 'Rynek droższy', f: (a, b) => ((b.cena_rynek || 0) - (b.min || 0)) - ((a.cena_rynek || 0) - (a.min || 0)) },
   marza: { nazwa: 'Marża', f: (a, b) => (b.marza ?? -1e9) - (a.marza ?? -1e9) },
   nazwa: { nazwa: 'Nazwa', f: (a, b) => String(a.nazwa).localeCompare(String(b.nazwa), 'pl') },
 };
@@ -25,19 +26,19 @@ const cwLinkProduktu = (x) => (x.platforma === 'emag' && x.produkt_id
     : x.platforma === 'kaufland' && x.produkt_id ? `https://www.kaufland.de/product/${encodeURIComponent(x.produkt_id)}/`
     : x.platforma === 'empik' && /^\d+$/.test(x.produkt_id || '') ? `https://www.empik.com/-,p${x.produkt_id},zabawki-p` : null);
 
+// Serwer liczy JEDEN rynek naraz i tylko towary z co najmniej `cwMinStan` sztukami (cała lista rynku to ~8 tys.
+// wierszy — ekran lagował); do tabeli trafia najpierw `cwLimit` wierszy, resztę dokłada „pokaż więcej”.
 async function odswiezCenyWystawianie({ odswiez = false } = {}) {
   const nr = ++cwNr;
-  el('cw-lista').innerHTML = cwDane ? el('cw-lista').innerHTML : '<p class="hint">Liczę ceny i stany z Subiekta…</p>';
+  if (!cwDane || cwDane.rynek !== cwRynek || cwDane.min_stan !== cwMinStan) el('cw-lista').innerHTML = '<p class="hint">Liczę ceny i stany z Subiekta…</p>';
   try {
-    const [d, h] = await Promise.all([
-      api(`/api/ceny/wystawianie${odswiez ? '?odswiez=1' : ''}`),
-      api('/api/ceny/wystawianie/historia'),
-    ]);
+    const q = new URLSearchParams({ rynek: cwRynek, min_stan: String(cwMinStan), ...(odswiez ? { odswiez: '1' } : {}) });
+    const [d, h] = await Promise.all([api(`/api/ceny/wystawianie?${q}`), api('/api/ceny/wystawianie/historia')]);
     if (nr !== cwNr) return;
     cwDane = d;
     cwHistoria = h.wystawienia || [];
-    const gotowe = new Set(d.rynki.filter((r) => r.gotowe).map((r) => r.klucz));
-    el('ceny-l-wystawianie').textContent = d.pozycje.filter((x) => gotowe.has(`${x.platforma}:${x.rynek}`)).length || '';
+    cwLimit = 200;
+    el('ceny-l-wystawianie').textContent = d.rynki.filter((r) => r.gotowe && r.gotowych).reduce((s, r) => s + r.gotowych, 0) || '';
     cwRenderuj();
   } catch (err) {
     if (nr !== cwNr) return;
@@ -62,7 +63,6 @@ async function cwWyslij(url, body, { tytul, przycisk, tresc = '' }) {
 function cwWidoczne() {
   const q = cwSzukaj.trim().toUpperCase();
   return cwDane.pozycje
-    .filter((x) => `${x.platforma}:${x.rynek}` === cwRynek)
     .filter((x) => !cwTylkoGotowe || !x.zablokowana)
     .filter((x) => !q || [x.sku, x.ean, x.nazwa, x.marka].some((v) => String(v || '').toUpperCase().includes(q)))
     .sort(CW_SORT[cwSort].f);
@@ -74,17 +74,20 @@ function cwRenderuj() {
   const skan = d.skan ? `katalogi sprawdzone ${formatDatetime(d.skan.czas)} (${d.skan.towary} towarów)` : 'katalogi jeszcze nie skanowane — pierwszy skan w nocy';
   el('cw-pasek').innerHTML = `
     <div class="ceny-rzad">${d.rynki.map((r) => `<button type="button" class="ceny-chip ${r.klucz === cwRynek ? 'aktywny' : ''}" data-cw-rynek="${r.klucz}"
-        title="${cenyEsc(r.gotowe ? 'Wystawianie włączone' : r.powod)} — ${r.gotowych} gotowych do wystawienia z ${r.n} kandydatów">${cenyEsc(r.nazwa)} <b>${r.gotowych}</b>${r.n > r.gotowych ? `<span class="cs-sz">/${r.n}</span>` : ''}${r.gotowe ? '' : ' 🔒'}</button>`).join('')}</div>
+        title="${cenyEsc(r.gotowe ? 'Wystawianie włączone' : r.powod)} — ${r.n == null ? `${r.n_katalog} kandydatów w katalogu (stan jeszcze nie liczony)` : `${r.gotowych} gotowych z ${r.n} kandydatów ze stanem ≥ ${d.min_stan}`}">${cenyEsc(r.nazwa)} ${r.n == null
+          ? `<span class="cs-sz">${r.n_katalog}</span>` : `<b>${r.gotowych}</b>${r.n > r.gotowych ? `<span class="cs-sz">/${r.n}</span>` : ''}`}${r.gotowe ? '' : ' 🔒'}</button>`).join('')}</div>
     <div class="ceny-rzad">
       <input type="search" id="cw-szukaj" placeholder="Szukaj SKU, EAN, nazwy, marki…" value="${cenyEsc(cwSzukaj)}" autocomplete="off">
       <span class="hint">Sortuj:</span>${Object.entries(CW_SORT).map(([k, s]) => `<button type="button" class="ceny-chip ${k === cwSort ? 'aktywny' : ''}" data-cw-sort="${k}">${s.nazwa}</button>`).join('')}
+      <label class="cw-auto-inline" title="Towary z mniejszym stanem dostępnym nie trafiają na listę">stan ≥ <input type="number" id="cw-min-stan" min="1" step="1" value="${cwMinStan}" style="width:4em"> szt.</label>
       <label class="cw-auto-inline" title="Ukryj pozycje z danymi do uzupełnienia albo blokadą"><input type="checkbox" id="cw-tylko-gotowe" ${cwTylkoGotowe ? 'checked' : ''}> tylko gotowe</label>
       <button type="button" class="btn btn-small" id="cw-odswiez" title="Policz od nowa ceny i stany (Subiekt)">↻ Odśwież</button>
       <button type="button" class="btn btn-small btn-primary" id="cw-wystaw" ${rynek?.gotowe ? '' : 'disabled'}>Wystaw zaznaczone (${cwZaznaczone.size})</button>
     </div>
     <p class="hint">${cenyEsc(skan)}${rynek && !rynek.gotowe ? ` · <b>${cenyEsc(rynek.powod)}</b> — lista do wglądu, wystawianie zablokowane` : ''}
       · do podpięcia w Sellasist: <b>${d.do_sellasist}</b></p>`;
-  el('cw-pasek').querySelectorAll('[data-cw-rynek]').forEach((b) => b.addEventListener('click', () => { cwRynek = b.dataset.cwRynek; cwRenderuj(); }));
+  el('cw-pasek').querySelectorAll('[data-cw-rynek]').forEach((b) => b.addEventListener('click', () => { cwRynek = b.dataset.cwRynek; cwZaznaczone.clear(); odswiezCenyWystawianie(); }));
+  el('cw-min-stan').addEventListener('change', (e) => { cwMinStan = Math.max(1, Math.floor(Number(e.target.value)) || 1); odswiezCenyWystawianie(); });
   el('cw-pasek').querySelectorAll('[data-cw-sort]').forEach((b) => b.addEventListener('click', () => { cwSort = b.dataset.cwSort; cwRenderuj(); }));
   el('cw-szukaj').addEventListener('input', (e) => { cwSzukaj = e.target.value; cwRenderujListe(); });
   el('cw-odswiez').addEventListener('click', () => odswiezCenyWystawianie({ odswiez: true }));
@@ -97,7 +100,8 @@ function cwRenderuj() {
 function cwRenderujListe() {
   const lista = cwWidoczne();
   const rynek = cwDane.rynki.find((r) => r.klucz === cwRynek);
-  if (!lista.length) { el('cw-lista').innerHTML = `<p class="hint">${cwTylkoGotowe ? 'Nic gotowego do wystawienia — odznacz „tylko gotowe”, żeby zobaczyć, czego brakuje.' : 'Brak kandydatów na tym rynku.'}</p>`; return; }
+  if (!lista.length) { el('cw-lista').innerHTML = `<p class="hint">${cwTylkoGotowe ? 'Nic gotowego do wystawienia — odznacz „tylko gotowe”, żeby zobaczyć, czego brakuje.' : `Brak kandydatów na tym rynku ze stanem ≥ ${cwMinStan} szt.`}</p>`; return; }
+  const pokazane = lista.slice(0, cwLimit);
   const wiersz = (x) => {
     const zablok = x.zablokowana || !rynek?.gotowe;
     const link = cwLinkProduktu(x);
@@ -105,20 +109,24 @@ function cwRenderujListe() {
     return `<tr class="${zablok ? 'cw-zablok' : ''}">
       <td><input type="checkbox" data-cw-zazn="${x.klucz}" ${cwZaznaczone.has(x.klucz) ? 'checked' : ''} ${zablok ? 'disabled' : ''}></td>
       <td><b>${cenyEsc(x.sku)}</b><div class="cs-sz">${cenyEsc(x.ean)}</div></td>
-      <td>${cenyEsc(x.nazwa)}${x.nazwa_platformy ? `<div class="cs-sz">${link ? `<a href="${link}" target="_blank" rel="noopener">↗</a> ` : ''}${cenyEsc(x.nazwa_platformy)}</div>` : ''}</td>
+      <td>${cenyEsc(x.nazwa)}${x.nazwa_platformy ? `<div class="cs-sz">${cenyEsc(x.nazwa_platformy)}</div>` : ''}</td>
+      <td>${link ? `<a class="btn btn-small" href="${link}" target="_blank" rel="noopener" title="Karta produktu na platformie — oferty konkurencji">Oferty ↗</a>` : '—'}</td>
       <td>${cenyEsc(x.marka || '')}<div class="cs-sz">${cenyEsc(x.kategoria || '')}${x.hotness ? ` · ${cenyEsc(x.hotness)}` : ''}</div></td>
       <td class="num">${x.stan ?? '—'}</td>
       <td class="num"><input type="number" step="0.01" min="0" class="cw-cena" data-cw-cena="${x.klucz}" value="${cwCeny.get(x.klucz) ?? x.cena ?? ''}" ${zablok ? 'disabled' : ''}> ${cenyEsc(x.waluta)}
         <div class="cs-sz">min ${cenyLiczba(x.min)}${x.strategia ? ` · ${cenyEsc(x.strategia)}` : ''}</div></td>
+      <td class="num">${cwRynekKomorka(x)}</td>
       <td class="num">${x.marza == null ? '—' : `${cenyLiczba(x.marza, 1)}%`}<div class="cs-sz">${x.zysk == null ? '' : `${cenyLiczba(x.zysk)} zł`}</div></td>
       <td>${uwagi}</td>
       <td><button type="button" class="btn btn-small" data-cw-skan="${x.tw_id}" title="Sprawdź katalogi tego towaru od nowa">↻</button></td>
     </tr>`;
   };
   el('cw-lista').innerHTML = `<div class="tabela-wrapper"><table class="tabela cs-tabela cw-tabela">
-    <thead><tr><th><input type="checkbox" id="cw-wszystkie" title="Zaznacz widoczne, które da się wystawić"></th><th>SKU / EAN</th><th>Nazwa (u nas / na platformie)</th><th>Marka</th>
-      <th>Stan</th><th>Cena brutto</th><th>Marża / zysk</th><th>Uwagi</th><th></th></tr></thead>
-    <tbody>${lista.map(wiersz).join('')}</tbody></table></div>`;
+    <thead><tr><th><input type="checkbox" id="cw-wszystkie" title="Zaznacz widoczne, które da się wystawić"></th><th>SKU / EAN</th><th>Nazwa (u nas / na platformie)</th><th>Link</th><th>Marka</th>
+      <th>Stan</th><th>Cena brutto</th><th title="Najniższa cena towaru u konkurencji (bez wysyłki) z nocnego skanu">Rynek</th><th>Marża / zysk</th><th>Uwagi</th><th></th></tr></thead>
+    <tbody>${pokazane.map(wiersz).join('')}</tbody></table></div>
+    ${lista.length > pokazane.length ? `<p><button type="button" class="btn btn-small" id="cw-wiecej">Pokaż więcej (${pokazane.length} z ${lista.length})</button></p>` : `<p class="hint">${lista.length} pozycji</p>`}`;
+  el('cw-wiecej')?.addEventListener('click', () => { cwLimit += 300; cwRenderujListe(); });
   const licz = () => { el('cw-wystaw').textContent = `Wystaw zaznaczone (${cwZaznaczone.size})`; };
   el('cw-lista').querySelectorAll('[data-cw-zazn]').forEach((c) => c.addEventListener('change', () => {
     if (c.checked) cwZaznaczone.add(c.dataset.cwZazn); else cwZaznaczone.delete(c.dataset.cwZazn);
@@ -133,6 +141,17 @@ function cwRenderujListe() {
   });
   el('cw-lista').querySelectorAll('[data-cw-cena]').forEach((i) => i.addEventListener('change', () => cwZmienCene(i.dataset.cwCena, i.value)));
   el('cw-lista').querySelectorAll('[data-cw-skan]').forEach((b) => b.addEventListener('click', () => cwSkan(Number(b.dataset.cwSkan), b)));
+}
+
+// Cena konkurencji: najniższa cena towaru (bez wysyłki). Droższa niż nasze minimum → proponujemy ją (cena startowa),
+// tańsza → zostaje minimum i komórka mówi, że na rynku jest taniej. eMAG nie podaje cen cudzych ofert w API.
+function cwRynekKomorka(x) {
+  if (x.platforma === 'emag' || x.platforma === 'amazon') return '<span class="cs-sz" title="Platforma nie podaje w API cen ofert, których nie mamy">—</span>';
+  if (!x.cena_rynek_czas) return '<span class="cs-sz" title="Ceny konkurencji pobiera nocny skan">nie sprawdzono</span>';
+  if (x.cena_rynek == null) return '<span class="cs-sz" title="Nikt nie sprzedaje — możemy być jedyną ofertą">brak ofert</span>';
+  const taniej = x.min != null && x.cena_rynek < x.min - 0.005;
+  return `<span class="${taniej ? 'cw-ostrz' : ''}" title="${x.ofert_rynek} ofert konkurencji, sprawdzone ${cenyEsc(formatDatetime(x.cena_rynek_czas))}">${cenyLiczba(x.cena_rynek)}</span>
+    <div class="cs-sz">${taniej ? 'taniej niż nasze min' : `${x.ofert_rynek} ofert`}</div>`;
 }
 
 // Braki danych towaru (EAN, waga, wymiary) jednym komunikatem — szczegóły w podpowiedzi. Uzupełnia się je w GT
@@ -215,7 +234,7 @@ function cwRenderujHistorie() {
     const oferta = w.oferta_id ? [w.of_auto ? 'automat wł.' : 'automat wył.', w.of_blokada ? `⚠ ${w.of_blokada}` : null].filter(Boolean).join(' · ') : '';
     return `<tr>
       <td>${cenyEsc(formatDatetime(w.czas))}<div class="cs-sz">${cenyEsc(w.kto || '')}</div></td>
-      <td>${cenyEsc(w.kanal_nazwa)}</td><td><b>${cenyEsc(w.sku)}</b></td>
+      <td>${cenyEsc(w.kanal_nazwa)}</td><td><b>${cenyEsc(w.sku)}</b>${(() => { const l = cwLinkProduktu(w); return l ? `<div class="cs-sz"><a href="${l}" target="_blank" rel="noopener">oferta ↗</a></div>` : ''; })()}</td>
       <td class="num">${cenyLiczba(w.cena)} ${cenyEsc(w.waluta)}<div class="cs-sz">${w.ilosc} szt.</div></td>
       <td><span class="cs-status ${s.klasa}">${cenyEsc(s.nazwa)}</span><div class="cs-sz">${cenyEsc(oferta)}</div></td>
       <td class="cw-opis">${cenyEsc(w.opis || '')}</td>

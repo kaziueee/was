@@ -53,12 +53,12 @@ function policz(dzis = dzisLokalnie()) {
       id, sym: k.symbol || String(id), nazwa: k.nazwa || '', grupa: k.grupa || '', pp: k.pp || null,
       k4: s.k4 || 0, k4g: s.k4g || 0, mag: s.mag || 0, ls: s.ls || 0, razem, rez: s.rez || 0, dost: dostepne,
       wart: Math.round(s.wartosc || 0), s30: x.s30 || 0, s90: x.s90 || 0, s365: x.s365 || 0, sklep365: x.sklep365 || 0,
-      ost: x.ost || null, t30: R1(o.tempo * 30), dni: o.dni, kub: o.kub,
+      ost: x.ost || null, t30: R1(o.tempo * 30), dni: o.dni, kub: o.kub, sila: o.sila,
     });
   }
   wiersze.sort((a, b) => b.wart - a.wart);
   const historiaOd = db.prepare('SELECT MIN(data_zam) d FROM zamowienia').get().d;
-  return { dzis, stanyZ: nocny, historiaOd, progi: sm.PROGI, kubelki: sm.KUBELKI, sumy: sm.podsumuj(wiersze), wiersze };
+  return { dzis, stanyZ: nocny, historiaOd, progi: sm.PROGI, kubelki: sm.KUBELKI, sily: sm.SILY, sumy: sm.podsumuj(wiersze), wiersze };
 }
 
 // --- gotowy wynik (wątek analiz liczy, API podaje) — jak Trendy -------------------------------------------------

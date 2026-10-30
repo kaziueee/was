@@ -47,3 +47,15 @@ test('podsumowanie kafli', () => {
   assert.deepStrictEqual(p.razem, { sku: 3, szt: 12, wart: 115 });
   assert.deepStrictEqual(p.kub.brak, { sku: 0, szt: 0, wart: 0 });
 });
+
+test('siła sprzedaży: szt. / 30 dni średnio z 90 dni, okno skrócone do wieku', () => {
+  assert.strictEqual(m.silaSprzedazy({ szt90: 30 }), 'mocna');       // 10 / 30 dni
+  assert.strictEqual(m.silaSprzedazy({ szt90: 29 }), 'srednia');
+  assert.strictEqual(m.silaSprzedazy({ szt90: 9 }), 'srednia');       // 3 / 30 dni
+  assert.strictEqual(m.silaSprzedazy({ szt90: 7 }), 'slaba');         // Bubblepops
+  assert.strictEqual(m.silaSprzedazy({ szt90: 15, wiek: 45 }), 'mocna');
+  // Nadmiar z hitem i z maruderem — ten sam kubełek, inna siła
+  assert.strictEqual(ocen({ dostepne: 2080, ostatnia: '2026-10-29', szt90: 247, szt365: 1486 }).sila, 'mocna');
+  const bubblepops = ocen({ dostepne: 455, ostatnia: '2026-10-25', szt90: 7, szt365: 69 });
+  assert.deepStrictEqual([bubblepops.kub, bubblepops.sila], ['nadmiar', 'slaba']);
+});

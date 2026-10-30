@@ -30,6 +30,21 @@ const KUBELKI = [
   { k: 'nowosc', nazwa: 'Nowości', opis: `pierwsza dostawa < ${PROGI.nowoscDni} dni — za wcześnie na ocenę` },
 ];
 
+// Druga oś (decyzja usera 2026-10-30): siła sprzedaży — bo w Nadmiarze stało ~100 hitów (NERF0423: 99 szt. w 30 dni,
+// 1,9 mln zł) obok ~1 400 słabych pozycji (Bubblepops: 1–5 szt.), a sortowanie po wartości wyciągało hity na górę
+// i przykrywało resztę. Hit z nadmiarem to sprawa zakupów (sprzedaż go wyczerpie), słaby — ceny albo promocji.
+// Miara: szt. na 30 dni średnio z 90 dni (okno skrócone do wieku towaru) — bieżące tempo, nie rok, i mniej szumu niż 30 dni.
+const SILA = { mocnaOd: 10, sredniaOd: 3 };
+const SILY = [
+  { k: 'mocna', nazwa: 'Mocna', opis: `≥ ${SILA.mocnaOd} szt. / 30 dni` },
+  { k: 'srednia', nazwa: 'Średnia', opis: `${SILA.sredniaOd}–${SILA.mocnaOd} szt. / 30 dni` },
+  { k: 'slaba', nazwa: 'Słaba', opis: `< ${SILA.sredniaOd} szt. / 30 dni` },
+];
+function silaSprzedazy({ szt90 = 0, wiek = null }) {
+  const na30 = szt90 / Math.max(1, wiek == null ? 90 : Math.min(90, wiek)) * 30;
+  return na30 >= SILA.mocnaOd ? 'mocna' : na30 >= SILA.sredniaOd ? 'srednia' : 'slaba';
+}
+
 const dniMiedzy = (od, doDnia) => Math.round((Date.parse(doDnia) - Date.parse(od)) / DZIEN_MS);
 
 // Sztuk dziennie. wiek = dni od pierwszej dostawy (null = nieznany → pełne okna).
@@ -39,17 +54,17 @@ function tempoDzienne({ szt90 = 0, szt365 = 0, wiek = null }) {
 }
 
 // dostepne — Razem − rezerwacje; razem — K4+K4G+MAG+LS; ostatnia — dzień ostatniej sprzedaży (null = brak w historii).
-// Wynik: { kub, tempo (szt./dzień), dni (zapas) } albo null, gdy towar nie należy do analizy (nic na stanie i brak
+// Wynik: { kub, tempo (szt./dzień), dni (zapas), sila } albo null, gdy towar nie należy do analizy (nic na stanie i brak
 // sprzedaży w 30 dni — albo cały stan zarezerwowany bez świeżej sprzedaży: nie ma czego oceniać).
 function ocenTowar({ dostepne = 0, razem = 0, szt30 = 0, szt90 = 0, szt365 = 0, ostatnia = null, pierwszePrzyjecie = null, dzis }) {
   const wiek = pierwszePrzyjecie ? dniMiedzy(pierwszePrzyjecie, dzis) : null;
-  const tempo = tempoDzienne({ szt90, szt365, wiek });
-  if (dostepne <= 0) return szt30 > 0 ? { kub: 'brak', tempo, dni: 0 } : null;
-  if (wiek != null && wiek < PROGI.nowoscDni) return { kub: 'nowosc', tempo, dni: tempo > 0 ? Math.round(dostepne / tempo) : null };
-  if (!ostatnia || dniMiedzy(ostatnia, dzis) > PROGI.lezakDni) return { kub: 'lezak', tempo, dni: null };
+  const tempo = tempoDzienne({ szt90, szt365, wiek }), sila = silaSprzedazy({ szt90, wiek });
+  if (dostepne <= 0) return szt30 > 0 ? { kub: 'brak', tempo, dni: 0, sila } : null;
+  if (wiek != null && wiek < PROGI.nowoscDni) return { kub: 'nowosc', tempo, dni: tempo > 0 ? Math.round(dostepne / tempo) : null, sila };
+  if (!ostatnia || dniMiedzy(ostatnia, dzis) > PROGI.lezakDni) return { kub: 'lezak', tempo, dni: null, sila };
   const dni = tempo > 0 ? Math.round(dostepne / tempo) : null;
   const kub = dni == null || dni > PROGI.nadmiarDni ? 'nadmiar' : dni > PROGI.okDni ? 'wolna' : dni >= PROGI.konczyDni ? 'ok' : 'konczy';
-  return { kub, tempo, dni };
+  return { kub, tempo, dni, sila };
 }
 
 // Sumy kafli: liczba SKU, sztuki (Razem) i wartość stanu w cenie zakupu, per kubełek i łącznie.
@@ -63,4 +78,4 @@ function podsumuj(wiersze) {
   return { kub, razem };
 }
 
-module.exports = { PROGI, KUBELKI, tempoDzienne, ocenTowar, podsumuj, dniMiedzy };
+module.exports = { PROGI, KUBELKI, SILA, SILY, tempoDzienne, silaSprzedazy, ocenTowar, podsumuj, dniMiedzy };

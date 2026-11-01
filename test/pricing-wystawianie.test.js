@@ -84,7 +84,8 @@ test('ocena pozycji: komplet przechodzi, braki danych osobno („do uzupełnieni
   assert.strictEqual(wm.powodyBlokady(o).length, 4);              // braki danych też zatrzymują wysyłkę
   assert.strictEqual(wm.ocenPozycje(pozycja({ cena: 50 })).ostrzezenia[0].kod, 'pod_minimum');
   assert.match(wm.ocenPozycje(pozycja({ rynek: 'HU' })).blokady[0], /czeka na test/);
-  assert.match(wm.ocenPozycje(pozycja({ platforma: 'amazon', rynek: 'DE' })).blokady[0], /Amazon/);
+  assert.deepStrictEqual(wm.ocenPozycje(pozycja({ platforma: 'amazon', rynek: 'DE', katalog: { produkt_id: 'B0DMWGSC2L', kategoria_id: 'TOY_FIGURE' } })).blokady, []);
+  assert.match(wm.ocenPozycje(pozycja({ platforma: 'amazon', rynek: 'DE', katalog: { produkt_id: 'B0DMWGSC2L' } })).blokady[0], /productType/);
 });
 
 test('oferta eMAG: EAN zawsze w treści, cena netto, zakres min/max szeroki wokół pasa', () => {
@@ -177,4 +178,21 @@ test('błąd zapisu eMAG: marka przed siecią (treść z linkiem https), sieć, 
   assert.strictEqual(km.rodzajBleduEmag('eMAG product_offer/save: HTTP 502'), 'siec');
   assert.strictEqual(km.rodzajBleduEmag('eMAG product_offer/save: The operation was aborted due to timeout'), 'siec');
   assert.strictEqual(km.rodzajBleduEmag('eMAG product_offer/save: ERROR: Invalid sale price'), 'odmowa');
+});
+
+test('Amazon: oferta do istniejącego ASIN-u (LISTING_OFFER_ONLY) i błędy z odpowiedzi', () => {
+  const p = { rynek: 'DE', sku: 'HWHHBL96-JBL02', cena: 16.384, ilosc: 375.6, katalog: { produkt_id: 'B0DMWGSC2L', kategoria_id: 'NON_RIDING_TOY_VEHICLE' } };
+  const o = wm.ofertaAmazon(p, { marketplaceId: 'A1PA6795UKMFR9', waluta: 'EUR', grupaWysylki: 'legacy-template-id' });
+  assert.strictEqual(o.body.productType, 'NON_RIDING_TOY_VEHICLE');
+  assert.strictEqual(o.body.requirements, 'LISTING_OFFER_ONLY');
+  assert.deepStrictEqual(o.body.attributes.merchant_suggested_asin, [{ value: 'B0DMWGSC2L', marketplace_id: 'A1PA6795UKMFR9' }]);
+  assert.deepStrictEqual(o.body.attributes.fulfillment_availability, [{ fulfillment_channel_code: 'DEFAULT', quantity: 375 }]);
+  assert.strictEqual(o.body.attributes.purchasable_offer[0].our_price[0].schedule[0].value_with_tax, 16.38);
+  assert.strictEqual(o.body.attributes.purchasable_offer[0].currency, 'EUR');
+  assert.match(wm.ofertaAmazon(p, { marketplaceId: 'X', waluta: 'EUR', grupaWysylki: null }).blad, /grupy wysyłki/);
+  assert.match(wm.ofertaAmazon({ ...p, katalog: { produkt_id: 'B0' } }, { marketplaceId: 'X', waluta: 'EUR', grupaWysylki: 'g' }).blad, /productType/);
+  assert.match(wm.ofertaAmazon({ ...p, ilosc: 0 }, { marketplaceId: 'X', waluta: 'EUR', grupaWysylki: 'g' }).blad, /stanu/);
+  const pr = wm.problemyAmazon({ status: 'ACCEPTED', issues: [{ severity: 'WARNING', code: '90000900', message: 'EPR' }, { severity: 'ERROR', code: '8572', message: 'zła cena' }] });
+  assert.deepStrictEqual(pr, { bledy: ['8572: zła cena'], ostrzezenia: ['90000900: EPR'] });
+  assert.deepStrictEqual(wm.problemyAmazon({}), { bledy: [], ostrzezenia: [] });
 });

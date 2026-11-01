@@ -99,7 +99,61 @@ async function wystawEmpikHurt(pozycje) {
   });
 }
 
-const WYSTAW = { emag: wystawEmag };
+// Grupa wysyłki Amazon (merchant_shipping_group) — bierzemy ją z naszej aktywnej oferty na tym rynku, żeby nowa
+// oferta miała te same stawki co reszta konta (DE/FR/IT: szablony z identyfikatorem, ES/NL/PL: legacy-template-id).
+// Pamiętana dobę w `stan` (amazon_grupa_<rynek>).
+async function grupaWysylkiAmazon(amazon, rynek) {
+  const klucz = `amazon_grupa_${rynek}`;
+  const z = stan.get(klucz);
+  if (z?.wartosc && Date.now() - new Date(String(z.czas).replace(' ', 'T') + 'Z').getTime() < 24 * 3600e3) return z.wartosc;
+  const mp = amazon.RYNKI_AMAZON[rynek].id;
+  const wzory = db.prepare("SELECT sku FROM oferty WHERE platforma = 'amazon' AND rynek = ? AND aktywna = 1 ORDER BY id LIMIT 5").all(rynek);
+  for (const w of wzory) {
+    try {
+      const t = await amazon.api('GET', `/listings/2021-08-01/items/${amazon.SELLER_ID}/${encodeURIComponent(w.sku)}?marketplaceIds=${mp}&includedData=attributes`);
+      const grupa = t?.attributes?.merchant_shipping_group?.[0]?.value;
+      if (grupa) { stan.set(klucz, grupa); return grupa; }
+    } catch { /* następny wzór */ }
+  }
+  return null;
+}
+
+// Amazon: najpierw restrictions (na żywo — nocny skan sprawdza ASIN raz na 7 dni), potem VALIDATION_PREVIEW, dopiero
+// czysty podgląd idzie zapisem. Cokolwiek padnie PRZED zapisem = „oferta nie powstała” → odrzucone.
+async function wystawAmazon(p) {
+  const amazon = require('./amazon');
+  const { amazonOgraniczenia } = require('./katalogi');
+  const r = amazon.RYNKI_AMAZON[p.rynek];
+  if (!r) return { status: 'odrzucone', opis: `Amazon: nieznany rynek ${p.rynek}` };
+  const asin = p.katalog?.produkt_id;
+  let ograniczenie;
+  try { ograniczenie = await amazonOgraniczenia(asin, p.rynek); } catch (e) { return { status: 'odrzucone', opis: `nie udało się sprawdzić ograniczeń: ${e.message}` }; }
+  if (ograniczenie) {
+    db.prepare("UPDATE katalog SET ograniczenie = ? WHERE platforma = 'amazon' AND rynek = ? AND produkt_id = ?").run(ograniczenie, p.rynek, asin);
+    return { status: 'odrzucone', opis: ograniczenie };
+  }
+  let grupa;
+  try { grupa = await grupaWysylkiAmazon(amazon, p.rynek); } catch (e) { return { status: 'odrzucone', opis: `grupa wysyłki: ${e.message}` }; }
+  const o = wm.ofertaAmazon(p, { marketplaceId: r.id, waluta: r.waluta, grupaWysylki: grupa });
+  if (o.blad) return { status: 'odrzucone', opis: o.blad };
+  const sciezka = `/listings/2021-08-01/items/${amazon.SELLER_ID}/${encodeURIComponent(p.sku)}?marketplaceIds=${r.id}&issueLocale=pl_PL`;
+  try {
+    const podglad = wm.problemyAmazon(await amazon.api('PUT', `${sciezka}&mode=VALIDATION_PREVIEW`, o.body));
+    if (podglad.bledy.length) return { status: 'odrzucone', opis: `Amazon (podgląd): ${podglad.bledy.join(' | ')}` };
+  } catch (e) { return { status: 'odrzucone', opis: `Amazon (podgląd): ${e.message}` }; }
+  let odp;
+  try { odp = await amazon.api('PUT', sciezka, o.body); } catch (e) {
+    // 4xx = Amazon odrzucił zgłoszenie (oferta nie powstała); sieć / 5xx po ponowieniach = nie wiemy.
+    if (/: 4\d\d /.test(e.message)) return { status: 'odrzucone', opis: `Amazon: ${e.message}`, id_platformy: asin };
+    return { status: 'blad', opis: `nie wiadomo, czy oferta powstała — sprawdź w Seller Central (${p.sku}): ${e.message}`, id_platformy: asin };
+  }
+  const pr = wm.problemyAmazon(odp);
+  if (odp?.status !== 'ACCEPTED' || pr.bledy.length) return { status: 'odrzucone', opis: `Amazon ${odp?.status || '?'}: ${pr.bledy.join(' | ') || 'bez opisu'}`, id_platformy: asin };
+  const uwagi = pr.ostrzezenia.length ? `; ostrzeżenia: ${pr.ostrzezenia.join(' | ').slice(0, 300)}` : '';
+  return { status: 'wyslane', opis: `ASIN ${asin}, ${o.body.attributes.purchasable_offer[0].our_price[0].schedule[0].value_with_tax} ${r.waluta}, zgłoszenie ${odp.submissionId || '?'}${uwagi}`, id_platformy: asin };
+}
+
+const WYSTAW = { emag: wystawEmag, amazon: wystawAmazon };
 const WYSTAW_HURT = { empik: wystawEmpikHurt };
 
 // pozycje = już ocenione i potwierdzone przez routes/ceny-wystawianie.js (wm.ocenPozycje bez blokad).

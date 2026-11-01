@@ -18,11 +18,13 @@ const RYNKI_WYSTAWIANIA = {
   'emag:BG': { gotowe: false, powod: 'eMAG BG — czeka na test pierwszej oferty' },
   'kaufland:DE': { gotowe: false, powod: 'Kaufland — czeka na test pierwszej oferty (POST /units)' },
   'empik:PL': { gotowe: true },     // test 30.10: MGA592822 import 268622431 → oferta 251330550 aktywna, klasa 2
+  // Amazon: test 30.10 HWHHBL96-JBL02 (B0DMWGSC2L) skryptem — BUYABLE na 6 rynkach; z ekranu włączone 2026-11-01 do testów.
+  ...Object.fromEntries(['DE', 'FR', 'IT', 'ES', 'NL', 'PL'].map((r) => [`amazon:${r}`, { gotowe: true }])),
 };
 const gotowyRynek = (platforma, rynek) => {
   const r = RYNKI_WYSTAWIANIA[`${platforma}:${rynek}`];
   if (r) return r;
-  return platforma === 'amazon' ? { gotowe: false, powod: 'Amazon — czeka na test (Listings Items PUT, VALIDATION_PREVIEW)' } : { gotowe: false, powod: 'rynek nieobsługiwany' };
+  return { gotowe: false, powod: 'rynek nieobsługiwany' };
 };
 
 // eMAG: stawka VAT podstawowa na każdym rynku (pricing/emag.js KRAJE — vat/read).
@@ -88,6 +90,7 @@ function ocenPozycje(p) {
   if (!p.ean) brakuje.push({ pole: 'EAN', tekst: 'brak poprawnego EAN-u w GT' });
   if (!p.katalog?.produkt_id) blokady.push('brak produktu na rynku');
   if (p.platforma === 'emag' && !(p.katalog?.nazwa && p.katalog?.marka && p.katalog?.kategoria_id)) blokady.push('katalog eMAG bez nazwy / marki / kategorii — odśwież skan');
+  if (p.platforma === 'amazon' && !p.katalog?.kategoria_id) blokady.push('katalog Amazon bez productType — odśwież towar (↻)');
   if (p.katalog?.ograniczenie) blokady.push(p.katalog.ograniczenie);
   const w = wagaGramy(p.waga); if (w.blad) brakuje.push({ pole: 'waga', tekst: w.blad });
   const m = wymiaryMm(p.wymiary); if (m.blad) brakuje.push({ pole: 'wymiary', tekst: m.blad });
@@ -130,6 +133,38 @@ function wymiaryEmag(p, id) {
   const w = wagaGramy(p.waga), m = wymiaryMm(p.wymiary);
   if (w.blad || m.blad) return { blad: w.blad || m.blad };
   return { pomiar: { id, ...m, weight: w.g } };
+}
+
+// Amazon Listings Items PUT przy dopięciu do istniejącego ASIN-u (`LISTING_OFFER_ONLY` — kartę ma ASIN, my dodajemy
+// samą ofertę). Kształt sprawdzony 30.10 na HWHHBL96-JBL02 (6 rynków BUYABLE). productType z katalogu (Catalog Items
+// `productTypes`), grupa wysyłki z naszej istniejącej oferty na tym rynku. Cena BRUTTO w walucie rynku.
+function ofertaAmazon(p, { marketplaceId, waluta, grupaWysylki }) {
+  if (!p.katalog?.produkt_id) return { blad: 'brak ASIN w katalogu' };
+  if (!p.katalog?.kategoria_id) return { blad: 'brak productType w katalogu — odśwież towar (↻)' };
+  if (!grupaWysylki) return { blad: `Amazon ${p.rynek}: nie znaleziono grupy wysyłki (brak naszej aktywnej oferty na tym rynku)` };
+  const cena = zaokr(Number(p.cena));
+  if (!(cena > 0)) return { blad: `niepoprawna cena: ${p.cena}` };
+  const ilosc = Math.floor(Number(p.ilosc));
+  if (!(ilosc > 0)) return { blad: 'brak stanu do wystawienia' };
+  const mp = (value) => [{ value, marketplace_id: marketplaceId }];
+  return {
+    body: {
+      productType: p.katalog.kategoria_id, requirements: 'LISTING_OFFER_ONLY',
+      attributes: {
+        condition_type: mp('new_new'),
+        merchant_suggested_asin: mp(p.katalog.produkt_id),
+        merchant_shipping_group: mp(grupaWysylki),
+        fulfillment_availability: [{ fulfillment_channel_code: 'DEFAULT', quantity: ilosc }],
+        purchasable_offer: [{ currency: waluta, audience: 'ALL', our_price: [{ schedule: [{ value_with_tax: cena }] }], marketplace_id: marketplaceId }],
+      },
+    },
+  };
+}
+// Odpowiedź Listings PUT → błędy, które blokują ofertę (severity ERROR); ostrzeżenia (np. EPR w ES) idą do opisu.
+function problemyAmazon(odp) {
+  const issues = Array.isArray(odp?.issues) ? odp.issues : [];
+  const tekst = (i) => `${i.code ? i.code + ': ' : ''}${i.message || ''}`.trim();
+  return { bledy: issues.filter((i) => i.severity === 'ERROR').map(tekst), ostrzezenia: issues.filter((i) => i.severity !== 'ERROR').map(tekst) };
 }
 
 function klasaLogistycznaEmpik(wymiary, gramy) {
@@ -184,5 +219,5 @@ function stanDostepny(stany, magazyny) {
 module.exports = {
   RYNKI_WYSTAWIANIA, gotowyRynek, EMAG_VAT, EMAG_ID_START, EMAG_STALE, EMAG_ZAKRES, EMPIK_STALE, MAX_NA_RAZ,
   nettoZBrutto, wagaGramy, wymiaryMm, ocenPozycje, powodyBlokady, ofertaEmag, wymiaryEmag, stanDostepny,
-  klasaLogistycznaEmpik, ofertaEmpik, plikOfertEmpik, bledyImportuEmpik,
+  klasaLogistycznaEmpik, ofertaEmpik, plikOfertEmpik, bledyImportuEmpik, ofertaAmazon, problemyAmazon,
 };

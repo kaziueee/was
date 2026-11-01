@@ -281,7 +281,7 @@ function oznaczMarke(platforma, rynek, marka, opis) {
     .run(`marka wymaga dokumentów: ${String(opis).slice(0, 200)}`, platforma, rynek, marka).changes;
 }
 
-module.exports = { skanuj, towaryDoSkanu, oznaczMarke, emagPoEan, amazonPoEan, kauflandPoEan, empikPoEan, cenyRynku };
+module.exports = { skanuj, towaryDoSkanu, oznaczMarke, emagPoEan, amazonPoEan, amazonOgraniczenia, kauflandPoEan, empikPoEan, cenyRynku };
 
 if (require.main === module) {
   const arg = (n) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : null; };

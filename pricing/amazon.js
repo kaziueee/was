@@ -153,4 +153,4 @@ function linkiOferty(rynek, asin) {
   return { produkt, oferty: `${produkt}?aod=1` };
 }
 
-module.exports = { RYNKI_AMAZON, dajToken, api, uczestnictwo, raport, aktywneOferty, tsv, linkiOferty, ustawCene };
+module.exports = { RYNKI_AMAZON, SELLER_ID, dajToken, api, uczestnictwo, raport, aktywneOferty, tsv, linkiOferty, ustawCene };

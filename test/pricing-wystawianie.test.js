@@ -196,3 +196,13 @@ test('Amazon: oferta do istniejącego ASIN-u (LISTING_OFFER_ONLY) i błędy z od
   assert.deepStrictEqual(pr, { bledy: ['8572: zła cena'], ostrzezenia: ['90000900: EPR'] });
   assert.deepStrictEqual(wm.problemyAmazon({}), { bledy: [], ostrzezenia: [] });
 });
+
+test('cena rynku Amazon: Buy Box nowego towaru z ceną dla klienta, bez Buy Boxa sama liczba ofert', () => {
+  const poz = (ceny, n) => ({ ASIN: 'B0', status: 'Success', Product: { CompetitivePricing: { CompetitivePrices: ceny, NumberOfOfferListings: [{ condition: 'New', Count: n }, { condition: 'Any', Count: n + 1 }] } } });
+  const bb = (kwota, o = {}) => ({ CompetitivePriceId: '1', condition: 'New', belongsToRequester: false, Price: { LandedPrice: { Amount: kwota }, ListingPrice: { Amount: kwota - 3 } }, ...o });
+  assert.deepStrictEqual(km.cenaRynkuAmazon(poz([bb(29.37)], 3)), { cena: 29.37, ofert: 3 });
+  assert.deepStrictEqual(km.cenaRynkuAmazon(poz([], 4)), { cena: null, ofert: 4 }, 'bez Buy Boxa');
+  assert.deepStrictEqual(km.cenaRynkuAmazon(poz([bb(20, { belongsToRequester: true })], 2)), { cena: null, ofert: 2 }, 'nasz Buy Box to nie rynek');
+  assert.deepStrictEqual(km.cenaRynkuAmazon(poz([bb(20, { condition: 'Used' })], 0)), null);
+  assert.strictEqual(km.cenaRynkuAmazon({ status: 'ClientError' }), null);
+});

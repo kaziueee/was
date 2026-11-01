@@ -143,15 +143,17 @@ function cwRenderujListe() {
   el('cw-lista').querySelectorAll('[data-cw-skan]').forEach((b) => b.addEventListener('click', () => cwSkan(Number(b.dataset.cwSkan), b)));
 }
 
-// Cena konkurencji: najniższa cena towaru (bez wysyłki). Droższa niż nasze minimum → proponujemy ją (cena startowa),
-// tańsza → zostaje minimum i komórka mówi, że na rynku jest taniej. eMAG nie podaje cen cudzych ofert w API.
+// Cena konkurencji: najniższa cena towaru (bez wysyłki); Amazon — Buy Box z wysyłką (cena dla klienta, nasze oferty mają
+// wysyłkę w cenie). Droższa niż nasze minimum → proponujemy ją (cena startowa), tańsza → zostaje minimum i komórka
+// mówi, że na rynku jest taniej. eMAG nie podaje cen cudzych ofert w API.
 function cwRynekKomorka(x) {
-  if (x.platforma === 'emag' || x.platforma === 'amazon') return '<span class="cs-sz" title="Platforma nie podaje w API cen ofert, których nie mamy">—</span>';
-  if (!x.cena_rynek_czas) return '<span class="cs-sz" title="Ceny konkurencji pobiera nocny skan">nie sprawdzono</span>';
+  if (x.platforma === 'emag') return '<span class="cs-sz" title="Platforma nie podaje w API cen ofert, których nie mamy">—</span>';
+  if (!x.cena_rynek_czas) return `<span class="cs-sz" title="Ceny konkurencji pobiera nocny skan${x.platforma === 'amazon' ? ' (Amazon: do 3000 ASIN-ów na rynek na noc, odświeżane co 3 dni)' : ''}">nie sprawdzono</span>`;
+  if (x.cena_rynek == null && x.ofert_rynek > 0) return `<span class="cs-sz" title="Są oferty, ale nikt nie ma Buy Boxa">${x.ofert_rynek} ofert, bez Buy Boxa</span>`;
   if (x.cena_rynek == null) return '<span class="cs-sz" title="Nikt nie sprzedaje — możemy być jedyną ofertą">brak ofert</span>';
   const taniej = x.min != null && x.cena_rynek < x.min - 0.005;
   return `<span class="${taniej ? 'cw-ostrz' : ''}" title="${x.ofert_rynek} ofert konkurencji, sprawdzone ${cenyEsc(formatDatetime(x.cena_rynek_czas))}">${cenyLiczba(x.cena_rynek)}</span>
-    <div class="cs-sz">${taniej ? 'taniej niż nasze min' : `${x.ofert_rynek} ofert`}</div>`;
+    <div class="cs-sz">${taniej ? 'taniej niż nasze min' : `${x.platforma === 'amazon' ? 'Buy Box · ' : ''}${x.ofert_rynek} ofert`}</div>`;
 }
 
 // Braki danych towaru (EAN, waga, wymiary) jednym komunikatem — szczegóły w podpowiedzi. Uzupełnia się je w GT

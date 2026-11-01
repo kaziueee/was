@@ -197,6 +197,7 @@ async function ograniczeniaAmazon(rynek, twIds) {
 
 // Ceny konkurencji dla kandydatów (produkt znany, nie mamy oferty) — tylko Kaufland i Empik (eMAG nie podaje cen
 // cudzych ofert). Kaufland: /buybox per produkt (6 równolegle); Empik: P11 po 100 produktów co 13 s (limit 5/min).
+const AMAZON_CENY_NA_RAZ = 3000, AMAZON_CENY_DNI = 3;
 async function cenyRynku(platforma, rynek, twIds) {
   const wiersze = db.prepare(`SELECT k.tw_id, k.produkt_id FROM katalog k
       WHERE k.platforma = ? AND k.rynek = ? AND k.produkt_id IS NOT NULL AND COALESCE(k.mamy, 0) = 0
@@ -215,6 +216,24 @@ async function cenyRynku(platforma, rynek, twIds) {
     const sklep = await empik.sklep().catch(() => ({}));
     const oferty = await empik.ofertyProduktow(wiersze.map((w) => w.produkt_id));
     for (const w of wiersze) if (oferty.has(String(w.produkt_id))) ceny.set(w.produkt_id, m.cenaRynkuEmpik(oferty.get(String(w.produkt_id)), sklep.nazwa));
+  } else if (platforma === 'amazon') {
+    // Buy Box nie musi być świeży co dobę (do znalezienia okazji, nie do repricera): na przebieg najwyżej AMAZON_CENY_NA_RAZ
+    // ASIN-ów, najpierw nigdy niesprawdzone i najstarsze, odświeżenie po AMAZON_CENY_DNI. 20 ASIN-ów na zapytanie,
+    // limit API 0,5/s → 3000 ASIN-ów ≈ 5 min na rynek.
+    const amazon = require('./amazon');
+    const czas = new Map(db.prepare(`SELECT produkt_id, MAX(COALESCE(cena_rynek_czas, '')) AS czas FROM katalog
+        WHERE platforma = 'amazon' AND rynek = ? AND produkt_id IS NOT NULL GROUP BY produkt_id`).all(rynek).map((r) => [r.produkt_id, r.czas]));
+    const granica = new Date(Date.now() - AMAZON_CENY_DNI * 864e5).toISOString().slice(0, 19).replace('T', ' ');
+    const asiny = [...new Set(wiersze.map((w) => w.produkt_id))]
+      .filter((a) => twIds || !(czas.get(a) >= granica))
+      .sort((a, b) => String(czas.get(a) || '').localeCompare(String(czas.get(b) || '')))
+      .slice(0, AMAZON_CENY_NA_RAZ);
+    const mp = amazon.RYNKI_AMAZON[rynek].id;
+    for (const cz of m.paczki(asiny, 20)) {
+      const j = await amazon.api('GET', `/products/pricing/v0/competitivePrice?MarketplaceId=${mp}&ItemType=Asin&Asins=${cz.join(',')}`);
+      for (const p of j.payload || []) if (p.status === 'Success') ceny.set(p.ASIN, m.cenaRynkuAmazon(p));
+      await sleep(2100);
+    }
   } else return 0;
   const ustaw = db.prepare('UPDATE katalog SET cena_rynek = ?, ofert_rynek = ?, cena_rynek_czas = CURRENT_TIMESTAMP WHERE platforma = ? AND rynek = ? AND produkt_id = ?');
   db.exec('BEGIN');
@@ -257,7 +276,7 @@ async function skanuj({ rynki = null, twIds = null, symbol = null } = {}) {
       const mapa = await SZUKAJ[platforma](eany, rynek, symbole);
       wynik.rynki[klucz] = zapiszRynek(platforma, rynek, towary, mapa);
       if (platforma === 'amazon') wynik.rynki[`${klucz} ograniczenia`] = await ograniczeniaAmazon(rynek, filtr);
-      if (platforma === 'kaufland' || platforma === 'empik') {
+      if (platforma === 'kaufland' || platforma === 'empik' || platforma === 'amazon') {
         try { wynik.rynki[`${klucz} ceny`] = await cenyRynku(platforma, rynek, filtr); } catch (e) { log(`${klucz} ceny rynku: ${e.message}`); }
       }
     } catch (e) {

@@ -90,6 +90,18 @@ function cenaRynkuKaufland(bb) {
     .map((x) => Number(x.price) / 100).filter((x) => x > 0);
   return ceny.length ? { cena: zaokr2(Math.min(...ceny)), ofert: ceny.length } : null;
 }
+// Amazon (Product Pricing getCompetitivePricing, 20 ASIN-ów w zapytaniu): Buy Box nowego towaru = CompetitivePriceId „1”,
+// cena DLA KLIENTA (LandedPrice = towar + wysyłka) — nasze oferty mają wysyłkę w cenie, więc to porównujemy. Bez Buy
+// Boxa (14 z 20 w próbce 2026-11-01) cena = null, ale liczba ofert zostaje: „są oferty, nikt nie ma Buy Boxa”.
+function cenaRynkuAmazon(pozycja) {
+  const cp = pozycja?.Product?.CompetitivePricing;
+  if (!cp) return null;
+  const bb = (cp.CompetitivePrices || []).find((c) => String(c.CompetitivePriceId) === '1' && c.condition === 'New' && !c.belongsToRequester);
+  const cena = Number(bb?.Price?.LandedPrice?.Amount);
+  const ofert = Number((cp.NumberOfOfferListings || []).find((n) => n.condition === 'New')?.Count) || 0;
+  if (!(cena > 0) && !ofert) return null;
+  return { cena: cena > 0 ? zaokr2(cena) : null, ofert };
+}
 // Sklepy niewidoczne na empik.com (pricing/empik-ukryte-sklepy.js) pomijamy — ich ceny nie są ceną rynku.
 function cenaRynkuEmpik(oferty, naszSklep = '') {
   const nasz = String(naszSklep || '').trim().toLowerCase();
@@ -132,4 +144,4 @@ function powodBraku(k, { mamyOferte = false, stan = null } = {}) {
   return null;
 }
 
-module.exports = { RYNKI_KATALOGU, kluczRynku, rodzajBleduEmag, normalizujEan, paczki, zEmagFindByEans, zEmpikP31, wybierzAsin, cenaRynkuKaufland, cenaRynkuEmpik, cenaStartowa, odrzucenieMarki, powodBraku };
+module.exports = { RYNKI_KATALOGU, kluczRynku, rodzajBleduEmag, normalizujEan, paczki, zEmagFindByEans, zEmpikP31, wybierzAsin, cenaRynkuKaufland, cenaRynkuAmazon, cenaRynkuEmpik, cenaStartowa, odrzucenieMarki, powodBraku };

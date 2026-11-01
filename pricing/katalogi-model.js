@@ -3,6 +3,8 @@
 // Czysta logika katalogów platform (bez API, SQLite i GT — testy w test/katalogi-model.test.js). Skan i zapis:
 // pricing/katalogi.js; ekran Ceny → „Do wystawienia”: routes/ceny-wystawianie.js.
 
+const { ukrytySklep } = require('./empik-ukryte-sklepy');
+
 // Rynki, których katalog skanujemy. Klucz = `${platforma}:${rynek}` (ten sam co w pricing/wystawianie-model.js).
 const RYNKI_KATALOGU = [
   { platforma: 'emag', rynek: 'RO' }, { platforma: 'emag', rynek: 'HU' }, { platforma: 'emag', rynek: 'BG' },
@@ -88,9 +90,11 @@ function cenaRynkuKaufland(bb) {
     .map((x) => Number(x.price) / 100).filter((x) => x > 0);
   return ceny.length ? { cena: zaokr2(Math.min(...ceny)), ofert: ceny.length } : null;
 }
+// Sklepy niewidoczne na empik.com (pricing/empik-ukryte-sklepy.js) pomijamy — ich ceny nie są ceną rynku.
 function cenaRynkuEmpik(oferty, naszSklep = '') {
   const nasz = String(naszSklep || '').trim().toLowerCase();
-  const ceny = (oferty || []).filter((o) => o && o.active !== false && (!nasz || String(o.shop_name || '').trim().toLowerCase() !== nasz))
+  const ceny = (oferty || []).filter((o) => o && o.active !== false && !ukrytySklep(o.shop_name)
+    && (!nasz || String(o.shop_name || '').trim().toLowerCase() !== nasz))
     .map((o) => Number(o.applicable_pricing?.price ?? o.price)).filter((x) => x > 0);
   return ceny.length ? { cena: zaokr2(Math.min(...ceny)), ofert: ceny.length } : null;
 }

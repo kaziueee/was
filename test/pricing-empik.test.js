@@ -84,6 +84,16 @@ test('Empik: naszą ofertę rozpoznajemy po offer_id, shop_id albo nazwie sklepu
   assert.strictEqual(empik.obserwacja([p11('Poszukiwacze Frajdy', 59.99, 8.99, { active: false })], { sklep: SKLEP }), null);
 });
 
+test('Empik: sklep niewidoczny na empik.com nie jest Buy Boxem ani konkurencją (PLA71602: TOYSMARF 238 zł)', () => {
+  const ob = empik.obserwacja([p11('TOYSMARF', 238, 11.9), p11('Poszukiwacze Frajdy', 249, 0), p11('Świat Dziecka - Warszawa Falenica', 254.99, 0)], { sklep: SKLEP });
+  assert.strictEqual(ob.bbNasz, true);
+  assert.strictEqual(ob.bbCena, 249);
+  assert.strictEqual(ob.najtanszaInna, 254.99);
+  assert.strictEqual(ob.ofert, 2, 'ukryty sklep nie liczy się do ofert');
+  const tylkoUkryty = empik.obserwacja([p11('  geszeft ', 77.64, 0), p11('Poszukiwacze Frajdy', 68.98, 0)], { sklep: SKLEP });
+  assert.strictEqual(tylkoUkryty.najtanszaInna, null, 'nazwa bez wielkości liter i spacji');
+});
+
 test('Empik: dwie nasze oferty na produkcie bez offer_id w P11 — nie zgadujemy, która to ta', () => {
   const ob = empik.obserwacja([p11('Poszukiwacze Frajdy', 59.99, 8.99), p11('Poszukiwacze Frajdy', 61, 8.99), p11('Sklep B', 65, 9.99)], { sklep: SKLEP });
   assert.strictEqual(ob.bbNasz, null);

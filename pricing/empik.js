@@ -38,6 +38,8 @@
 //   - format product_sku (sam numer czy z „p”) — link do karty produktu,
 //   - po ilu minutach cena z PRI01 jest widoczna w P11 i na stronie.
 
+const { ukrytySklep } = require('./empik-ukryte-sklepy');
+
 const URL_API = () => String(process.env.EMPIK_API_URL || 'https://marketplace.empik.com').replace(/\/+$/, '');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const zaokr = (x) => Math.round(x * 100) / 100;
@@ -220,10 +222,16 @@ const normNazwa = (s) => String(s || '').trim().toLowerCase();
 // Premium 0 zł. Porównanie po cenie łącznej kazało repricerowi „gonić” Yupi w dół do 108,24.
 // Dlatego `wysylka` = 0: model porównuje same ceny towaru (jak eMAG). Kolejność bywa inna dla klientów
 // Premium i zalogowanych (Empik o tym pisze) — liczymy pod widok domyślny.
+// Pomiar 2026-11-01 na 2797 produktach (lista ze strony vs P11): strona sortuje częściej po cenie ŁĄCZNEJ z
+// najtańszą dostawą (pierwszy jest najtańszy łącznie w 83% produktów, po samej cenie towaru w 68%) — ale P11
+// tej dostawy NIE podaje: `min_shipping_price` to 0 u prawie każdej oferty w strefie Premium, a na stronie te same
+// oferty mają 5,99–15 zł. Z P11 dostawy nie odtworzymy, więc zostaje cena towaru.
+// Sklepy, których strona nie pokazuje (pricing/empik-ukryte-sklepy.js), wypadają z porównania — także z `ofert`.
 function obserwacja(ofertyProduktu, { offerId = null, sklep: s = {} } = {}) {
-  const oferty = (ofertyProduktu || []).filter((o) => o && o.active !== false && cenaOferty(o) != null);
   const naszSklep = (o) => (s.id != null && liczba(o.shop_id) != null && liczba(o.shop_id) === s.id)
     || (!!s.nazwa && !!o.shop_name && normNazwa(o.shop_name) === normNazwa(s.nazwa));
+  const oferty = (ofertyProduktu || []).filter((o) => o && o.active !== false && cenaOferty(o) != null
+    && (naszSklep(o) || !ukrytySklep(o.shop_name)));
   const poId = offerId != null ? oferty.find((o) => liczba(o.offer_id) > 0 && liczba(o.offer_id) === liczba(offerId)) : null;
   const nasze = oferty.filter((o) => o === poId || naszSklep(o));
   const ta = poId || (nasze.length === 1 ? nasze[0] : null);

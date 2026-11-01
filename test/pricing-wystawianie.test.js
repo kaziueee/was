@@ -150,6 +150,8 @@ test('cena rynku: Kaufland bez naszych ofert, w centach → zł; Empik bez nasze
   assert.strictEqual(km.cenaRynkuKaufland({ units: [{ price: 1999, id_offer: 'X' }] }), null);
   const of = [{ shop_name: 'Poszukiwacze Frajdy', price: 70 }, { shop_name: 'Yupi', applicable_pricing: { price: 84.5 }, price: 90 }, { shop_name: 'Inny', price: 99.99, active: false }];
   assert.deepStrictEqual(km.cenaRynkuEmpik(of, 'Poszukiwacze Frajdy'), { cena: 84.5, ofert: 1 });
+  assert.deepStrictEqual(km.cenaRynkuEmpik([...of, { shop_name: 'TOYSMARF', price: 60 }], 'Poszukiwacze Frajdy'), { cena: 84.5, ofert: 1 },
+    'sklep niewidoczny na empik.com nie jest ceną rynku');
 });
 
 test('cena startowa: rynek droższy → cena rynku, tańszy albo brak → minimum', () => {

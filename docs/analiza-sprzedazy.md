@@ -271,7 +271,12 @@ dnia**. Nie jest już pilne przed sezonem — wchodzi w etapie 1.
   `ob_CenaWaluta` pozycji. Kurs NBP z dnia przed wystawieniem; KFS kursem faktury pierwotnej.
 - Kanały z regułami w kalkulatorze: Allegro, Amazon DE/FR/IT/ES/NL, eMAG RO/HU/BG, Kaufland DE, Empik. Bez reguł
   (Amazon PL, Erli, InPost, Sklep, „personal”, „tergpl”) → marża handlowa (przychód − koszt zakupu) z dopiskiem
-  „bez kosztów kanału”. Allegro CZ/SK/HU: czy reguły Allegro PL pasują — **do sprawdzenia**.
+  „bez kosztów kanału”. Allegro CZ/SK/HU — własne reguły od 2026-11-05 (`config/rynki.js` `ALLEGRO_ZAGRANICA`):
+  cennik Smart! z Polski w walucie rynku — punkty/automaty i kurier osobno, wg metody dostawy z ZK `pwd_Tekst03`
+  (strony pomocy Allegro, zgodne z billingiem co do grosza), VAT kraju
+  (CZ 21 / SK 23 / HU 27), prowizja 14,15% od całości z dostawą kupującego, bez Ads, na HU „Lokalna dopłata od
+  sprzedaży detalicznej” (HUN) 4,43% brutto od całości; billing pobierany z `marketplaceId` allegro-cz/-sk/-hu.
+  Pomiar 30 dni do 05.11.2026 (sam kalkulator): HU 28,4% → 24,3% przychodu, CZ 29,1 → 30,7%, SK 27,9 → 29,4%.
 
 ### Zestawy
 
@@ -547,7 +552,7 @@ zysk handlowy jako przybliżenie zysku po kosztach kanału):
 
 1. Tier i to, co z niego weźmie repricer (etap 3) — dane wyżej.
 2. ~~Sprawdzenie reguły kraju przed 26.08~~ — potwierdzone 2026-10-20 na 31 997 FS z rozliczeniami Amazona: 99,8% (sekcja „Wdrożenie etapu 1”).
-3. Koszty kanału dla Allegro CZ/SK/HU.
+3. ~~Koszty kanału dla Allegro CZ/SK/HU~~ — zrobione 2026-11-05 (sekcja „Kanały”, `ALLEGRO_ZAGRANICA`).
 4. ~~Historia kosztu~~ — rozstrzygnięte 2026-10-21: koszt rozchodu z GT (sekcja „Koszt i zysk”). Pomiar, który
    do tego doprowadził:
    **Pomiar 2026-10-21 — średnia ważona dostaw na stanie, nie ostatnia PZ** (uwaga usera: 100 szt. po 10 zł i jedna

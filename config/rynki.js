@@ -148,6 +148,42 @@ const DHL_STAWKI = {
 // Do 18.10.2026 było 2,1 / 3,2 / 5,5 / 7,6 / 7,5 / 11 (zaniżone w niższych progach o 0,3–0,6 zł).
 const ALLEGRO_PROGI = [[45, 0], [65, 2.5], [100, 3.75], [150, 5.82], [200, 7.33], [500, 7.43], [Infinity, 12.16]];
 
+// Allegro CZ / SK / HU — sprzedaż z Polski na rynki zagraniczne Allegro (2026-11-05). Do tej pory analiza liczyła je
+// regułami Allegro PL przy cenie netto × 1,23 — z polskim cennikiem Smart w zł, polskim VAT i polskimi Ads. Liczby
+// z billingu Allegro (`marketplaceId`, oba konta, 30 dni do 05.11.2026) i stron pomocy Allegro dla sprzedających:
+//  - `smart` — opłata za dostawę Smart! z Polski [poniżej wartości zamówienia, opłata], waluta rynku, tak jak w
+//    billingu (kwota z 23% VAT Allegro PL — odliczamy, `vatOplat`). Dwie tabele: `smart` = punkty / automaty
+//    (Packeta, DPD Pickup, Allegro International APM / PUDO), `smartKurier` = kurier DPD / DHL / Allegro International
+//    Courier. Którą bierzemy, mówi metoda dostawy z ZK (`pwd_Tekst03`, np. „Allegro One Kurier DPD” — słowo
+//    „kurier”/„courier”); nieznana metoda = punkty (większość paczek). Progi co do grosza zgodne z billingiem (HU
+//    310 HUF przy 5025–5955, kurier 910 przy 9345–13045; CZ 18,49 przy 299–375; SK 0,79 przy 12,97–14,88). Poniżej
+//    pierwszego progu Smart nie działa — dostawę płaci kupujący. Uwaga: Smart za granicą jest DROŻSZY niż
+//    polski cennik przeliczony po kursie (pomiar 30 dni: CZ 5,24 vs 4,84 zł, SK 5,45 vs 4,65, HU 6,09 vs 5,06 na
+//    zamówieniu bez dostawy od kupującego).
+//  - `prowizja` — mediana prowizji SUC z billingu: 14,15% wartości zamówienia brutto RAZEM z dostawą zapłaconą przez
+//    kupującego (HU, CZ, SK tak samo; PL ma średnią 13,3% obrotu). Ads na zagranicy nie prowadzimy (decyzja usera).
+//  - `lokalna` (HU) — „Lokalna dopłata od sprzedaży detalicznej” (typ HUN): 4,43% brutto od całości, którą płaci
+//    kupujący (towar + dostawa), na KAŻDYM zamówieniu allegro.hu (30/30 zamówień: HUN / totalToPay = 0,04430;
+//    to 3,6% netto + 23% VAT — węgierski podatek od sprzedaży detalicznej przerzucony przez Allegro na sprzedawców).
+//  - `vat` — stawka sprzedaży kraju kupującego (OSS), zgodna z FS w GT: CZ 21%, SK 23%, HU 27%.
+//  - Kupujący spoza Smart płaci za dostawę, a Allegro pobiera od nas opłatę przewoźnika (HU Packeta 790 / kurier
+//    1490 HUF przy 790 / 1990 od kupującego) — szacujemy ją kwotą zapłaconą przez kupującego.
+// Nie są w RYNKI: Cennik i repricer ich nie wyceniają (nie wystawiamy cen per rynek zagraniczny Allegro).
+const ALLEGRO_ZAGRANICA = {
+  CZ: { nazwa: 'Allegro CZ', kraj: 'CZ', waluta: 'CZK', vat: 21, prowizja: 14.15, ads: 0, vatOplat: 23, typ: 'allegro', zagranica: true,
+    smart: [[179, 0], [269, 9.29], [379, 18.49], [589, 30.09], [879, 45.69], [Infinity, 57.79]],
+    smartKurier: [[179, 0], [269, 11.59], [379, 23.19], [589, 35.29], [879, 54.99], [Infinity, 68.79]] },
+  SK: { nazwa: 'Allegro SK', kraj: 'SK', waluta: 'EUR', vat: 23, prowizja: 14.15, ads: 0, vatOplat: 23, typ: 'allegro', zagranica: true,
+    smart: [[6.9, 0], [10.4, 0.39], [15, 0.79], [23, 1.29], [34.5, 1.89], [Infinity, 2.39]],
+    smartKurier: [[6.9, 0], [10.4, 0.49], [15, 0.99], [23, 1.49], [34.5, 2.29], [Infinity, 2.79]] },
+  HU: { nazwa: 'Allegro HU', kraj: 'HU', waluta: 'HUF', vat: 27, prowizja: 14.15, ads: 0, vatOplat: 23, typ: 'allegro', zagranica: true,
+    lokalna: 4.43, smart: [[2800, 0], [4200, 160], [6000, 310], [9200, 500], [13900, 760], [Infinity, 960]],
+    smartKurier: [[2800, 0], [4200, 200], [6000, 390], [9200, 590], [13900, 910], [Infinity, 1140]] },
+};
+// Metoda dostawy z ZK (pwd_Tekst03) → czy kurier (druga tabela Smart).
+const czyKurierAllegro = (metoda) => /kurier|courier/i.test(String(metoda || ''));
+
+
 // Stale oplaty za zamowienie (w walucie rynku, netto) wg progu wartosci zamowienia BRUTTO: [ponizej, oplata].
 // GENIUS_RO: prowizja Genius eMAG RO od 01.01.2026 (marketplace.emag.ro/infocenter, „How the Genius
 // contribution is applied"): zamowienie klienta Genius z dostawa do automatu, z min. 1 produktem Genius.
@@ -237,7 +273,8 @@ function kosztWysylkiEmpik({ paczka = null, waga = 1 } = {}) {
 }
 
 // --- helpery (czyste) ---
-const kursDla = (waluta, g) => (waluta === 'EUR' ? +g.eur || 0 : waluta === 'RON' ? +g.ron || 0 : waluta === 'HUF' ? +g.huf || 0 : 1);
+const kursDla = (waluta, g) => (waluta === 'EUR' ? +g.eur || 0 : waluta === 'RON' ? +g.ron || 0 : waluta === 'HUF' ? +g.huf || 0
+  : waluta === 'CZK' ? +g.czk || 0 : 1);
 
 // zaokraglenie do NAJBLIZSZEJ koncowki ,99 (nie zawsze w gore - inaczej cena tuz nad cala zlotowka
 // skakalaby o ~1 i marza rozjezdzalaby sie w gore).
@@ -253,9 +290,10 @@ function totalCelu(koszty, D, denomZysk, kurs, g) {
   return koszty / D;
 }
 
-function doplataSmartAllegro(cena) {
-  for (const [gr, d] of ALLEGRO_PROGI) if (cena < gr) return d;
-  return ALLEGRO_PROGI[ALLEGRO_PROGI.length - 1][1];
+function doplataSmartAllegro(cena, tabela) {
+  const progi = Array.isArray(tabela) ? tabela : ALLEGRO_PROGI;   // .map(doplataSmartAllegro) podaje indeks
+  for (const [gr, d] of progi) if (cena < gr) return d;
+  return progi[progi.length - 1][1];
 }
 
 // Narzut Ads (% ceny): własny rynku (Allegro), inaczej wspólny z DOMYSLNE.
@@ -458,7 +496,7 @@ function wycenaPrzyCenie(kosztPLN, rynek, g, cena) {
 //                    zostaje szacunkiem zawsze. VAT od opłat odliczamy jak w kalkulatorze (`vatOplat`).
 // Zysk rozkładamy na pozycje: przychód po kosztach kanału dzielony proporcjonalnie do wartości brutto pozycji,
 // minus jej własny koszt zakupu — gratis (cena 0) ma więc zysk = −koszt, a nie udział w cudzej marży.
-function wycenaZamowienia(rynek, g, { pozycje = [], wysylkaKlienta = null, doplata = 0, oplaty = null } = {}) {
+function wycenaZamowienia(rynek, g, { pozycje = [], wysylkaKlienta = null, doplata = 0, oplaty = null, metodaDostawy = null } = {}) {
   const r = profilRynku(rynek, g);
   const poz = pozycje.map((x) => ({ koszt: +x.koszt || 0, cena: +x.cena || 0, szt: +x.szt || 0 })).filter((x) => x.szt > 0);
   const T = poz.reduce((s, x) => s + x.cena * x.szt, 0);           // towar brutto, waluta rynku
@@ -466,7 +504,26 @@ function wycenaZamowienia(rynek, g, { pozycje = [], wysylkaKlienta = null, dopla
   if (!poz.length || T <= 0) return wynik(r, { blad: 'brak wartości zamówienia', status: 'bad' });
   const v = (+r.vat || 0) / 100, obs = +g.obsluga || 0;
   let kurs, zyskWal, pnWal, detal;
-  if (r.typ === 'allegro') {
+  if (r.typ === 'allegro' && r.zagranica) {
+    // Allegro CZ/SK/HU (ALLEGRO_ZAGRANICA): wszystko w walucie rynku, koszt zakupu i obsługa przez kurs dokumentu.
+    // Inaczej niż PL: prowizja i opłata lokalna (HU) liczą się od całości z dostawą zapłaconą przez kupującego, więc
+    // ta dostawa wchodzi do przychodu, a kosztem dostawy jest Smart wg wartości towaru albo — gdy kupujący zapłacił —
+    // opłata przewoźnika, szacowana jego kwotą. `oplaty.inne` z billingu niesie też rzeczywistą opłatę HUN.
+    kurs = kursDla(r.waluta, g);
+    if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });
+    const S = Math.max(0, +wysylkaKlienta || 0), D = Math.max(0, +doplata || 0), vo = 1 + (+r.vatOplat || 0) / 100, o = oplaty || {};
+    const baza = T + S + D;
+    const prow = o.prowizja != null ? +o.prowizja / vo : baza * (+r.prowizja || 0) / 100 / vo;
+    const ads = baza * adsRynku(r, g) / 100 / vo;
+    const kurier = czyKurierAllegro(metodaDostawy);
+    const dost = o.dostawa != null ? +o.dostawa / vo : (S > 0 ? S : doplataSmartAllegro(T, kurier && r.smartKurier ? r.smartKurier : r.smart)) / vo;
+    const lokalna = o.inne != null ? 0 : (T + S) * (+r.lokalna || 0) / 100 / vo;  // billing „inne” zawiera już HUN
+    const inne = (+o.inne || 0) / vo;
+    zyskWal = baza / (1 + v) - prow - ads - dost - lokalna - inne - (K + obs) / kurs;
+    pnWal = baza / (1 + v);
+    detal = { dostawaSmart: dost, doplata: D, prowizja: prow, ads, lokalna, inne, wysKlient: S, kurier,
+      rzeczywiste: { prowizja: o.prowizja != null, dostawa: o.dostawa != null } };
+  } else if (r.typ === 'allegro') {
     kurs = 1;
     const D = Math.max(0, +doplata || 0), vo = 1 + (+r.vatOplat || 0) / 100, o = oplaty || {};
     const prow = o.prowizja != null ? +o.prowizja / vo : (T + D) * (+r.prowizja || 0) / 100 / vo;
@@ -554,9 +611,9 @@ function policzWszystkie(kosztPLN, nadpisz = {}) {
 }
 
 module.exports = {
-  DOMYSLNE, RYNKI, DHL_STAWKI, ALLEGRO_PROGI, OPLATY_ZAM, SKRYTKA_AUTOMATU_CM, EMPIK_WYSYLKA,
+  DOMYSLNE, RYNKI, DHL_STAWKI, ALLEGRO_PROGI, ALLEGRO_ZAGRANICA, OPLATY_ZAM, SKRYTKA_AUTOMATU_CM, EMPIK_WYSYLKA,
   gabarytPaczkomatu, kosztWysylkiEmpik,
-  do99, totalCelu, kursDla, doplataSmartAllegro, stawkaDHL, kosztWysylkiFlat, oplataZamowienia, oplataZamOczekiwana,
+  do99, totalCelu, kursDla, doplataSmartAllegro, czyKurierAllegro, stawkaDHL, kosztWysylkiFlat, oplataZamowienia, oplataZamOczekiwana,
   prowizjaUlamek,
   miesciSieWAutomacie, profilRynku,
   policzRynek, policzKotwica, wycenaPrzyCenie, wycenaZamowienia, policzZRecznaCena, policzWszystkie,

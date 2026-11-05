@@ -42,7 +42,7 @@ const POLA_FS = `d.dok_Id fs_id, d.dok_NrPelny numer, CONVERT(char(10), d.dok_Da
   LEFT(ISNULL(d.dok_Uwagi, ''), 200) uwagi, ISNULL(kr.kraj, '') kraj,
   zk.dok_Id zk_id, CONVERT(char(10), zk.dok_DataWyst, 23) data_zk, LTRIM(RTRIM(ISNULL(z8.pwd_Tekst01, ''))) zrodlo_zk,
   ISNULL(kz.kat_Nazwa, '') kat_zk, z8.pwd_Tekst05 uuid, LEFT(ISNULL(zk.dok_Uwagi, ''), 200) uwagi_zk,
-  ISNULL(zk.dok_NrPelnyOryg, '') oryg_zk`;
+  ISNULL(zk.dok_NrPelnyOryg, '') oryg_zk, LTRIM(RTRIM(ISNULL(z8.pwd_Tekst03, ''))) metoda`;
 const ZLACZ_FS = `LEFT JOIN dok__Dokument zk ON zk.dok_Id = d.dok_DoDokId AND zk.dok_Typ = 16
   LEFT JOIN pw_Dane z2 ON z2.pwd_IdObiektu = d.dok_Id AND z2.pwd_TypObiektu = -2
   LEFT JOIN pw_Dane z8 ON z8.pwd_IdObiektu = zk.dok_Id AND z8.pwd_TypObiektu = -8
@@ -74,7 +74,8 @@ async function pobierzOkno(od, doDnia) {
     query(POZ(FS_W_OKNIE), par),
     query(`SELECT d.dok_Id zk_id, d.dok_NrPelny numer, CONVERT(char(10), d.dok_DataWyst, 23) data_zk, d.dok_Waluta waluta,
         d.dok_WalutaKurs kurs, LTRIM(RTRIM(ISNULL(z8.pwd_Tekst01, ''))) zrodlo_zk, ISNULL(kz.kat_Nazwa, '') kat_zk,
-        z8.pwd_Tekst05 uuid, LEFT(ISNULL(d.dok_Uwagi, ''), 200) uwagi, ISNULL(kr.kraj, '') kraj, ISNULL(d.dok_NrPelnyOryg, '') oryg_zk
+        z8.pwd_Tekst05 uuid, LEFT(ISNULL(d.dok_Uwagi, ''), 200) uwagi, ISNULL(kr.kraj, '') kraj, ISNULL(d.dok_NrPelnyOryg, '') oryg_zk,
+        LTRIM(RTRIM(ISNULL(z8.pwd_Tekst03, ''))) metoda
       FROM dok__Dokument d LEFT JOIN pw_Dane z8 ON z8.pwd_IdObiektu = d.dok_Id AND z8.pwd_TypObiektu = -8
       LEFT JOIN sl_Kategoria kz ON kz.kat_Id = d.dok_KatId ${KRAJ} WHERE ${ZK_BEZ_FS}`, par),
     query(POZ(ZK_BEZ_FS), par),
@@ -104,6 +105,8 @@ async function skladZestawow(ids) {
 
 // --- składanie zamówień -------------------------------------------------------------------------------------
 // Definicja rynku kalkulatora dla kanału (jak pricing/pas.js: kolumna → RYNKI po nazwie + rynekNadpisz).
+const RYNEK_ALLEGRO_WALUTY = { CZK: 'CZ', EUR: 'SK', HUF: 'HU' };   // jak RYNEK_ALLEGRO w analiza-kanal
+
 function rynekKanalu(kanal) {
   const kol = KOL[kanal === 'ALLEGRO' ? 'ALLEGRO_EKAJTEK' : kanal];
   const def = kol && kol.kalkulator && rynki.RYNKI.find((r) => r.nazwa === kol.kalkulator);
@@ -114,38 +117,45 @@ function rynekKanalu(kanal) {
 // Zysk zamówienia: po kosztach kanału z kalkulatora (wycenaZamowienia), a dla kanałów bez reguł — marża handlowa.
 // Paczka = największy towar zamówienia (jak w analizie kartonów, decyzja usera 2026-09-23). Kurs = kurs dokumentu.
 // billing — { doplata, oplaty } z services/analiza-billing.js (oplatyZamowienia): dopłata Allegro do ceny i opłaty
-// rzeczywiste, brutto PLN; tylko Allegro PL z kalkulatorem (billing Allegro jest tylko dla allegro-pl).
+// rzeczywiste, brutto w walucie rynku (allegro-pl PLN, allegro-cz/-sk/-hu CZK/EUR/HUF).
 function policzZysk(z, poz, wyceny, billing = null) {
   const handlowa = () => {
     for (const p of poz) p.zysk = p.netto - p.szt * (p.koszt || 0);
     return { zysk: poz.reduce((s, p) => s + p.zysk, 0), zrodlo: 'handlowa' };
   };
-  const rk = rynekKanalu(z.kanal);
+  let rk = rynekKanalu(z.kanal);
   if (!rk || !poz.length) return handlowa();
+  // Allegro CZ/SK/HU: własny rynek kalkulatora (config/rynki.js ALLEGRO_ZAGRANICA — cennik Smart, VAT kraju, opłata
+  // lokalna HU, bez Ads), w walucie dokumentu. Do 2026-11-05 liczone regułami Allegro PL przy netto × 1,23.
   const allegroZagranica = rk.def.typ === 'allegro' && z.waluta !== 'PLN';
+  if (allegroZagranica) {
+    const def = rynki.ALLEGRO_ZAGRANICA[RYNEK_ALLEGRO_WALUTY[z.waluta]];
+    if (!def) return handlowa();
+    rk = { def, waluta: def.waluta };
+  }
   // eMAG BG do końca 2025 sprzedawał w BGN (od 01.01.2026 w EUR): lew jest sztywno związany z euro (1,95583),
   // więc przeliczamy do waluty kalkulatora zamiast spadać do marży handlowej.
   const bgn = z.waluta === 'BGN' && rk.waluta === 'EUR' ? 1.95583 : 1;
-  if (!allegroZagranica && rk.waluta !== (bgn !== 1 ? 'EUR' : z.waluta)) return handlowa();
+  if (rk.waluta !== (bgn !== 1 ? 'EUR' : z.waluta)) return handlowa();
   const najw = poz.reduce((a, p) => ((wyceny.get(p.tw_id)?.waga || 0) > (wyceny.get(a.tw_id)?.waga || 0) ? p : a), poz[0]);
   const w = wyceny.get(najw.tw_id) || {};
   const g = { ...rynki.DOMYSLNE, waga: w.waga || rynki.DOMYSLNE.waga, paczka: w.paczka || null, genius: w.genius ?? null,
     docinanie: !!w.docinalny, docinanieOn: true };
-  if (z.waluta === 'EUR' || bgn !== 1) g.eur = z.kurs * bgn; else if (z.waluta === 'RON') g.ron = z.kurs; else if (z.waluta === 'HUF') g.huf = z.kurs;
-  // Allegro CZ/SK/HU: reguły Allegro PL przy cenie brutto w zł (netto × 1,23) — kosztów rynków zagranicznych Allegro
-  // per zamówienie nie zna nikt (Rozliczenia: billing API tylko allegro-pl), więc oznaczamy źródło osobno.
-  const wejscie = poz.map((p) => ({ koszt: p.koszt || 0, szt: p.szt,
-    cena: allegroZagranica ? p.netto / p.szt * 1.23 : p.cena / bgn }));
-  const b = rk.def.typ === 'allegro' && !allegroZagranica && billing ? billing : { doplata: 0, oplaty: null };
-  const r = rynki.wycenaZamowienia(rk.def, g, { pozycje: wejscie, wysylkaKlienta: allegroZagranica ? null : z.wysylka_klienta / bgn,
-    doplata: b.doplata, oplaty: b.oplaty });
+  if (z.waluta === 'EUR' || bgn !== 1) g.eur = z.kurs * bgn; else if (z.waluta === 'RON') g.ron = z.kurs;
+  else if (z.waluta === 'HUF') g.huf = z.kurs; else if (z.waluta === 'CZK') g.czk = z.kurs;
+  const wejscie = poz.map((p) => ({ koszt: p.koszt || 0, szt: p.szt, cena: p.cena / bgn }));
+  // billing Allegro: kwoty w walucie rynku (allegro-pl w PLN, zagraniczne w CZK / EUR / HUF — pricing/billing-allegro.js)
+  const b = rk.def.typ === 'allegro' && billing ? billing : { doplata: 0, oplaty: null };
+  const r = rynki.wycenaZamowienia(rk.def, g, { pozycje: wejscie, wysylkaKlienta: z.wysylka_klienta / bgn,
+    doplata: b.doplata, oplaty: b.oplaty, metodaDostawy: z.metoda });   // metoda z ZK (pwd_Tekst03): kurier / punkt
   if (r.blad) return handlowa();
   r.pozycje.forEach((x, i) => { poz[i].zysk = x.zysk; });
   // źródło zysku: 'billing' = prowizja i dostawa rzeczywiste, 'billing_czesc' = część jeszcze szacowana (dostawa
   // przychodzi 1–3 dni po zamówieniu), 'kalkulator' = sam szacunek
   const rz = r.detal?.rzeczywiste || {};
-  const zrodlo = allegroZagranica ? 'kalkulator_pl' : rz.prowizja && rz.dostawa ? 'billing' : rz.prowizja || rz.dostawa ? 'billing_czesc' : 'kalkulator';
-  return { zysk: r.zysk, zrodlo, doplataNetto: (Number(b.doplata) || 0) / (1 + (Number(rk.def.vat) || 0) / 100) };
+  const zrodlo = rz.prowizja && rz.dostawa ? 'billing' : rz.prowizja || rz.dostawa ? 'billing_czesc' : 'kalkulator';
+  const kursDok = allegroZagranica ? (Number(z.kurs) || 0) : 1;
+  return { zysk: r.zysk, zrodlo, doplataNetto: (Number(b.doplata) || 0) * kursDok / (1 + (Number(rk.def.vat) || 0) / 100) };
 }
 
 function pozycjeDokumentu(lista) {
@@ -201,7 +211,7 @@ function zlozZamowienia(surowe, wyceny, sklady, koszty, billing = new Map(), dzi
     const data = am.dataZamowienia({ uuid: kanal.kanal.startsWith('ALLEGRO') ? d.uuid : null, dataZk: d.data_zk, dataFs: d.data_fs });
     dodaj({ id: d.zk_id ? `Z${d.zk_id}` : `F${d.fs_id}`, zk_id: d.zk_id || null, fs_id: d.fs_id, numer: d.numer, status: 'zafakturowane',
       data_zam: data.dzien, godz_zam: data.godz, data_zam_zrodlo: data.zrodlo, data_zk: d.data_zk || null, data_fs: d.data_fs,
-      waluta: d.waluta, kurs }, fsPoz.get(d.fs_id) || [], kanal, uuidDokumentu(d));
+      waluta: d.waluta, kurs, metoda: d.metoda || null }, fsPoz.get(d.fs_id) || [], kanal, uuidDokumentu(d));
   }
   const zkPoz = pozycjeDokumentu(surowe.zkPoz);
   for (const d of surowe.zk) {
@@ -209,7 +219,8 @@ function zlozZamowienia(surowe, wyceny, sklady, koszty, billing = new Map(), dzi
       oryg_zk: d.oryg_zk, konto_allegro: d.konto_allegro });
     const data = am.dataZamowienia({ uuid: kanal.kanal.startsWith('ALLEGRO') ? d.uuid : null, dataZk: d.data_zk });
     dodaj({ id: `Z${d.zk_id}`, zk_id: d.zk_id, fs_id: null, numer: d.numer, status: 'zamowione', data_zam: data.dzien, godz_zam: data.godz,
-      data_zam_zrodlo: data.zrodlo, data_zk: d.data_zk, data_fs: null, waluta: d.waluta, kurs: am.kursDokumentu(d.waluta, d.kurs) },
+      data_zam_zrodlo: data.zrodlo, data_zk: d.data_zk, data_fs: null, waluta: d.waluta, kurs: am.kursDokumentu(d.waluta, d.kurs),
+      metoda: d.metoda || null },
     zkPoz.get(d.zk_id) || [], kanal, uuidDokumentu(d));
   }
   const paPoz = pozycjeDokumentu(surowe.paPoz);

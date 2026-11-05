@@ -259,3 +259,67 @@ test('Allegro hybrydowo: opłaty z billingu zastępują szacunek składnik po sk
   const w = rynki.wycenaZamowienia(a, g, { pozycje: poz, doplata: 16.14, oplaty: { prowizja: 18.40, dostawa: 8.99, inne: -2 } });
   assert.ok(Math.abs(w.zysk - (z.zysk + z.detal.dostawaSmart - 8.99 / 1.23 + 2 / 1.23)) < 1e-9);
 });
+
+// --- Allegro CZ / SK / HU (ALLEGRO_ZAGRANICA, 2026-11-05) ---
+
+test('Allegro HU: VAT 27%, prowizja 14,15% i opłata lokalna 4,43% od całości, Smart wg cennika HUF, bez Ads', () => {
+  const hu = rynki.ALLEGRO_ZAGRANICA.HU, kurs = 0.0117;
+  // zamówienie Smart z billingu: towar 7700 HUF, dostawa 0 — SUC 1089,56 (14,15%), HUN 341,12 (4,43%), Smart 500 HUF
+  const z = rynki.wycenaZamowienia(hu, { ...g, huf: kurs }, { pozycje: [{ koszt: 20, cena: 7700, szt: 1 }], wysylkaKlienta: 0 });
+  const zyskWal = 7700 / 1.27 - 7700 * 0.1415 / 1.23 - 7700 * 0.0443 / 1.23 - 500 / 1.23 - (20 + g.obsluga) / kurs;
+  assert.ok(Math.abs(z.zysk - zyskWal * kurs) < 1e-6, `${z.zysk} vs ${zyskWal * kurs}`);
+  assert.strictEqual(z.detal.ads, 0);
+  assert.ok(Math.abs(z.przychodNetto - 7700 / 1.27 * kurs) < 1e-9);
+});
+
+test('Allegro zagranica: cennik Smart co do progu z billingu (HU punkty, CZ, SK), poniżej progu 0', () => {
+  const s = (k, w) => rynki.doplataSmartAllegro(w, rynki.ALLEGRO_ZAGRANICA[k].smart);
+  assert.strictEqual(s('HU', 2799), 0);
+  assert.strictEqual(s('HU', 5025), 310); assert.strictEqual(s('HU', 9125), 500); assert.strictEqual(s('HU', 13430), 760); assert.strictEqual(s('HU', 32745), 960);
+  assert.strictEqual(s('CZ', 178), 0); assert.strictEqual(s('CZ', 299), 18.49); assert.strictEqual(s('CZ', 588), 30.09); assert.strictEqual(s('CZ', 2570), 57.79);
+  assert.strictEqual(s('SK', 6.89), 0); assert.strictEqual(s('SK', 12.97), 0.79); assert.strictEqual(s('SK', 22.84), 1.29); assert.strictEqual(s('SK', 58.86), 2.39);
+  assert.strictEqual(rynki.doplataSmartAllegro(60), rynki.doplataSmartAllegro(60, rynki.ALLEGRO_PROGI), 'PL bez zmian');
+});
+
+test('Allegro zagranica bez Smart: dostawa kupującego wchodzi do przychodu i podstawy opłat, koszt = jej kwota', () => {
+  const hu = rynki.ALLEGRO_ZAGRANICA.HU, kurs = 0.0117, gg = { ...g, huf: kurs };
+  // billing: towar 5730 + dostawa 790 = 6520; HUN 288,84 = 4,43% × 6520, Packeta 790 HUF od nas
+  const z = rynki.wycenaZamowienia(hu, gg, { pozycje: [{ koszt: 10, cena: 5730, szt: 1 }], wysylkaKlienta: 790 });
+  const zyskWal = 6520 / 1.27 - 6520 * 0.1415 / 1.23 - 6520 * 0.0443 / 1.23 - 790 / 1.23 - (10 + g.obsluga) / kurs;
+  assert.ok(Math.abs(z.zysk - zyskWal * kurs) < 1e-6);
+  assert.ok(Math.abs(z.detal.lokalna * 1.23 - 288.84) < 0.01, `HUN ${z.detal.lokalna * 1.23}`);
+});
+
+test('Allegro zagranica z billingiem: kwoty rzeczywiste w walucie rynku, HUN w „inne” zastępuje szacunek', () => {
+  const hu = rynki.ALLEGRO_ZAGRANICA.HU, kurs = 0.0117, gg = { ...g, huf: kurs };
+  const z = rynki.wycenaZamowienia(hu, gg, { pozycje: [{ koszt: 20, cena: 7700, szt: 1 }], wysylkaKlienta: 0,
+    oplaty: { prowizja: 1089.56, dostawa: 500, inne: 341.12 } });
+  const zyskWal = 7700 / 1.27 - (1089.56 + 500 + 341.12) / 1.23 - (20 + g.obsluga) / kurs;
+  assert.ok(Math.abs(z.zysk - zyskWal * kurs) < 1e-6);
+  assert.strictEqual(z.detal.lokalna, 0);
+  assert.deepStrictEqual(z.detal.rzeczywiste, { prowizja: true, dostawa: true });
+});
+
+test('Allegro CZ / SK: bez opłaty lokalnej, VAT 21% / 23%, brak kursu = błąd', () => {
+  const cz = rynki.ALLEGRO_ZAGRANICA.CZ, sk = rynki.ALLEGRO_ZAGRANICA.SK;
+  const zc = rynki.wycenaZamowienia(cz, { ...g, czk: 0.17 }, { pozycje: [{ koszt: 30, cena: 502, szt: 1 }], wysylkaKlienta: 0 });
+  assert.ok(Math.abs(zc.przychodNetto - 502 / 1.21 * 0.17) < 1e-9);
+  assert.strictEqual(zc.detal.lokalna, 0);
+  assert.ok(Math.abs(zc.detal.dostawaSmart - 30.09 / 1.23) < 1e-9);
+  const zs = rynki.wycenaZamowienia(sk, { ...g, eur: 4.25 }, { pozycje: [{ koszt: 30, cena: 25.89, szt: 1 }], wysylkaKlienta: 0 });
+  assert.ok(Math.abs(zs.przychodNetto - 25.89 / 1.23 * 4.25) < 1e-9);
+  assert.ok(rynki.wycenaZamowienia(cz, { ...g, czk: 0 }, { pozycje: [{ koszt: 30, cena: 502, szt: 1 }] }).blad);
+  assert.ok(!rynki.RYNKI.some((r) => r.zagranica), 'Cennik i repricer bez rynków zagranicznych Allegro');
+});
+
+test('Allegro zagranica: kurier (metoda z ZK) liczony z tabeli kurierskiej, punkt / nieznana — z punktowej', () => {
+  const hu = rynki.ALLEGRO_ZAGRANICA.HU, gg = { ...g, huf: 0.0117 };
+  const wycena = (metodaDostawy) => rynki.wycenaZamowienia(hu, gg, { pozycje: [{ koszt: 20, cena: 11665, szt: 1 }], wysylkaKlienta: 0, metodaDostawy });
+  assert.ok(Math.abs(wycena('Allegro One Kurier DPD').detal.dostawaSmart - 910 / 1.23) < 1e-9);   // billing: kurier 910 przy 9345–13045
+  assert.ok(Math.abs(wycena('Allegro One Punkt, Box').detal.dostawaSmart - 760 / 1.23) < 1e-9);
+  assert.ok(Math.abs(wycena(null).detal.dostawaSmart - 760 / 1.23) < 1e-9);
+  assert.ok(wycena('Allegro One Kurier DPD').zysk < wycena('Allegro One Punkt, Box').zysk);
+  assert.ok(rynki.czyKurierAllegro('Allegro International Courier') && !rynki.czyKurierAllegro('Allegro International Automat One'));
+  assert.strictEqual(rynki.doplataSmartAllegro(500, rynki.ALLEGRO_ZAGRANICA.CZ.smartKurier), 35.29);
+  assert.strictEqual(rynki.doplataSmartAllegro(39.08, rynki.ALLEGRO_ZAGRANICA.SK.smartKurier), 2.79);
+});

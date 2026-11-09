@@ -21,6 +21,7 @@
       const t = P.bz ? P.bz[id] || [0, 0, 0] : null;
       const bz = t && !inf[6] ? { a: t[0], b: por === 'prev' ? t[1] : t[2] } : null;
       return { id, sym: inf[0], nazwa: inf[1], grupa: inf[2], nowosc: !!inf[3], dost: inf[4], dni: inf[5], zestaw: !!inf[6], bz, okno,
+        kan: (X.kanaly && X.kanaly[okno] && X.kanaly[okno][id]) || [], wybor: kanal ? pasujeKanal(X, kanal) : null,
         a: { s: cs, n: cn, z: cz }, b, prev: { s: ps, n: pn }, dn: cn - b.n, dz: cz - b.z, dp: b.n > 0 ? (cn / b.n - 1) * 100 : null };
     });
   }
@@ -63,6 +64,26 @@
   // 271 → 234, zgasły 45 → 26; przestoje zwykle długie (15–30 dni), krótkie 1–2 dni prawie się nie zdarzają.
   const zakonczony = (w) => w.bz != null && w.bz.a > 0;
 
+  // „Podnieś na tańszych” (prośba usera 2026-11-09: „czy któryś produkt sprzedaje się na jednym z rynków wystarczająco
+  // drogo i szybko, a stan ma na tyle mały, że warto podnieść ceny na tańszych rynkach”). Towar z zapasem ≤ 45 dni,
+  // który na jednym kanale zarabia na sztuce wyraźnie więcej (≥ 8 zł, po kosztach kanału — zysk z analizy) niż na innych.
+  // Drogi kanał musi mieć ≥ 2 szt. (jedno zamówienie to przypadek). `luka` = ile zysku dałyby sztuki z tańszych
+  // kanałów sprzedane z zyskiem drogiego — sortowanie. Liczy zawsze ze WSZYSTKICH kanałów towaru (zapas jest wspólny);
+  // przy wybranym kanale zostają towary, na których to WŁAŚNIE ten kanał jest tańszy. Bez kanałów nie-rynkowych:
+  // hurt/ręczne FS, Sklep, Amazon i Allegro bez rozpoznanego rynku. Pomiar na produkcji 2026-11-09 (30 dni): 28 towarów.
+  const ZAPAS_MAX_DNI = 45, ROZNICA_MIN_ZL = 8, DROGI_MIN_SZT = 2;
+  const POZA_POROWNANIEM = new Set(['INNE', 'SKLEP', 'AMAZON_EU', 'ALLEGRO']);
+  function rozpietosc(w, o = {}) {
+    if (!(w.dost > 0) || w.dni == null || w.dni > ZAPAS_MAX_DNI || !w.kan) return null;
+    const k = w.kan.filter((x) => x[1] > 0 && !POZA_POROWNANIEM.has(x[10])).map((x) => ({ nazwa: x[0], s: x[1], zs: x[3] / x[1] }));
+    if (k.reduce((a, x) => a + x.s, 0) < (o.baza || 5)) return null;
+    const drogi = k.filter((x) => x.s >= DROGI_MIN_SZT).sort((a, b) => b.zs - a.zs)[0];
+    if (!drogi) return null;
+    const tanie = k.filter((x) => drogi.zs - x.zs >= ROZNICA_MIN_ZL).sort((a, b) => a.zs - b.zs);
+    if (!tanie.length || (w.wybor && !tanie.some((x) => w.wybor(x.nazwa)))) return null;
+    return { drogi, tanie, luka: Math.round(tanie.reduce((a, x) => a + (drogi.zs - x.zs) * x.s, 0)) };
+  }
+
   // [klucz, nazwa, warunek(w, o) — o = { prog (%), baza (szt.) }, domyślne sortowanie ('+' = rosnąco)]
   const FILTRY = [
     ['wszystkie', 'Wszystkie ze sprzedażą', (w) => w.a.s > 0, 'n'],
@@ -73,6 +94,7 @@
     ['zgasl', 'Zgasły', (w, o) => w.prev.s >= o.baza && w.a.s === 0 && !zakonczony(w), 'pn'],
     ['zakonczone', 'Zakończone w okresie', (w) => zakonczony(w) && (w.a.s > 0 || w.b.s > 0), 'bn'],
     ['nowe', 'Nowości', (w) => w.nowosc && w.a.s > 0, 'n'],
+    ['drozej', 'Podnieś na tańszych', (w, o) => !!rozpietosc(w, o), 'luka'],
   ];
 
   // hity = produkty, które razem dają połowę przychodu okna
@@ -88,7 +110,8 @@
     return lista.filter((w) => def[2](w, o));
   }
   const klucz = (w, k) => ({ sym: w.sym, as: w.a.s, bs: w.b.s, n: w.a.n, bn: w.b.n, dn: w.dn, dp: w.dp, z: w.a.z, dz: w.dz,
-    m: w.a.n ? w.a.z / w.a.n : null, dost: w.dost, dni: w.dni, pn: w.prev.n, bz: w.bz ? w.bz.a : null }[k]);
+    m: w.a.n ? w.a.z / w.a.n : null, dost: w.dost, dni: w.dni, pn: w.prev.n, bz: w.bz ? w.bz.a : null,
+    luka: k === 'luka' ? (rozpietosc(w) || {}).luka : undefined }[k]);
   // sortuje w miejscu; sort/kier = wybór użytkownika albo null (domyślne filtra). Zwraca [klucz, kierunek].
   function sortuj(lista, f, sort = null, kier = -1) {
     const def = FILTRY.find((x) => x[0] === f) || FILTRY[0];
@@ -149,7 +172,7 @@
     return out;
   }
 
-  const api = { wiersze, wierszeKanalu, kanalyDoWyboru, nazwaWyboru, FILTRY, hity, filtruj, klucz, sortuj, oznaczenia, zakonczony, KONCZY_DNI };
+  const api = { wiersze, wierszeKanalu, kanalyDoWyboru, nazwaWyboru, FILTRY, hity, filtruj, klucz, sortuj, oznaczenia, zakonczony, rozpietosc, KONCZY_DNI };
   if (typeof module === 'object' && module.exports) module.exports = api;   // testy (node --test)
   else window.TrendyModel = api;
 })();

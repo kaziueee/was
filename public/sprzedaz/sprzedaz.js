@@ -245,7 +245,7 @@
   // ---------- „Zmiany” ----------
   const M = window.TrendyModel;
   const ZOPCJE = { okno: [['7', '7 dni'], ['30', '30 dni']], por: [['prev', 'vs poprzedni'], ['rok', 'vs rok temu']] };
-  const KOLEJNOSC = ['trend', 'spadek', 'zgasl', 'zakonczone', 'strata', 'hity', 'nowe', 'wszystkie'];   // na telefonie zmiany najpierw
+  const KOLEJNOSC = ['trend', 'spadek', 'drozej', 'zgasl', 'zakonczone', 'strata', 'hity', 'nowe', 'wszystkie'];   // na telefonie zmiany najpierw
   const PROGI = { prog: 30, baza: 5 };
   const PARTIA = 40;
   const zs = { okno: pamiec('z-okno', '7'), por: pamiec('z-por', 'prev'), filtr: pamiec('z-filtr', 'trend') };
@@ -310,13 +310,18 @@
       + `<svg viewBox="0 0 ${W_} ${H}" preserveAspectRatio="none" height="${H}">${slupki}<path d="${linia}" fill="none" stroke="#a8a69f" stroke-width="2"/></svg></div>`;
   }
 
+  // „Podnieś na tańszych” (TrendyModel.rozpietosc) — najtańszy kanał vs najdroższy, zysk na sztuce
+  function znakDrozej(w) {
+    const r = M.rozpietosc(w, PROGI);
+    return r ? `<span class="z-znak uwaga">taniej: ${W.esc(r.tanie[0].nazwa)} ${W.szt(Math.round(r.tanie[0].zs))} zł/szt. vs ${W.esc(r.drogi.nazwa)} ${W.szt(Math.round(r.drogi.zs))}</span>` : '';
+  }
   function kartaZmiany(w) {
     const off = zs.por === 'prev' ? 3 : 6, przed = zs.por === 'prev' ? 'przed' : 'rok temu';
     const kan = ((X.kanaly[zs.okno] || {})[w.id] || []).map((k) => ({ nazwa: k[0], s: k[1], n: k[2], bs: k[1 + off], bn: k[2 + off], klucz: k[10] }))
       .filter((k) => k.s || k.bs).sort((a, b) => b.n - a.n || b.bn - a.bn).slice(0, 8);
     const znaki = [w.dost === 0 ? '<span class="z-znak zly">stan 0</span>' : '', w.dost > 0 && w.dni != null && w.dni < 14 ? `<span class="z-znak uwaga">zapas ${w.dni} dni</span>` : '',
       w.nowosc ? '<span class="z-znak dobry">nowość</span>' : '', w.a.s > 0 && w.a.z < 0 ? '<span class="z-znak zly">strata</span>' : '',
-      M.zakonczony(w) ? `<span class="z-znak uwaga">bez stanu ${w.bz.a} z ${w.okno} dni</span>` : ''].join('');
+      M.zakonczony(w) ? `<span class="z-znak uwaga">bez stanu ${w.bz.a} z ${w.okno} dni</span>` : '', znakDrozej(w)].join('');
     const zm = (a, b) => (b > 0 ? W.zmiana(a, b) : a > 0 ? '<span class="sw-plus">nowy</span>' : '—');
     return `<div class="sw-karta" data-tw="${w.id}">
       ${W.fotoKarty(w.id)}

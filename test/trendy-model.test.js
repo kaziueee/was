@@ -120,3 +120,35 @@ test('filtry: zakończone poza spadkiem i zgasłymi, z własnym filtrem', () => 
   // bez sprzedaży w obu oknach — nic do pokazania
   assert.deepStrictEqual(ids(filtruj([wiersz({ a: { s: 0, n: 0, z: 0 }, b: { s: 0, n: 0, z: 0 }, bz: { a: 30, b: 30 } })], 'zakonczone', o)), []);
 });
+
+// „Podnieś na tańszych” (prośba usera 2026-11-09): mały zapas + jeden kanał wyraźnie droższy na sztuce.
+test('filtr „Podnieś na tańszych”: luka zysku między kanałami przy małym zapasie', () => {
+  const { rozpietosc, sortuj } = require('../public/shared/trendy-model');
+  const o = { prog: 30, baza: 5 };
+  // kanał: [nazwa, szt, netto, zysk, …6 liczb porównania, klucz]
+  const k = (nazwa, s, z, klucz) => [nazwa, s, s * 100, z, 0, 0, 0, 0, 0, 0, klucz];
+  const suchomimus = wiersz({ id: 1, dost: 19, dni: 22, kan: [k('Amazon FR', 3, 336, 'AMAZON_FR'), k('Kaufland DE', 4, 266, 'KAUFLAND_DE'),
+    k('Allegro eKajtek', 16, 536, 'ALLEGRO_EKAJTEK')] });
+  const r = rozpietosc(suchomimus, o);
+  assert.equal(r.drogi.nazwa, 'Amazon FR');
+  assert.deepStrictEqual(r.tanie.map((x) => x.nazwa), ['Allegro eKajtek', 'Kaufland DE']);
+  assert.equal(r.luka, Math.round((112 - 33.5) * 16 + (112 - 66.5) * 4));
+  const ids = (l) => l.map((x) => x.id);
+  // zapas za duży, różnica za mała, drogi kanał z jednej sztuki, za mało sztuk, hurt jako „drogi” — nie
+  const nie = [
+    { ...suchomimus, id: 2, dni: 60 },
+    wiersz({ id: 3, dni: 10, kan: [k('Amazon DE', 5, 100, 'AMAZON_DE'), k('Allegro eKajtek', 5, 80, 'ALLEGRO_EKAJTEK')] }),
+    wiersz({ id: 4, dni: 10, kan: [k('Amazon FR', 1, 100, 'AMAZON_FR'), k('Allegro eKajtek', 9, 90, 'ALLEGRO_EKAJTEK')] }),
+    wiersz({ id: 5, dni: 10, kan: [k('Amazon FR', 2, 200, 'AMAZON_FR'), k('Allegro eKajtek', 2, 20, 'ALLEGRO_EKAJTEK')] }),
+    wiersz({ id: 6, dni: 10, kan: [k('Ręczne / bez źródła', 300, 4350, 'INNE'), k('Allegro eKajtek', 27, 150, 'ALLEGRO_EKAJTEK')] }),
+    { ...suchomimus, id: 7, dost: 0 },
+  ];
+  const mniejszy = wiersz({ id: 8, dni: 30, kan: [k('Amazon DE', 4, 200, 'AMAZON_DE'), k('Empik', 3, 60, 'EMPIK_PL')] });
+  const lista = filtruj([...nie, mniejszy, suchomimus], 'drozej', o);
+  assert.deepStrictEqual(ids(lista), [8, 1]);
+  sortuj(lista, 'drozej');
+  assert.deepStrictEqual(ids(lista), [1, 8], 'największa luka najpierw');
+  // wybrany kanał: zostają towary, na których to on jest tańszy
+  const naEmpiku = (n) => n === 'Empik';
+  assert.deepStrictEqual(ids(filtruj([{ ...suchomimus, wybor: naEmpiku }, { ...mniejszy, wybor: naEmpiku }], 'drozej', o)), [8]);
+});

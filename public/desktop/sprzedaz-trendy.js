@@ -237,6 +237,15 @@
   const KOLUMNY = [['', null], ['SKU / nazwa', 'sym'], ['Szt.', 'as', 1], ['Szt. przed', 'bs', 1], ['Przychód', 'n', 1], ['Przychód przed', 'bn', 1],
     ['Zmiana zł', 'dn', 1], ['Zmiana %', 'dp', 1], ['Zysk', 'z', 1], ['Zmiana zysku', 'dz', 1], ['Marża', 'm', 1], ['Dostępne', 'dost', 1], ['Zapas', 'dni', 1], ['Uwagi', null]];
   const MAX_WIERSZY = 3000;
+  // „Podnieś na tańszych” (TrendyModel.rozpietosc): który kanał zarabia na sztuce najwięcej, a które wyraźnie mniej
+  function znakDrozej(w) {
+    const r = M.rozpietosc(w, { baza: st.baza });
+    if (!r) return '';
+    const zs = (x) => `${nf0.format(Math.round(x.zs))} zł/szt.`;
+    const tytul = `Zysk na sztuce po kosztach kanału, ${w.okno} dni. Drogo: ${r.drogi.nazwa} ${zs(r.drogi)} (${r.drogi.s} szt.). Taniej: `
+      + r.tanie.map((x) => `${x.nazwa} ${zs(x)} (${x.s} szt.)`).join(', ') + `. Zapas ~${w.dni} dni — tańsze kanały do podniesienia; luka ${nf0.format(r.luka)} zł.`;
+    return `<span class="tr-znak uwaga" title="${esc(tytul)}">taniej: ${esc(r.tanie[0].nazwa)} ${zs(r.tanie[0])} · ${esc(r.drogi.nazwa)} ${zs(r.drogi)}</span>`;
+  }
   function rysujProd() {
     const P = X.produkty[st.okno], przed = st.por === 'prev' ? 'przed' : 'rok temu';
     const porTxt = st.por === 'prev' ? `poprzednie ${st.okno} dni (${dd(P.prevOd)}–${dd(P.prevDo)})` : `te same dni rok temu (${dd(P.rokOd)}–${dd(P.rokDo)}.${P.rokDo.slice(0, 4)})`;
@@ -252,7 +261,8 @@
     const th = KOLUMNY.map(([t, k, num]) => `<th class="${num ? 'n ' : ''}${k ? 'tr-sort' : ''}" data-k="${k || ''}">${t.replace('przed', przed)}${k && k === sk ? (kier > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('');
     const uwagi = (w) => [w.dost === 0 ? '<span class="tr-znak zly">stan 0</span>' : '', w.dost > 0 && w.dni != null && w.dni < 14 ? `<span class="tr-znak uwaga">zapas ${w.dni} dni</span>` : '',
       w.nowosc ? '<span class="tr-znak dobry">nowość</span>' : '', w.zestaw ? '<span class="tr-znak">zestaw</span>' : '', w.a.z < 0 && w.a.s > 0 ? '<span class="tr-znak zly">strata</span>' : '',
-      M.zakonczony(w) ? `<span class="tr-znak uwaga" title="Dni bez stanu Razem w oknie — odtworzone wstecz z dokumentów GT${w.bz.b ? `; w porównaniu ${w.bz.b} dni` : ''}">bez stanu ${w.bz.a} z ${w.okno} dni</span>` : ''].join('');
+      M.zakonczony(w) ? `<span class="tr-znak uwaga" title="Dni bez stanu Razem w oknie — odtworzone wstecz z dokumentów GT${w.bz.b ? `; w porównaniu ${w.bz.b} dni` : ''}">bez stanu ${w.bz.a} z ${w.okno} dni</span>` : '',
+      znakDrozej(w)].join('');
     $('produkty').innerHTML = `<thead><tr>${th}</tr><tr class="tr-razem"><td></td><td><b>Razem (${nf0.format(lista.length)} poz.)</b></td><td class="n">${szt(suma((w) => w.a.s))}</td><td class="n">${szt(suma((w) => w.b.s))}</td>`
       + `<td class="n"><b>${zl(sN)}</b></td><td class="n">${zl(sB)}</td><td class="n">${zmianaZl(sN - sB)}</td><td class="n">${zmiana(sN, sB)}</td><td class="n">${zl(sZ)}</td><td class="n">${zmianaZl(suma((w) => w.dz))}</td>`
       + `<td class="n">${pct(sN ? sZ / sN * 100 : null)}</td><td></td><td></td><td></td></tr></thead><tbody>`
@@ -263,7 +273,7 @@
         <td class="n">${zl(w.a.z)}</td><td class="n">${zmianaZl(w.dz)}</td><td class="n">${pct(w.a.n ? w.a.z / w.a.n * 100 : null)}</td>
         <td class="n">${w.dost == null ? '—' : szt(w.dost)}</td><td class="n">${w.dni == null ? '—' : szt(w.dni) + ' dni'}</td><td>${uwagi(w)}</td></tr>`).join('')
       + (lista.length > MAX_WIERSZY ? `<tr><td colspan="14" class="tr-sz">… i ${nf0.format(lista.length - MAX_WIERSZY)} kolejnych — zawęź filtrem, grupą albo wyszukiwaniem</td></tr>` : '') + '</tbody>';
-    $('pr-def').innerHTML = `<b>Hity</b> — produkty, które razem dają połowę przychodu okna. <b>Trendujące</b> — przychód ≥ +${st.prog}% vs porównanie (albo nowy w oknie), przy bazie ≥ ${st.baza} szt. w jednym z okresów; kolejność wg zmiany w zł. <b>Spadek trendu</b> — ≤ −${st.prog}%, ta sama baza. <b>Ze stratą</b> — zysk po kosztach kanału < 0 (koszt = rozchód dostaw z GT). <b>Zgasły</b> — ≥ ${st.baza} szt. w poprzednim oknie, 0 teraz. <b>Zakończone w okresie</b> — w oknie choć jeden dzień bez stanu Razem (odtworzone wstecz z dokumentów GT${X.bezStanu ? `, dane do ${dd(X.bezStanu.do)}` : ' — jeszcze nie policzone'}); takie produkty nie wchodzą do spadku ani zgasłych, bo sprzedawały się gorzej z braku towaru. Zestawy pomijamy (leżą składniki). <b>Nowości</b> — pierwsze przyjęcie w ostatnich 30 dniach. Dostępne = Razem − rezerwacje (zestaw: ze składników), zapas wg tempa 30 dni. Nagłówek kolumny = sortowanie.`;
+    $('pr-def').innerHTML = `<b>Hity</b> — produkty, które razem dają połowę przychodu okna. <b>Trendujące</b> — przychód ≥ +${st.prog}% vs porównanie (albo nowy w oknie), przy bazie ≥ ${st.baza} szt. w jednym z okresów; kolejność wg zmiany w zł. <b>Spadek trendu</b> — ≤ −${st.prog}%, ta sama baza. <b>Ze stratą</b> — zysk po kosztach kanału < 0 (koszt = rozchód dostaw z GT). <b>Zgasły</b> — ≥ ${st.baza} szt. w poprzednim oknie, 0 teraz. <b>Zakończone w okresie</b> — w oknie choć jeden dzień bez stanu Razem (odtworzone wstecz z dokumentów GT${X.bezStanu ? `, dane do ${dd(X.bezStanu.do)}` : ' — jeszcze nie policzone'}); takie produkty nie wchodzą do spadku ani zgasłych, bo sprzedawały się gorzej z braku towaru. Zestawy pomijamy (leżą składniki). <b>Nowości</b> — pierwsze przyjęcie w ostatnich 30 dniach. <b>Podnieś na tańszych</b> — zapas ≤ 45 dni, ≥ ${st.baza} szt. w oknie, a jeden kanał (≥ 2 szt.) zarabia na sztuce o ≥ 8 zł więcej niż inne (zysk po kosztach kanału; bez hurtu i FS ręcznych) — tańsze kanały warto podnieść, bo towaru i tak zaraz zabraknie; kolejność wg luki = ile zysku dałyby sztuki z tańszych kanałów przy zysku drogiego. Przy wybranym kanale: towary, na których to on jest tańszy. Dostępne = Razem − rezerwacje (zestaw: ze składników), zapas wg tempa 30 dni. Nagłówek kolumny = sortowanie.`;
   }
 
   // ---------- grupy ----------

@@ -160,6 +160,10 @@ test('cena startowa: rynek droższy → cena rynku, tańszy albo brak → minimu
   assert.strictEqual(km.cenaStartowa(78.99, 60), 78.99);
   assert.strictEqual(km.cenaStartowa(78.99, null), 78.99);
   assert.strictEqual(km.cenaStartowa(null, 50), 50);
+  // Kaufland DE: cena naszej oferty Amazon DE wygrywa (decyzja 09.11), także pod minimum — ostrzeżenie daje ocena pozycji.
+  assert.strictEqual(km.cenaStartowa(12.99, 14.81, 14.99), 14.99);
+  assert.strictEqual(km.cenaStartowa(12.99, 14.81, 11.5), 11.5);
+  assert.deepStrictEqual(km.WZORZEC_CENY["kaufland:DE"], { platforma: "amazon", rynek: "DE" });
 });
 
 test('Amazon: EAN na kilku ASIN-ach — wygrywa model z symbolu, potem karta z jednym EAN-em', () => {

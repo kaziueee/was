@@ -111,7 +111,11 @@ function cenaRynkuEmpik(oferty, naszSklep = '') {
   return ceny.length ? { cena: zaokr2(Math.min(...ceny)), ofert: ceny.length } : null;
 }
 // Cena startowa: rynek droższy niż nasze minimum → cena rynku (nie oddajemy marży), inaczej minimum (pod nie nie schodzimy).
-function cenaStartowa(min, cenaRynek) {
+// Rynek z WZORCEM (decyzja usera 09.11: Kaufland DE startuje od naszej ceny na Amazon DE, potem prowadzi automat) —
+// cena naszej aktywnej oferty wzorca wygrywa, gdy jest; bez niej zasada jak wyżej. Ta sama waluta (EUR).
+const WZORZEC_CENY = { 'kaufland:DE': { platforma: 'amazon', rynek: 'DE' } };
+function cenaStartowa(min, cenaRynek, cenaWzorca = null) {
+  if (cenaWzorca > 0) return Math.round(cenaWzorca * 100) / 100;
   if (!(min > 0)) return cenaRynek > 0 ? cenaRynek : null;
   return cenaRynek > min ? cenaRynek : min;
 }
@@ -144,4 +148,4 @@ function powodBraku(k, { mamyOferte = false, stan = null } = {}) {
   return null;
 }
 
-module.exports = { RYNKI_KATALOGU, kluczRynku, rodzajBleduEmag, normalizujEan, paczki, zEmagFindByEans, zEmpikP31, wybierzAsin, cenaRynkuKaufland, cenaRynkuAmazon, cenaRynkuEmpik, cenaStartowa, odrzucenieMarki, powodBraku };
+module.exports = { RYNKI_KATALOGU, kluczRynku, rodzajBleduEmag, normalizujEan, paczki, zEmagFindByEans, zEmpikP31, wybierzAsin, cenaRynkuKaufland, cenaRynkuAmazon, cenaRynkuEmpik, cenaStartowa, WZORZEC_CENY, odrzucenieMarki, powodBraku };

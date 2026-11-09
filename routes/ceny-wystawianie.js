@@ -18,7 +18,7 @@
 const express = require('express');
 const { db, stan } = require('../pricing/db');
 const wm = require('../pricing/wystawianie-model');
-const { RYNKI_KATALOGU, kluczRynku, powodBraku, cenaStartowa } = require('../pricing/katalogi-model');
+const { RYNKI_KATALOGU, kluczRynku, powodBraku, cenaStartowa, WZORZEC_CENY } = require('../pricing/katalogi-model');
 const { kluczKolumny, kolumna } = require('../pricing/kolumny');
 const { pasyZWyceny } = require('../pricing/pas');
 const strategieDane = require('../pricing/strategie-dane');
@@ -60,6 +60,18 @@ module.exports = function wystawianieRouter({ asyncH }) {
       strategieDane.strategieDlaPasow(twIds).catch(() => ({ poTw: new Map() })),
     ]);
     const pasy = new Map();
+    // Ceny wzorca (np. Amazon DE dla Kauflandu DE): nasza najniższa aktywna oferta na towar.
+    const wzorce = new Map();
+    const cenaWzorca = (platforma, rynek, tw) => {
+      const w = WZORZEC_CENY[`${platforma}:${rynek}`];
+      if (!w) return null;
+      const kl = `${w.platforma}:${w.rynek}`;
+      if (!wzorce.has(kl)) {
+        wzorce.set(kl, new Map(db.prepare(`SELECT tw_id, MIN(cena) AS c FROM oferty WHERE platforma = ? AND rynek = ? AND aktywna = 1
+          AND cena > 0 AND tw_id IS NOT NULL GROUP BY tw_id`).all(w.platforma, w.rynek).map((r) => [r.tw_id, r.c])));
+      }
+      return wzorce.get(kl).get(tw) ?? null;
+    };
     const out = [];
     for (const [i, k] of wiersze.entries()) {
       if (i && i % 300 === 0) await new Promise((r) => setImmediate(r));     // nie trzymamy pętli Zebr (zasada 7)
@@ -71,7 +83,8 @@ module.exports = function wystawianieRouter({ asyncH }) {
       const a = atrybuty.get(String(k.tw_id)) || {};
       const klucz = `${k.tw_id}|${k.platforma}|${k.rynek}`;
       const cenaKlienta = Number(ceny.get(klucz));
-      const cena = cenaKlienta > 0 ? Math.round(cenaKlienta * 100) / 100 : cenaStartowa(pas?.min ?? null, k.cena_rynek);
+      const wzor = cenaWzorca(k.platforma, k.rynek, k.tw_id);
+      const cena = cenaKlienta > 0 ? Math.round(cenaKlienta * 100) / 100 : cenaStartowa(pas?.min ?? null, k.cena_rynek, wzor);
       const p = {
         tw_id: k.tw_id, sku: w.sku, nazwa: w.nazwa, ean: k.ean, platforma: k.platforma, rynek: k.rynek,
         katalog: { produkt_id: k.produkt_id, nazwa: k.nazwa, marka: k.marka, kategoria: k.kategoria, kategoria_id: k.kategoria_id, ograniczenie: k.ograniczenie },
@@ -86,7 +99,7 @@ module.exports = function wystawianieRouter({ asyncH }) {
         produkt_id: k.produkt_id, nazwa_platformy: k.nazwa, marka: k.marka, kategoria: k.kategoria, hotness: k.hotness,
         stan: p.ilosc, waga: p.waga, wymiary: a.wymiary ?? null, cena, min: pas?.min ?? null, max: pas?.max ?? null,
         strategia: pas?.strategia?.nazwa ?? null, zysk: przy?.zysk ?? null, marza: przy?.marza ?? null,
-        cena_rynek: k.cena_rynek ?? null, ofert_rynek: k.ofert_rynek ?? null, cena_rynek_czas: k.cena_rynek_czas ?? null,
+        cena_wzorca: wzor, cena_rynek: k.cena_rynek ?? null, ofert_rynek: k.ofert_rynek ?? null, cena_rynek_czas: k.cena_rynek_czas ?? null,
         blokady: ocena.blokady, brakuje: ocena.brakuje, ostrzezenia: ocena.ostrzezenia, sprawdzono: k.sprawdzono,
         zablokowana: wm.powodyBlokady(ocena).length > 0,
         _pozycja: p,

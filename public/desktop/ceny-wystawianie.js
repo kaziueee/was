@@ -147,6 +147,11 @@ function cwRenderujListe() {
 // wysyłkę w cenie). Droższa niż nasze minimum → proponujemy ją (cena startowa), tańsza → zostaje minimum i komórka
 // mówi, że na rynku jest taniej. eMAG nie podaje cen cudzych ofert w API.
 function cwRynekKomorka(x) {
+  // Kaufland DE startuje od naszej ceny na Amazon DE (decyzja 09.11) — mówimy to przy komórce, żeby nie dziwiła cena ≠ rynek.
+  const wz = x.cena_wzorca != null ? `<div class="cs-sz" title="Cena startowa = nasza oferta na Amazon DE; dalej prowadzi automat">start = Amazon DE ${cenyLiczba(x.cena_wzorca)}</div>` : '';
+  return cwRynekKomorkaKonkurencja(x) + wz;
+}
+function cwRynekKomorkaKonkurencja(x) {
   if (x.platforma === 'emag') return '<span class="cs-sz" title="Platforma nie podaje w API cen ofert, których nie mamy">—</span>';
   if (!x.cena_rynek_czas) return `<span class="cs-sz" title="Ceny konkurencji pobiera nocny skan${x.platforma === 'amazon' ? ' (Amazon: do 3000 ASIN-ów na rynek na noc, odświeżane co 3 dni)' : ''}">nie sprawdzono</span>`;
   if (x.cena_rynek == null && x.ofert_rynek > 0) return `<span class="cs-sz" title="Są oferty, ale nikt nie ma Buy Boxa">${x.ofert_rynek} ofert, bez Buy Boxa</span>`;

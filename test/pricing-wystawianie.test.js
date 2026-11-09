@@ -206,3 +206,14 @@ test('cena rynku Amazon: Buy Box nowego towaru z ceną dla klienta, bez Buy Boxa
   assert.deepStrictEqual(km.cenaRynkuAmazon(poz([bb(20, { condition: 'Used' })], 0)), null);
   assert.strictEqual(km.cenaRynkuAmazon({ status: 'ClientError' }), null);
 });
+
+test('Kaufland: oferta po EAN-ie w centach, minimum = cena (bez Smart Pricing), grupa i magazyn z naszych ofert', () => {
+  const p = { ean: '5010996211234', sku: 'HASF1234', rynek: 'DE', cena: 24.99, ilosc: 7.6, katalog: { produkt_id: '123456' } };
+  const ust = { grupaWysylki: '68774', magazyn: '51330' };
+  const o = wm.ofertaKaufland(p, ust);
+  assert.deepEqual(o.body, { ean: '5010996211234', id_offer: 'HASF1234', condition: 'NEW', listing_price: 2499, minimum_price: 2499,
+    amount: 7, handling_time: 1, id_shipping_group: 68774, id_warehouse: 51330 });
+  assert.match(wm.ofertaKaufland({ ...p, ean: null }, ust).blad, /EAN/);
+  assert.match(wm.ofertaKaufland(p, { grupaWysylki: null, magazyn: 1 }).blad, /grupy wysyłki/);
+  assert.match(wm.ofertaKaufland({ ...p, ilosc: 0 }, ust).blad, /stanu/);
+});

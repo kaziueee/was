@@ -153,7 +153,50 @@ async function wystawAmazon(p) {
   return { status: 'wyslane', opis: `ASIN ${asin}, ${o.body.attributes.purchasable_offer[0].our_price[0].schedule[0].value_with_tax} ${r.waluta}, zgłoszenie ${odp.submissionId || '?'}${uwagi}`, id_platformy: asin };
 }
 
-const WYSTAW = { emag: wystawEmag, amazon: wystawAmazon };
+// Kaufland: grupa wysyłki i magazyn — najczęstsze na naszych ofertach tego storefrontu (dobę w `stan`).
+async function ustawieniaKaufland(kaufland, rynek) {
+  const klucz = `kaufland_ustawienia_${rynek}`;
+  const z = stan.get(klucz);
+  if (z?.wartosc && Date.now() - new Date(String(z.czas).replace(' ', 'T') + 'Z').getTime() < 24 * 3600e3) return JSON.parse(z.wartosc);
+  const j = await kaufland.api('GET', '/units', { query: { storefront: rynek.toLowerCase(), limit: 100 } });
+  const najczestsze = (pole) => {
+    const m = new Map();
+    for (const u of j?.data || []) if (u[pole] != null) m.set(u[pole], (m.get(u[pole]) || 0) + 1);
+    return [...m].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  };
+  const w = { grupaWysylki: najczestsze('id_shipping_group'), magazyn: najczestsze('id_warehouse') };
+  if (w.grupaWysylki && w.magazyn) stan.set(klucz, JSON.stringify(w));
+  return w;
+}
+
+// Kaufland: SKU (id_offer) nie może już istnieć na storefroncie — także ONHOLD, którego sync nie liczy jako aktywnej
+// (druga oferta z tym samym id_offer rozjechałaby dopasowanie). Zapis BEZ ponowień: POST ponowiony po timeoucie mógłby
+// założyć drugi unit; niepewny wynik = `blad` + sprawdzenie po SKU.
+async function wystawKaufland(p) {
+  const kaufland = require('./kaufland');
+  let istnieje;
+  try { istnieje = await kaufland.unitPoSku(p.sku, p.rynek); } catch (e) { return { status: 'odrzucone', opis: `Kaufland: nie udało się sprawdzić SKU: ${e.message}` }; }
+  if (istnieje.length) return { status: 'odrzucone', opis: `Kaufland: oferta ${p.sku} już istnieje (unit ${istnieje.map((u) => `${u.id_unit} ${u.status}`).join(', ')})` };
+  let ust;
+  try { ust = await ustawieniaKaufland(kaufland, p.rynek); } catch (e) { return { status: 'odrzucone', opis: `Kaufland: ustawienia ofert: ${e.message}` }; }
+  const o = wm.ofertaKaufland(p, ust);
+  if (o.blad) return { status: 'odrzucone', opis: o.blad };
+  try {
+    const j = await kaufland.api('POST', '/units', { query: { storefront: p.rynek.toLowerCase() }, body: o.body, proby: 1 });
+    const u = j?.data || j;
+    return { status: 'wyslane', opis: `unit ${u?.id_unit ?? '?'}, produkt ${u?.id_product ?? p.katalog.produkt_id}, ${o.body.listing_price / 100} EUR × ${o.body.amount}, ${u?.status || ''}`.trim(), id_platformy: u?.id_unit ?? p.katalog.produkt_id };
+  } catch (e) {
+    if (e.status >= 400 && e.status < 500) return { status: 'odrzucone', opis: e.message };
+    // Sieć / 5xx: mogła powstać — sprawdzamy po SKU.
+    try {
+      const po = await kaufland.unitPoSku(p.sku, p.rynek);
+      if (po.length) return { status: 'wyslane', opis: `unit ${po[0].id_unit} (po błędzie: ${e.message})`, id_platformy: po[0].id_unit };
+    } catch { /* nie wiemy */ }
+    return { status: 'blad', opis: `nie wiadomo, czy oferta powstała — sprawdź w panelu Kaufland (${p.sku}): ${e.message}`, id_platformy: p.katalog.produkt_id };
+  }
+}
+
+const WYSTAW = { emag: wystawEmag, amazon: wystawAmazon, kaufland: wystawKaufland };
 const WYSTAW_HURT = { empik: wystawEmpikHurt };
 
 // pozycje = już ocenione i potwierdzone przez routes/ceny-wystawianie.js (wm.ocenPozycje bez blokad).

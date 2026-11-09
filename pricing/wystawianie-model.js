@@ -160,6 +160,28 @@ function ofertaAmazon(p, { marketplaceId, waluta, grupaWysylki }) {
     },
   };
 }
+// Kaufland POST /units?storefront=… — oferta do istniejącego produktu po EAN-ie (kartę ma Kaufland, wymiarów i wagi
+// unit nie przyjmuje). Ceny w CENTACH waluty storefrontu, brutto. `minimum_price` = cena, jak na KAŻDEJ naszej ofercie
+// (pomiar 09.11: 1058/1058) — niższe minimum włącza Smart Pricing Kauflandu, który ciągnąłby cenę razem z repricerem.
+// Grupa wysyłki i magazyn z naszych istniejących ofert (68774 „Kurier DHL” 4,99 € i 51330 na 1057/1058), realizacja 1 dzień.
+const KAUFLAND_STALE = { handling_time: 1, condition: 'NEW' };
+function ofertaKaufland(p, { grupaWysylki, magazyn }) {
+  if (!p.ean) return { blad: 'brak EAN-u' };
+  if (!p.katalog?.produkt_id) return { blad: 'brak produktu Kaufland w katalogu' };
+  if (!grupaWysylki || !magazyn) return { blad: `Kaufland ${p.rynek}: nie znaleziono grupy wysyłki / magazynu z naszych ofert` };
+  const centy = Math.round(Number(p.cena) * 100);
+  if (!(centy > 0)) return { blad: `niepoprawna cena: ${p.cena}` };
+  const ilosc = Math.floor(Number(p.ilosc));
+  if (!(ilosc > 0)) return { blad: 'brak stanu do wystawienia' };
+  return {
+    body: {
+      ean: String(p.ean), id_offer: String(p.sku), condition: KAUFLAND_STALE.condition,
+      listing_price: centy, minimum_price: centy, amount: ilosc, handling_time: KAUFLAND_STALE.handling_time,
+      id_shipping_group: Number(grupaWysylki), id_warehouse: Number(magazyn),
+    },
+  };
+}
+
 // Odpowiedź Listings PUT → błędy, które blokują ofertę (severity ERROR); ostrzeżenia (np. EPR w ES) idą do opisu.
 function problemyAmazon(odp) {
   const issues = Array.isArray(odp?.issues) ? odp.issues : [];
@@ -220,4 +242,5 @@ module.exports = {
   RYNKI_WYSTAWIANIA, gotowyRynek, EMAG_VAT, EMAG_ID_START, EMAG_STALE, EMAG_ZAKRES, EMPIK_STALE, MAX_NA_RAZ,
   nettoZBrutto, wagaGramy, wymiaryMm, ocenPozycje, powodyBlokady, ofertaEmag, wymiaryEmag, stanDostepny,
   klasaLogistycznaEmpik, ofertaEmpik, plikOfertEmpik, bledyImportuEmpik, ofertaAmazon, problemyAmazon,
+  KAUFLAND_STALE, ofertaKaufland,
 };

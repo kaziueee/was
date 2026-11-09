@@ -16,7 +16,7 @@ const RYNKI_WYSTAWIANIA = {
   'emag:RO': { gotowe: true },
   'emag:HU': { gotowe: false, powod: 'eMAG HU — czeka na test pierwszej oferty' },
   'emag:BG': { gotowe: false, powod: 'eMAG BG — czeka na test pierwszej oferty' },
-  'kaufland:DE': { gotowe: false, powod: 'Kaufland — czeka na test pierwszej oferty (POST /units)' },
+  'kaufland:DE': { gotowe: true },  // test 09.11: HASA9305 → unit 393788672871, live po ~10 min „compliance_review”
   'empik:PL': { gotowe: true },     // test 30.10: MGA592822 import 268622431 → oferta 251330550 aktywna, klasa 2
   // Amazon: test 30.10 HWHHBL96-JBL02 (B0DMWGSC2L) skryptem — BUYABLE na 6 rynkach; z ekranu włączone 2026-11-01 do testów.
   ...Object.fromEntries(['DE', 'FR', 'IT', 'ES', 'NL', 'PL'].map((r) => [`amazon:${r}`, { gotowe: true }])),

@@ -23,6 +23,14 @@ Write-Host ""
 #    - twardo po nazwie procesu (lapie tez zawieszonego zombie,
 #      ktorego zadanie juz nie "widzi")
 Write-Host "[1/4] Zatrzymuje most i zwalniam port 5000..."
+# Najpierw ukryty Subiekt mostu (proces-DZIECKO GtBridge) - po ubiciu samego mostu zostaje
+# sierota, ktora zajmuje stanowisko Subiekta (12.11.2026: pid 31172 wisial jeszcze 1,5 h).
+# Rozpoznanie WYLACZNIE po rodzicu: Subiektow pracownikow i lacznika Fenom nie ruszamy.
+foreach ($most in @(Get-Process GtBridge -EA 0)) {
+    Get-CimInstance Win32_Process -Filter "Name='Subiekt.exe'" -EA 0 |
+        Where-Object { $_.ParentProcessId -eq $most.Id } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -EA 0 }
+}
 schtasks /End /TN "WMS-Bridge" 2>$null | Out-Null
 Get-Process GtBridge -EA 0 | Stop-Process -Force -EA 0
 

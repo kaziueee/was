@@ -34,6 +34,21 @@ namespace GtBridge.Services
         private readonly BlockingCollection<Action> _zadania = new();
         private readonly Thread _watekSta;
 
+        // Ukryty Subiekt.exe obslugujacy _subiekt (dziecko tego procesu) - pid i czas startu, zeby
+        // straznik mogl rozpoznac JEGO awarie w dzienniku Windows. Zob. ProcesySubiekta.
+        private readonly object _blokadaPid = new();
+        private int? _pidSubiekta;
+        private DateTime? _startSubiekta;
+
+        // Straznik: co minute sprawdza, czy Windows nie zapisal awarii Subiekta mostu. Bez niego
+        // martwa sesja wychodzila na jaw dopiero przy pierwszym MM (13.11: Subiekt padl o 19:40,
+        // pierwsze MM padloby nastepnego dnia rano). Nie dotyka COM ani watku STA.
+        private static readonly TimeSpan CoIleStraznik = TimeSpan.FromMinutes(1);
+        private static readonly TimeSpan OknoStraznika = TimeSpan.FromMinutes(3);
+        private readonly Timer _straznik;
+        private int _straznikPracuje;
+        private bool _straznikBladZgloszony;
+
         public SferaGtService(IOptions<SferaOptions> opcje, StanMostu stan)
         {
             _opcje = opcje.Value;
@@ -41,6 +56,7 @@ namespace GtBridge.Services
             _watekSta = new Thread(PetlaSta) { IsBackground = true, Name = "SferaSTA" };
             _watekSta.SetApartmentState(ApartmentState.STA);
             _watekSta.Start();
+            _straznik = new Timer(SprawdzCzySubiektZyje, null, CoIleStraznik, CoIleStraznik);
         }
 
         // Petla watku STA - wykonuje kolejno zadania z kolejki. Kazde zadanie ma
@@ -134,8 +150,131 @@ namespace GtBridge.Services
             }
 
             _subiekt = gt.Uruchom(UruchomDopasujOperatora, UruchomNowy | UruchomWTle);
-            Dziennik.Zapisz("sfera", "Zalogowano - nowa sesja Subiekta (dziala w tle, bez okna)");
+            ZapamietajPidSubiekta();
+            Dziennik.Zapisz("sfera", $"Zalogowano - nowa sesja Subiekta (dziala w tle, bez okna), pid={_pidSubiekta?.ToString() ?? "?"}");
             return _subiekt;
+        }
+
+        // Po zalogowaniu: najmlodszy Subiekt.exe, ktorego rodzicem jest most, to ten od _subiekt.
+        private void ZapamietajPidSubiekta()
+        {
+            int? pid = null;
+            DateTime? start = null;
+            try
+            {
+                foreach (var kandydat in ProcesySubiekta.Dzieci())
+                {
+                    try
+                    {
+                        using var p = Process.GetProcessById(kandydat);
+                        if (start == null || p.StartTime > start) { pid = kandydat; start = p.StartTime; }
+                    }
+                    catch { /* proces zdazyl zniknac */ }
+                }
+            }
+            catch (Exception ex) { Dziennik.Zapisz("sfera", $"Nie ustalilem pid Subiekta mostu: {ex.Message}"); }
+            lock (_blokadaPid) { _pidSubiekta = pid; _startSubiekta = start; }
+        }
+
+        // HRESULT-y ZERWANEJ sesji: proces Subiekta, z ktorym rozmawiamy, nie zyje albo odlaczyl
+        // obiekty. Taka sesja juz nie wroci - kazde kolejne wywolanie skonczy sie tym samym bledem
+        // (12.11: cztery MM pod rzad w 0-13 ms), wiec trzeba ja porzucic i zalogowac sie od nowa.
+        private static readonly HashSet<uint> BledyZerwania = new()
+        {
+            0x80010108, // RPC_E_DISCONNECTED - obiekt odlaczyl sie od klientow (12.11.2026)
+            0x800706BA, // RPC_S_SERVER_UNAVAILABLE - serwer RPC niedostepny (14.09, 08.10, 02.11)
+            0x800706BE, // RPC_S_CALL_FAILED - wywolanie zdalne nie powiodlo sie
+            0x80010007, // RPC_E_SERVER_DIED - serwer padl w trakcie wywolania
+            0x80010012, // RPC_E_SERVER_DIED_DNE - serwer padl, wywolanie nie doszlo
+        };
+
+        private static bool CzyZerwanie(Exception ex) =>
+            ex is COMException com && BledyZerwania.Contains((uint)com.ErrorCode);
+
+        // Porzuca martwa sesje: zwalnia obiekt COM i ubija Subiekta mostu (inaczej zostaje sierota,
+        // jak 12.11 pid 31172). Kolejne Polacz() zaloguje sie od nowa. Wolane na watku STA.
+        private void PorzucSesje(string powod)
+        {
+            var stary = _subiekt;
+            _subiekt = null;
+            lock (_blokadaPid) { _pidSubiekta = null; _startSubiekta = null; }
+            if (stary != null)
+            {
+                try { Marshal.FinalReleaseComObject(stary); } catch { /* martwy obiekt - trudno */ }
+            }
+            ProcesySubiekta.UbijDzieci(powod);
+            Dziennik.Zapisz("sfera", $"Sesja Sfery porzucona ({powod}) - przy nastepnej operacji logowanie od nowa");
+        }
+
+        // Nowy dokument MM, ze sprawdzeniem sesji. Pierwsze wywolanie COM w MM to wlasnie to -
+        // na martwej sesji pada TU, zanim cokolwiek powstanie w GT (Dodaj tworzy dokument tylko
+        // w pamieci Subiekta, do bazy trafia dopiero Zapisz). Dlatego TYLKO tutaj wolno od razu
+        // powtorzyc na nowej sesji: magazynier nie zobaczy bledu. Zerwanie pozniej (po Dodaj)
+        // NIE jest powtarzane w moscie - mogl powstac dokument; ponawia job WMS, ktory najpierw
+        // szuka w GT dokumentu po kluczu WMS-RUCH (gt-dokumenty.znajdzMMpoKluczu).
+        private dynamic NowyDokumentMm()
+        {
+            try
+            {
+                return Polacz().Dokumenty.Dodaj(SubiektDokumentMM);
+            }
+            catch (Exception ex) when (CzyZerwanie(ex))
+            {
+                Dziennik.Zapisz("sfera", $"Sesja Sfery zerwana przed MM (0x{(uint)((COMException)ex).ErrorCode:X8}) - loguje sie od nowa i powtarzam");
+                PorzucSesje("zerwana przed MM");
+                return Polacz().Dokumenty.Dodaj(SubiektDokumentMM);
+            }
+        }
+
+        // Callback straznika (watek puli, nie STA). Patrz _straznik.
+        private void SprawdzCzySubiektZyje(object? _)
+        {
+            if (Interlocked.Exchange(ref _straznikPracuje, 1) == 1) return;
+            try
+            {
+                int? pid;
+                DateTime? start;
+                lock (_blokadaPid) { pid = _pidSubiekta; start = _startSubiekta; }
+                if (pid == null || start == null) return;
+
+                bool padl;
+                try { padl = ProcesySubiekta.PadlWedlugDziennika(pid.Value, start.Value, OknoStraznika); }
+                catch (Exception ex)
+                {
+                    // Raz na proces - straznik chodzi co minute, a brak dostepu do dziennika
+                    // to stan trwaly, nie zdarzenie.
+                    if (!_straznikBladZgloszony)
+                    {
+                        _straznikBladZgloszony = true;
+                        Dziennik.Zapisz("straznik", $"Nie moge czytac dziennika Windows - straznik nieaktywny: {ex.Message}");
+                    }
+                    return;
+                }
+                if (!padl) return;
+
+                lock (_blokadaPid)
+                {
+                    if (_pidSubiekta != pid) return; // w miedzyczasie sesja zostala juz wymieniona
+                    _pidSubiekta = null;
+                    _startSubiekta = null;
+                }
+                Dziennik.Zapisz("straznik", $"Subiekt mostu pid={pid} padl (Application Error 1000) - porzucam sesje i loguje sie od nowa");
+                _stan.ZapiszBlad("Subiekt mostu padl - loguje sie od nowa");
+
+                // Ubicie POZA watkiem STA: gdyby STA wisial w wywolaniu do zombie, smierc procesu
+                // zwroci mu blad RPC i odblokuje kolejke.
+                ProcesySubiekta.UbijDzieci("Subiekt mostu padl");
+                NaWatkuSta<object?>(() => { PorzucSesje("Subiekt mostu padl"); return null; }, "porzucenie sesji");
+                TestPolaczeniaAsync().GetAwaiter().GetResult(); // loguje sie od nowa i ustawia StanMostu
+            }
+            catch (Exception ex)
+            {
+                Dziennik.Zapisz("straznik", $"Blad straznika: {ex.Message}");
+            }
+            finally
+            {
+                Volatile.Write(ref _straznikPracuje, 0);
+            }
         }
 
         // Wystawia dokument MM (przesuniecie miedzymagazynowe) w GT przez Sfere.
@@ -155,9 +294,9 @@ namespace GtBridge.Services
             {
                 var odpowiedz = NaWatkuSta(() =>
                 {
-                    dynamic subiekt = Polacz();
-
-                    dynamic dok = subiekt.Dokumenty.Dodaj(SubiektDokumentMM);
+                  try
+                  {
+                    dynamic dok = NowyDokumentMm();
                     dok.MagazynNadawczyId = request.MagazynZrodlowyId;
                     dok.MagazynOdbiorczyId = request.MagazynDocelowyId;
 
@@ -181,6 +320,14 @@ namespace GtBridge.Services
 
                     string numer = dok.NumerPelny;
                     return new DokumentResponse { Sukces = true, NumerDokumentu = numer };
+                  }
+                  catch (Exception ex) when (CzyZerwanie(ex))
+                  {
+                      // Zerwanie w trakcie MM: nie powtarzamy (patrz NowyDokumentMm), ale martwej
+                      // sesji nie trzymamy - nastepne MM zaloguje sie od nowa.
+                      PorzucSesje("zerwana w trakcie MM");
+                      throw;
+                  }
                 }, etykieta);
                 _stan.ZapiszOk($"MM {odpowiedz.NumerDokumentu}");
                 Dziennik.Zapisz("mm", $"OK {odpowiedz.NumerDokumentu} po {zegar.ElapsedMilliseconds} ms :: {etykieta}");
@@ -209,11 +356,24 @@ namespace GtBridge.Services
 
         // Lekki test polaczenia: loguje sie do Sfery (Polacz na watku STA) i nic nie wystawia.
         // Aktualizuje StanMostu, zeby ikona od razu pokazala wynik. Nie rzuca.
+        //
+        // Przy istniejacej sesji dotyka jej (odczyt managera Dokumenty - nic nie tworzy). Wczesniej
+        // test oddawal sama zapamietana sesje, wiec przy martwym Subiekcie mowil "OK" - i "Testuj
+        // polaczenie" w trayu klamal dokladnie wtedy, gdy byl potrzebny.
         public Task<DokumentResponse> TestPolaczeniaAsync()
         {
             try
             {
-                NaWatkuSta<object?>(() => { Polacz(); return null; }, "test polaczenia");
+                NaWatkuSta<object?>(() =>
+                {
+                    if (_subiekt != null)
+                    {
+                        try { object _ = _subiekt.Dokumenty; return null; }
+                        catch (Exception ex) when (CzyZerwanie(ex)) { PorzucSesje("test: sesja zerwana"); }
+                    }
+                    Polacz();
+                    return null;
+                }, "test polaczenia");
                 _stan.ZapiszOk("Test polaczenia OK");
                 Dziennik.Zapisz("test", "Test polaczenia OK");
                 return Task.FromResult(new DokumentResponse { Sukces = true });
@@ -311,10 +471,11 @@ namespace GtBridge.Services
         {
             // Zamkniecie Subiekta musi sie odbyc na tym samym watku STA, ktory go utworzyl.
             // UWAGA: jesli watek STA stoi w zawieszonym wywolaniu COM, to zadanie nigdy nie
-            // ruszy i Dispose bedzie czekac w nieskonczonosc (proces nie zamknie sie sam -
-            // do ubicia zostaje wtedy MOST-RESTART.cmd / naprawmost.ps1). Log ponizej pozwala
-            // to rozpoznac po fakcie: jest "zamykam", nie ma "zamkniete".
+            // ruszy i Dispose bedzie czekac w nieskonczonosc. Od 2026-11-13 ratuje to straznik
+            // zamykania w Program.cs (po 20 s ubija Subiekta mostu i konczy proces twardo).
+            // Log ponizej pozwala to rozpoznac po fakcie: jest "zamykam", nie ma "zamkniete".
             Dziennik.Zapisz("proces", "Zamykam sesje Sfery (Dispose)");
+            _straznik.Dispose();
             try
             {
                 NaWatkuSta<object?>(() =>
@@ -330,6 +491,8 @@ namespace GtBridge.Services
                 Dziennik.Zapisz("proces", "Sesja Sfery zamknieta");
             }
             catch (Exception ex) { Dziennik.Zapisz("proces", $"Blad przy zamykaniu sesji: {ex.Message}"); }
+            // Zdrowy Subiekt po Zakoncz() konczy sie sam; martwy (po crashu) - nie. Nie zostawiamy sieroty.
+            ProcesySubiekta.UbijDzieci("zamykanie mostu");
             _zadania.CompleteAdding();
         }
     }

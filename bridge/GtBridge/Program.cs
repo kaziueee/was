@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using GtBridge.Services;
@@ -69,24 +70,55 @@ namespace GtBridge
             // Zatrzymaj host PRZED ewentualnym restartem - zwalnia port 5000, zamyka Sfere
             // (SferaGtService.Dispose przez kontener DI), zeby nowa instancja mogla wystartowac.
             Dziennik.Zapisz("proces", restart ? "Zadano RESTART z traya - zatrzymuje host" : "Zamykanie mostu - zatrzymuje host");
+
+            // Straznik zamykania (2026-11-13): zamkniecie sesji Sfery to wywolanie COM, ktorego nie da
+            // sie przerwac. 12.11 restart z traya zawisl na "Zamykam sesje Sfery" po crashu Subiekta
+            // mostu: proces zyl, portu 5000 juz nie bylo, a nowa instancja nigdy nie wstala - most
+            // lezal 1,5 h do recznego ubicia. Po 20 s sprzatamy sami i konczymy proces twardo.
+            using var zamkniete = new ManualResetEventSlim(false);
+            var straznikZamykania = new Thread(() =>
+            {
+                if (zamkniete.Wait(TimeSpan.FromSeconds(20))) return;
+                Dziennik.Zapisz("proces", "Zamykanie wisi > 20 s - ubijam Subiekta mostu i koncze proces twardo");
+                ProcesySubiekta.UbijDzieci("zamykanie wisi");
+                if (restart) UruchomNowaInstancje(zOpoznieniem: true);
+                Dziennik.Zapisz("proces", "Twarde zakonczenie procesu");
+                Process.GetCurrentProcess().Kill();
+            }) { IsBackground = true, Name = "StraznikZamykania" };
+            straznikZamykania.Start();
+
             host.StopAsync().GetAwaiter().GetResult();
             host.Dispose();
+            zamkniete.Set();
             Dziennik.Zapisz("proces", "Host zatrzymany");
 
-            if (restart)
-            {
-                var exe = Environment.ProcessPath;
-                if (!string.IsNullOrEmpty(exe))
+            if (restart) UruchomNowaInstancje(zOpoznieniem: false);
+        }
+
+        // Nowa instancja mostu po restarcie z traya. Z opoznieniem (sciezka twardego zakonczenia):
+        // stary proces jeszcze zyje w chwili startu, a nowy musi zajac port 5000 - wiec cmd czeka
+        // ~3 s, w tym czasie stary proces sie zabija.
+        private static void UruchomNowaInstancje(bool zOpoznieniem)
+        {
+            var exe = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exe)) return;
+            Dziennik.Zapisz("proces", $"Uruchamiam nowa instancje{(zOpoznieniem ? " (za 3 s)" : "")}: {exe}");
+            var start = zOpoznieniem
+                ? new ProcessStartInfo
                 {
-                    Dziennik.Zapisz("proces", $"Uruchamiam nowa instancje: {exe}");
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = exe,
-                        WorkingDirectory = Environment.CurrentDirectory, // appsettings.json z CWD!
-                        UseShellExecute = true,
-                    });
+                    FileName = "cmd.exe",
+                    Arguments = $"/c ping -n 4 127.0.0.1 >nul & start \"\" \"{exe}\"",
+                    WorkingDirectory = Environment.CurrentDirectory, // appsettings.json z CWD!
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
                 }
-            }
+                : new ProcessStartInfo
+                {
+                    FileName = exe,
+                    WorkingDirectory = Environment.CurrentDirectory, // appsettings.json z CWD!
+                    UseShellExecute = true,
+                };
+            Process.Start(start);
         }
 
         public static IHostBuilder CreateHostBuilder(string[] args)

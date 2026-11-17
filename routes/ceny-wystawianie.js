@@ -23,7 +23,7 @@ const { kluczKolumny, kolumna } = require('../pricing/kolumny');
 const { pasyZWyceny } = require('../pricing/pas');
 const strategieDane = require('../pricing/strategie-dane');
 const { wycenaHurtem } = require('../services/cennik');
-const { pobierzStanyGt } = require('../services/gt-produkty');
+const { pobierzStanyGt, pobierzWarunkiSklepu } = require('../services/gt-produkty');
 const { pobierzAtrybuty } = require('../services/gt-atrybuty');
 const { MAGAZYNY_RAZEM } = require('../config/magazyny');
 
@@ -55,9 +55,10 @@ module.exports = function wystawianieRouter({ asyncH }) {
       wiersze = wiersze.filter((k) => zostaja.has(k.tw_id));
       if (!twIds.length) return [];
     }
-    const [wyceny, atrybuty, strategie] = await Promise.all([
+    const [wyceny, atrybuty, strategie, warunki] = await Promise.all([
       wycenaHurtem(twIds), pobierzAtrybuty(twIds),
       strategieDane.strategieDlaPasow(twIds).catch(() => ({ poTw: new Map() })),
+      pobierzWarunkiSklepu(twIds),
     ]);
     const pasy = new Map();
     // Ceny wzorca (np. Amazon DE dla Kauflandu DE): nasza najniższa aktywna oferta na towar.
@@ -90,6 +91,7 @@ module.exports = function wystawianieRouter({ asyncH }) {
         katalog: { produkt_id: k.produkt_id, nazwa: k.nazwa, marka: k.marka, kategoria: k.kategoria, kategoria_id: k.kategoria_id, ograniczenie: k.ograniczenie },
         ilosc: wm.stanDostepny(stany.get(String(k.tw_id)), MAGAZYNY_RAZEM),
         waga: a.waga ?? null, wymiary: a.rozbite ?? null, cena, pas,
+        sklep: warunki.get(String(k.tw_id))?.sklep ?? null, cena3: warunki.get(String(k.tw_id))?.cena3 ?? null,
       };
       const ocena = wm.ocenPozycje(p);
       const przy = cena > 0 && pas?.ocen ? pas.ocen(cena) : null;

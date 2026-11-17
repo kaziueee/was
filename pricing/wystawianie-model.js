@@ -83,10 +83,20 @@ function wymiaryMm(r) {
 //              uzupełnienia” (decyzja usera 2026-10-30: nie ukrywać), ale wystawić się jej nie da;
 //   blokady  = pozostałe powody, dla których nie wyślemy wcale (rynek bez testu, brak produktu, marka, stan, cena);
 //   ostrzezenia = wymaga potwierdzenia.
+// Warunek wejścia na KAŻDY rynek (zasada usera 2026-11-17): towar ma w Subiekcie „sprzedaż w sklepie internetowym”
+// (`tw_SklepInternet = 1`) i cenę internetową (poziom 3, brutto) > 0. Bez flagi BaseLinker/Sellasist nie dostają stanu,
+// a oferta bez stanu jest od razu wyłączana: 17.11 siedem świeżych ofert Allegro poszło w ENDED po kilku minutach
+// (Allegro: `endedBy: USER` — integracja działa jako konto). `sklep` i `cena3` dokleja trasa z GT; brak danych =
+// blokada (fail-closed: pozycja bez sprawdzonej flagi nie wychodzi).
+const BEZ_FLAGI_SKLEPU = 'brak oznaczenia „sklep internetowy” w Subiekcie — towar nie dostanie stanu, oferta zostanie wyłączona';
+const BEZ_CENY_3 = { pole: 'cena internetowa', tekst: 'cena internetowa (poziom 3) w Subiekcie = 0 — sklep i BaseLinker nie dostaną ceny; uzupełnij w Subiekcie' };
+
 function ocenPozycje(p) {
   const blokady = [], brakuje = [], ostrzezenia = [];
   const r = gotowyRynek(p.platforma, p.rynek);
   if (!r.gotowe) blokady.push(r.powod);
+  if (p.sklep !== true) blokady.push(BEZ_FLAGI_SKLEPU);
+  if (!(Number(p.cena3) > 0)) brakuje.push(BEZ_CENY_3);
   if (!p.ean) brakuje.push({ pole: 'EAN', tekst: 'brak poprawnego EAN-u w GT' });
   if (!p.katalog?.produkt_id) blokady.push('brak produktu na rynku');
   if (p.platforma === 'emag' && !(p.katalog?.nazwa && p.katalog?.marka && p.katalog?.kategoria_id)) blokady.push('katalog eMAG bez nazwy / marki / kategorii — odśwież skan');
@@ -240,7 +250,7 @@ function stanDostepny(stany, magazyny) {
 
 module.exports = {
   RYNKI_WYSTAWIANIA, gotowyRynek, EMAG_VAT, EMAG_ID_START, EMAG_STALE, EMAG_ZAKRES, EMPIK_STALE, MAX_NA_RAZ,
-  nettoZBrutto, wagaGramy, wymiaryMm, ocenPozycje, powodyBlokady, ofertaEmag, wymiaryEmag, stanDostepny,
+  BEZ_FLAGI_SKLEPU, BEZ_CENY_3, nettoZBrutto, wagaGramy, wymiaryMm, ocenPozycje, powodyBlokady, ofertaEmag, wymiaryEmag, stanDostepny,
   klasaLogistycznaEmpik, ofertaEmpik, plikOfertEmpik, bledyImportuEmpik, ofertaAmazon, problemyAmazon,
   KAUFLAND_STALE, ofertaKaufland,
 };

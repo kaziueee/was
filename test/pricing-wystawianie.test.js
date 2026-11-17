@@ -72,7 +72,19 @@ test('stan dostępny = Razem − rezerwacje, bez ujemnych magazynów', () => {
 const pozycja = (z = {}) => ({
   platforma: 'emag', rynek: 'RO', tw_id: 1, sku: 'HASF9703-G1700', ean: '5010996304018', cena: 67.99, ilosc: 5,
   katalog: { produkt_id: 'DLSLY03BM', nazwa: 'Jucarie Interactiva Furby', marka: 'Furby', kategoria_id: '2753' },
-  waga: '0,112', wymiary: { dlugosc: 13, szerokosc: 10, wysokosc: 6 }, pas: { min: 59.99, max: 89.99 }, ...z,
+  waga: '0,112', wymiary: { dlugosc: 13, szerokosc: 10, wysokosc: 6 }, pas: { min: 59.99, max: 89.99 }, sklep: true, cena3: 69.99, ...z,
+});
+
+test('warunek wejścia: bez flagi „sklep internetowy” albo bez ceny poziomu 3 nie wystawiamy na żaden rynek (17.11)', () => {
+  for (const [platforma, rynek] of [['emag', 'RO'], ['amazon', 'DE'], ['kaufland', 'DE'], ['empik', 'PL']]) {
+    const o = wm.ocenPozycje(pozycja({ platforma, rynek, sklep: false, katalog: { produkt_id: 'X', nazwa: 'n', marka: 'm', kategoria_id: 'k' } }));
+    assert.ok(o.blokady.includes(wm.BEZ_FLAGI_SKLEPU), `${platforma}:${rynek}`);
+  }
+  assert.ok(wm.ocenPozycje(pozycja({ sklep: undefined })).blokady.includes(wm.BEZ_FLAGI_SKLEPU));   // nie sprawdzono = blokada
+  const o = wm.ocenPozycje(pozycja({ cena3: 0 }));
+  assert.deepStrictEqual(o.brakuje.map((b) => b.pole), ['cena internetowa']);
+  assert.strictEqual(wm.powodyBlokady(o).length, 1);
+  assert.deepStrictEqual(wm.ocenPozycje(pozycja({ cena3: null })).brakuje.map((b) => b.pole), ['cena internetowa']);
 });
 
 test('ocena pozycji: komplet przechodzi, braki danych osobno („do uzupełnienia”), cena pod minimum ostrzega', () => {

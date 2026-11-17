@@ -77,6 +77,19 @@ async function pobierzProdukt(identyfikator) {
 // nienumerycznych (np. "GT-100" z lokalnych danych testowych WMS) lub
 // nieznalezionych w GT zwraca stanyGt z samymi zerami, wiec kazdy wejsciowy
 // id ma zawsze wpis w mapie wynikowej.
+// Warunek wejścia na rynki (pricing/wystawianie-model.js ocenPozycje): flaga „sprzedaż w sklepie internetowym”
+// i cena poziomu 3 (internetowa, brutto). → Map(String(tw_Id) → { sklep: bool, cena3: number|null }).
+async function pobierzWarunkiSklepu(twIds) {
+  const wynik = new Map();
+  const idy = [...new Set(twIds.map(Number).filter(Number.isInteger))];
+  for (const paczka of naCzesci(idy, 900)) {
+    const r = await query(`SELECT t.tw_Id, t.tw_SklepInternet AS sklep, c.tc_CenaBrutto3 AS cena3
+        FROM tw__Towar t LEFT JOIN tw_Cena c ON c.tc_IdTowar = t.tw_Id WHERE t.tw_Id IN (${paczka.join(',')})`);
+    for (const w of r.recordset ?? r) wynik.set(String(w.tw_Id), { sklep: !!w.sklep, cena3: w.cena3 == null ? null : Number(w.cena3) });
+  }
+  return wynik;
+}
+
 async function pobierzStanyGt(artykulGtIds) {
   const wynik = new Map();
   const idyNumeryczne = [];
@@ -905,6 +918,7 @@ async function rozkladZgodnosci() {
 
 module.exports = {
   pobierzProdukt,
+  pobierzWarunkiSklepu,
   znajdzTowarPoKodzie,
   pobierzSymbolPoId,
   pobierzPodstawoweInfo,

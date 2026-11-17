@@ -194,3 +194,17 @@ Strona: https://claude.ai/artifact/5apjKQwzjpiwShpVUAeYLf (kolekcja `decyzje`). 
 
 Uwagi usera: **NER0314** — zmienić kategorię na Militarne (pistolety), sprzedawać jako pistolety laserowe na podczerwień. **NER0072** — kategoria Militarne; „generalnie nigdy nie wystawiamy w kategorii Pozostałe”. Obie karty katalogu stoją w „Dziecko > Zabawki > Plastyczne > Pozostałe” (93654) i **nie mają kategorii podobnych**, więc do wystawienia potrzebna jest propozycja zmiany kategorii produktu na Militarne (§7a).
 Kategorie pozostałych 8 są w porządku (Samochody i pojazdy, Figurki, Klocki > Plastikowe, Słuchawki > Przewodowe, Planszowe > Logiczne i edukacyjne).
+
+**Wystawione 17.11 ~17:00** (karty sklepu 38212–38220 od sesji sklepu, galerie tylko z polskimi grafikami, skrypt `C:\Users\Adm\al-wystaw7.js`, ceny ze strony przeglądu):
+
+| SKU | Oferta | Cena × szt. | Status |
+|---|---|---|---|
+| FPHMC30-HTN50 | 19130563312 | 25,99 × 32 | ACTIVE |
+| FPHMC30-HTN52 | 19130564013 | 26,00 × 32 | **INACTIVE**: bez błędów walidacji; komenda ACTIVATE przyjęta, zadanie wisi w NEW |
+| GOL6454 | 19130572880 | 169,89 × 50 | ACTIVE |
+| HWHHWCC14 | 19130573933 | 158,98 × 50 | ACTIVE |
+| HWHHWCC9B | 19130574687 | 129,00 × 50 | ACTIVE. Karta katalogu nazywa się „Rack N' Track”, ale jej opis to Rack N' Truck z pętlą na 44 auta, więc ten sam towar |
+| MAGI12765 | 19130575483 | 13,99 × 50 | ACTIVE |
+| PLA71510 | 19130576909 | 128,99 × 3 | ACTIVE |
+
+Wszystkie aktywne: sygnatura = SKU, „DHL Inpost Poczta” (paczkomat C), przelicznik CZ/SK/HU, Smart!. Wstrzymane: **TRU21658** (na koncie nie ma producenta GPSR Trust; trzeba go dodać w Allegro — dane są w karcie katalogu: Trust International B.V., Dordrecht) oraz **NER0314 / NER0072** (karta w „Plastyczne > Pozostałe”, potrzebna propozycja zmiany kategorii na Militarne).

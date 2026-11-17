@@ -161,3 +161,17 @@ Skrypt: `C:\Users\Adm\al-wystaw-test.js` (bez flagi = podgląd treści; `--wysli
 | CTR i konwersja liczą się do trafności (klikalność miniatury, cena wobec rynku) | cena startowa = max(min, rynek) | cena z Niezbędnika przy zaznaczonych pozycjach |
 | GPSR: producent + informacje o bezpieczeństwie | tak | — |
 | Brak duplikatów (jedna oferta na produkt i konto) | sprawdzamy `external.id` we wszystkich statusach | + sprawdzić produkt katalogu wśród naszych ofert |
+
+## 10. Pierwsze oferty po teście (2026-11-17 ~15:30, polecenie usera „wystaw te 3”)
+
+Trzy nowe karty sklepu (38209–38211, założone tego dnia), konto ekajtek, skrypt `C:\Users\Adm\al-wystaw3.js` (galerie w `al-galerie.json`):
+
+| SKU | Oferta | Cena | Szt. | Galeria |
+|---|---|---|---|---|
+| MGA5402398 Pixel Petz Corgi | 19130281598 | 59,95 (rynek; min 44,99) | 50 | 14 ze sklepu |
+| MGA540304 Pixel Petz Dalmatyńczyk | 19130282731 | 53,98 (rynek; min 44,99) | 50 | 13 ze sklepu |
+| PLA71082 Playmobil Dragons Kruszka | 19130283666 | 69,99 (min; rynek 59,99 poniżej) | 50 | 6 ze sklepu |
+
+Wszystkie: ACTIVE, sygnatura = SKU, przelicznik na CZ/SK/HU (3 reguły), Smart! spełniony, galeria bez zdjęć katalogu. Cena rynku z Niezbędnika (najniższa oferta „nowy” poza naszymi kontami). Ahsoka FUN64534 pominięta: dwa produkty Allegro z tym samym EAN-em, wybór należy do człowieka (§7a).
+
+Oferta testowa 19130199688 po 20 min: galeria dalej 3 zdjęcia (Allegro nie dokleja ponownie), rynki zagraniczne APPROVED.

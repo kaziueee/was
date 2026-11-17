@@ -262,11 +262,15 @@ test('odświeżenie EAN: katalog Allegro wygrywa z GT; świeży (doba) nie odpyt
 });
 
 test('zapisy EAN: 12 cyfr ↔ 13 z zerem, lista z oferty bez powtórzeń i śmieci', () => {
-  assert.deepStrictEqual(k.wariantyEan('193052070883'), ['193052070883', '0193052070883']);
-  assert.deepStrictEqual(k.wariantyEan('0193052070883'), ['0193052070883', '193052070883']);
-  assert.deepStrictEqual(k.wariantyEan('5010993842094'), ['5010993842094']);
-  assert.deepStrictEqual(k.eanyOferty({ ean: '193052070883,0193052070883' }), ['193052070883', '0193052070883']);
-  assert.deepStrictEqual(k.eanyOferty({ ean: '193052070883' }), ['193052070883', '0193052070883']);   // stary zapis — dokładamy wariant
+  // bez zer, z „0”, z „00” (zasada usera 17.11)
+  assert.deepStrictEqual(k.wariantyEan('193052070883'), ['193052070883', '0193052070883', '00193052070883']);
+  assert.deepStrictEqual(k.wariantyEan('0193052070883'), ['0193052070883', '193052070883', '00193052070883']);
+  assert.deepStrictEqual(k.wariantyEan('0035051540298'), ['0035051540298', '35051540298', '035051540298']);   // Pixel Petz Corgi
+  assert.deepStrictEqual(k.wariantyEan('035051540298'), ['035051540298', '35051540298', '0035051540298']);
+  assert.deepStrictEqual(k.wariantyEan('5010993842094'), ['5010993842094']);   // zwykły EAN-13 — bez wariantów
+  assert.deepStrictEqual(k.wariantyEan('40123455'), ['40123455']);             // EAN-8 bez zera
+  assert.deepStrictEqual(k.eanyOferty({ ean: '193052070883,0193052070883' }), ['193052070883', '0193052070883', '00193052070883']);
+  assert.deepStrictEqual(k.eanyOferty({ ean: '193052070883' }), ['193052070883', '0193052070883', '00193052070883']);   // stary zapis — dokładamy warianty
   assert.deepStrictEqual(k.eanyOferty({ ean: 'abc, ' }), []);
   assert.deepStrictEqual(k.eanyZProduktu({ parameters: [{ name: 'EAN (GTIN)', values: ['193052070883', '0193052070883', 'x'] }] }), ['193052070883', '0193052070883']);
 });

@@ -40,8 +40,17 @@ const limitDzienny = () => (Number(process.env.PRICING_NSP_DZIENNIE) > 0 ? Numbe
 const waznoscH = () => (Number(process.env.PRICING_NSP_WAZNOSC_H) > 0 ? Number(process.env.PRICING_NSP_WAZNOSC_H) : 12);
 
 const dobryEan = (e) => /^(\d{8}|\d{12,14})$/.test(String(e || '').trim());
-// 12 cyfr (UPC) ↔ 13 z zerem na początku — ten sam kod, różny zapis w ofertach.
-const wariantyEan = (e) => (/^\d{12}$/.test(e) ? [e, `0${e}`] : /^0\d{12}$/.test(e) ? [e, e.slice(1)] : [e]);
+// Ten sam kod, różne zapisy w ofertach: bez zer wiodących, z „0” i z „00” (zasada usera 2026-11-17). Pixel Petz Corgi:
+// po „0035051540298” Niezbędnik dał 22 oferty od 59,95 zł, po „035051540298” 40 ofert od 42,75 zł — sprzedawcy
+// wpisują UPC raz z zerem, raz bez. Dotyczy kodów z zerem na początku i krótszych niż 13 cyfr (rodzina UPC); zwykły
+// EAN-13 bez zera zostaje sam — „0” + EAN-13 to GTIN-14, którego w ofertach nikt nie wpisuje, a każdy zapis to
+// osobne sprawdzenie z pakietu. Najpierw zapis wejściowy, potem bez zer, z „0”, z „00”; tylko 11–14 cyfr.
+function wariantyEan(e) {
+  const s = String(e || '').trim();
+  if (!/^\d+$/.test(s) || (s.length >= 13 && s[0] !== '0')) return [s];
+  const rdzen = s.replace(/^0+/, '');
+  return [...new Set([s, rdzen, `0${rdzen}`, `00${rdzen}`])].filter((x) => x === s || (x.length >= 11 && x.length <= 14));
+}
 const zWariantami = (lista) => [...new Set(lista.map((e) => String(e || '').trim()).filter(dobryEan).flatMap(wariantyEan))];
 const eanyOferty = (o) => zWariantami(String(o?.ean || '').split(','));
 const coH = (v) => (CO_H.includes(Number(v)) ? Number(v) : DOMYSLNE.co_h);

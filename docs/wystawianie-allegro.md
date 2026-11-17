@@ -86,14 +86,35 @@ Wpasowane w istniejący ekran Ceny → „Do wystawienia” (`pricing/katalogi*.
 5. **Po wystawieniu**: sync listy Allegro w workerze (`dopnijWystawione`) widzi ofertę i włącza automat wg reguł `POST /automat` (wysyłka cen Allegro działa od 19.10). Historia ma odhaczenie „podpięte w BaseLinkerze”.
 6. **Kolejność**: jedna oferta testowa ręcznym skryptem → powiązanie w BL i sprawdzenie, czy stan się synchronizuje → kod + `allegro:EKAJTEK gotowe:true` → paczka.
 
-## 7. Decyzje dla usera
+## 7. Decyzje usera (2026-11-17)
 
-1. **Które konto:** ekajtek (większe, 6 400 szt./30 dni), NaTropie, czy oba? Na obu = dwie oferty tego samego towaru konkurują ze sobą (dziś ~1 800 SKU tak ma).
-2. **Tytuł:** nazwa produktu z katalogu Allegro („Figurka Hasbro Avengers Captain America 24 cm”) czy nasz styl WIELKIMI LITERAMI z kodem modelu (generowany z nazwy katalogu + symbolu)? Limit 75 znaków.
-3. **Opis:** wystarczy opis i zdjęcia z karty katalogu Allegro (nic nie wysyłamy), czy zawsze własny opis jak na obecnych ofertach (wtedy skąd: sklep Fenom, Icecat)?
-4. **Powiązanie ze stanem:** czy BaseLinker powiąże ofertę sam po SKU, czy trzeba ją zaimportować / powiązać ręcznie? Do sprawdzenia w panelu BL na ofercie testowej.
-5. **Cennik dostaw:** czy reguła „nie mieści się w paczkomacie C → Kurier i Packeta” jest prawdziwa?
-6. **Rynki dodatkowe CZ/SK/HU:** włączać od razu, jak na obecnych ofertach?
+1. **Konto:** test na **ekajtek**.
+2. **Tytuł:** WIELKIMI LITERAMI i **sprzedażowy**, z wykorzystaniem limitu 75 znaków. Sklep dostaje nazwę techniczną, zgodną z katalogiem; Allegro dostaje tytuł pod wyszukiwanie: postać po polsku i po angielsku, wysokość, wyróżnik (tarcza), marka, kod modelu.
+3. **Opis:** **własny, w sekcjach, każda sekcja ze zdjęciem.** Wzór obecnych ofert: sekcja 1 = zdjęcie + `<h1>` + wstęp, sekcja 2 = zdjęcie + „Najważniejsze cechy” (lista), sekcja 3 = zdjęcie + „Zawartość zestawu” + wymiary / wiek / kod. Treść: karta sklepu, katalog Allegro i karty z innych rynków. Piszemy tylko to, co tam stoi, bez dopisywania cech.
+4. **Cennik dostaw:** reguła potwierdzona: nie mieści się w paczkomacie C → „Kurier i Packeta”, inaczej „DHL Inpost Poczta”.
+5. **Rynki CZ/SK/HU:** tak, **od razu z regułą „Przelicznik cen”** (EXCHANGE_RATE, `644bd75d07bd9c00ddaf5786`, domyślna na koncie). Nasze obecne oferty mają ceny CZ/SK/HU, ale `GET /sale/price-automation/offers/{id}/rules` = 404 „brak reguł”, więc ceny ustawiono raz, bez reguły. Nowa oferta: rynki dodatkowe w `publication.marketplaces.additional` bez cen. Potem sprawdzamy reguły oferty, a gdy ich nie ma, przypisujemy przelicznik przez `POST /sale/offer-price-automation-commands` (cz, sk, hu). Do sprawdzenia na teście: czy reguła na rynku zagranicznym nie blokuje repricera (`zmianaCeny` odrzuca oferty z regułą na `sellingMode` bazowym).
+6. **Powiązanie w BaseLinkerze:** do sprawdzenia na ofercie testowej.
+
+## 7a. Produktyzacja: wybór produktu katalogu (kluczowe, uwaga usera)
+
+Zła karta = oferta pod cudzym towarem (lekcja z Kauflandu: TEF82380 dostał kartę zestawu garnków pod naszym EAN-em). Reguły, wszystkie muszą przejść, inaczej pozycja jest zablokowana do decyzji człowieka:
+- **EAN dokładny:** nasz EAN (po `normalizujEan`, 12↔13 cyfr) jest wśród wartości parametru „EAN (GTIN)” produktu. Nie bierzemy pierwszego wyniku wyszukiwania.
+- **Jeden kandydat:** więcej niż jeden produkt z naszym EAN-em = wybór człowieka na ekranie (nazwy, zdjęcia, kategorie obok siebie).
+- **Kod modelu:** kod z symbolu GT (`HASE5556-E5579` → `E5579`) występuje w nazwie, „Kodzie producenta” albo opisie produktu. „Kod producenta” w katalogu bywa inny (tu `2577121`), więc sam ten parametr nie wystarczy. Brak kodu wszędzie = ostrzeżenie, nie blokada (nie każdy towar ma kod w symbolu).
+- **Sztuki:** „Liczba sztuk” = 1, a w nazwie nie ma „zestaw / komplet / N szt. / pak”, chyba że towar GT też jest zestawem. Multipak pod pojedynczym EAN-em to najczęstsza pułapka.
+- **Marka:** parametr „Marka” zgodny z marką towaru (prefiks symbolu / kartoteka). „bez marki” = blokada.
+- **Status:** `LISTED` (Allegro: najszybsza publikacja). `PROPOSED` / inne = ostrzeżenie.
+- **Wymiary:** parametry produktu (wys./szer./gł.) nie mogą przeczyć wymiarom opakowania w GT o rząd wielkości (cm↔mm).
+- Flagi z wyszukiwania zapisujemy do katalogu: `hasProtectedBrand` (marka chroniona: parametry karty edytuje tylko marka; przy Hasbro = true, a nasze oferty Hasbro istnieją, więc to nie blokada), `aiCoCreatedContent` (parametry karty uzupełniało AI, mniej wiarygodne).
+
+Pomiar na teście: EAN 5010993596133 → dokładnie 1 produkt (`6fc1a748…`, Hasbro, 1 szt., LISTED, E5579 w opisie). Wyszukiwanie po frazie znajduje jeszcze 3 karty „Captain America 24 cm” z innymi EAN-ami (dwie „bez marki”). Właśnie dlatego dobieramy wyłącznie po EAN-ie.
+
+## 7b. Miniatura i galeria (uwaga usera: „miniatura też jest ważna”)
+
+Pierwsze zdjęcie oferty Allegro **jest tym samym obrazkiem co pierwsze zdjęcie karty w sklepie**: kompozycja 1:1, produkt duży, pudełko mniejsze. Sprawdzone na HWHHPC07 (identyczny obraz) i Playmobil 71270 (pudełko, jak w sklepie). Reguła:
+- **galeria oferty = galeria karty w sklepie, w tej samej kolejności** (miniatura → produkt → lifestyle → pudełko na końcu, zasady sklepu z `docs/wystawianie-sklep.md`). Zdjęcia wgrywamy do Allegro po URL-u (`POST https://upload.allegro.pl/sale/images {url}`), bo opis może pokazywać tylko zdjęcia z galerii oferty;
+- zdjęcia karty katalogu Allegro tylko awaryjnie. Ich pierwsze zdjęcie to często samo pudełko albo zdjęcie amatorskie (u E5579 jest zdjęcie figurki w pudełku zrobione telefonem);
+- **towar bez karty w sklepie nie idzie na Allegro**: nie ma miniatury w naszym stylu, a krok 2 procesu (sklep) i tak poprzedza krok 4.
 
 ## 8. Oferta testowa (do wystawienia po zgodzie usera)
 
@@ -102,6 +123,9 @@ Wpasowane w istniejący ekran Ceny → „Do wystawienia” (`pricing/katalogi*.
 - stan dostępny 41 szt., waga 0,2 kg, wymiary 25,5×13×5 cm (paczkomat → „DHL Inpost Poczta”);
 - producent „Hasbro” `8f14d06c-521d-4203-96bf-3b379418f4da` (19 z 25 naszych ofert Hasbro), bezpieczeństwo „Nie nadaje się dla dzieci w wieku poniżej 36 miesięcy.”;
 - koszt 14,76 zł, pas Allegro 32,99–49,48 zł, prowizja 14,16%; propozycja **39,99 zł** (jak nasz Empik), albo cena z Niezbędnika po 1 sprawdzeniu;
-- ilość 41, tytuł i opis z karty katalogu (chyba że user zdecyduje inaczej).
+- ilość 41;
+- tytuł (72 zn.): **MARVEL AVENGERS DUŻA FIGURKA KAPITAN AMERYKA 24 CM Z TARCZĄ HASBRO E5579**;
+- galeria ze sklepu: `u4um0ge1.png` (miniatura: pudełko + figurka), `hzyvqzmj.jpg` (figurka), `zxjenrr5.jpg` (pudełko); 3 sekcje opisu, każda ze swoim zdjęciem;
+- rynki business-pl, CZ, SK, HU, business-cz z przelicznikiem.
 
-Po wystawieniu: sprawdzić ofertę na allegro.pl i rynki CZ/SK/HU, powiązać w BaseLinkerze i potwierdzić, że BL zmienia jej stan.
+Skrypt: `C:\Users\Adm\al-wystaw-test.js` (bez flagi = podgląd treści; `--wyslij` = wgranie zdjęć → `POST /sale/product-offers` → operacja → przelicznik). Po wystawieniu: sprawdzić ofertę na allegro.pl i rynki CZ/SK/HU, powiązać w BaseLinkerze i potwierdzić, że BL zmienia jej stan.

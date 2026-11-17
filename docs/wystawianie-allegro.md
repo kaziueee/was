@@ -187,7 +187,7 @@ Strona: https://claude.ai/artifact/5apjKQwzjpiwShpVUAeYLf (kolekcja `decyzje`). 
 
 | Decyzja | Towary (cena wpisana przez usera) |
 |---|---|
-| **Wystawić (10)** | FPHMC30-HTN50 25,99 · FPHMC30-HTN52 26,00 · GOL6454 169,89 · HWHHWCC14 (karta 861729d9 „Bagażnik 2w1 20 aut”, cena pusta) · HWHHWCC9B 129,00 · MAGI12765 13,99 · NER0072 75,99 · NER0314 96,99 · PLA71510 128,99 · TRU21658 157,44 |
+| **Wystawić (10)** | FPHMC30-HTN50 25,99 · FPHMC30-HTN52 26,00 · GOL6454 169,89 · HWHHWCC14 158,98 (karta 861729d9 „Bagażnik 2w1 20 aut”; 1 gr pod konkurencją, user 17.11) · HWHHWCC9B 129,00 · MAGI12765 13,99 · NER0072 75,99 · NER0314 96,99 · PLA71510 128,99 · TRU21658 157,43 (1 gr pod jedyną konkurencją: -ELEKTRO-OUTLET- 157,44 + 50 zł dostawy; user 17.11) |
 | Później (5) | BATMAX164010, BP561021, PLA71463, SLH98643, SPIN20151457 |
 | Pominąć (3) | LEG71046, LEG71047, MATN3242 |
 | Bez decyzji (2) | LEG71045, SPIN20154229 |

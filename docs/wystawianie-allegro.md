@@ -201,7 +201,7 @@ Kategorie pozostałych 8 są w porządku (Samochody i pojazdy, Figurki, Klocki >
 | SKU | Oferta | Cena × szt. | Status |
 |---|---|---|---|
 | FPHMC30-HTN50 | 19130563312 | 25,99 × 32 | ACTIVE |
-| FPHMC30-HTN52 | 19130564013 | 26,00 × 32 | **INACTIVE**: bez błędów walidacji; komenda ACTIVATE przyjęta, zadanie wisi w NEW |
+| FPHMC30-HTN52 | 19130564013 | 26,00 × 32 | **ENDED**: aktywowana 16:11:31 UTC, zakończona 16:15:24 z `endedBy: USER`, bez błędów walidacji. Zakończył ją ktoś z konta albo integracja działająca jako konto (BaseLinker?), nie my |
 | GOL6454 | 19130572880 | 169,89 × 50 | ACTIVE |
 | HWHHWCC14 | 19130573933 | 158,98 × 50 | ACTIVE |
 | HWHHWCC9B | 19130574687 | 129,00 × 50 | ACTIVE. Karta katalogu nazywa się „Rack N' Track”, ale jej opis to Rack N' Truck z pętlą na 44 auta, więc ten sam towar |

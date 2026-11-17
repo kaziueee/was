@@ -106,6 +106,7 @@ Zła karta = oferta pod cudzym towarem (lekcja z Kauflandu: TEF82380 dostał kar
 - **Marka:** parametr „Marka” zgodny z marką towaru (prefiks symbolu / kartoteka). „bez marki” = blokada.
 - **Status:** `LISTED` (Allegro: najszybsza publikacja). `PROPOSED` / inne = ostrzeżenie.
 - **Wymiary:** parametry produktu (wys./szer./gł.) nie mogą przeczyć wymiarom opakowania w GT o rząd wielkości (cm↔mm).
+- **Nigdy kategoria „Pozostałe”** (zasada usera 17.11): produkt, którego kategoria albo każda dozwolona kategoria podobna (`category.similar` z `/sale/products/{id}`) kończy się na „Pozostałe”, jest zablokowany. Oferta z produktem może stać tylko w kategorii produktu albo w jednej z podobnych. Przy dobrej kategorii podobnej wybieramy ją (np. Triominos: „Planszowe > Logiczne i edukacyjne”, a nie „Planszowe > Pozostałe”). Gdy dobrej nie ma, zostaje **propozycja zmiany kategorii produktu** (`POST /sale/products/{id}/change-proposals`; Allegro ją weryfikuje, obowiązuje limit zgłoszeń, a elementów „zaufanych” nie da się zmienić). Wysyłamy ją dopiero za zgodą usera. Nerf (wyrzutnie, lasery) ma iść do **Dziecko > Zabawki > Militarne** (93564); tam stoi 284 z naszych 300 ofert NER* z laserem, pistoletem albo blasterem.
 - Flagi z wyszukiwania zapisujemy do katalogu: `hasProtectedBrand` (marka chroniona: parametry karty edytuje tylko marka; przy Hasbro = true, a nasze oferty Hasbro istnieją, więc to nie blokada), `aiCoCreatedContent` (parametry karty uzupełniało AI, mniej wiarygodne).
 
 Pomiar na teście: EAN 5010993596133 → dokładnie 1 produkt (`6fc1a748…`, Hasbro, 1 szt., LISTED, E5579 w opisie). Wyszukiwanie po frazie znajduje jeszcze 3 karty „Captain America 24 cm” z innymi EAN-ami (dwie „bez marki”). Właśnie dlatego dobieramy wyłącznie po EAN-ie.
@@ -179,3 +180,17 @@ Oferta testowa 19130199688 po 20 min: galeria dalej 3 zdjęcia (Allegro nie dokl
 **Błąd ceny rynku przy Pixel Petz (zgłoszenie usera 17.11).** Strona produktu Corgi pokazywała 62 oferty od 44,50 zł, a mój raport z Niezbędnika 22 oferty od 59,95 zł. Przyczyna: pytałem tylko o EAN-13 `0035051540298`, a większość ofert ma kod zapisany jako 12-cyfrowy UPC `035051540298`. Po tym zapisie Niezbędnik daje 40 ofert od 29,99 zł (42,75 Lilusia2024, 44,50 RMFBestPrice). Repricer robi to dobrze (`zWariantami` w `pricing/konkurencja-allegro.js`: 12↔13 cyfr, wszystkie EAN-y produktu), ale skrypt wystawienia go ominął. **W kodzie cena rynku idzie wyłącznie przez `zWariantami` + `FILTRY` z konkurencja-allegro**, nigdy przez gołe `zlecRaport([ean])`. Dalmatyńczyk z wariantem: najtańszy „nowy” 53,98 (ProDealPolska), czyli tyle, ile wystawiliśmy.
 
 **Wdrożenie 17.11 ~16:30 (za „tak” usera):** `d5c75b7` na main, `git pull` na SRV, restart WMS-Pricing o 15:31 czasu serwera (worker liczy z nowymi wariantami). WMS-Node NIE był restartowany, żeby nie przerywać pracy Zebr w dzień. Karta oferty na ekranie Ceny łączy wyniki po starej liście wariantów do najbliższego restartu WMS-Node. Corgi 19130281598: 59,95 → **44,99 zł** (minimum), `ustawCene` bezpośrednio, przelicznik od razu przeliczył CZ/SK/HU: 250 Kč / 10,22 € / 3 725 Ft.
+
+## 11. Decyzje usera dla 20 kandydatów (strona przeglądu, 17.11 ~16:00)
+
+Strona: https://claude.ai/artifact/5apjKQwzjpiwShpVUAeYLf (kolekcja `decyzje`). Wszystkie czekają na kartę w sklepie (galeria i miniatura stamtąd).
+
+| Decyzja | Towary (cena wpisana przez usera) |
+|---|---|
+| **Wystawić (10)** | FPHMC30-HTN50 25,99 · FPHMC30-HTN52 26,00 · GOL6454 169,89 · HWHHWCC14 (karta 861729d9 „Bagażnik 2w1 20 aut”, cena pusta) · HWHHWCC9B 129,00 · MAGI12765 13,99 · NER0072 75,99 · NER0314 96,99 · PLA71510 128,99 · TRU21658 157,44 |
+| Później (5) | BATMAX164010, BP561021, PLA71463, SLH98643, SPIN20151457 |
+| Pominąć (3) | LEG71046, LEG71047, MATN3242 |
+| Bez decyzji (2) | LEG71045, SPIN20154229 |
+
+Uwagi usera: **NER0314** — zmienić kategorię na Militarne (pistolety), sprzedawać jako pistolety laserowe na podczerwień. **NER0072** — kategoria Militarne; „generalnie nigdy nie wystawiamy w kategorii Pozostałe”. Obie karty katalogu stoją w „Dziecko > Zabawki > Plastyczne > Pozostałe” (93654) i **nie mają kategorii podobnych**, więc do wystawienia potrzebna jest propozycja zmiany kategorii produktu na Militarne (§7a).
+Kategorie pozostałych 8 są w porządku (Samochody i pojazdy, Figurki, Klocki > Plastikowe, Słuchawki > Przewodowe, Planszowe > Logiczne i edukacyjne).

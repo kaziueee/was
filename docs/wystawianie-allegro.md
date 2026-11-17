@@ -129,4 +129,16 @@ Pierwsze zdjęcie oferty Allegro **jest tym samym obrazkiem co pierwsze zdjęcie
 - galeria ze sklepu: `u4um0ge1.png` (miniatura: pudełko + figurka), `hzyvqzmj.jpg` (figurka), `zxjenrr5.jpg` (pudełko); 3 sekcje opisu, każda ze swoim zdjęciem;
 - rynki business-pl, CZ, SK, HU, business-cz z przelicznikiem.
 
+### Wynik testu (2026-11-17 14:34, za „tak” usera)
+
+**Oferta 19130199688** (https://allegro.pl/oferta/19130199688): ACTIVE od razu, sygnatura `HASE5556-E5579` zgodna, 39,99 zł, 41 szt., „DHL Inpost Poczta”, 3 sekcje opisu (zdjęcie + tekst), pierwsze zdjęcie = miniatura ze sklepu.
+
+Lekcje do kodu:
+- `publication.marketplaces.base` jest tylko do odczytu: w zapytaniu = 422 `UnknownJSONProperty` „...base” i nic nie powstaje. `publication.marketplaces.additional` przechodzi, ale jest **przestarzałe** (ostrzeżenie `DeprecatedField`): o rynkach zagranicznych decyduje **cennik dostawy**. „DHL Inpost Poczta” obejmuje pl, business-pl, cz, business-cz, sk, hu, więc wystarczy cennik. W kodzie tego pola nie wysyłamy.
+- Odpowiedź 202 → `/operations/{id}` 303 po ~5 s, oferta ACTIVE. Ostrzeżenie `SAFETY_INFO_DESCRIPTION_SUGGESTED_DATA_VERIFICATION_NEEDED` to formułka o odpowiedzialności sprzedawcy, nie błąd.
+- **Rynki zagraniczne po wystawieniu: PENDING** (business-pl, CZ, SK, HU, business-cz), bez reguł (`/rules` = 404). `POST /sale/offer-price-automation-commands` z „Przelicznikiem cen” na cz/sk/hu → SUCCESS w 0,6 s, reguły widoczne w `/rules`, ceny wyliczone: **222 Kč, 9,08 €, 3 310 Ft**. Na rynku bazowym `priceAutomation` = null, więc repricer (`zmianaCeny`) może zmieniać cenę PLN.
+- **Allegro dokleja do galerii zdjęcia karty katalogu**: wysłaliśmy 3 zdjęcia, oferta ma 6. Nasze 3 są pierwsze (miniatura się zgadza), za nimi 3 z katalogu, w tym amatorskie zdjęcie figurki w pudełku. Do decyzji: zostawić czy próbować usuwać (PATCH `images`; nie wiadomo, czy Allegro nie doklei ich znowu).
+- Wgranie zdjęcia po URL-u daje adres Allegro po skrócie treści: miniatura sklepu `u4um0ge1.png` dostała ten sam adres co zdjęcie z katalogu, bo to ten sam plik.
+- Do zrobienia przez człowieka: **powiązać ofertę w BaseLinkerze** i potwierdzić, że BL zmienia jej stan. Test był skryptem, więc oferty nie ma w tabeli `wystawienia`. Sync repricera dopnie ją do `oferty` przy następnym przebiegu.
+
 Skrypt: `C:\Users\Adm\al-wystaw-test.js` (bez flagi = podgląd treści; `--wyslij` = wgranie zdjęć → `POST /sale/product-offers` → operacja → przelicznik). Po wystawieniu: sprawdzić ofertę na allegro.pl i rynki CZ/SK/HU, powiązać w BaseLinkerze i potwierdzić, że BL zmienia jej stan.

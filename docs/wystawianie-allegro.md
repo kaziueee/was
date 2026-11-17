@@ -76,7 +76,8 @@ Wpasowane w istniejący ekran Ceny → „Do wystawienia” (`pricing/katalogi*.
 2. **Cena startowa** = max(min pasa, cena rynku z Niezbędnika), jak `cenaStartowa`; bez danych rynku = min pasa. Niezbędnik tylko dla pozycji zaznaczonych na ekranie, nie dla całego katalogu (pakiet).
 3. **Treść oferty** (`ofertaAllegro` w `wystawianie-model.js`, czysta funkcja z testami):
    - `productSet: [{ product: { id }, quantity: { value: 1 }, responsibleProducer: { id }, safetyInformation: { type: 'TEXT', description } }]`;
-   - `external.id` = SKU; `sellingMode` BUY_NOW, cena PLN; `stock.available` = min(dostępne, 50);
+   - **sygnatura (`external.id`) = nasze SKU, czyli symbol GT, ZAWSZE** (wymóg usera 17.11). Bez niej repricer nie dopasuje oferty do towaru (`oferty.tw_id` po SKU), a BaseLinker nie powiąże jej ze stanem. Pusta albo inna sygnatura = blokada wysyłki. Po wystawieniu sprawdzamy, że Allegro ją zapisało;
+   - `sellingMode` BUY_NOW, cena PLN; `stock.available` = min(dostępne, 50);
    - `delivery` = „DHL Inpost Poczta”; „Kurier i Packeta”, gdy nie mieści się w paczkomacie C (64×41×38, ≤ 25 kg, ta sama reguła co klasa Empik; **reguła do potwierdzenia przez usera**); `handlingTime PT0S`;
    - zwroty / reklamacje / gwarancja, faktura VAT, rynki dodatkowe: jak na obecnych ofertach konta (id z konfiguracji);
    - `parameters` Stan=Nowy; `publication.status` ACTIVE.

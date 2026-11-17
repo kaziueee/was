@@ -209,3 +209,7 @@ Kategorie pozostałych 8 są w porządku (Samochody i pojazdy, Figurki, Klocki >
 | PLA71510 | 19130576909 | 128,99 × 3 | ACTIVE |
 
 Wszystkie aktywne: sygnatura = SKU, „DHL Inpost Poczta” (paczkomat C), przelicznik CZ/SK/HU, Smart!. Wstrzymane: **TRU21658** (na koncie nie ma producenta GPSR Trust; trzeba go dodać w Allegro — dane są w karcie katalogu: Trust International B.V., Dordrecht) oraz **NER0314 / NER0072** (karta w „Plastyczne > Pozostałe”, potrzebna propozycja zmiany kategorii na Militarne).
+
+**Wszystkie 7 ofert z 17.11 ~17:00 są ENDED (stan sprawdzony 17.11 22:55 czasu SRV).** Przyczyna (zasada usera przekazana przez sesję sklepu): **towar musi mieć w Subiekcie „sprzedaż w sklepie internetowym” (`tw_SklepInternet = 1`)**. Inaczej BaseLinker nie dostaje dla niego stanu, a oferta bez stanu jest od razu wyłączana (Allegro zapisuje `endedBy: USER`, bo BL działa jako konto). Flagi nie miały HTN50, HTN52, HWHHWCC14, HWHHWCC9B, MAGI12765, PLA71510. GOL6454 ma flagę, a też jest ENDED; najpewniej flaga przyszła po wyłączeniu albo BL jeszcze nie ma produktu. Oferty z flagą sprzed wystawienia (Captain America, Pixel Petz ×2, Kruszka) są ACTIVE.
+
+**Warunek wstępny wystawienia na Allegro: `tw_SklepInternet = 1` w GT** (sprawdzany przed wysyłką, brak flagi = blokada). Do tego niezerowa cena poziomu 3 w GT: HTN50, HTN52, HWHHWCC9B, MAGI12765, NER0072, NER0314 mają tam 0. Wznowienie zakończonych ofert (komenda ACTIVATE) robimy dopiero po oflagowaniu i za zgodą usera, razem z podmianą galerii HWCC14 / HWCC9B.

@@ -116,6 +116,7 @@ Pomiar na teście: EAN 5010993596133 → dokładnie 1 produkt (`6fc1a748…`, Ha
 Pierwsze zdjęcie oferty Allegro **jest tym samym obrazkiem co pierwsze zdjęcie karty w sklepie**: kompozycja 1:1, produkt duży, pudełko mniejsze. Sprawdzone na HWHHPC07 (identyczny obraz) i Playmobil 71270 (pudełko, jak w sklepie). Reguła:
 - **galeria oferty = galeria karty w sklepie, w tej samej kolejności** (miniatura → produkt → lifestyle → pudełko na końcu, zasady sklepu z `docs/wystawianie-sklep.md`). Zdjęcia wgrywamy do Allegro po URL-u (`POST https://upload.allegro.pl/sale/images {url}`), bo opis może pokazywać tylko zdjęcia z galerii oferty;
 - zdjęcia karty katalogu Allegro tylko awaryjnie. Ich pierwsze zdjęcie to często samo pudełko albo zdjęcie amatorskie (u E5579 jest zdjęcie figurki w pudełku zrobione telefonem);
+- **zasady usera dla grafik (17.11):** w miniaturze bez nakładanych logotypów (np. czerwone logo Hot Wheels), pudełko zawsze w całości, jeden dominujący produkt. **Napisów na grafikach nie przerabiamy** („zostaw oryginały”). Grafiki z tekstem w innym języku niż polski **pomijamy na Allegro PL**, a w sklepie zostają. Gdy galeria karty sklepu zmieni się po wystawieniu, podmieniamy ją w ofercie PATCH-em (`images` + zdjęcia w sekcjach opisu), za zgodą usera;
 - **towar bez karty w sklepie nie idzie na Allegro**: nie ma miniatury w naszym stylu, a krok 2 procesu (sklep) i tak poprzedza krok 4.
 
 ## 8. Oferta testowa (do wystawienia po zgodzie usera)

@@ -91,7 +91,7 @@ Wpasowane w istniejący ekran Ceny → „Do wystawienia” (`pricing/katalogi*.
 
 1. **Konto:** test na **ekajtek**.
 2. **Tytuł:** WIELKIMI LITERAMI i **sprzedażowy**, z wykorzystaniem limitu 75 znaków. Sklep dostaje nazwę techniczną, zgodną z katalogiem; Allegro dostaje tytuł pod wyszukiwanie: postać po polsku i po angielsku, wysokość, wyróżnik (tarcza), marka, kod modelu.
-3. **Opis:** **własny, w sekcjach, każda sekcja ze zdjęciem.** Wzór obecnych ofert: sekcja 1 = zdjęcie + `<h1>` + wstęp, sekcja 2 = zdjęcie + „Najważniejsze cechy” (lista), sekcja 3 = zdjęcie + „Zawartość zestawu” + wymiary / wiek / kod. Treść: karta sklepu, katalog Allegro i karty z innych rynków. Piszemy tylko to, co tam stoi, bez dopisywania cech.
+3. **Opis:** **własny, w sekcjach, każda sekcja ze zdjęciem.** Wzór obecnych ofert: sekcja 1 = zdjęcie + `<h1>` **= tytuł oferty** + wstęp, sekcja 2 = zdjęcie + „Najważniejsze cechy” (lista), sekcja 3 = zdjęcie + „Zawartość zestawu” + wymiary / wiek / kod. Treść: karta sklepu, katalog Allegro i karty z innych rynków. Piszemy tylko to, co tam stoi, bez dopisywania cech.
 4. **Cennik dostaw:** reguła potwierdzona: nie mieści się w paczkomacie C → „Kurier i Packeta”, inaczej „DHL Inpost Poczta”.
 5. **Rynki CZ/SK/HU:** tak, **od razu z regułą „Przelicznik cen”** (EXCHANGE_RATE, `644bd75d07bd9c00ddaf5786`, domyślna na koncie). Nasze obecne oferty mają ceny CZ/SK/HU, ale `GET /sale/price-automation/offers/{id}/rules` = 404 „brak reguł”, więc ceny ustawiono raz, bez reguły. Nowa oferta: rynki dodatkowe w `publication.marketplaces.additional` bez cen. Potem sprawdzamy reguły oferty, a gdy ich nie ma, przypisujemy przelicznik przez `POST /sale/offer-price-automation-commands` (cz, sk, hu). Do sprawdzenia na teście: czy reguła na rynku zagranicznym nie blokuje repricera (`zmianaCeny` odrzuca oferty z regułą na `sellingMode` bazowym).
 6. **Powiązanie w BaseLinkerze:** do sprawdzenia na ofercie testowej.
@@ -137,8 +137,27 @@ Lekcje do kodu:
 - `publication.marketplaces.base` jest tylko do odczytu: w zapytaniu = 422 `UnknownJSONProperty` „...base” i nic nie powstaje. `publication.marketplaces.additional` przechodzi, ale jest **przestarzałe** (ostrzeżenie `DeprecatedField`): o rynkach zagranicznych decyduje **cennik dostawy**. „DHL Inpost Poczta” obejmuje pl, business-pl, cz, business-cz, sk, hu, więc wystarczy cennik. W kodzie tego pola nie wysyłamy.
 - Odpowiedź 202 → `/operations/{id}` 303 po ~5 s, oferta ACTIVE. Ostrzeżenie `SAFETY_INFO_DESCRIPTION_SUGGESTED_DATA_VERIFICATION_NEEDED` to formułka o odpowiedzialności sprzedawcy, nie błąd.
 - **Rynki zagraniczne po wystawieniu: PENDING** (business-pl, CZ, SK, HU, business-cz), bez reguł (`/rules` = 404). `POST /sale/offer-price-automation-commands` z „Przelicznikiem cen” na cz/sk/hu → SUCCESS w 0,6 s, reguły widoczne w `/rules`, ceny wyliczone: **222 Kč, 9,08 €, 3 310 Ft**. Na rynku bazowym `priceAutomation` = null, więc repricer (`zmianaCeny`) może zmieniać cenę PLN.
-- **Allegro dokleja do galerii zdjęcia karty katalogu**: wysłaliśmy 3 zdjęcia, oferta ma 6. Nasze 3 są pierwsze (miniatura się zgadza), za nimi 3 z katalogu, w tym amatorskie zdjęcie figurki w pudełku. Do decyzji: zostawić czy próbować usuwać (PATCH `images`; nie wiadomo, czy Allegro nie doklei ich znowu).
+- **Allegro dokleja do galerii zdjęcia karty katalogu**: wysłaliśmy 3 zdjęcia, oferta ma 6. Nasze 3 są pierwsze (miniatura się zgadza), za nimi 3 z katalogu, w tym amatorskie zdjęcie figurki w pudełku. **Wyłącznika nie ma** — ani w API (`POST /sale/product-offers` nie ma takiej flagi), ani w ustawieniach. Moderacja Allegro na forum: zdjęcia katalogu dochodzą „w drugiej kolejności”, a na kontach firmowych nie wliczają się do limitu 16, więc pełną galerią się ich nie wypchnie. **Działa PATCH po wystawieniu**: `PATCH /sale/product-offers/{id} { images: [nasze] }` → 200, galeria = 3, po minucie dalej 3 (17.11, user: „usuń”). Kod: po 303 z operacji porównać `images` z wysłanymi i PATCH-em zdjąć nadmiar.
+- **`<h1>` = tytuł oferty** (user 17.11, zgodnie z poradnikami: H1 powtarza tytuł z frazami kluczowymi, jeden H1 w opisie). Zmienione tym samym PATCH-em. Na starszych ofertach H1 to nazwa techniczna ze sklepu; tych nie ruszamy.
 - Wgranie zdjęcia po URL-u daje adres Allegro po skrócie treści: miniatura sklepu `u4um0ge1.png` dostała ten sam adres co zdjęcie z katalogu, bo to ten sam plik.
 - Do zrobienia przez człowieka: **powiązać ofertę w BaseLinkerze** i potwierdzić, że BL zmienia jej stan. Test był skryptem, więc oferty nie ma w tabeli `wystawienia`. Sync repricera dopnie ją do `oferty` przy następnym przebiegu.
 
 Skrypt: `C:\Users\Adm\al-wystaw-test.js` (bez flagi = podgląd treści; `--wyslij` = wgranie zdjęć → `POST /sale/product-offers` → operacja → przelicznik). Po wystawieniu: sprawdzić ofertę na allegro.pl i rynki CZ/SK/HU, powiązać w BaseLinkerze i potwierdzić, że BL zmienia jej stan.
+
+## 9. Dobre praktyki Allegro: co już robimy, co dołożyć (przegląd 2026-11-17)
+
+Źródła: dokumentacja Allegro dla deweloperów, poradniki integratorów (Base, Shoper, iFirma) i forum Allegro. Oficjalnego dokumentu Allegro „jak pozycjonować” nie ma, więc punkty bez źródła Allegro traktujemy jako wskazówki.
+
+| Praktyka | U nas | Do zrobienia w kodzie |
+|---|---|---|
+| Miniatura na czystej bieli (RGB 255, nie 250–254, inaczej szara ramka), bez tekstu, logo i ikon, produkt duży | sklep: rogi 255,255,255 na 4/4 sprawdzonych | sprawdzać rogi pierwszego zdjęcia przed wysłaniem (≠ 255 = ostrzeżenie) |
+| Tytuł: najważniejsze frazy na początku, marka + model + rodzaj + wyróżnik, tylko o tym przedmiocie, bez „promocja / okazja” | WIELKIE LITERY, sprzedażowy (decyzja usera) | szablon tytułu + słownik zakazanych słów. Wielkie litery: część poradników odradza, regulamin nie zakazuje, a ~5 000 naszych ofert ma tak od lat |
+| `<h1>` = tytuł, jeden H1 | od 17.11 | w szablonie opisu |
+| Więcej zdjęć (co 6. oferta na Allegro ma jedno; limit 16, zdjęcia katalogu się nie wliczają) | cała galeria sklepu | — |
+| Opis w sekcjach zdjęcie + tekst, konkret (zawartość, wymiary, wiek) | tak | — |
+| Parametry kompletne: wpływają na filtry i trafność | oferta dziedziczy parametry z produktu katalogu. U E5579 komplet, u Playmobil 71270 puste „Marka / Wiek / Płeć” | w doborze produktu oceniać kompletność parametrów (więcej pustych = gorsza karta). Uzupełnić się ich nie da przy `hasProtectedBrand` |
+| Smart! (decyduje cennik dostaw) | test: `GET /sale/offers/{id}/smart` → `fulfilled: true` | po wystawieniu sprawdzić Smart; brak = ostrzeżenie w historii |
+| Szybka wysyłka | `handlingTime PT0S` | — |
+| CTR i konwersja liczą się do trafności (klikalność miniatury, cena wobec rynku) | cena startowa = max(min, rynek) | cena z Niezbędnika przy zaznaczonych pozycjach |
+| GPSR: producent + informacje o bezpieczeństwie | tak | — |
+| Brak duplikatów (jedna oferta na produkt i konto) | sprawdzamy `external.id` we wszystkich statusach | + sprawdzić produkt katalogu wśród naszych ofert |

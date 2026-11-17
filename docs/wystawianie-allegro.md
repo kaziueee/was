@@ -213,3 +213,21 @@ Wszystkie aktywne: sygnatura = SKU, „DHL Inpost Poczta” (paczkomat C), przel
 **Wszystkie 7 ofert z 17.11 ~17:00 są ENDED (stan sprawdzony 17.11 22:55 czasu SRV).** Przyczyna (zasada usera przekazana przez sesję sklepu): **towar musi mieć w Subiekcie „sprzedaż w sklepie internetowym” (`tw_SklepInternet = 1`)**. Inaczej BaseLinker nie dostaje dla niego stanu, a oferta bez stanu jest od razu wyłączana (Allegro zapisuje `endedBy: USER`, bo BL działa jako konto). Flagi nie miały HTN50, HTN52, HWHHWCC14, HWHHWCC9B, MAGI12765, PLA71510. GOL6454 ma flagę, a też jest ENDED; najpewniej flaga przyszła po wyłączeniu albo BL jeszcze nie ma produktu. Oferty z flagą sprzed wystawienia (Captain America, Pixel Petz ×2, Kruszka) są ACTIVE.
 
 **Warunek wstępny wystawienia na Allegro: `tw_SklepInternet = 1` w GT** (sprawdzany przed wysyłką, brak flagi = blokada). Do tego niezerowa cena poziomu 3 w GT: HTN50, HTN52, HWHHWCC9B, MAGI12765, NER0072, NER0314 mają tam 0. Wznowienie zakończonych ofert (komenda ACTIVATE) robimy dopiero po oflagowaniu i za zgodą usera, razem z podmianą galerii HWCC14 / HWCC9B.
+
+## 12. HASB5995 i lista „sklep bez Allegro” (18.11)
+
+**HASB5995** (Optimus Prime B5995, flaga i cena 69,99 w GT, 502 szt.) → oferta **19131744429**, 89,99 zł × 50 (cena od usera; jedyna konkurencja PiasecznoZabawki 226 zł). Po utworzeniu INACTIVE, ACTIVE od 23:26 UTC (aktywacja trwała ~10 min, tak jak przy HTN52), a po 20 min nadal aktywna. Skrypt `C:\Users\Adm\al-wystaw1.js`.
+
+**Lista do przeglądu:** https://claude.ai/artifact/NovmQ5TdwtUKps8xwhZGKH (kolekcja `decyzje`: decyzja, karta, cena, uwagi). Dane: `C:\Users\Adm\al-lista.js` → `al-lista.json` (feed Google Merchant sklepu, „in stock”: 4 045 towarów; z tego **1 366 bez aktywnej oferty ekajtek**). Proces osobny na SRV (`Invoke-CimMethod`), ~30 min, Niezbędnik ~2 tys. sprawdzeń.
+
+| Grupa | wszystkie | stan ≥ 4 |
+|---|---|---|
+| Gotowe do wystawienia | 131 | 39 |
+| Rynek pod minimum | 79 | 30 |
+| Wybór karty (kilka pod EAN-em) | 11 | 6 |
+| Kategoria „Pozostałe” | 3 | 2 |
+| Oferta ekajtek zakończona / nieaktywna (do wznowienia) | 29 | 11 |
+| Brak karty Allegro | 66 | 39 |
+| Braki w danych | 1 047 | 184 |
+
+Braki w danych to głównie **waga w GT (987)**, dalej wymiary (150), EAN (80), flaga i cena internetowa (po 13). 943 z 1 366 ma kartę Allegro.

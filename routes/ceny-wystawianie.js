@@ -91,8 +91,7 @@ module.exports = function wystawianieRouter({ asyncH }) {
         katalog: { produkt_id: k.produkt_id, nazwa: k.nazwa, marka: k.marka, kategoria: k.kategoria, kategoria_id: k.kategoria_id, ograniczenie: k.ograniczenie },
         ilosc: wm.stanDostepny(stany.get(String(k.tw_id)), MAGAZYNY_RAZEM),
         waga: a.waga ?? null, wymiary: a.rozbite ?? null, cena, pas,
-        sklep: warunki.get(String(k.tw_id))?.sklep ?? null, cena1: warunki.get(String(k.tw_id))?.cena1 ?? null,
-        cena3: warunki.get(String(k.tw_id))?.cena3 ?? null,
+        sklep: warunki.get(String(k.tw_id))?.sklep ?? null, cena3: warunki.get(String(k.tw_id))?.cena3 ?? null,
       };
       const ocena = wm.ocenPozycje(p);
       const przy = cena > 0 && pas?.ocen ? pas.ocen(cena) : null;

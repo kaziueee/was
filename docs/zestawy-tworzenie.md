@@ -117,6 +117,18 @@ Wszystkie 7 zestawów ma ten sam schemat: SPIN20148931 (Rubble) + 1 pojazd po 1 
 - Wszystkie składniki mają pudełko 22x21x8, więc zestaw ma wymiary 42x22x8. Wagi i wagi opakowań są sumowane przez skrypt.
 - Karty powstały na wzorze 38239 z `Product.IsSet` zaznaczonym przed zapisem. Wszystkie mają cenę i stan 0 i czekają na BaseLinkera.
 
+### Torba cel + strzałki (+ Fang) (2026-11-19)
+
+| Symbol | Skład | tw_Id | Karta sklepu | EAN | Sklep | Koszt |
+|---|---|---|---|---|---|---|
+| NERCHITORLZ33Z1 | NERCHITORLZ33 torba cel + NERCHIKOL100 strzałki 100 szt. | 96727 | 38256 | 5900805605163 | 65,99 | 15,23 |
+| NERCHITORLZ33Z2 | torba + strzałki + NERE6973 Nerf Fang QS-4 | 96728 | 38257 | 5900805605170 | 108,99 | 28,26 |
+
+- Decyzje usera: strzałki NERCHIKOL100, Fang NERE6973 (niebieski), **oba symbole od torby**, wymiary 37x32x10 (strzałki i Fang leżą na płaskiej torbie). Cena wg reguły Rubble.
+- Karta 1: wzór = karta torby 36071 (profil Wyrzutnie, kategorie: dodatki do wyrzutni + strzałki, cecha 157 „100”), galeria 5 zdjęć (składniki bez pudełek).
+- Karta 2: wzór = istniejący zestaw Fanga NERE6973Z1 (30852: profil Nerf, Karabiny / Alpha Strike, cecha 157 „10+100”), galeria 8 zdjęć — 2 na składnik + pudełko Fanga na końcu.
+- Nazwy w sklepie kończą się numerem katalogowym, gdy ma go któryś składnik (E6973). Torba i strzałki go nie mają.
+
 ## 4a. BaseLinker (zbadane 2026-11-18, niedokończone)
 
 - Subiekt → BaseLinker łączy **SubLinker** (instancja „Magazyn_synchronizacja”, konfiguracja `C:\ProgramData\Infologic\Sublinker\8f4a4fb0-….json`, log `C:\Users\Sublinker\AppData\Roaming\Infologic\SubLinker\Magazyn_synchronizacja_info.log*`). Co kilka minut aktualizuje stany i ceny **tylko produktów, które już są w BL** (dopasowanie `SymbolSKU`). `AddStorageItems = false`, więc **nowych produktów nie zakłada** — nowy zestaw sam do BL nie trafi.

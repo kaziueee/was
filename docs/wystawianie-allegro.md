@@ -289,5 +289,5 @@ Wszystkie: sygnatura = SKU, „DHL Inpost Poczta”, przelicznik CZ/SK/HU (3 reg
 
 - **Aktywacja trwa 0–40 min.** 12 ofert powstało jako INACTIVE bez błędów walidacji i aktywowało się samo (HASF0895 po ~45 min). Wznowienie NIC83431 (komenda ACTIVATE) wisiało w kolejce ~20 min, potem SUCCESS. Nie ponawiać — czekać.
 - **NER0239**: sklep ma to samo zdjęcie dwa razy w galerii, a Allegro odrzuca ofertę z duplikatem (`VALIDATION_ERROR … przekazane więcej niż jeden raz`). Skrypt pomija powtórzone zdjęcia.
-- **TEF82441GP — niewystawiony**: karta katalogu ma markę „bez marki”, a tytuł i opis mówią „Tefal” → odmowa z programu **Współpraca w Ochronie Praw** (używanie znaku towarowego przy produkcie innej marki). Do decyzji usera: inna karta z marką Tefal albo propozycja zmiany marki na karcie.
+- **TEF82441GP — niewystawiony**: karta katalogu ma markę „bez marki”, a tytuł i opis mówią „Tefal” → odmowa z programu **Współpraca w Ochronie Praw** (używanie znaku towarowego przy produkcie innej marki). Wstrzymany (decyzja usera 18.11 „pomiń na razie”); później: inna karta z marką Tefal albo propozycja zmiany marki na karcie.
 - **BARJCT72 — wstrzymany** (decyzja usera „pomiń na razie”), patrz wyżej.

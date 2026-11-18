@@ -231,3 +231,63 @@ Wszystkie aktywne: sygnatura = SKU, „DHL Inpost Poczta” (paczkomat C), przel
 | Braki w danych | 1 047 | 184 |
 
 Braki w danych to głównie **waga w GT (987)**, dalej wymiary (150), EAN (80), flaga i cena internetowa (po 13). 943 z 1 366 ma kartę Allegro.
+
+## 13. Wystawienie z listy „sklep bez Allegro” (18.11, decyzje usera z listy)
+
+Decyzje z listy (kolekcja `decyzje`, 18.11 ~02:48): **35 × „wystawić”**, 1 × pominąć (NERE9533FFP), 1 bez decyzji (NERE8964). Ceny wpisane przez usera, wszystkie ≥ nasze minimum Allegro. Skrypt `C:\Users\Adm\al-wystaw35.js` (treści: `al-tresci35.js`, galerie i opisy ze stron sklepu: `sklep35.json`), wyniki `al-wystaw35.jsonl`.
+
+- **Treść:** tytuł sprzedażowy wielkimi literami (≤ 75), opis w 3 sekcjach ze zdjęciami (`<h1>` = tytuł, wstęp / najważniejsze cechy / zawartość + wymiary opakowania z GT, wiek, kod producenta), galeria = galeria karty sklepu w tej samej kolejności (miniatury przejrzane na planszy: czyste zdjęcia produktu, bez nałożonych logo).
+- **Producent GPSR** = ten sam, co w większości naszych ofert ekajtek tej marki (Barbie/Hot Wheels, Mattel, Fisher-Price, Dart Zone, Goliath, Grafix, Hasbro, Hasbro-PLAYDOH, Hasbro-NERF, SuperThings, Playmates Toys — także Miraculous, jak ZAG50029 — Playmobil, Tefal, Zuru). NER0239 jak NER0256/NER0289 (Hasbro).
+- **Tefal**: zamiast „Nie nadaje się dla dzieci poniżej 36 miesięcy” — ostrzeżenia GPSR dla garnków i patelni z naszej oferty TEF82489ZE.
+- **HASF0231-F1912**: na górze opisu uwaga ze sklepu — blister odkleił się od kartonika, produkt nowy i nieużywany, stan pokazują ostatnie zdjęcia.
+- Druga oferta tego samego towaru na **NaTropie** (HASE8530, HASF5621-F5637, HASF6474-F6567, PLA71602) nie blokuje — decyzja usera z listy.
+
+**Lekcje:**
+- **Wznowienie zakończonej oferty** (`PATCH` treści → komenda `ACTIVATE`) jest asynchroniczne i potrafi zostać odrzucone. **BARJCT72** (18508970131): `BetterProductFound` — Allegro uparcie wskazuje kartę d542cc98 („BARBIE LALKA HAIR PLAY…”, **bez EAN-u**, kod producenta = obcy EAN 590…), mimo że nasza karta 6fc4b2ca ma dokładny EAN. Ten sam błąd przy nowej ofercie (szkic **19132057228**, INACTIVE) i przy zmienionym tytule. Do decyzji usera: wystawić na karcie bez EAN-u albo zgłosić propozycję zmiany/scalenia kart.
+- **Allegro dokleja zdjęcia z katalogu przy wznowieniu** (MAGI12765: 2 → 11 zdjęć) i `PATCH images` tego nie cofa (200, ale lista bez zmian). Miniatura zostaje nasza (pierwsze zdjęcie). Przy nowych ofertach `PATCH` po utworzeniu działa.
+- **„&” w tytule liczy się jako więcej niż 1 znak** (limit 75 „przy założeniu, że niektóre litery i symbole liczone są jako więcej niż 1 znak”) — w tytułach piszemy „AND”.
+
+**Wynik (stan 18.11 03:22 UTC): 33 oferty ACTIVE**, 2 niewystawione.
+
+| SKU | oferta | cena × stan |
+|---|---|---|
+| BARDWK44-HJT11 | 19132062456 | 62,99 × 50 |
+| DARTZ66202 | 19132062866 | 81,99 × 7 |
+| FPHFX91-HDY67 | 19132063329 | 26,99 × 21 |
+| GLH932019 | 19132068262 | 69,90 × 50 |
+| GRA00062 | 19132073348 | 52,99 × 12 |
+| HASE8530-E8534 | 19132075196 | 45,00 × 29 |
+| HASF0231-F1912 | 19132075560 | 64,90 × 23 |
+| HASF0364-F0681 | 19132080135 | 55,00 × 36 |
+| HASF0895 | 19132085278 | 40,99 × 34 |
+| HASF2888 | 19132090212 | 58,00 × 13 |
+| HASF3730-F3838 | 19132055948 | 49,99 × 20 |
+| HASF3730-F3839 | 19132090596 | 49,99 × 20 |
+| HASF4262 | 19132091042 | 38,99 × 16 |
+| HASF5621-F5637 | 19132091474 | 59,90 × 50 |
+| HASF5621-F5719 | 19132091926 | 58,88 × 14 |
+| HASF6474-F6567 | 19132092396 | 103,55 × 9 |
+| HWHFLF56-JBM32 | 19132097372 | 63,99 × 50 |
+| MAGI12765 | 19130575483 (wznowiona) | 13,99 × 50 |
+| MATHKV32 | 19132097845 | 62,99 × 50 |
+| MATHKY69 | 19132103977 | 199,94 × 50 |
+| NER0239 | 19132148770 | 124,99 × 24 |
+| NERF0576 | 19132109730 | 17,99 × 50 |
+| NIC83264 | 19132116226 | 29,99 × 50 |
+| NIC83321 | 19132116692 | 25,99 × 23 |
+| NIC83431 | 18841823379 (wznowiona) | 149,99 × 50 |
+| PLA71012 | 19132117213 | 57,00 × 50 |
+| PLA71269 | 19132117831 | 38,86 × 50 |
+| PLA71602 | 19132118294 | 218,87 × 50 |
+| PLAMP50005 | 19132118842 | 62,99 × 50 |
+| PLAMP50010 | 19132124368 | 64,99 × 50 |
+| PLAMP50012 | 19132131092 | 64,99 × 50 |
+| PLAMP50158 | 19132138113 | 99,90 × 50 |
+| ZUR6701 | 19132143864 | 49,99 × 24 (stan już poprawiony przez BaseLinker z 40) |
+
+Wszystkie: sygnatura = SKU, „DHL Inpost Poczta”, przelicznik CZ/SK/HU (3 reguły), Smart! (u trzech klasyfikacja przyszła po kilku minutach). Automat cen niewłączony.
+
+- **Aktywacja trwa 0–40 min.** 12 ofert powstało jako INACTIVE bez błędów walidacji i aktywowało się samo (HASF0895 po ~45 min). Wznowienie NIC83431 (komenda ACTIVATE) wisiało w kolejce ~20 min, potem SUCCESS. Nie ponawiać — czekać.
+- **NER0239**: sklep ma to samo zdjęcie dwa razy w galerii, a Allegro odrzuca ofertę z duplikatem (`VALIDATION_ERROR … przekazane więcej niż jeden raz`). Skrypt pomija powtórzone zdjęcia.
+- **TEF82441GP — niewystawiony**: karta katalogu ma markę „bez marki”, a tytuł i opis mówią „Tefal” → odmowa z programu **Współpraca w Ochronie Praw** (używanie znaku towarowego przy produkcie innej marki). Do decyzji usera: inna karta z marką Tefal albo propozycja zmiany marki na karcie.
+- **BARJCT72 — wstrzymany** (decyzja usera „pomiń na razie”), patrz wyżej.

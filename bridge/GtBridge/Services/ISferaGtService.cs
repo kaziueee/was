@@ -23,5 +23,9 @@ namespace GtBridge.Services
         // Lekki test polaczenia z GT (dla przycisku "Testuj polaczenie" w ikonie trayu):
         // loguje sie do Sfery (Polacz) i nic nie wystawia. Nie rzuca - zwraca Sukces/Blad.
         Task<DokumentResponse> TestPolaczeniaAsync();
+
+        // Zaklada nowy komplet (rodzaj 8) ze skladem, cenami, EAN-em i polami wlasnymi.
+        // Nie rzuca - bledy w KompletResponse.Blad. Podglad = bez zapisu (patrz KompletRequest).
+        Task<KompletResponse> ZalozKompletAsync(KompletRequest request);
     }
 }

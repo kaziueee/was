@@ -131,6 +131,10 @@ Wszystkie inwarianty są egzekwowane w backendzie. Dodając nową regułę: najp
 - **GT niedostępne = przepuszczamy ruch** (`czyZestaw` zwraca `null`). Bilans błędów jest niesymetryczny: przepuszczony zestaw to jeden wiersz do skasowania, a zablokowany ruch przy padniętym GT zatrzymuje odkładanie całego magazynu. Tożsamość towaru nie jest inwariantem stanu — przed nadpisaniem stanów chronią osobne, twarde warunki (deficyt, rezerwacje), które i tak wymagają GT i same zwracają 503.
 - **Sprzątanie istniejących wierszy idzie przez „Czyść zera"** — ta ścieżka nie filtruje po rodzaju, więc pusty zestaw pokazuje się na obchodzie jak każda pusta półka, a zwolnienie slotu **przelicza `tw_Pole1`**, czyli przy okazji kasuje fałszywy adres w Subiekcie.
 
+## Zakładanie nowych zestawów (2026-11-18)
+
+Nowy komplet zakłada się **przez Sferę** (`POST /api/komplet` mostu, `TowaryManager.DodajKomplet`), nigdy SQL-em (13 triggerów na `tw__Towar` + liczniki `ins_ident`). Narzędzie: `node scripts/zestaw-zaloz.js zestaw.json --baza <baza> --most <url>` (podgląd w Sferze; `--zapisz` zakłada). Liczy koszt (suma składników — Sfera sama go nie liczy), wagę produktu i trzy wagi opakowań (suma), baterie (po typie); op. zbiorcze zostaje puste. EAN z puli `5900805…` rezerwuje się w arkuszu „eany GS1” (zakładka Kajtek+). Karta w sklepie: `Product.IsSet` + `ProductsSet.Ids[]` (karty składników). Przepis, reguły i wyniki testów: `docs/zestawy-tworzenie.md`.
+
 ## Tożsamość towaru: `tw_Id`, nie symbol
 
 **Kluczem artykułu jest `artykul_gt_id` (= `tw_Id`). Symbol, nazwa i EAN w `stany_lokalizacji` to KOPIA kartoteki GT** — etykieta do pokazania człowiekowi, nie identyfikator. `tw_Id` jest w GT niezmienne, symbol wolno przestawić w każdej chwili (i bywa przestawiany: na produkcji 2026-09-18 rozjechane były 3 symbole i 11 nazw na 2888 artykułów).
@@ -368,6 +372,7 @@ POST /api/lok
 GET  /api/stan/:magId
 GET  /api/artykul/:id
 GET  /api/zdrowie          # stan mostu (nie dotyka Sfery) — czyta go routes/status.js
+POST /api/komplet          # nowy komplet (rodzaj 8) przez Sferę; tryb podglad = bez zapisu — scripts/zestaw-zaloz.js
 POST /api/inwentaryzacja/rw
 POST /api/inwentaryzacja/pw
 ```

@@ -63,6 +63,16 @@ namespace GtBridge.Controllers
             return wynik.Sukces ? Ok(wynik) : StatusCode(502, wynik);
         }
 
+        // POST /api/komplet - nowy komplet (rodzaj 8) w GT. Wola scripts/zestaw-zaloz.js po
+        // walidacjach w Node. Odmowa biznesowa = 409, awaria = 502 (jak /api/mm).
+        [HttpPost("komplet")]
+        public async Task<ActionResult<KompletResponse>> Komplet([FromBody] KompletRequest request)
+        {
+            var wynik = await _sfera.ZalozKompletAsync(request);
+            if (wynik.Sukces) return Ok(wynik);
+            return StatusCode(wynik.Rodzaj == "biznesowy" ? 409 : 502, wynik);
+        }
+
         [HttpPost("lok")]
         public async Task<ActionResult<DokumentResponse>> Lok([FromBody] LokRequest request)
         {

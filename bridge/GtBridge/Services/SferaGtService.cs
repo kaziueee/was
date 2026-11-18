@@ -387,6 +387,188 @@ namespace GtBridge.Services
             }
         }
 
+        // Odmowa zalozenia kompletu z powodu danych (symbol zajety, za dluga nazwa) - wykrywana
+        // przez most przed wywolaniem Sfery, wiec rozpoznajemy ja po typie, nie po HRESULT.
+        private sealed class OdmowaKompletu : Exception
+        {
+            public OdmowaKompletu(string komunikat) : base(komunikat) { }
+        }
+
+        // Zaklada nowy komplet (towar rodzaj 8) przez Sfere: TowaryManager.DodajKomplet ->
+        // Symbol/Nazwa/GrupaId/KodyKreskowe.Podstawowy/DoSklepuInternetowego -> Skladniki.Dodaj ->
+        // Ceny.Element(poziom) -> PoleWlasne(nazwa) -> Zapisz (gta.chm, model obiektowy Towar).
+        //
+        // Dlaczego Sfera, a nie SQL: na tw__Towar wisi 13 triggerow (synchronizacje, wyszukiwarka,
+        // historia zmian), a klucze tw__Towar/tw_Cena/tw_Komplet/pw_Dane nadaje licznik ins_ident -
+        // ominiecie go juz raz zepsulo zapis pol wlasnych (incydent pw_Dane 2026-07-20). Sfera robi
+        // dokladnie to, co reczny zapis w Subiekcie. Przepis: docs/zestawy-tworzenie.md.
+        //
+        // Po ustawieniu pol ODCZYTUJEMY z obiektu ceny/sklad/pola i oddajemy je w odpowiedzi -
+        // mapowanie Ceny.Element(i) -> poziom tw_Cena nie jest opisane w gta.chm, wiec weryfikujemy
+        // je w trybie Podglad (bez Zapisz) zamiast zakladac.
+        public Task<KompletResponse> ZalozKompletAsync(KompletRequest request)
+        {
+            var etykieta = $"KOMPLET {request.Symbol} '{request.Nazwa}' skladniki=" +
+                string.Join("+", request.Skladniki.ConvertAll(s => $"{s.TwId}x{s.Ilosc}")) +
+                (request.Podglad ? " [PODGLAD]" : "");
+            var zegar = Stopwatch.StartNew();
+            Dziennik.Zapisz("komplet", $"START {etykieta}");
+            try
+            {
+                if (string.IsNullOrWhiteSpace(request.Symbol) || request.Symbol.Length > 20)
+                    throw new OdmowaKompletu("Symbol pusty albo dluzszy niz 20 znakow.");
+                if (string.IsNullOrWhiteSpace(request.Nazwa) || request.Nazwa.Length > 50)
+                    throw new OdmowaKompletu("Nazwa pusta albo dluzsza niz 50 znakow (tw_Nazwa).");
+                if (request.Skladniki.Count == 0)
+                    throw new OdmowaKompletu("Komplet bez skladnikow.");
+
+                var odpowiedz = NaWatkuSta(() =>
+                {
+                    dynamic? tw = null;
+                    try
+                    {
+                        dynamic subiekt = Polacz();
+                        if ((bool)subiekt.Towary.Istnieje(request.Symbol))
+                            throw new OdmowaKompletu($"Towar o symbolu {request.Symbol} juz istnieje.");
+
+                        tw = subiekt.TowaryManager.DodajKomplet();
+                        tw.Symbol = request.Symbol;
+                        tw.Nazwa = request.Nazwa;
+                        if (request.GrupaId.HasValue) tw.GrupaId = request.GrupaId.Value;
+                        if (!string.IsNullOrWhiteSpace(request.Ean)) tw.KodyKreskowe.Podstawowy = request.Ean;
+                        tw.DoSklepuInternetowego = request.SklepInternetowy;
+
+                        foreach (var s in request.Skladniki)
+                        {
+                            dynamic skl = tw.Skladniki.Dodaj(s.TwId);
+                            skl.Ilosc = (double)s.Ilosc;
+                        }
+
+                        // Najpierw koszt (przelicza poziomy wg narzutow), potem nasze ceny na wierzch.
+                        if (request.CenaKartotekowa.HasValue) tw.CenaKartotekowa = (double)request.CenaKartotekowa.Value;
+
+                        foreach (var c in request.Ceny)
+                        {
+                            dynamic cena = tw.Ceny.Element(c.Poziom);
+                            if (c.Brutto.HasValue) cena.Brutto = (double)c.Brutto.Value;
+                            else if (c.Netto.HasValue) cena.Netto = (double)c.Netto.Value;
+                        }
+
+                        foreach (var (nazwa, wartosc) in request.PolaWlasne)
+                        {
+                            // Parametryzowany atrybut COM (PoleWlasne("Nazwa") = wartosc) - przez
+                            // IDispatch, bo binder dynamic C# nie ustawia wlasciwosci z argumentem.
+                            ((object)tw).GetType().InvokeMember("PoleWlasne",
+                                System.Reflection.BindingFlags.SetProperty, null, (object)tw,
+                                new object[] { nazwa, wartosc });
+                        }
+
+                        var wynik = new KompletResponse { Sukces = true, Podglad = request.Podglad };
+                        OdczytajKomplet(tw, request, wynik);
+
+                        if (request.Podglad)
+                        {
+                            Dziennik.Zapisz("komplet", $"PODGLAD bez zapisu :: {etykieta}");
+                        }
+                        else
+                        {
+                            tw.Zapisz();
+                            wynik.TwId = (int)tw.Identyfikator;
+                        }
+                        return wynik;
+                    }
+                    catch (Exception ex) when (CzyZerwanie(ex))
+                    {
+                        PorzucSesje("zerwana przy komplecie");
+                        tw = null;
+                        throw;
+                    }
+                    finally
+                    {
+                        // Zamknij bez Zapisz = porzucenie zmian (tryb Podglad i sciezka bledu).
+                        if (tw != null) { try { tw.Zamknij(); } catch { /* zamykamy mimo bledu */ } }
+                    }
+                }, etykieta);
+
+                _stan.ZapiszOk(request.Podglad ? $"Podglad kompletu {request.Symbol}" : $"Komplet {request.Symbol} tw_Id={odpowiedz.TwId}");
+                Dziennik.Zapisz("komplet", $"OK tw_Id={odpowiedz.TwId?.ToString() ?? "-"} po {zegar.ElapsedMilliseconds} ms :: {etykieta}");
+                return Task.FromResult(odpowiedz);
+            }
+            catch (Exception ex)
+            {
+                // 0x800411EF "Wartosc musi byc unikalna" - Sfera odrzuca zajety EAN (test Z_KAJTEK
+                // 2026-11-18); nic nie zapisuje, liczniki GT nietkniete.
+                bool biznesowy = ex is OdmowaKompletu
+                    || (ex is COMException ce && (uint)ce.ErrorCode == 0x800411EF);
+                var blad = biznesowy ? ex.Message : OpisBledu(ex);
+                if (biznesowy) _stan.ZapiszOdmowa($"Komplet odrzucony: {blad}");
+                else _stan.ZapiszBlad($"Komplet: {blad}");
+                Dziennik.Zapisz("komplet", $"{(biznesowy ? "ODMOWA" : "BLAD")} po {zegar.ElapsedMilliseconds} ms :: {etykieta} :: {blad} :: {ex.GetType().Name}"
+                    + (ex is COMException c ? $" HRESULT=0x{(uint)c.ErrorCode:X8}" : "") + $" :: {ex.Message}");
+                return Task.FromResult(new KompletResponse
+                {
+                    Sukces = false,
+                    Podglad = request.Podglad,
+                    Blad = blad,
+                    Rodzaj = biznesowy ? "biznesowy" : "techniczny",
+                });
+            }
+        }
+
+        // Odczyt kompletu z obiektu Sfery (przed Zapisz) - kazdy odczyt osobno, zeby jeden brakujacy
+        // atrybut nie wywrocil calej operacji; blad odczytu laduje jako tekst w wartosci.
+        private static void OdczytajKomplet(dynamic tw, KompletRequest request, KompletResponse wynik)
+        {
+            static object? Bezp(Func<object?> f)
+            {
+                try { return f(); } catch (Exception e) { return $"! {e.Message}"; }
+            }
+
+            int liczbaCen = 0;
+            try { liczbaCen = (int)tw.Ceny.Liczba; } catch { /* zostaje 0 */ }
+            for (int i = 1; i <= liczbaCen; i++)
+            {
+                dynamic c = tw.Ceny.Element(i);
+                wynik.Ceny.Add(new Dictionary<string, object?>
+                {
+                    ["element"] = i,
+                    ["id"] = Bezp(() => (object?)c.Id),
+                    ["nazwa"] = Bezp(() => (object?)c.Nazwa),
+                    ["waluta"] = Bezp(() => (object?)c.Waluta),
+                    ["netto"] = Bezp(() => (object?)c.Netto),
+                    ["brutto"] = Bezp(() => (object?)c.Brutto),
+                });
+            }
+
+            int liczbaSkl = 0;
+            try { liczbaSkl = (int)tw.Skladniki.Liczba; } catch { /* zostaje 0 */ }
+            for (int i = 1; i <= liczbaSkl; i++)
+            {
+                dynamic s = tw.Skladniki.Element(i);
+                wynik.Skladniki.Add(new Dictionary<string, object?>
+                {
+                    ["tw_id"] = Bezp(() => (object?)s.TowarId),
+                    ["ilosc"] = Bezp(() => (object?)s.Ilosc),
+                });
+            }
+
+            wynik.Pola["symbol"] = Bezp(() => (object?)tw.Symbol);
+            wynik.Pola["nazwa"] = Bezp(() => (object?)tw.Nazwa);
+            wynik.Pola["rodzaj"] = Bezp(() => (object?)tw.Rodzaj);
+            wynik.Pola["grupa_id"] = Bezp(() => (object?)tw.GrupaId);
+            wynik.Pola["cena_kartotekowa"] = Bezp(() => (object?)tw.CenaKartotekowa);
+            wynik.Pola["ean"] = Bezp(() => (object?)tw.KodyKreskowe.Podstawowy);
+            wynik.Pola["sklep_internetowy"] = Bezp(() => (object?)tw.DoSklepuInternetowego);
+            wynik.Pola["vat_sprzedaz_id"] = Bezp(() => (object?)tw.SprzedazVatId);
+            wynik.Pola["vat_zakup_id"] = Bezp(() => (object?)tw.ZakupVatId);
+            wynik.Pola["jm"] = Bezp(() => (object?)tw.SprzedazJm);
+            foreach (var nazwa in request.PolaWlasne.Keys)
+            {
+                wynik.Pola[$"pole_wlasne:{nazwa}"] = Bezp(() => ((object)tw).GetType().InvokeMember("PoleWlasne",
+                    System.Reflection.BindingFlags.GetProperty, null, (object)tw, new object[] { nazwa }));
+            }
+        }
+
         // HRESULT-y, przy ktorych Sfera po prostu ODMOWILA wystawienia dokumentu - dane sie nie
         // zgadzaja, ale GT i sesja dzialaja normalnie. Takie odmowy nie zapalaja czerwonej kropki
         // "Most" w WMS (zob. DokumentResponse.Rodzaj) i nie sa powodem do restartu mostu.
@@ -409,6 +591,7 @@ namespace GtBridge.Services
                 {
                     0x80040F60 => "Brak towaru na magazynie zrodlowym (za malo sztuk do przesuniecia).",
                     0x80040F62 => "Dokument zostal usuniety z danych.",
+                    0x800411EF => "Wartosc musi byc unikalna (np. EAN uzywany juz przez inny towar).",
                     0x800411F2 => "Brak waznej licencji Sfery w podmiocie GT.",
                     0x80041248 => "Licencja Sfery wygasla.",
                     0x80041797 => "Uzytkownik SQL nie ma uprawnienia VIEW SERVER STATE.",

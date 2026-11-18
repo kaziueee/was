@@ -67,6 +67,18 @@ namespace GtBridge.Services
             });
         }
 
+        public Task<KompletResponse> ZalozKompletAsync(KompletRequest request)
+        {
+            _logger.LogInformation("MOCK KOMPLET: {Symbol} '{Nazwa}' skladnikow={Liczba} podglad={Podglad}",
+                request.Symbol, request.Nazwa, request.Skladniki.Count, request.Podglad);
+            return Task.FromResult(new KompletResponse
+            {
+                Sukces = true,
+                Podglad = request.Podglad,
+                TwId = request.Podglad ? null : 999000 + _licznikDokumentow++,
+            });
+        }
+
         public Task<DokumentResponse> WystawRwAsync(InwentaryzacjaDokumentRequest request)
         {
             _logger.LogInformation("MOCK RW: magazyn={Magazyn} pozycji={Liczba}", request.Magazyn, request.Pozycje.Count);

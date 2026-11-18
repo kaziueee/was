@@ -72,7 +72,7 @@ test('stan dostępny = Razem − rezerwacje, bez ujemnych magazynów', () => {
 const pozycja = (z = {}) => ({
   platforma: 'emag', rynek: 'RO', tw_id: 1, sku: 'HASF9703-G1700', ean: '5010996304018', cena: 67.99, ilosc: 5,
   katalog: { produkt_id: 'DLSLY03BM', nazwa: 'Jucarie Interactiva Furby', marka: 'Furby', kategoria_id: '2753' },
-  waga: '0,112', wymiary: { dlugosc: 13, szerokosc: 10, wysokosc: 6 }, pas: { min: 59.99, max: 89.99 }, sklep: true, cena3: 69.99, ...z,
+  waga: '0,112', wymiary: { dlugosc: 13, szerokosc: 10, wysokosc: 6 }, pas: { min: 59.99, max: 89.99 }, sklep: true, cena1: 69.99, cena3: 69.99, ...z,
 });
 
 test('warunek wejścia: bez flagi „sklep internetowy” albo bez ceny poziomu 3 nie wystawiamy na żaden rynek (17.11)', () => {
@@ -85,6 +85,16 @@ test('warunek wejścia: bez flagi „sklep internetowy” albo bez ceny poziomu 
   assert.deepStrictEqual(o.brakuje.map((b) => b.pole), ['cena internetowa']);
   assert.strictEqual(wm.powodyBlokady(o).length, 1);
   assert.deepStrictEqual(wm.ocenPozycje(pozycja({ cena3: null })).brakuje.map((b) => b.pole), ['cena internetowa']);
+});
+
+test('cena w Subiekcie nie może być zero: Detaliczna (poziom 1) też, waluty nie (18.11)', () => {
+  for (const cena1 of [0, null, undefined]) {
+    const o = wm.ocenPozycje(pozycja({ cena1 }));
+    assert.deepStrictEqual(o.brakuje.map((b) => b.pole), ['cena detaliczna'], String(cena1));
+    assert.strictEqual(wm.powodyBlokady(o).length, 1);
+  }
+  assert.deepStrictEqual(wm.ocenPozycje(pozycja({ cena1: 0, cena3: 0 })).brakuje.map((b) => b.pole), ['cena detaliczna', 'cena internetowa']);
+  assert.deepStrictEqual(wm.ocenPozycje(pozycja({ cena1: 59.99 })), { blokady: [], brakuje: [], ostrzezenia: [] });
 });
 
 test('ocena pozycji: komplet przechodzi, braki danych osobno („do uzupełnienia”), cena pod minimum ostrzega', () => {

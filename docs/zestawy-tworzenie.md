@@ -87,14 +87,41 @@ Sklep pokazuje **stan kompletu** (karta 38122 `SPIN20148931Z1` ma 233 szt., cho�
 
 Formularz najprościej zbudować, serializując kartę-wzór (select bez wyboru pomijać).
 - **Nazwa:** nazwa składnika 1 z numerem + „ + ” + nazwa składnika 2 bez „Psi Patrol Zestaw” z numerem — kończy się numerem katalogowym.
-- **Galeria** (jak 38122):
-  - nowa miniatura: oba produkty razem na białym kwadracie 1000×1000,
-  - zdjęcia składnika 1, potem zdjęcia składnika 2 — już wgrane do sklepu, podajemy ich nazwy plików, nie wgrywamy drugi raz,
-  - pudełko 1, pudełko 2, na końcu nowe zdjęcie z oboma pudełkami.
+- **Galeria = 6 zdjęć** (zasada usera 2026-11-18, ograniczył tak galerię 38239):
+  1. nowa miniatura — oba pojazdy z figurkami, jeden pod drugim, na białym kwadracie 1000×1000;
+  2. po **2 zdjęcia każdego składnika**: pojazd z pieskiem w środku (ujęcie pod kątem) i pojazd obok figurki. Bierzemy je z kart składników po nazwie pliku, bez ponownego wgrywania;
+  3. nowe zdjęcie z oboma pudełkami.
+  Pojedynczych pudełek, ujęć z przodu, lifestyle'ów i choinek **nie dajemy**.
 - **Pliki zdjęć sklepu:** `https://poszukiwaczefrajdy.pl/services/picasso/thumb/<nazwa>`.
 - **Opis:** jak na kartach składników — **bez tabeli**: `<p><b>nazwa</b></p>`, 2 akapity `<p>` językiem korzyści, `<p><b>Wyjątkowe cechy produktu:</b></p><ul>…</ul>`, `<p><b>Zawartość zestawu:</b></p><ul>…</ul>`, `<p><b>Wymiary pojazdów:</b> …</p>`, `<p><b>Wiek:</b> 3+</p>`. Fakty wyłącznie z kart składników. **Nie kopiować układu z 38122** — ma listy w `<table><th>` z pustymi wierszami i na stronie lista ląduje w wąskiej kolumnie bez punktorów (tak rozjechała się pierwsza wersja 38239, poprawione 2026-11-18).
 
 **Założona 2026-11-18: karta 38239** `SPIN20148931Z2`, EAN 5900805605095, zestaw ze składnikami 36931 + 36930, profil 47, kategoria 904, kanały 1,3,4,5,6,7. Ma 12 zdjęć, z czego nowe są dwa: miniatura `uqvxpxx3.jpg` i oba pudełka `nixx5i34.jpg`. Cena i stan 0 — czeka na powiązanie w BaseLinkerze.
+
+### Seria Rubble + pojazd (2026-11-18)
+
+Wszystkie 7 zestawów ma ten sam schemat: SPIN20148931 (Rubble) + 1 pojazd po 1 szt.
+
+| Symbol | Drugi składnik | tw_Id | Karta sklepu | EAN | Sklep (poz. 3) | Koszt |
+|---|---|---|---|---|---|---|
+| SPIN20148931Z2 | SPIN20148929 Marshall | 96720 | 38239 | 5900805605095 | 89,99 | 40,95 |
+| SPIN20148931Z3 | SPIN20148932 Skye | 96721 | 38250 | 5900805605101 | 89,99 | 40,95 |
+| SPIN20148931Z4 | SPIN20148933 Zuma | 96722 | 38251 | 5900805605118 | 89,99 | 40,95 |
+| SPIN20148931Z5 | SPIN6071212 Ryder | 96723 | 38252 | 5900805605125 | 89,99 | 48,99 |
+| SPIN20148931Z6 | SPIN20153731 Święta Chase | 96724 | 38253 | 5900805605132 | 94,99 | 43,12 |
+| SPIN20148931Z7 | SPIN20153733 Święta Skye | 96725 | 38254 | 5900805605149 | 94,99 | 43,12 |
+| SPIN20148931Z8 | SPIN20153732 Święta Marshall | 96726 | 38255 | 5900805605156 | 94,99 | 43,12 |
+
+- **Cena sklepu** = suma cen sklepu składników × 0,95, zaokrąglona do pełnych złotych, minus 1 gr (94,98 → 89,99; 99,98 → 94,99). Pozostałe poziomy = suma składników.
+- **Nazwa w GT** (≤ 50 znaków): „Psi Patrol Rubble z buldożerem + ‹pojazd›”. Gdy przekracza limit, skracamy, np. „+ Skye helikopter”.
+- **Nazwa w sklepie:** „‹nazwa karty Rubble› + ‹pojazd› z Figurką ‹postać› ‹nr katalogowy›”.
+- Wszystkie składniki mają pudełko 22x21x8, więc zestaw ma wymiary 42x22x8. Wagi i wagi opakowań są sumowane przez skrypt.
+- Karty powstały na wzorze 38239 z `Product.IsSet` zaznaczonym przed zapisem. Wszystkie mają cenę i stan 0 i czekają na BaseLinkera.
+
+## 4a. BaseLinker (zbadane 2026-11-18, niedokończone)
+
+- Subiekt → BaseLinker łączy **SubLinker** (instancja „Magazyn_synchronizacja”, konfiguracja `C:\ProgramData\Infologic\Sublinker\8f4a4fb0-….json`, log `C:\Users\Sublinker\AppData\Roaming\Infologic\SubLinker\Magazyn_synchronizacja_info.log*`). Co kilka minut aktualizuje stany i ceny **tylko produktów, które już są w BL** (dopasowanie `SymbolSKU`). `AddStorageItems = false`, więc **nowych produktów nie zakłada** — nowy zestaw sam do BL nie trafi.
+- Zestawy w BL to **produkty typu zestaw** (stan liczony przez BL ze składników). SubLinker co przebieg próbuje im ustawić stan i dostaje setki odmów „Stan zestawu jest wyznaczany automatycznie…” — to szum w logu, nie awaria.
+- **Otwarte:** jak dotychczasowe zestawy (np. `SPIN20148931Z1`) trafiały do BL — ręcznie w panelu, import ze sklepu (kanał 7 na karcie) czy inaczej. Do sprawdzenia w panelu BL, porównując Z1 i Z2. Odczytu API kluczem z konfiguracji SubLinkera nie robimy (brak zgody).
 
 ## 5. Platformy
 

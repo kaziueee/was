@@ -16,6 +16,7 @@
 //        zdrowie workera, trend dzienny (BB, zysk/szt., FS z GT wg źródła) — pricing/pulpit-model.js
 //   GET  /api/ceny/towar/:tw_id                                        karta SKU: wszystkie rynki towaru + historia
 //   /api/ceny/strategie/…                                              strategie cenowe per towar — routes/ceny-strategie.js
+//   /api/ceny/sciezka/…                                                ścieżka wystawienia towaru — routes/ceny-sciezka.js
 //   GET  /api/ceny/log?limit=                                          zmiany cen (auto) + działania ludzi
 //   POST /api/ceny/automat  { ids: [oferta_id...], auto: true|false }  — tylko podane oferty, nigdy hurtem
 //   GET  /api/ceny/cena/podglad?oferta_id=&cena=                      zysk/marża przy wpisanej cenie + ostrzeżenia
@@ -476,6 +477,8 @@ async function pasZeStrategia(w, o) {
 router.use('/strategie', require('./ceny-strategie')({ SQL_OFERTY, zKanalem, cenaTeraz, asyncH }));
 // Wystawianie ofert tam, gdzie towar ma kartę produktu, a nie ma naszej oferty (routes/ceny-wystawianie.js).
 router.use('/wystawianie', require('./ceny-wystawianie')({ asyncH }));
+// Ścieżka wystawienia: Subiekt → sklep → Allegro → rynki, każdy towar w jednym wierszu (routes/ceny-sciezka.js).
+router.use('/sciezka', require('./ceny-sciezka')({ asyncH }));
 
 async function ocenaRecznejCeny(o, cenaWe) {
   const c = granice.walidujCene(cenaWe);

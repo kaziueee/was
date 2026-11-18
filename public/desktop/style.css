@@ -1711,3 +1711,18 @@ img.tr-min { width: 64px; height: 64px; object-fit: contain; border-radius: 4px;
 .cs-status.blad { color: #b3261e; border-color: #b3261e; background: #fdecea; }
 .cw-auto-inline { font-size: 0.85rem; display: inline-flex; gap: 0.25rem; align-items: center; }
 .cw-uzupelnij { color: #8a4b00; font-size: 0.78rem; font-weight: 600; cursor: help; }
+/* Ceny → Ścieżka wystawienia (public/desktop/ceny-sciezka.js) */
+.sc-tabela td.sc-krok { font-size: 0.85rem; vertical-align: top; }
+.sc-tabela td.sc-tu { background: #fff6dc; box-shadow: inset 3px 0 0 #e0a100; }
+.sc-ok { color: #1b7a32; font-weight: 600; }
+.sc-czeka { color: #8a5a00; font-weight: 600; }
+.sc-mozna { color: #1557b0; font-weight: 600; }
+.sc-zle { color: #b3261e; }
+.sc-szary { color: #888; }
+.sc-rynki { display: flex; flex-wrap: wrap; gap: 0.2rem 0.5rem; max-width: 20rem; }
+.sc-rynek { white-space: nowrap; font-size: 0.8rem; cursor: help; }
+button.sc-rynek { background: #e8f0fe; border: 1px solid #b6cdf5; border-radius: 4px; padding: 0 0.3rem; cursor: pointer; font: inherit; font-size: 0.8rem; }
+.sc-link { background: none; border: none; padding: 0; color: #1557b0; text-decoration: underline; cursor: pointer; font: inherit; font-size: 0.8rem; margin-right: 0.4rem; }
+#sc-szukaj { min-width: 16rem; }
+.sc-odhacz { display: flex; gap: 0.3rem; align-items: center; margin-top: 0.2rem; }
+.sc-odhacz input { width: 6rem; }

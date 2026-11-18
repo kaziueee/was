@@ -123,4 +123,5 @@ hurtPlnJob.start();
 analizaWatek.start();   // analiza sprzedazy w osobnym watku (nie blokuje Zebry): FS/ZK z GT do db/sprzedaz.db co 15 min, nocny przebieg, Trendy
 reconciliacjaMM.start();
 watek.uruchom(require.resolve('./services/pulpit-snapshot'), 'pulpit');   // migawka pulpitu w osobnym watku (zasada 7)
+if (process.env.SCIEZKA_WYSTAWIENIA_WYLACZ !== '1') watek.uruchom(require.resolve('./services/sciezka-wystawienia'), 'sciezka');   // Ceny → „Ścieżka” (GT + feed sklepu + pricing.db) w osobnym watku
 pomiarPetli.start();   // opóźnienia głównego wątku > 100 ms → logs/petla-*.log

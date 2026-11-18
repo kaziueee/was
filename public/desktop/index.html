@@ -811,6 +811,7 @@
           <button type="button" class="ceny-chip" data-ceny-widok="macierz">Macierz</button>
           <button type="button" class="ceny-chip" data-ceny-widok="karta">Karta SKU</button>
           <button type="button" class="ceny-chip" data-ceny-widok="strategie">Strategie</button>
+          <button type="button" class="ceny-chip" data-ceny-widok="sciezka" title="Każdy towar ze stanem na K4/K4G: Subiekt → sklep → Allegro → rynki">Ścieżka wystawienia</button>
           <button type="button" class="ceny-chip" data-ceny-widok="wystawianie">Do wystawienia <b id="ceny-l-wystawianie"></b></button>
           <button type="button" class="ceny-chip" data-ceny-widok="log">Log decyzji</button>
           <button type="button" class="ceny-chip" data-ceny-widok="powiazania">Do powiązania <b id="ceny-l-powiazania"></b></button>
@@ -876,6 +877,14 @@
         <div id="cs-lista"></div>
         <div id="cs-podglad"></div>
         <div id="cs-formularz" class="cs-formularz"></div>
+      </div>
+      <!-- Ścieżka wystawienia: Subiekt → sklep → Allegro → rynki (public/desktop/ceny-sciezka.js, /api/ceny/sciezka) -->
+      <div id="ceny-widok-sciezka" class="hidden">
+        <p class="hint cw-wstep">Każdy towar ze stanem na K4/K4G w jednym wierszu: <b>1. Subiekt</b> (flaga „sklep internetowy”, cena Specjalna, EAN, waga, wymiary)
+          → <b>2. Sklep</b> (karta w poszukiwaczefrajdy.pl; ✓ dopiero, gdy BaseLinker dał jej cenę) → <b>3. Allegro</b> → <b>4. Rynki</b> (eMAG, Empik, Kaufland, Amazon).
+          Podświetlony krok = ten, na którym towar utknął. Liczone co 15 min.</p>
+        <div id="sc-pasek" class="cw-pasek"></div>
+        <div id="sc-lista"></div>
       </div>
       <!-- Wystawianie ofert tam, gdzie towar ma kartę produktu (public/desktop/ceny-wystawianie.js, /api/ceny/wystawianie) -->
       <div id="ceny-widok-wystawianie" class="hidden">
@@ -1180,6 +1189,7 @@
   <script src="ceny-pulpit.js"></script>
   <script src="ceny-strategie.js"></script>
   <script src="ceny-wystawianie.js"></script>
+  <script src="ceny-sciezka.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

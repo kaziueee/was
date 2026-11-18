@@ -320,6 +320,18 @@ db.exec(`CREATE TABLE IF NOT EXISTS zadania_sprzedazowe (
   dodano DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// Ścieżka wystawienia (Ceny → „Ścieżka”, services/sciezka-wystawienia.js): ręczne odhaczenie „karta w sklepie
+// założona” dla kart, które czekają na powiązanie w BaseLinkerze. Feed sklepu pokazuje kartę dopiero z ceną od Base,
+// więc bez tego odhaczenia świeżo założona karta wyglądałaby jak brak karty. Tylko do wyświetlania — nic od niego
+// nie zależy. Klucz = tw_Id (tożsamość towaru), symbol to kopia do pokazania.
+db.exec(`CREATE TABLE IF NOT EXISTS sklep_karty (
+  tw_id INTEGER PRIMARY KEY,
+  symbol TEXT,
+  karta_id INTEGER,
+  kto TEXT,
+  czas DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // Seed z config/kartony.KARTONY gdy tabela pusta. kolejnosc = pozycja na liscie (1..N) -
 // startowo mniej wiecej wg objetosci jak plik, a admin moze ja przeciagnac gdzie chce.
 if (db.prepare('SELECT COUNT(*) AS c FROM kartony').get().c === 0) {

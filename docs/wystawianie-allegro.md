@@ -214,6 +214,11 @@ Wszystkie aktywne: sygnatura = SKU, „DHL Inpost Poczta” (paczkomat C), przel
 
 **Warunek wstępny wystawienia na Allegro: `tw_SklepInternet = 1` w GT** (sprawdzany przed wysyłką, brak flagi = blokada). Do tego niezerowa cena poziomu 3 w GT: HTN50, HTN52, HWHHWCC9B, MAGI12765, NER0072, NER0314 mają tam 0. Wznowienie zakończonych ofert (komenda ACTIVATE) robimy dopiero po oflagowaniu i za zgodą usera, razem z podmianą galerii HWCC14 / HWCC9B.
 
+**Galerie HWCC do podmiany (stan sklepu 18.11, przekazane przez sesję sklepu).** Na kartach Fenom zdjęcia są już bez napisów i nakładanych logo, zgodnie z regulaminem Allegro. Jedyny wyjątek: zdjęcie chłopca z logo Hot Wheels na ścianie zostaje, tak zdecydował user. Przy wznowieniu bierzemy dokładnie te pliki, w tej kolejności (URL `https://poszukiwaczefrajdy.pl/services/picasso/thumb/<nazwa>`):
+- HWHHWCC9B (karta 38216, 10 zdjęć): 34fycxog.png, 1tj1jjdx, ygwkvz4k, bcnhalau, 43vepybw, m4gusi1a, fjftf4qq, fyaithhw, ptmw2keq, qgk14nja (.jpg).
+- HWHHWCC14 (karta 38215, 7 zdjęć): n2b4uovz, lo2peem2, mjkf2jzu, rimyeiqf, bgucs55g, i2a5fnhn, n4ss3qhw (.jpg). Usunięte zostały zdjęcia „STORE 20 CARS”, „LAUNCH 4 CARS” (na niebieskim tle) i „4 LANES/CARS NOT INCLUDED”, bo napis zasłaniał produkt albo zdjęcie było duplikatem.
+- Uwaga: przy wznowieniu Allegro potrafi dokleić zdjęcia z katalogu (tak było przy MAGI12765), a PATCH ich nie usuwa. Po wznowieniu trzeba sprawdzić galerię.
+
 ## 12. HASB5995 i lista „sklep bez Allegro” (18.11)
 
 **HASB5995** (Optimus Prime B5995, flaga i cena 69,99 w GT, 502 szt.) → oferta **19131744429**, 89,99 zł × 50 (cena od usera; jedyna konkurencja PiasecznoZabawki 226 zł). Po utworzeniu INACTIVE, ACTIVE od 23:26 UTC (aktywacja trwała ~10 min, tak jak przy HTN52), a po 20 min nadal aktywna. Skrypt `C:\Users\Adm\al-wystaw1.js`.

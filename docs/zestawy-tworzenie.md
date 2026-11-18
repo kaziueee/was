@@ -88,7 +88,7 @@ Sklep pokazuje **stan kompletu** (karta 38122 `SPIN20148931Z1` ma 233 szt., cho�
 Formularz najprościej zbudować, serializując kartę-wzór (select bez wyboru pomijać).
 - **Nazwa:** nazwa składnika 1 z numerem + „ + ” + nazwa składnika 2 bez „Psi Patrol Zestaw” z numerem — kończy się numerem katalogowym.
 - **Galeria = 6 zdjęć** (zasada usera 2026-11-18, ograniczył tak galerię 38239):
-  1. nowa miniatura — oba pojazdy z figurkami, jeden pod drugim, na białym kwadracie 1000×1000;
+  1. nowa miniatura — oba pojazdy z figurkami, jeden pod drugim, na białym kwadracie 1000×1000. **Na górze drugi pojazd (ten, który odróżnia zestaw), na dole wspólny składnik serii** (Rubble z buldożerem) — poprawka usera 2026-11-18, podmienione na 38239 i 38250–38255;
   2. po **2 zdjęcia każdego składnika**: pojazd z pieskiem w środku (ujęcie pod kątem) i pojazd obok figurki. Bierzemy je z kart składników po nazwie pliku, bez ponownego wgrywania;
   3. nowe zdjęcie z oboma pudełkami.
   Pojedynczych pudełek, ujęć z przodu, lifestyle'ów i choinek **nie dajemy**.

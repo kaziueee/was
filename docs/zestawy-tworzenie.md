@@ -1,6 +1,6 @@
 # Tworzenie zestawów (kompletów) — przepis
 
-Status: **2026-11-18 — zapis przez Sferę przetestowany na Z_KAJTEK** (3 komplety testowe `TESTKOMPLETWMS1..3`). Narzędzie: endpoint mostu `POST /api/komplet` + `scripts/zestaw-zaloz.js`. Produkcja: **SPIN20148931Z2 założony 2026-11-18 (tw_Id 96720)**.
+Status: **2026-11-18 — zapis przez Sferę przetestowany na Z_KAJTEK** (3 komplety testowe `TESTKOMPLETWMS1..3`). Narzędzie: endpoint mostu `POST /api/komplet` (na produkcji od 18.11) + `scripts/zestaw-zaloz.js`. Produkcja: **SPIN20148931Z2 założony 2026-11-18 (tw_Id 96720)**.
 Zakres (decyzja usera 2026-11-18): **cały ciąg** — komplet w Subiekcie GT → karta w sklepie poszukiwaczefrajdy.pl → oferty na platformach.
 
 ## 1. Jak wyglądają dziś komplety w GT (pomiar OKITRADE 2026-11-18)
@@ -104,10 +104,9 @@ Formularz najprościej zbudować, serializując kartę-wzór (select bez wyboru 
 
 `SPIN20148931Z2` „Psi Patrol Rubble z buldożerem + Marshall z wozem”, **tw_Id 96720**, EAN 5900805605095, grupa SpinMaster (307), skład SPIN20148931 + SPIN20148929 po 1 szt. Ceny 119,98 zł / 172,98 RON / **89,99 zł sklep** / 11,82 EUR / Hurt 13,00 EUR netto, koszt 40,95 zł (marża sklepu 44 %). Waga 0,4 kg, opakowania karton 0,02 / tworzywa 0,002 / zbiorcze 0,8 kg, wymiary 42x22x8, flaga sklepu. Wagi gabarytowe (`pwd_Tekst09/10`) i docinkę uzupełni `waga-gabarytowa-job` (co 6 h).
 
-Założony przez kopię mostu z nowym kodem (`C:\Users\Adm\most-komplet`) przełączoną na chwilę na OKITRADE — produkcyjny most nietknięty. Po zapisie kopia zatrzymana, zadanie `WMS-Most-Test-Komplet` usunięte, konfiguracja kopii wróciła na Z_KAJTEK (zostały w niej jawne hasła Sfery w `appsettings.json`, w profilu Adm). **Docelowo**: commit + `aktualizuj-most.cmd`, wtedy `/api/komplet` jest w produkcyjnym moście na `:5000`.
+Założony przez kopię mostu z nowym kodem (`C:\Users\Adm\most-komplet`) przełączoną na chwilę na OKITRADE — produkcyjny most nietknięty. Po zapisie kopia zatrzymana, zadanie `WMS-Most-Test-Komplet` usunięte, konfiguracja kopii wróciła na Z_KAJTEK (zostały w niej jawne hasła Sfery w `appsettings.json`, w profilu Adm). **Od 2026-11-18 (commit fbdbf13) `/api/komplet` jest w produkcyjnym moście na `:5000`** — kolejne zestawy: `--baza OKITRADE --most http://127.0.0.1:5000` (na SRV albo przez tunel SSH). Kopia testowa (`C:\\Users\\Adm\\most-komplet`, konfiguracja Z_KAJTEK) zostaje do testów — uruchamiana ręcznie na `:5001`.
 
 ## 6. Otwarte
 
 - Powiązanie karty 38239 w BaseLinkerze (wtedy dostanie cenę i stan); oferty na platformach (sekcja 5).
-- Wdrożenie `/api/komplet` do produkcyjnego mostu (commit, `aktualizuj-most.cmd`).
 - Komplety testowe `TESTKOMPLETWMS1..3` (tw_Id 93696–93698) zostają w Z_KAJTEK — baza testowa.

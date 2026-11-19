@@ -52,7 +52,7 @@ Druga instancja mostu (`C:\Users\Adm\most-komplet`, zadanie `WMS-Most-Test-Kompl
 
 ## 3a. Jak założyć zestaw
 
-1. Wolny EAN z puli: arkusz **„eany GS1”**, zakładka **Kajtek+** (kolumna C = GTIN, A = symbol, H = nazwa) — wpisać symbol i nazwę w pierwszym pustym wierszu (rezerwacja, zasada usera).
+1. Wolny EAN z puli: arkusz **„eany GS1”**, zakładka **Kajtek+** (kolumna C = GTIN, H = nazwa, **J = symbol**; A zostaje pusta) — wpisać nazwę (H) i symbol (J) w pierwszym wierszu z wolnym GTIN-em (rezerwacja, zasada usera 2026-11-19: symbol zawsze w J).
 2. Plik zestawu (przykład niżej), `node scripts/zestaw-zaloz.js zestaw.json --baza <baza> --most <url>` → walidacja + podgląd w Sferze; potem to samo z `--zapisz`.
 3. `--baza` musi być bazą, do której wpięty jest most (walidacja idzie SQL-em, zapis Sferą). Most słucha tylko na `127.0.0.1` SRV — z Maca przez tunel `ssh -L 15001:127.0.0.1:5001 Adm@<SRV>`.
 

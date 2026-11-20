@@ -666,6 +666,7 @@ router.post('/rozloz', async (req, res, next) => {
   let zrodloOpis = '(nieprzypisane)';
   let zrodloDokumenty = null;
   let dokDoZapisu = null;
+  let dokIdDoZapisu = null;   // dok_Id w GT - klucz atrybucji odporny na przenumerowanie PZ
   let reszta = null;   // ile stanu NIE tlumaczy zaden dokument; null = GT nie odpowiedzial
   try {
     const dokumenty = (await gtDokumenty.pobierzDostawyK4([artykul_gt_id])).get(String(artykul_gt_id)) || [];
@@ -686,6 +687,7 @@ router.post('/rozloz', async (req, res, next) => {
         });
       }
       dokDoZapisu = poz.pz_nr;
+      dokIdDoZapisu = poz.dok_id ?? null;
       // rodzaj bierzemy WPROST z rozbicia (dostawa/zwrot/przywozka) - mapowanie recznym
       // ifem gubilo kazdy nowy rodzaj i przywozka logowala sie jako "dostawa"
       zrodloOpis = poz.rodzaj;
@@ -739,9 +741,9 @@ router.post('/rozloz', async (req, res, next) => {
   db.exec('BEGIN');
   try {
     const ruch = db.prepare(`
-      INSERT INTO ruchy (typ, artykul_gt_id, artykul_symbol, lok_zrodlo_id, lok_cel_id, mag_zrodlo_pula, zrodlo_dok, ilosc, status, operator)
-      VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 'pending', ?)
-    `).run(typRuchu, artykul_gt_id, symbolDoWpisu, lok_cel_id, zrodloMag, dokDoZapisu, ilo, operator ?? null);
+      INSERT INTO ruchy (typ, artykul_gt_id, artykul_symbol, lok_zrodlo_id, lok_cel_id, mag_zrodlo_pula, zrodlo_dok, zrodlo_dok_id, ilosc, status, operator)
+      VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'pending', ?)
+    `).run(typRuchu, artykul_gt_id, symbolDoWpisu, lok_cel_id, zrodloMag, dokDoZapisu, dokIdDoZapisu, ilo, operator ?? null);
     ruchId = ruch.lastInsertRowid;
 
     // Zrodlem jest pula bez lokalizacji, wiec po stronie zrodla NIE ma czego odejmowac -

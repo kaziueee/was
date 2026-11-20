@@ -18,6 +18,7 @@ const { MAGAZYNY_ZEWNETRZNE, MAGAZYN_GT_ID } = require('../config/magazyny');
 // rozbijStanK4. Publiczne API gt-dokumenty (rozbijStanK4, RODZAJE_STREF, PRIORYTET_PRZYDZIALU,
 // przydzielZwroty) zostaje bez zmian.
 const rozbicieStanu = require('./rozbicie-stanu');
+const rozlozoneDokumenty = require('./rozlozone-dokumenty');
 const { KUBELKI_STREF, PRIORYTET_PRZYDZIALU, przydzielZwroty } = rozbicieStanu;
 
 // Uwagi dokumentu MM (Faza A#3): Node buduje tu cala tresc, ktora most C# wpisuje do
@@ -536,7 +537,7 @@ async function pobierzRozmontowaniaZeStanuOd(od) {
   // (ten sam rachunek, co widzi ekran; osobny warunek SQL rozjechalby job z lista).
   const { recordset } = await query(`
     SELECT o.ob_TowId AS tw_id, t.tw_Symbol AS symbol, t.tw_Nazwa AS nazwa,
-           t.tw_PodstKodKresk AS ean, pw.dok_NrPelny AS pw_nr, pw.dok_DataWyst AS data,
+           t.tw_PodstKodKresk AS ean, pw.dok_NrPelny AS pw_nr, pw.dok_Id AS pw_id, pw.dok_DataWyst AS data,
            zest.zestaw_id, zest.zestaw_symbol, SUM(o.ob_Ilosc) AS ilosc
     FROM dok__Dokument pw
     ${ROZMONTOWANIE_JOIN}
@@ -544,7 +545,7 @@ async function pobierzRozmontowaniaZeStanuOd(od) {
     JOIN tw__Towar t ON t.tw_Id = o.ob_TowId AND t.tw_Rodzaj = @rodzaj
     WHERE pw.dok_Typ = @pwTyp AND o.ob_MagId = @mag AND pw.dok_DataWyst >= @od
     GROUP BY o.ob_TowId, t.tw_Symbol, t.tw_Nazwa, t.tw_PodstKodKresk,
-             pw.dok_NrPelny, pw.dok_DataWyst, zest.zestaw_id, zest.zestaw_symbol
+             pw.dok_NrPelny, pw.dok_Id, pw.dok_DataWyst, zest.zestaw_id, zest.zestaw_symbol
     ORDER BY pw.dok_DataWyst
   `, { pwTyp: PW_TYP, rwTyp: RW_TYP, mag: MAG_K4, od,
        rodzaj: TW_RODZAJ_TOWAR, rodzajZestaw: TW_RODZAJ_ZESTAW });
@@ -560,6 +561,7 @@ async function pobierzRozmontowaniaZeStanuOd(od) {
       nazwa: r.nazwa ? String(r.nazwa).trim() : null,
       ean: r.ean ? String(r.ean).trim() : null,
       pw_nr: String(r.pw_nr).trim(),
+      pw_id: r.pw_id != null ? Number(r.pw_id) : null,
       zestaw_symbol: r.zestaw_symbol ? String(r.zestaw_symbol).trim() : null,
       data: r.data instanceof Date ? r.data.toISOString().slice(0, 10) : null,
       ilosc: Number(r.ilosc) || 0,
@@ -800,6 +802,9 @@ async function pobierzDostawyK4(twIds) {
         rodzaj,
         // dokument magazynowy - klucz atrybucji (ruchy.zrodlo_dok)
         pz_nr: r.dok_nr ? String(r.dok_nr).trim() : null,
+        // dok_Id dokumentu magazynowego - WLASCIWY klucz atrybucji (ruchy.zrodlo_dok_id). Numer
+        // potrafi sie zmienic (przenumerowanie PZ po zmianie daty FZ), id nie.
+        dok_id: r.dok_id != null ? Number(r.dok_id) : null,
         // podpis na ekranie: dostawa/zwrot maja dokument zrodlowy (FZ/KFS), przywozka jest
         // sama dla siebie dokumentem (MM), wiec podpisujemy ja wlasnym numerem
         fz_nr: (r.zrodlo_nr ? String(r.zrodlo_nr).trim() : null) ?? (r.dok_nr ? String(r.dok_nr).trim() : null),
@@ -822,7 +827,9 @@ async function pobierzDostawyK4(twIds) {
 }
 
 // Ile z KONKRETNEGO dokumentu (PZ dostawy albo zwrotu) juz rozlozono - suma naszych
-// wlasnych ruchow z puli, podpisanych numerem tego dokumentu (ruchy.zrodlo_dok).
+// wlasnych ruchow z puli, podpisanych tym dokumentem (ruchy.zrodlo_dok_id, a dla starych
+// ruchow bez id - numerem ruchy.zrodlo_dok). Logika i powod klucza po id:
+// services/rozlozone-dokumenty.js.
 //
 // Po co per dokument, a nie sumarycznie: SKU moze miec naraz dostawe (paleta) i zwrot
 // (sztuka w strefie). Gdybysmy liczyli lacznie, rozlozenie palety zjadaloby licznik zwrotu
@@ -831,13 +838,8 @@ async function pobierzDostawyK4(twIds) {
 // Liczymy z ruchow, a nie z osobnej tabeli, bo /ruchy/rozloz to JEDYNA droga wyprowadzenia
 // towaru z puli. Przypisanie starego stanu idzie przez /ruchy/lok (bez mag_zrodlo_pula),
 // wiec go nie liczy - i slusznie, bo to inny kubelek.
-function iloscRozlozonaZDokumentu(artykulGtId, magazyn, dokNr) {
-  if (!dokNr) return 0;
-  const r = db.prepare(`
-    SELECT COALESCE(SUM(ilosc), 0) AS suma FROM ruchy
-    WHERE artykul_gt_id = ? AND mag_zrodlo_pula = ? AND zrodlo_dok = ? AND status != 'blad'
-  `).get(String(artykulGtId), magazyn, String(dokNr));
-  return Number(r.suma) || 0;
+function iloscRozlozonaZDokumentu(artykulGtId, magazyn, dokNr, dokId = null) {
+  return rozlozoneDokumenty.iloscRozlozona(db, artykulGtId, magazyn, dokNr, dokId);
 }
 
 // rozbijStanK4, kolejnosc zjadania (PRIORYTET_PRZYDZIALU) i cala arytmetyka kubelkow zyja teraz

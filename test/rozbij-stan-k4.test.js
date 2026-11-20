@@ -291,3 +291,16 @@ test('wartosci brzegowe nie wysadzaja rachunku', () => {
   assert.equal(rozbijStanK4(10, 5, null).polka, 5, 'brak listy dokumentow nie wysadza');
   assert.equal(rozbijStanK4(undefined, undefined, []).reszta, 0);
 });
+
+// Licznik rozlozonych dostaje dok_Id dokumentu - numer PZ zmienia sie przy edycji FZ w Subiekcie
+// (Intek 2026-11-18: PZ 3954/2026 -> PZ 4099/2026), dok_Id nie. Bez id cala dostawa wracala jako
+// nierozlozona.
+test('iloscRozlozona dostaje dok_id dokumentu (klucz odporny na przenumerowanie PZ)', () => {
+  const wolania = [];
+  const iloscRozlozona = (art, mag, nr, id) => { wolania.push({ art, mag, nr, id }); return id === 6974580 ? 96 : 0; };
+  const d = { ...dok('dostawa', 96, '2026-11-04', 'PZ 4099/2026'), dok_id: 6974580 };
+  const r = rozbijStanK4(95, 72, [d], { artykul_gt_id: '95947', magazyn: 'K4', iloscRozlozona });
+  assert.deepEqual(wolania, [{ art: '95947', mag: 'K4', nr: 'PZ 4099/2026', id: 6974580 }]);
+  assert.equal(r.dostawy.length, 0);
+  assert.equal(r.polka, 72);
+});

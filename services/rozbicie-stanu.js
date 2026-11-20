@@ -169,8 +169,9 @@ function porownajPrzydzial(a, b) {
 // stanGt  - st_Stan z GT (master ilosci)
 // sumaWms - suma stany_lokalizacji dla tego magazynu (kopia WMS; moze byc STARSZA od GT,
 //           bo sprzedaz w Subiekcie zbija stan bez wiedzy WMS)
-// opcje.iloscRozlozona - (artykul_gt_id, magazyn, pz_nr) => ile juz rozlozono z dokumentu;
-//           wolane tylko gdy podano artykul_gt_id
+// opcje.iloscRozlozona - (artykul_gt_id, magazyn, pz_nr, dok_id) => ile juz rozlozono z dokumentu;
+//           wolane tylko gdy podano artykul_gt_id. dok_id jest wlasciwym kluczem (numer PZ
+//           potrafi sie zmienic przy edycji FZ - services/rozlozone-dokumenty.js)
 function rozbijStanK4(stanGt, sumaWms, dokumenty, { artykul_gt_id, magazyn = MAG_KOD_K4, iloscRozlozona } = {}) {
   let zostalo = Math.max(Number(stanGt) || 0, 0);
   const polkaKopia = Math.max(Number(sumaWms) || 0, 0);
@@ -183,7 +184,7 @@ function rozbijStanK4(stanGt, sumaWms, dokumenty, { artykul_gt_id, magazyn = MAG
 
   for (const d of wgPrzydzialu) {
     if (zostalo <= 0) break;
-    const juz = artykul_gt_id && iloscRozlozona ? iloscRozlozona(artykul_gt_id, magazyn, d.pz_nr) : 0;
+    const juz = artykul_gt_id && iloscRozlozona ? iloscRozlozona(artykul_gt_id, magazyn, d.pz_nr, d.dok_id ?? null) : 0;
     const pozostalo = d.ilosc - juz;
     if (pozostalo <= 0) continue;             // ten dokument juz rozlozony w calosci
     const ilosc = Math.min(pozostalo, zostalo);

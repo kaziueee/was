@@ -80,7 +80,7 @@ async function przetworz() {
   let pominieto = 0;
   for (const p of pozycje) {
     try {
-      const juz = gtDokumenty.iloscRozlozonaZDokumentu(p.artykul_gt_id, MAG, p.pw_nr);
+      const juz = gtDokumenty.iloscRozlozonaZDokumentu(p.artykul_gt_id, MAG, p.pw_nr, p.pw_id);
       const pozostalo = p.ilosc - juz;
       if (pozostalo <= 0) continue; // juz dopisane wczesniejszym przebiegiem
 
@@ -111,9 +111,9 @@ function zapiszDopis(p, lok, ilo) {
   db.exec('BEGIN');
   try {
     const ruch = db.prepare(`
-      INSERT INTO ruchy (typ, artykul_gt_id, artykul_symbol, lok_zrodlo_id, lok_cel_id, mag_zrodlo_pula, zrodlo_dok, ilosc, status, operator)
-      VALUES ('LOK', ?, ?, NULL, ?, ?, ?, ?, 'pending', ?)
-    `).run(p.artykul_gt_id, p.symbol ?? String(p.artykul_gt_id), lok.id, MAG, p.pw_nr, ilo, OPERATOR);
+      INSERT INTO ruchy (typ, artykul_gt_id, artykul_symbol, lok_zrodlo_id, lok_cel_id, mag_zrodlo_pula, zrodlo_dok, zrodlo_dok_id, ilosc, status, operator)
+      VALUES ('LOK', ?, ?, NULL, ?, ?, ?, ?, ?, 'pending', ?)
+    `).run(p.artykul_gt_id, p.symbol ?? String(p.artykul_gt_id), lok.id, MAG, p.pw_nr, p.pw_id ?? null, ilo, OPERATOR);
     ruchId = ruch.lastInsertRowid;
 
     const stanCel = db.prepare('SELECT * FROM stany_lokalizacji WHERE lokalizacja_id = ? AND artykul_gt_id = ?')

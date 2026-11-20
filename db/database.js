@@ -57,6 +57,17 @@ if (!kolumnyRuchow.some((k) => k.name === 'zrodlo_dok')) {
   console.log('Migracja: dodano kolumne zrodlo_dok do ruchy');
 }
 
+// migracja: dodaj zrodlo_dok_id (dok_Id dokumentu GT rozkladanej puli) do ruchy. Numer w
+// zrodlo_dok nie jest stalym kluczem: zmiana daty FZ w Subiekcie przenumerowuje jej PZ
+// (incydent Intek 2026-11-18, PZ 3954/2026 -> PZ 4099/2026), a wtedy rozlozenia podpisane
+// starym numerem przestaja pasowac i cala dostawa wraca jako nierozlozona. Numer zostaje
+// zapisem historycznym; licznik kubelka idzie po id (services/rozlozone-dokumenty.js).
+// Uzupelnienie starych ruchow: scripts/zrodlo-dok-id.js.
+if (!kolumnyRuchow.some((k) => k.name === 'zrodlo_dok_id')) {
+  db.exec('ALTER TABLE ruchy ADD COLUMN zrodlo_dok_id INTEGER');
+  console.log('Migracja: dodano kolumne zrodlo_dok_id do ruchy');
+}
+
 // migracja: dodaj dok_gt_id (PK dokumentu GT) do ruchy. dok_NrPelny NIE jest unikalny
 // (numeracja MM resetuje sie per magazyn/rok), wiec sam numer nie identyfikuje dokumentu
 // jednoznacznie - dok_Id (PK sl. dok__Dokument) domyka gwarancje zgodnosci numeru WMS<->GT.

@@ -153,7 +153,10 @@ Zestaw wystawiamy jako **jedną ofertę na nowej karcie produktu** z EAN-em zest
 | Zestaw | Oferta ekajtek | Karta Allegro | Cena |
 |---|---|---|---|
 | SPIN20148931Z2–Z8 | 19137572079 … 19137574086 | nowe, EAN zestawów | 15% marży |
-| NERCHITORLZ33Z2 | 19140198785 | 260c9589-483b-49f2-a417-1e84e3968a5f | 69,99 × 50 |
+| NERCHITORLZ33Z2 | 19140198785 | 260c9589-483b-49f2-a417-1e84e3968a5f (marka Poszukiwacze Frajdy) | 69,99 × 50 |
+| NERCHITORLZ33Z1 | 19140571694 | e258dc7f-25dc-49fb-b26c-62be382e3263 (marka Blaster Squad = marka torby) | 49,99 × 50 |
+
+Skrypt Z1: `C:\Users\Adm\al-lz33z1.js` (kopia Z2 z galerią karty 38256). Miniatura Z1 (20.11): kompozycja z OpenAI `gpt-image-2.6-sunburst` (`/v1/images/edits`, ~0,06 USD) poprawiona lokalnie — stosy strzałek i „100” przeklejone z miniatury Z2, tarcza „25” podmieniona.
 
 ## 5a. Pierwszy zestaw na produkcji (2026-11-18)
 

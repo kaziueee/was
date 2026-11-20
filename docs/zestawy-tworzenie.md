@@ -137,7 +137,23 @@ Wszystkie 7 zestawów ma ten sam schemat: SPIN20148931 (Rubble) + 1 pojazd po 1 
 
 ## 5. Platformy
 
-- Własny EAN `5900805…` nie ma produktu w katalogach Allegro/Amazon/eMAG — każda platforma wymaga **założenia nowego produktu**, nie dopięcia do istniejącej karty. Allegro: przekazać sesji Allegro (`docs/wystawianie-allegro.md`), nie dublować.
+- Własny EAN `5900805…` nie ma produktu w katalogach Allegro/Amazon/eMAG — każda platforma wymaga **założenia nowego produktu**, nie dopięcia do istniejącej karty. Ogólne zasady Allegro: `docs/wystawianie-allegro.md`.
+
+### Allegro: zestaw jako jeden produkt
+
+Zestaw wystawiamy jako **jedną ofertę na nowej karcie produktu** z EAN-em zestawu (nie „zestaw 2 produktów” z kart składników — decyzja usera 19.11 przy Psi Patrol). Karta powstaje razem z ofertą (`productSet[0].product` z `name`, `category`, `parameters`, `images` w `POST /sale/product-offers`).
+- **Marka karty — od początku marka oryginalnego składnika** (zasada usera 20.11): zestaw z oryginalnym Nerfem = karta z marką **NERF** (precedens: karta `11ac0f5b…`, nasz EAN 5900805602353, marka NERF, LISTED). **Marki karty potem nie zmienisz:** karta z naszym EAN-em już istnieje, a PATCH oferty z inną marką = 422 „wartość parametru Marka … różni się od wartości w produkcie z katalogu”. Zostaje zgłoszenie zmiany karty, którego bez zgody usera nie wysyłamy. „Poszukiwacze Frajdy” tylko wtedy, gdy Allegro zablokuje markę składnika (Spin Master przy Psi Patrol). Producent GPSR: „Producent Kajtek” (`e2143a70…`), bezpieczeństwo jak na ofercie składnika.
+- Parametry karty: EAN zestawu, wymiary i waga z GT, kod producenta = symbol zestawu, kod taryfy celnej (zabawki-broń `95030081`), wiek, materiał, kolor — ze słownika kategorii.
+- Przy karcie z marką „Poszukiwacze Frajdy”: **start bez obcej marki** w tytule, nazwie karty i opisie (NERF, Psi Patrol…), bo inaczej aktywacja pada na ochronie marek. Po ACTIVE (0–45 min) PATCH pełnego tytułu i opisu + przelicznik CZ/SK/HU. Przy karcie z marką składnika jego nazwa w tytule nie jest obcą marką.
+- **Opis (zasada usera 20.11):** miniatura + `<h1>` = tytuł + wstęp; potem **sekcja na każdą część zestawu: jej zdjęcie + jej zalety**; zdjęcia bez tekstu parami pomiędzy; na końcu **podsumowanie** (zawartość, 1 zdanie, wymiary, wiek, kod) **ze zdjęciem całego zestawu**. Fakty tylko z kart składników.
+- NERCHITORLZ33Z2 poszedł jeszcze z marką „Poszukiwacze Frajdy”; zgłoszenie zmiany na NERF (`ba98a930…`, 20.11) wysłane przez API, zanim user napisał „nie zgłaszaj” — czeka na weryfikację Allegro.
+- **Cena: pytać usera.** Psi Patrol: 15% marży z kalkulatora repricera (polecenie usera 19.11); NERCHITORLZ33Z2: 69,99 zł (sklep 108,99, składniki osobno na Allegro 114,98).
+- Skrypty na SRV: `C:\Users\Adm\al-psi-nowa.js` (Psi), `C:\Users\Adm\al-lz33z2.js` (wzór z opisem per składnik: podgląd / `--utworz --cena X` / `--dokoncz`).
+
+| Zestaw | Oferta ekajtek | Karta Allegro | Cena |
+|---|---|---|---|
+| SPIN20148931Z2–Z8 | 19137572079 … 19137574086 | nowe, EAN zestawów | 15% marży |
+| NERCHITORLZ33Z2 | 19140198785 | 260c9589-483b-49f2-a417-1e84e3968a5f | 69,99 × 50 |
 
 ## 5a. Pierwszy zestaw na produkcji (2026-11-18)
 

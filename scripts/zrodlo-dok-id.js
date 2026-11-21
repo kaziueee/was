@@ -83,19 +83,20 @@ async function kandydaci(grupa) {
     process.exit(0);
   }
 
-  // dokumenty GT o tych numerach (PZ/PW/MM)
+  // dokumenty GT o tych numerach (PZ/PW/MM). Jedno pobranie po typie i dacie, dopasowanie
+  // numerow w Node - dok_NrPelny nie ma indeksu, wiec "IN (500 numerow)" przekraczalo 15 s.
+  const potrzebne = new Set(grupy.map((g) => String(g.nr).trim()));
+  const odDaty = grupy.map((g) => g.od).sort()[0].slice(0, 10);
+  const { recordset: dokumenty } = await query(
+    `SELECT dok_Id AS id, dok_NrPelny AS nr FROM dok__Dokument
+     WHERE dok_Typ IN (9, 10, 12) AND dok_DataWyst >= DATEADD(day, -${OKNO_KANDYDATOW_DNI}, @od)`,
+    { od: odDaty });
   const poNumerze = new Map();
-  for (const paczka of naCzesci(grupy.map((g) => g.nr), 500)) {
-    const parametry = {};
-    const ph = paczka.map((nr, i) => { parametry[`n${i}`] = nr; return `@n${i}`; }).join(',');
-    const { recordset } = await query(
-      `SELECT dok_Id AS id, dok_NrPelny AS nr FROM dok__Dokument WHERE dok_Typ IN (9, 10, 12) AND dok_NrPelny IN (${ph})`,
-      parametry);
-    for (const r of recordset) {
-      const nr = String(r.nr).trim();
-      if (!poNumerze.has(nr)) poNumerze.set(nr, []);
-      poNumerze.get(nr).push(r.id);
-    }
+  for (const r of dokumenty) {
+    const nr = String(r.nr).trim();
+    if (!potrzebne.has(nr)) continue;
+    if (!poNumerze.has(nr)) poNumerze.set(nr, []);
+    poNumerze.get(nr).push(r.id);
   }
   const pozycje = await pozycjeDokumentow([...[...poNumerze.values()].flat(), ...mapa.values()]);
   const maTowary = (id, g) => g.artykuly.every((a) => pozycje.get(id)?.has(a));

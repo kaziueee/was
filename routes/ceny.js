@@ -407,6 +407,7 @@ router.post('/automat', (req, res) => {
   const log = db.prepare('INSERT INTO zmiany (kto, oferta_id, akcja, opis) VALUES (?, ?, ?, ?)');
   let zmienione = 0;
   const pominiete = [];
+  const doPrzywrocenia = [];   // Allegro CZ/SK/HU z wyłączonym automatem — wraca reguła przelicznika
   db.exec('BEGIN');
   try {
     for (const id of ids) {
@@ -422,12 +423,28 @@ router.post('/automat', (req, res) => {
       if (o.auto === auto) continue;
       ustaw.run(auto, id);
       log.run(kto, id, auto ? 'automat_wl' : 'automat_wyl', `${o.rynek} ${o.sku}`);
+      if (!auto && o.platforma === az.PLATFORMA) doPrzywrocenia.push(o);
       zmienione++;
     }
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
-  res.json({ ok: true, zmienione, pominiete });
+  // Bez automatu cena rynku zagranicznego nie może stać zamrożona — wraca przelicznik (decyzja usera 2026-11-22).
+  // W tle, po odpowiedzi: to wywołania Allegro (~3–25 s na ofertę), a wynik ląduje w `zmiany`.
+  if (doPrzywrocenia.length) przywrocPrzeliczniki(doPrzywrocenia, kto).catch((e) => console.error('[ceny] przywracanie przelicznika:', e.message));
+  res.json({ ok: true, zmienione, pominiete, przelicznik: doPrzywrocenia.length });
 });
+
+async function przywrocPrzeliczniki(oferty, kto) {
+  const log = db.prepare('INSERT INTO zmiany (kto, oferta_id, akcja, opis) VALUES (?, ?, ?, ?)');
+  for (const o of oferty) {
+    const r = az.zRynkuOferty(o.rynek);
+    const asin = db.prepare('SELECT asin FROM oferty WHERE id = ?').get(o.id)?.asin;
+    if (!r || !asin) continue;
+    const w = await allegro.przywrocRegule(r.konto, asin, r.kod);
+    log.run(kto, o.id, w.ok ? 'przelicznik_przywrocony' : 'przelicznik_blad',
+      `${o.rynek} ${o.sku}: ${w.ok ? (w.juz ? 'reguła już była na rynku' : `reguła ${w.regula} przywrócona — cena idzie za PL`) : w.blad}`);
+  }
+}
 
 // --- Ręczna cena i ręczne granice -------------------------------------------------------------
 // Czysta logika (walidacja, pas po granicach, ostrzeżenia) w pricing/granice.js; wysyłka per platforma

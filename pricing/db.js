@@ -176,6 +176,17 @@ db.exec(`CREATE TABLE IF NOT EXISTS allegro_top (
 
 // Allegro: ostatnie sprawdzenie konkurencji w Niezbędniku per EAN (pricing/konkurencja-allegro.js). Jeden EAN
 // obsługuje obie nasze oferty tego towaru (ekajtek i NaTropie). Nieudane sprawdzenie zostawia poprzedni wynik.
+// Reguły cenowe Allegro zdjęte przez repricer z rynku zagranicznego oferty (pricing/allegro-zagranica.js, od 2026-11-22):
+// po wyłączeniu automatu na tym rynku przywracamy dokładnie tę regułę (CZ/SK zwykle „Przelicznik cen”, HU „Cena
+// Węgry”), żeby cena znów szła za PL. Wpis znika po przywróceniu.
+db.exec(`CREATE TABLE IF NOT EXISTS allegro_reguly_zdjete (
+  konto   TEXT NOT NULL,
+  oferta  TEXT NOT NULL,                  -- numer oferty Allegro
+  kod     TEXT NOT NULL,                  -- CZ / SK / HU
+  regula  TEXT NOT NULL,
+  czas    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (konto, oferta, kod)
+)`);
 db.exec(`CREATE TABLE IF NOT EXISTS allegro_konkurencja (
   ean          TEXT PRIMARY KEY,
   czas         TEXT,                       -- kiedy Niezbędnik sprawdził (UTC); NULL = zlecone, jeszcze bez wyniku

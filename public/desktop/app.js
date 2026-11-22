@@ -5027,7 +5027,8 @@ async function cenyUstawAutomat(oferty, auto, { poZmianie = odswiezCeny, komunik
       body: JSON.stringify({ ids, auto, operator: operator() }),
     });
     const pomin = r.pominiete.length ? ` Pominięte ${r.pominiete.length}: ${r.pominiete.slice(0, 3).map((p) => `${p.sku || p.id} — ${p.powod}`).join('; ')}${r.pominiete.length > 3 ? '…' : ''}` : '';
-    komunikat(`Automat ${auto ? 'włączony' : 'wyłączony'}: ${r.zmienione} ofert.${auto && r.zmienione ? ' Pierwsza zmiana ceny przy najbliższym przebiegu (do 30 min).' : ''}${pomin}`, r.pominiete.length ? 'blad' : 'ok');
+    const przel = r.przelicznik ? ` Allegro CZ/SK/HU: na ${r.przelicznik} ofertach wraca reguła przelicznika (cena znów idzie za PL; wynik w logu zmian).` : '';
+    komunikat(`Automat ${auto ? 'włączony' : 'wyłączony'}: ${r.zmienione} ofert.${auto && r.zmienione ? ' Pierwsza zmiana ceny przy najbliższym przebiegu (do 30 min).' : ''}${przel}${pomin}`, r.pominiete.length ? 'blad' : 'ok');
     poZmianie();
     return true;
   } catch (err) { komunikat(err.message, 'blad'); return false; }

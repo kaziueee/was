@@ -132,5 +132,11 @@ const polecenieUsunieciaReguly = (ofertaId, kod) => ({
   offerCriteria: [{ offers: [{ id: String(ofertaId) }], type: 'CONTAINS_OFFERS' }],
 });
 
-module.exports = { RYNKI_ZAGR, PLATFORMA, KONTO_GLOWNE, MIN_PROBEK_KURSU, definicja, rynekOferty, zRynkuOferty, cenyNaRynkach, cenaPl,
+// To samo polecenie, odwrotnie: przypisanie reguły (przelicznika) do jednego rynku oferty — po wyłączeniu automatu.
+const polecenieReguly = (ofertaId, kod, regula) => ({
+  modification: { set: [{ marketplace: { id: definicja(kod).allegro }, rule: { id: String(regula) } }] },
+  offerCriteria: [{ offers: [{ id: String(ofertaId) }], type: 'CONTAINS_OFFERS' }],
+});
+
+module.exports = { polecenieReguly, RYNKI_ZAGR, PLATFORMA, KONTO_GLOWNE, MIN_PROBEK_KURSU, definicja, rynekOferty, zRynkuOferty, cenyNaRynkach, cenaPl,
   kursyPrzelicznika, zaokraglij, podloga, zPodloga, zmianaCeny, polecenieUsunieciaReguly };

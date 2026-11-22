@@ -347,6 +347,9 @@ async function ustawCeneZagr(surowa, kod, cena) {
       }
       if (zostala) return { ok: false, blad: `reguła cenowa na ${def.allegro} nie zeszła — ceny nie wysłano` };
       zdjetaRegula = true;
+      // Pamiętamy, którą regułę zdjęliśmy — po wyłączeniu automatu wraca ta sama (przywrocRegule).
+      baza().prepare(`INSERT INTO allegro_reguly_zdjete (konto, oferta, kod, regula) VALUES (?, ?, ?, ?)
+        ON CONFLICT (konto, oferta, kod) DO UPDATE SET regula = excluded.regula, czas = CURRENT_TIMESTAMP`).run(konto, String(surowa.id), kod, z.regula);
     }
     const r = await zapytanie(konto, `/sale/product-offers/${encodeURIComponent(surowa.id)}`, { metoda: 'PATCH', body: z.body, proby: 2 });
     if (r.status !== 202) return { ok: true, cena: z.cena, zdjetaRegula };
@@ -358,6 +361,35 @@ async function ustawCeneZagr(surowa, kod, cena) {
       if (s2.status === 303 || s2.status === 200) return { ok: true, cena: z.cena, zdjetaRegula };
     }
     return { ok: true, cena: z.cena, zdjetaRegula, asynchronicznie: true };
+  } catch (e) {
+    return { ok: false, blad: e.message };
+  }
+}
+
+// Po wyłączeniu automatu na rynku zagranicznym: z powrotem reguła, którą repricer zdjął (z allegro_reguly_zdjete),
+// a bez wpisu — przelicznik rynku (az.definicja(kod).regulaKursu). Gdy reguła na rynku już jest (automat nie zdążył nic
+// zmienić albo człowiek przypisał ją w panelu) — nic nie robimy. { ok, regula, juz, blad }
+async function przywrocRegule(konto, ofertaId, kod) {
+  const az = require('./allegro-zagranica');
+  const def = az.definicja(kod);
+  if (!def) return { ok: false, blad: `nieznany rynek ${kod}` };
+  const db = baza();
+  const wpis = db.prepare('SELECT regula FROM allegro_reguly_zdjete WHERE konto = ? AND oferta = ? AND kod = ?').get(konto, String(ofertaId), kod);
+  try {
+    if ((await regulyRynku(konto, ofertaId, def.allegro)).length) {
+      db.prepare('DELETE FROM allegro_reguly_zdjete WHERE konto = ? AND oferta = ? AND kod = ?').run(konto, String(ofertaId), kod);
+      return { ok: true, juz: true };
+    }
+    const regula = wpis?.regula || def.regulaKursu;
+    await zapytanie(konto, '/sale/offer-price-automation-commands', { metoda: 'POST', body: az.polecenieReguly(ofertaId, kod, regula), proby: 1 });
+    for (let i = 0; i < 8; i++) {
+      await sleep(3000);
+      if ((await regulyRynku(konto, ofertaId, def.allegro)).length) {
+        db.prepare('DELETE FROM allegro_reguly_zdjete WHERE konto = ? AND oferta = ? AND kod = ?').run(konto, String(ofertaId), kod);
+        return { ok: true, regula };
+      }
+    }
+    return { ok: false, blad: `reguła ${regula} na ${def.allegro} nie pojawiła się po 24 s` };
   } catch (e) {
     return { ok: false, blad: e.message };
   }
@@ -388,5 +420,5 @@ const linkiOferty = (id) => (id ? { produkt: `https://allegro.pl/oferta/${encode
 
 module.exports = {
   KONTA, USER_AGENT, skonfigurowany, kontaAutoryzowane, tokenDostepu, zapiszTokeny, postAuth, tokenWazny, czekajMs,
-  api, zapytanie, wszystkieOferty, ofertaPoId, ustawCeneZagr, regulyRynku, login, trescTokenu, zapytaniePodgladu, stawkaZPodgladu, prowizjaOferty, doOferty, kluczeOfert, skuGt, zOferty, zmianaCeny, ustawCene, linkiOferty,
+  api, zapytanie, wszystkieOferty, ofertaPoId, ustawCeneZagr, regulyRynku, przywrocRegule, login, trescTokenu, zapytaniePodgladu, stawkaZPodgladu, prowizjaOferty, doOferty, kluczeOfert, skuGt, zOferty, zmianaCeny, ustawCene, linkiOferty,
 };

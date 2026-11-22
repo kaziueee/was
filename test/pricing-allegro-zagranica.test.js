@@ -104,3 +104,10 @@ test('kalkulator Allegro CZ/SK/HU: minimum spełnia marżę, cena w jednostkach 
   const hu = rynki.wycenaPrzyCenie(60, rynki.definicjaRynku('Allegro HU'), g, 12735);
   assert.ok(hu.detal.lokalna > 0);
 });
+
+test('polecenie przywrócenia reguły: ta sama reguła, jeden rynek, jedna oferta', () => {
+  assert.deepStrictEqual(az.polecenieReguly(123, 'HU', '6863b926d59f9b0553b533db'), {
+    modification: { set: [{ marketplace: { id: 'allegro-hu' }, rule: { id: '6863b926d59f9b0553b533db' } }] },
+    offerCriteria: [{ offers: [{ id: '123' }], type: 'CONTAINS_OFFERS' }],
+  });
+});

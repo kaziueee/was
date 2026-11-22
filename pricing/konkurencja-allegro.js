@@ -39,6 +39,14 @@ const limitDzienny = () => (Number(process.env.PRICING_NSP_DZIENNIE) > 0 ? Numbe
 // Jak długo wynik sprawdzenia jest dla repricera prawdziwy — dłużej niż noc bez sprawdzeń, krócej niż doba.
 const waznoscH = () => (Number(process.env.PRICING_NSP_WAZNOSC_H) > 0 ? Number(process.env.PRICING_NSP_WAZNOSC_H) : 12);
 
+// Rzadsze sprawdzanie tam, gdzie nic się nie dzieje (oszczędność pakietu, decyzja usera 2026-11-22): „odcisk” wyniku =
+// liczba konkurentów po filtrach + trzy najniższe ceny (bez naszych kont — nasze zmiany cen nie są zmianą konkurencji).
+// Odcisk niezmieniony od STABILNE_DNI → co STABILNE_H, a gdy przez ten czas nie ma żadnego konkurenta → co BEZ_KONK_H.
+// Każda zmiana odcisku wraca do zwykłego rytmu (co_h oferty). Wynik takiego EAN-u jest dla repricera ważny do
+// następnego sprawdzenia (+2 h zapasu) — inaczej przy co 24 h repricer uznałby go za nieaktualny i przestał decydować.
+const liczbaEnv = (k, d) => (Number(process.env[k]) > 0 ? Number(process.env[k]) : d);
+const STABILNOSC = () => ({ dni: liczbaEnv('PRICING_NSP_STABILNE_DNI', 3), h: liczbaEnv('PRICING_NSP_STABILNE_H', 12), bezKonkH: liczbaEnv('PRICING_NSP_BEZ_KONK_H', 24) });
+
 const dobryEan = (e) => /^(\d{8}|\d{12,14})$/.test(String(e || '').trim());
 // Ten sam kod, różne zapisy w ofertach: bez zer wiodących, z „0” i z „00” (zasada usera 2026-11-17). Pixel Petz Corgi:
 // po „0035051540298” Niezbędnik dał 22 oferty od 59,95 zł, po „035051540298” 40 ofert od 42,75 zł — sprzedawcy
@@ -67,6 +75,27 @@ const zWyniku = (x) => ({ oferta: x.offer_id, sprzedawca: x.seller_id, login: x.
   dostawa: kwota(x.delivery_price), stan: x.stock ?? null, popularnosc: x.popularity ?? null, firma: x.is_company ?? null,
   ss: x.is_superseller ?? null, nazwa: x.name || null });
 
+// Odcisk wyniku (zob. STABILNOSC): oferty z wyniku (zWyniku) → tekst do porównania między sprawdzeniami.
+function odcisk(oferty, nasze) {
+  const k = konkurenci(oferty, nasze);
+  return JSON.stringify([k.lista.length, ...k.lista.slice(0, 3).map((c) => Math.round(c.cena * 100) / 100)]);
+}
+const BEZ_KONKURENCJI = JSON.stringify([0]);
+
+// Rytm sprawdzania EAN-u: { h, powod } — co_h oferty albo dłużej przy stabilnym wyniku. wpis = wiersz allegro_konkurencja.
+function rytm(coHOferty, wpis, teraz = Date.now(), st = STABILNOSC()) {
+  const od = zBazy(wpis?.stabilne_od);
+  if (!wpis?.odcisk || !Number.isFinite(od) || teraz - od < st.dni * 86_400_000) return { h: coHOferty, powod: null };
+  const dni = Math.floor((teraz - od) / 86_400_000);
+  if (wpis.odcisk === BEZ_KONKURENCJI) return { h: Math.max(coHOferty, st.bezKonkH), powod: `brak konkurencji od ${dni} dni` };
+  return { h: Math.max(coHOferty, st.h), powod: `konkurencja bez zmian od ${dni} dni` };
+}
+// Ważność wyniku dla repricera przy wydłużonym rytmie: do następnego sprawdzenia + 2 h (najrzadszy rytm EAN-u).
+function waznoscWpisuH(wpis, teraz = Date.now()) {
+  const r = rytm(DOMYSLNE.co_h, wpis, teraz);
+  return r.powod ? r.h + 2 : 0;
+}
+
 // Konkurenci po filtrach, rosnąco po cenie towaru. `nasze` — konta z pricing/allegro.js KONTA (numer i login).
 function konkurenci(oferty, nasze, { minStan = DOMYSLNE.minStan } = {}) {
   const pomin = { nasze: 0, stan: 0, prywatne: 0 };
@@ -87,7 +116,7 @@ function konkurenci(oferty, nasze, { minStan = DOMYSLNE.minStan } = {}) {
 // `konkurenci` (ceny rosnąco) zostają w obserwacji — cel pod minimum wybiera doModelu(), gdy znamy pas.
 // wpisy — wynik(i) dla zapisów EAN-u oferty (jeden obiekt albo lista); łączymy świeże, oferty bez powtórzeń.
 const polaczWyniki = (wpisy, teraz, wazH) => {
-  const swieze = [].concat(wpisy || []).filter((w) => w && w.czas && !w.blad && teraz - zBazy(w.czas) <= wazH * 3_600_000);
+  const swieze = [].concat(wpisy || []).filter((w) => w && w.czas && !w.blad && teraz - zBazy(w.czas) <= Math.max(wazH, waznoscWpisuH(w, teraz)) * 3_600_000);
   if (!swieze.length) return null;
   const oferty = new Map();
   for (const w of swieze) {
@@ -138,7 +167,8 @@ function doSprawdzenia(oferty, ostatnie, teraz = Date.now(), { limit = Infinity,
   for (const [ean, h] of poEan) {
     const w = ostatnie.get(ean);
     const ost = Math.max(zBazy(w?.czas) || 0, zBazy(w?.zlecono) || 0);
-    if (!ost || teraz - ost >= h * 3_600_000 - TOLERANCJA_MIN * 60_000) due.push({ ean, ost });
+    const co = rytm(h, w, teraz).h;   // stabilny wynik — rzadziej (oszczędność pakietu)
+    if (!ost || teraz - ost >= co * 3_600_000 - TOLERANCJA_MIN * 60_000) due.push({ ean, ost });
   }
   return due.sort((a, b) => a.ost - b.ost).slice(0, limit).map((d) => d.ean);
 }
@@ -265,10 +295,13 @@ async function odbierz({ czekajMs = 0, rynek = 'allegro-pl' } = {}) {
     if (Date.now() - zBazy(s.czas) > 2 * 3_600_000) { stan.set(SLOT, ''); stan.set('blad_niezbednik', `raport ${zlec.id} (${rynek}) nie skończył się w 2 h — porzucony`); }
     return { id: zlec.id, status: r.status, gotowy: false };
   }
-  const zapisz = db.prepare(`INSERT INTO allegro_konkurencja (ean, czas, oferty, wszystkich, blad, raport, zlecono)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+  const zapisz = db.prepare(`INSERT INTO allegro_konkurencja (ean, czas, oferty, wszystkich, blad, raport, zlecono, odcisk, stabilne_od)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (ean) DO UPDATE SET czas = excluded.czas, oferty = excluded.oferty, wszystkich = excluded.wszystkich,
-      blad = excluded.blad, raport = excluded.raport`);
+      blad = excluded.blad, raport = excluded.raport, odcisk = excluded.odcisk, stabilne_od = excluded.stabilne_od`);
+  // Odcisk poprzedniego wyniku — ten sam = stabilne_od zostaje, inny = liczymy od teraz (zob. rytm).
+  const poprzedni = db.prepare('SELECT odcisk, stabilne_od FROM allegro_konkurencja WHERE ean = ?');
+  const nasze = naszeKonta();
   const bladTylko = db.prepare('UPDATE allegro_konkurencja SET blad = ?, raport = ? WHERE ean = ?');
   let ok = 0, bledy = 0;
   db.exec('BEGIN');
@@ -276,8 +309,10 @@ async function odbierz({ czekajMs = 0, rynek = 'allegro-pl' } = {}) {
     for (const it of r.items) {
       if (it.status === 'completed' && it.result) {
         const czas = it.result.checked_at || it.checked_at;
-        zapisz.run(kluczBazy(rynek, it.ean), czas ? doBazy(Date.parse(czas)) : doBazy(Date.now()), JSON.stringify((it.result.offers || []).map(zWyniku)),
-          it.result.total ?? null, null, zlec.id, doBazy(zBazy(s.czas) || Date.now()));
+        const kl = kluczBazy(rynek, it.ean), oferty = (it.result.offers || []).map(zWyniku), czasB = czas ? doBazy(Date.parse(czas)) : doBazy(Date.now());
+        const odc = odcisk(oferty, nasze), stary = poprzedni.get(kl);
+        zapisz.run(kl, czasB, JSON.stringify(oferty), it.result.total ?? null, null, zlec.id, doBazy(zBazy(s.czas) || Date.now()),
+          odc, stary?.odcisk === odc && stary.stabilne_od ? stary.stabilne_od : czasB);
         ok++;
       } else {
         // Nieudana pozycja: poprzedni wynik zostaje (stary, ale prawdziwy), dopisujemy tylko błąd.
@@ -316,4 +351,5 @@ async function zlec(oferty, teraz = Date.now(), { rynek = 'allegro-pl' } = {}) {
 }
 
 module.exports = { FILTRY, CO_H, DOMYSLNE, PRZEBICIE_MAX, okno, waznoscH, dobryEan, wariantyEan, eanyOferty, wpisyOferty, coH, przebicie, godzinaPL, wOknie, zWyniku, eanZProduktu, eanyZProduktu, eanZAllegro,
-  konkurenci, zNiezbednika, doModelu, doSprawdzenia, podsumowanie, naszeKonta, wyniki, odswiezEan, odbierz, zlec, sufiksRynku, kluczBazy, kluczStanu };
+  konkurenci, zNiezbednika, doModelu, doSprawdzenia, podsumowanie, naszeKonta, wyniki, odswiezEan, odbierz, zlec, sufiksRynku, kluczBazy, kluczStanu,
+  odcisk, rytm, waznoscWpisuH, STABILNOSC, BEZ_KONKURENCJI };

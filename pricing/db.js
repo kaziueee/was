@@ -197,6 +197,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS allegro_konkurencja (
   zlecono      TEXT                        -- kiedy ostatnio zlecone (harmonogram liczy od tego, gdy brak wyniku)
 )`);
 
+// Rzadsze sprawdzanie stabilnych wyników (pricing/konkurencja-allegro.js rytm, od 2026-11-22): odcisk wyniku i od kiedy
+// się nie zmienia. NULL = jeszcze nie liczone (wiersz sprzed zmiany) — zwykły rytm do pierwszego nowego wyniku.
+const kolKonk = db.prepare('PRAGMA table_info(allegro_konkurencja)').all().map((k) => k.name);
+if (!kolKonk.includes('odcisk')) db.exec('ALTER TABLE allegro_konkurencja ADD COLUMN odcisk TEXT');
+if (!kolKonk.includes('stabilne_od')) db.exec('ALTER TABLE allegro_konkurencja ADD COLUMN stabilne_od TEXT');
+
 // Strategie cenowe per towar (pricing/strategie.js, zakładka Ceny → Strategie). Domyślna „All marża 20” nie ma
 // wiersza: towar bez przypisania = dzisiejszy kalkulator. aktywna = 0 to PODGLĄD (pas liczony i pokazywany,
 // automat go nie używa), 1 = automat używa (decyzja usera 2026-10-19: wdrożenie kontrolowane).

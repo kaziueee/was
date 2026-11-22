@@ -114,7 +114,10 @@ const zKanalem = (o) => {
       co_h: konkurencja.coH(o.konk_co_h), przebicie: konkurencja.przebicie(o.konk_przebicie), wlasne: o.konk_co_h != null || o.konk_przebicie != null,
       ean: o.ean || null, ean_zrodlo: o.ean_zrodlo || null, okno: konkurencja.okno(),
       // Wyniki dla wszystkich zapisów EAN-u (pricing/konkurencja-allegro.js eanyOferty) — połączone.
-      wynik: o.ean ? konkurencja.podsumowanie(konkurencja.wpisyOferty(o, az.zRynkuOferty(o.rynek)?.def?.allegro), naszeKonta()) : null } } : {}),
+      wynik: o.ean ? konkurencja.podsumowanie(konkurencja.wpisyOferty(o, az.zRynkuOferty(o.rynek)?.def?.allegro), naszeKonta()) : null,
+      // Faktyczny rytm (rzadziej przy stabilnym wyniku — konkurencja-allegro.js rytm): najrzadszy z zapisów EAN-u.
+      rytm: o.ean ? konkurencja.wpisyOferty(o, az.zRynkuOferty(o.rynek)?.def?.allegro).map((w) => konkurencja.rytm(konkurencja.coH(o.konk_co_h), w))
+        .reduce((a, r) => (r.h > a.h ? r : a), { h: konkurencja.coH(o.konk_co_h), powod: null }) : null } } : {}),
     // Allegro: raport „Czynniki Top oferty” (pricing/allegro-top.js) — cena Top oferty i co jeszcze blokuje.
     top: o.top_czas ? { ocena: o.top_ocena, cena: o.top_cena, roznica: o.top_roznica, cena_nasza: o.top_cena_nasza,
       czas: o.top_czas, aktualny: allegroTop.aktualny({ raport_czas: o.top_czas }), waznosc_h: allegroTop.WAZNOSC_H,

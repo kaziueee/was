@@ -306,3 +306,39 @@ test('reguła 6 nie dotyczy pełnej listy konkurentów: po podwyżce przyszedł 
   const amazon = decyzja({ cena: 89.9, wysylka: 0, bbNasz: false, bbCena: 85 }, pas(77.99, 116.98), {}, kontekst);
   assert.strictEqual(amazon.kod, 'cofniecie');
 });
+
+test('oszczędność pakietu: odcisk wyniku bez naszych kont, rytm 4 h → 12 h (bez zmian 3 dni) → 24 h (brak konkurencji)', () => {
+  const nasze = new Set(['111', 'ekajtek_pl']);
+  const of = [{ sprzedawca: '1', login: 'a', cena: 50, stan: 10, firma: true }, { sprzedawca: '111', login: 'ekajtek_pl', cena: 45, stan: 5, firma: true },
+    { sprzedawca: '2', login: 'b', cena: 52.5, stan: 10, firma: true }];
+  assert.strictEqual(k.odcisk(of, nasze), JSON.stringify([2, 50, 52.5]));
+  // nasza cena się zmieniła — odcisk ten sam
+  assert.strictEqual(k.odcisk([of[0], { ...of[1], cena: 49 }, of[2]], nasze), k.odcisk(of, nasze));
+  assert.strictEqual(k.odcisk([of[1]], nasze), k.BEZ_KONKURENCJI);
+  const t = Date.parse('2026-11-22T12:00:00Z');
+  const st = { dni: 3, h: 12, bezKonkH: 24 };
+  assert.deepStrictEqual(k.rytm(4, null, t, st), { h: 4, powod: null });
+  assert.strictEqual(k.rytm(4, { odcisk: '[2,50,52.5]', stabilne_od: '2026-11-20 12:00:00' }, t, st).h, 4);    // 2 dni — za wcześnie
+  const r = k.rytm(4, { odcisk: '[2,50,52.5]', stabilne_od: '2026-11-19 10:00:00' }, t, st);
+  assert.strictEqual(r.h, 12);
+  assert.match(r.powod, /bez zmian od 3 dni/);
+  assert.strictEqual(k.rytm(4, { odcisk: k.BEZ_KONKURENCJI, stabilne_od: '2026-11-15 10:00:00' }, t, st).h, 24);
+  assert.strictEqual(k.rytm(1, { odcisk: '[0]', stabilne_od: '2026-11-15 10:00:00' }, t, st).h, 24);
+});
+
+test('oszczędność pakietu: stabilny EAN sprawdzany rzadziej, a jego wynik ważny do następnego sprawdzenia', () => {
+  const t = Date.parse('2026-11-22T12:00:00Z');   // 13:00 w Polsce
+  const stary = '2026-11-01 10:00:00';
+  const ost = new Map([
+    ['5901111111111', { czas: '2026-11-22 05:00:00', odcisk: '[0]', stabilne_od: stary }],          // 7 h temu, brak konkurencji od 3 tyg. — co 24 h
+    ['5902222222222', { czas: '2026-11-22 05:00:00', odcisk: '[1,40]' , stabilne_od: '2026-11-22 05:00:00' }],  // zmiana dziś — co 4 h
+  ]);
+  const of = [{ ean: '5901111111111' }, { ean: '5902222222222' }];
+  assert.deepStrictEqual(k.doSprawdzenia(of, ost, t, { oknoH: [7, 23] }), ['5902222222222']);
+  // wynik sprzed 20 h: zwykle nieaktualny (12 h), przy rytmie 24 h nadal ważny
+  const wpis = { czas: '2026-11-21 16:00:00', oferty: JSON.stringify([{ oferta: 1, sprzedawca: '111', login: 'ekajtek_pl', cena: 30, stan: 5, firma: true }]),
+    wszystkich: 1, odcisk: '[0]', stabilne_od: stary };
+  const nasze = new Set(['111', 'ekajtek_pl']);
+  assert.ok(k.zNiezbednika([wpis], 30, nasze, t), 'stabilny wynik bez konkurencji ma być ważny');
+  assert.strictEqual(k.zNiezbednika([{ ...wpis, odcisk: null, stabilne_od: null }], 30, nasze, t), null);
+});

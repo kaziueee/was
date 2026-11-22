@@ -125,7 +125,8 @@ function zmianaCeny(surowa, kod, cena) {
 }
 
 // POST /sale/offer-price-automation-commands — zdjęcie reguły cenowej z jednego rynku oferty (tym samym poleceniem
-// przypisywaliśmy przelicznik przy wystawianiu: modification.set). Kształt `remove` do potwierdzenia testem.
+// przypisywaliśmy przelicznik przy wystawianiu: modification.set). `remove` potwierdzone 22.11 (BKR3261, oferta
+// 15250184686): reguła zeszła tylko z CZ w ~3 s, cena CZ 274 → 275 Kč, PL / SK / HU bez zmian.
 const polecenieUsunieciaReguly = (ofertaId, kod) => ({
   modification: { remove: [{ marketplace: { id: definicja(kod).allegro } }] },
   offerCriteria: [{ offers: [{ id: String(ofertaId) }], type: 'CONTAINS_OFFERS' }],

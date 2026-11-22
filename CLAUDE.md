@@ -317,7 +317,7 @@ Dotąd ceny zagraniczne liczyła reguła Allegro przypisana do każdego rynku of
 - **Minimum** z kalkulatora rynku (`config/rynki.js` `ALLEGRO_ZAGRANICA`: Smart rynku, VAT kraju, prowizja 14,15%, HU opłata 4,43%; `policzAllegroZagranica`), max = min × 1,5 — od podłogi, gdy jest wyższa.
 - **Bez konkurencji: +3% raz na dobę do maksimum** (reguła 11 w `pricing/model.js`, włączana kolumną; PL bez zmian).
 - **Konkurencja:** Niezbędnik z `marketplace_id` allegro-cz/-sk/-hu, osobne raporty i liczniki (`stan.nsp_raport_cz` …), wyniki w `allegro_konkurencja` z prefiksem (`cz:<EAN>`).
-- **Zapis** (`allegro.ustawCeneZagr`): najpierw zdjęcie reguły z TEGO rynku (`offer-price-automation-commands`, `modification.remove` — kształt do potwierdzenia testem) i sprawdzenie, że zeszła, potem `PATCH additionalMarketplaces.<rynek>.sellingMode.price`. Wysyłka czeka na **`PRICING_ALLEGRO_ZAGR_WYSYLKA=1`** (osobno od PL); automat per oferta, startuje wyłączony.
+- **Zapis** (`allegro.ustawCeneZagr`): najpierw zdjęcie reguły z TEGO rynku (`offer-price-automation-commands`, `modification.remove: [{ marketplace: { id } }]` — potwierdzone 22.11 na BKR3261: zeszła tylko reguła CZ w ~3 s, SK/HU i PL bez zmian) i sprawdzenie, że zeszła, potem `PATCH additionalMarketplaces.<rynek>.sellingMode.price`. Wysyłka czeka na **`PRICING_ALLEGRO_ZAGR_WYSYLKA=1`** (osobno od PL); automat per oferta, startuje wyłączony.
 
 ## Wystawianie ofert: Ceny → „Do wystawienia” (2026-10-30)
 

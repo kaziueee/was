@@ -26,8 +26,8 @@ const SYTUACJE = [
   { klucz: 'wszystkie', nazwa: 'Wszystkie sytuacje', oferta: () => true },
   { klucz: 'bb', nazwa: 'Mamy Buy Box', opis: 'Buy Box jest nasz (ostatnia obserwacja)', oferta: (o) => o.bb_nasz === 1 },
   { klucz: 'podwyzka', nazwa: 'Do podwyżki', opis: 'Mamy Buy Box, następny konkurent wyraźnie wyżej — automat podniesie cenę; na eMAG także szukanie ceny konkurenta (+3%)',
-    oferta: zKodem('podwyzka', 'podwyzka_limit', 'sonda', 'sonda_limit'), wartosc: (o) => (o.zysk_cel ?? o.zysk_nowa ?? 0) - (o.zysk ?? 0) },
-  { klucz: 'jedyna', nazwa: 'Jedyna oferta', opis: 'Nikt inny nie sprzedaje tego produktu na tym rynku', oferta: zKodem('top_bez_konkurencji') },
+    oferta: zKodem('podwyzka', 'podwyzka_limit', 'sonda', 'sonda_limit', 'bez_konk_podwyzka', 'bez_konk_podwyzka_limit'), wartosc: (o) => (o.zysk_cel ?? o.zysk_nowa ?? 0) - (o.zysk ?? 0) },
+  { klucz: 'jedyna', nazwa: 'Jedyna oferta', opis: 'Nikt inny nie sprzedaje tego produktu na tym rynku', oferta: zKodem('top_bez_konkurencji', 'bez_konk_podwyzka', 'bez_konk_podwyzka_limit', 'bez_konk_czeka') },
   { klucz: 'szansa', nazwa: 'Szansa na Buy Box', opis: 'Nie mamy Buy Boxa, a zwycięzca stoi nad naszym minimum — automat zejdzie pod niego',
     oferta: zKodem('obnizka', 'obnizka_limit'), wartosc: (o) => o.zysk_cel ?? o.zysk_nowa ?? -Infinity },
   // Amazon daje FBA przewagę przy Buy Boxie poza ceną — przy zwycięzcy wysyłającym sam o BB decyduje

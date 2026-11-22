@@ -322,6 +322,47 @@ async function ustawCene(surowa, cena) {
   }
 }
 
+// Cena na JEDNYM rynku zagranicznym oferty (CZ/SK/HU — pricing/allegro-zagranica.js). Reguła cenowa na tym rynku
+// (przelicznik) przeliczyłaby cenę z PL przy następnej zmianie, więc najpierw ją zdejmujemy i sprawdzamy, że zeszła;
+// gdy nie zeszła — ceny nie wysyłamy. Reguły innych rynków i cena PL zostają nietknięte. { ok, cena, blad, zdjetaRegula }
+async function regulyRynku(konto, ofertaId, marketplace) {
+  try {
+    const j = await api(konto, `/sale/price-automation/offers/${encodeURIComponent(ofertaId)}/rules`);
+    return (j?.rules || []).filter((r) => r?.marketplace?.id === marketplace);
+  } catch (e) { if (e.status === 404) return []; throw e; }   // 404 = oferta bez żadnej reguły
+}
+async function ustawCeneZagr(surowa, kod, cena) {
+  const az = require('./allegro-zagranica');
+  const z = az.zmianaCeny(surowa, kod, cena);
+  if (z.blad) return { ok: false, blad: z.blad };
+  const konto = surowa._konto, def = az.definicja(kod);
+  try {
+    let zdjetaRegula = false;
+    if (z.regula) {
+      await zapytanie(konto, '/sale/offer-price-automation-commands', { metoda: 'POST', body: az.polecenieUsunieciaReguly(surowa.id, kod), proby: 1 });
+      let zostala = true;
+      for (let i = 0; i < 8 && zostala; i++) {
+        await sleep(3000);
+        zostala = (await regulyRynku(konto, surowa.id, def.allegro)).length > 0;
+      }
+      if (zostala) return { ok: false, blad: `reguła cenowa na ${def.allegro} nie zeszła — ceny nie wysłano` };
+      zdjetaRegula = true;
+    }
+    const r = await zapytanie(konto, `/sale/product-offers/${encodeURIComponent(surowa.id)}`, { metoda: 'PATCH', body: z.body, proby: 2 });
+    if (r.status !== 202) return { ok: true, cena: z.cena, zdjetaRegula };
+    const loc = r.h.get('location');
+    const sciezka = loc ? loc.replace(/^https?:\/\/[^/]+/, '') : null;
+    for (let i = 0; sciezka && i < 6; i++) {
+      await sleep(Math.min(10, Number(r.h.get('retry-after')) || 5) * 1000);
+      const s2 = await zapytanie(konto, sciezka);
+      if (s2.status === 303 || s2.status === 200) return { ok: true, cena: z.cena, zdjetaRegula };
+    }
+    return { ok: true, cena: z.cena, zdjetaRegula, asynchronicznie: true };
+  } catch (e) {
+    return { ok: false, blad: e.message };
+  }
+}
+
 // Podgląd opłat oferty — czyste funkcje: treść zapytania i stawka % ceny (prowizja brutto, jak pobiera Allegro).
 function zapytaniePodgladu(surowa) {
   if (!surowa?.category?.id || !(cenaPln(surowa.sellingMode) > 0)) return null;
@@ -347,5 +388,5 @@ const linkiOferty = (id) => (id ? { produkt: `https://allegro.pl/oferta/${encode
 
 module.exports = {
   KONTA, USER_AGENT, skonfigurowany, kontaAutoryzowane, tokenDostepu, zapiszTokeny, postAuth, tokenWazny, czekajMs,
-  api, zapytanie, wszystkieOferty, ofertaPoId, login, trescTokenu, zapytaniePodgladu, stawkaZPodgladu, prowizjaOferty, doOferty, kluczeOfert, skuGt, zOferty, zmianaCeny, ustawCene, linkiOferty,
+  api, zapytanie, wszystkieOferty, ofertaPoId, ustawCeneZagr, regulyRynku, login, trescTokenu, zapytaniePodgladu, stawkaZPodgladu, prowizjaOferty, doOferty, kluczeOfert, skuGt, zOferty, zmianaCeny, ustawCene, linkiOferty,
 };

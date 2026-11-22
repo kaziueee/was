@@ -14,8 +14,9 @@
 // Uruchomienie: node pricing/sync-allegro.js EKAJTEK|NATROPIE
 
 const allegro = require('./allegro');
-const { db } = require('./db');
+const { db, stan } = require('./db');
 const { mapaKartoteki, przypisz } = require('./sync-oferty');
+const az = require('./allegro-zagranica');
 
 async function synchronizujAllegro(konto, surowe = null) {
   const lista = surowe || await allegro.wszystkieOferty(konto);
@@ -35,6 +36,18 @@ async function synchronizujAllegro(konto, surowe = null) {
       prowizja_czas = CASE WHEN oferty.kategoria IS NOT excluded.kategoria THEN NULL ELSE oferty.prowizja_czas END,
       kategoria = excluded.kategoria`);
   const wygas = db.prepare(`UPDATE oferty SET aktywna = 0 WHERE platforma = 'allegro' AND rynek = ? AND widziana < ?`);
+  // Rynki zagraniczne tej samej oferty (pricing/allegro-zagranica.js): osobny wiersz na CZ/SK/HU z ceną w walucie
+  // rynku — repricer prowadzi je osobno. Ten sam klucz SKU i numer oferty co PL; automat startuje wyłączony.
+  const upsertZagr = db.prepare(`
+    INSERT INTO oferty (platforma, rynek, sku, asin, tw_id, symbol_gt, dopasowanie, nazwa, cena, ilosc, kanal, kategoria, aktywna, widziana)
+    VALUES ('${az.PLATFORMA}', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 1, CURRENT_TIMESTAMP)
+    ON CONFLICT (platforma, rynek, sku) DO UPDATE SET
+      auto = CASE WHEN oferty.asin IS NOT excluded.asin THEN 0 ELSE oferty.auto END,
+      asin = excluded.asin, tw_id = excluded.tw_id, symbol_gt = excluded.symbol_gt, dopasowanie = excluded.dopasowanie, nazwa = excluded.nazwa,
+      cena = excluded.cena, ilosc = excluded.ilosc, aktywna = 1, widziana = CURRENT_TIMESTAMP, kategoria = excluded.kategoria`);
+  const rynkiKonta = az.RYNKI_ZAGR.map((d) => az.rynekOferty(konto, d.kod));
+  const wygasZagr = db.prepare(`UPDATE oferty SET aktywna = 0 WHERE platforma = '${az.PLATFORMA}' AND rynek IN (${rynkiKonta.map(() => '?').join(',')}) AND widziana < ?`);
+  let zagr = 0;
 
   const start = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%S','now','-1 second') AS t").get().t;
   let dopasowane = 0, regulyAllegro = 0, duplikaty = 0;
@@ -52,12 +65,27 @@ async function synchronizujAllegro(konto, surowe = null) {
       if (t) dopasowane++; else brak.push(o.sku);
       upsert.run(konto, k, o.id, t ? t.tw_Id : null, t ? t.tw_Symbol : null, t ? t.dopasowanie : null, o.nazwa, o.cena, o.ilosc,
         surowa?.category?.id ? String(surowa.category.id) : null);
+      for (const [kod, c] of Object.entries(az.cenyNaRynkach(surowa))) {
+        upsertZagr.run(az.rynekOferty(konto, kod), k, o.id, t ? t.tw_Id : null, t ? t.tw_Symbol : null, t ? t.dopasowanie : null, o.nazwa, c.cena, o.ilosc,
+          surowa?.category?.id ? String(surowa.category.id) : null);
+        zagr++;
+      }
     }
     // Pusta lista = najpewniej awaria po stronie Allegro, nie „wszystko zniknęło" — nie wygaszamy.
     const wygasle = lista.length ? wygas.run(konto, start).changes : 0;
+    if (lista.length) wygasZagr.run(...rynkiKonta, start);
     db.exec('COMMIT');
+    // Kurs przelicznika Allegro (podłoga cen zagranicznych) z ofert, które wciąż stoją pod regułą — zapamiętany, bo
+    // oferty przejęte przez repricer z próbki wypadają. Nowszy pomiar wygrywa, rynek bez próbek zostaje ze starym.
+    const kursy = az.kursyPrzelicznika(lista);
+    if (Object.keys(kursy).length) {
+      const stare = (() => { try { return JSON.parse(stan.get('allegro_kursy')?.wartosc || '{}'); } catch { return {}; } })();
+      const teraz = new Date().toISOString().slice(0, 19).replace('T', ' ');
+      for (const [kod, x] of Object.entries(kursy)) stare[kod] = { ...x, konto, czas: teraz };
+      stan.set('allegro_kursy', JSON.stringify(stare));
+    }
     return { rynek: `Allegro ${konto}`, ofert: lista.length, aktywne: lista.length, dopasowane, brak: brak.length, duplikaty,
-      reguly_allegro: regulyAllegro, wygasle, przyklady_brak: brak.slice(0, 5).join(' ') };
+      reguly_allegro: regulyAllegro, wygasle, zagranica: zagr, przyklady_brak: brak.slice(0, 5).join(' ') };
   } catch (e) { db.exec('ROLLBACK'); throw e; }
 }
 

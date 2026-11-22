@@ -309,6 +309,16 @@ Pole ceny **Hurt_PLN** (`pricesfield_id` 6) w Sellasist = **Hurt × średni kurs
 - **Podejrzane = wynik > 2× ceny w Sellasist** (`MAX_WZGLEDEM_DETALU`) — wypisywane, ale **zapisywane** (decyzja usera 2026-10-26, „na razie wszędzie”). 116 takich 2026-10-26: 22 × Siku z Hurtem = detal co do grosza (cena w PLN wpisana w poziom EUR — SIK1015: 20,99 → 92,41 zł, do poprawy w Subiekcie), ~80 wariantów (U/P/ZE/części zestawów: Hurt pełnego produktu, tańsza cena), kilkanaście zwykłych 2–3×. Po poprawce w Subiekcie job przepisze je sam (różnica > 1%).
 - Ręcznie: `node scripts/sellasist-hurt-pln.js` (podgląd; `--zapisz`, `--kurs`, `--wszystko`, `--tylko SYM`, `--lista`). Czysta logika i testy: `services/sellasist-hurt-pln-model.js`, `test/sellasist-hurt-pln-model.test.js`.
 
+## Repricer Allegro CZ / SK / HU — osobna cena na rynek (2026-11-21)
+
+Dotąd ceny zagraniczne liczyła reguła Allegro przypisana do każdego rynku oferty: CZ/SK „Przelicznik cen”, HU „Cena Węgry” (przelicznik +11%). Zagranica to ~43% przychodu Allegro, a na ~połowie top ofert nie ma tam konkurencji (badanie 20.11). Teraz repricer prowadzi każdy rynek osobno — platforma **`allegro_zagr`**, rynek `EKAJTEK_CZ` itd., kolumny `ALLEGRO_<KONTO>_<KOD>` (osobna platforma celowo: kod znający tylko `allegro` nie ruszy ceny PL). Logika: `pricing/allegro-zagranica.js` (testy `test/pricing-allegro-zagranica.test.js`).
+
+- **Podłoga (zasada usera, twarda — też dla ręcznej ceny):** nie mniej niż cena PL tej oferty po kursie przelicznika Allegro, na HU + 11%; **NaTropie nie taniej niż ekajtek** na tym samym rynku. Kurs = mediana cena_rynku ÷ cena_PL z ofert wciąż pod regułą (sync, `stan.allegro_kursy`; 21.11: 5,49 Kč, 0,224 €, 83,77 Ft za zł). Brak kursu albo ceny PL = brak pasa, nic nie wysyłamy.
+- **Minimum** z kalkulatora rynku (`config/rynki.js` `ALLEGRO_ZAGRANICA`: Smart rynku, VAT kraju, prowizja 14,15%, HU opłata 4,43%; `policzAllegroZagranica`), max = min × 1,5 — od podłogi, gdy jest wyższa.
+- **Bez konkurencji: +3% raz na dobę do maksimum** (reguła 11 w `pricing/model.js`, włączana kolumną; PL bez zmian).
+- **Konkurencja:** Niezbędnik z `marketplace_id` allegro-cz/-sk/-hu, osobne raporty i liczniki (`stan.nsp_raport_cz` …), wyniki w `allegro_konkurencja` z prefiksem (`cz:<EAN>`).
+- **Zapis** (`allegro.ustawCeneZagr`): najpierw zdjęcie reguły z TEGO rynku (`offer-price-automation-commands`, `modification.remove` — kształt do potwierdzenia testem) i sprawdzenie, że zeszła, potem `PATCH additionalMarketplaces.<rynek>.sellingMode.price`. Wysyłka czeka na **`PRICING_ALLEGRO_ZAGR_WYSYLKA=1`** (osobno od PL); automat per oferta, startuje wyłączony.
+
 ## Wystawianie ofert: Ceny → „Do wystawienia” (2026-10-30)
 
 Towary ze stanem, które na rynku mają **gotową kartę produktu** (eMAG PNK, ASIN, Kaufland id_product), a nie mają naszej oferty — z ceną startową i marżą z kalkulatora; zaznaczasz → podgląd → wystaw. Dostęp jak Ceny (admin + biuro).

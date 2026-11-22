@@ -46,6 +46,10 @@
 //     „Czynniki Top oferty” ocenia cenę jako „odpowiednią”, kod `top_raport` („cena OK”) — to nie brak danych, tylko
 //     brak ceny NASTĘPNEGO konkurenta do podwyżki (19.10: 823 oferty ekajtek liczyły się w „Brak danych”). „Cena OK”
 //     to nie pewny Top: 21.10 na 70 produktach dwie nasze oferty miały naraz „OK”, a Top na stronie jest jeden.
+// 11. Brak konkurencji przy pełnej liście ofert (Niezbędnik: nikt poza nami) — dziś stoimy (`top_bez_konkurencji`).
+//     Kolumna może włączyć powolne podnoszenie (`bezKonkurencjiPct` > 0, Allegro CZ/SK/HU od 2026-11-21, decyzja
+//     usera): +pct raz na `bezKonkurencjiCoH` godzin (licząc od ostatniej WYSŁANEJ podwyżki), najwyżej do max.
+//     Gdy pojawi się konkurent, działa zwykła reguła 3 (schodzimy pod niego, nie pod minimum).
 
 const DOMYSLNE_REGULY = {
   krok: 0.01,          // o ile schodzimy pod konkurenta; 0 = remis — ta sama cena (przebicie przy ofercie, worker)
@@ -57,6 +61,8 @@ const DOMYSLNE_REGULY = {
   wojnaObnizek: 3,     // tyle wysłanych obniżek z rzędu bez Buy Boxa = wojna o grosze (reguła 8)
   wojnaPauzaH: 24,     // tyle godzin od ostatniej obniżki bez kolejnej
   sondaKrokPct: 3,     // krok szukania ceny konkurenta przy naszym BB, gdy jego ceny nie znamy (reguła 9)
+  bezKonkurencjiPct: 0,  // reguła 11: podwyżka bez konkurencji (0 = wyłączona — stoimy)
+  bezKonkurencjiCoH: 24, // reguła 11: najwyżej raz na tyle godzin
 };
 
 const zaokr = (x) => Math.round(x * 100) / 100;
@@ -79,6 +85,7 @@ const zaokr = (x) => Math.round(x * 100) / 100;
 //   blokadaPodwyzek  — true, gdy w oknie blokady było już cofnięcie
 //   obnizkiBezBb     — { n, godzOd }: wysłane obniżki od ostatniej obserwacji z NASZYM Buy Boxem
 //                      i ile godzin minęło od ostatniej z nich (reguła 8)
+//   godzOdPodwyzki   — godziny od ostatniej WYSŁANEJ podwyżki tej oferty (null = nie było) — reguła 11
 // Zwraca { cena, cel, zmiana, kod, powod } — `cena` to cena towaru do ustawienia w tym przebiegu,
 // `cel` to cena docelowa (bez limitu schodka); bez zmiany cel = cena.
 function decyzja(obs, pas, reguly = {}, kontekstWe = {}) {
@@ -150,6 +157,15 @@ function decyzja(obs, pas, reguly = {}, kontekstWe = {}) {
         const sonda = zaokr(Math.min(cena * (1 + r.sondaKrokPct / 100), max));
         if (sonda - cena < 0.005) return zostaw('top', 'mamy Buy Box, cena na maksimum');
         return ustaw(sonda, 'sonda', `mamy Buy Box, ceny konkurencji nieznane — szukamy jej: +${r.sondaKrokPct}% (po utracie BB powrót)`);
+      }
+      if (r.bezKonkurencjiPct > 0) {
+        const cel = zaokr(Math.min(cena * (1 + r.bezKonkurencjiPct / 100), max));
+        if (cel - cena < 0.005) return zostaw('top_bez_konkurencji', 'brak konkurencji, cena na maksimum');
+        const godz = kontekstWe.godzOdPodwyzki;
+        if (godz != null && godz < r.bezKonkurencjiCoH) {
+          return zostaw('bez_konk_czeka', `brak konkurencji — kolejne +${r.bezKonkurencjiPct}% za ${Math.max(1, Math.ceil(r.bezKonkurencjiCoH - godz))} h`);
+        }
+        return ustaw(cel, 'bez_konk_podwyzka', `brak konkurencji — podnosimy +${r.bezKonkurencjiPct}% (raz na ${r.bezKonkurencjiCoH} h, do maksimum ${max})`);
       }
       return zostaw('top_bez_konkurencji', 'mamy Buy Box, brak innych ofert do porównania');
     }

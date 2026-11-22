@@ -84,6 +84,7 @@ async function stanyGt(twIds) {
 
 // Linki do oferty — każda platforma po swojemu (pricing/linki.js, wspólne z kartą produktu w Trendach).
 const { linkiOferty: linki } = require('../pricing/linki');
+const az = require('../pricing/allegro-zagranica');
 // Nasze konta Allegro (numer + login) — raz na żądanie wystarczy, KONTA się nie zmieniają.
 let naszeKontaCache = null;
 const naszeKonta = () => (naszeKontaCache ||= konkurencja.naszeKonta());
@@ -109,11 +110,11 @@ const zKanalem = (o) => {
     // o ile automat przebija konkurenta: własne przy ofercie (0 = remis) albo null = krok kanału (POST /przebicie)
     przebicie: { wlasne: o.konk_przebicie ?? null, domyslne: krokKanalu(o.platforma, k) },
     // Allegro: ustawienia sprawdzania konkurencji (Niezbędnik) i ostatni wynik dla EAN-u towaru.
-    ...(o.platforma === 'allegro' ? { konkurencja: {
+    ...(o.platforma === 'allegro' || o.platforma === az.PLATFORMA ? { konkurencja: {
       co_h: konkurencja.coH(o.konk_co_h), przebicie: konkurencja.przebicie(o.konk_przebicie), wlasne: o.konk_co_h != null || o.konk_przebicie != null,
       ean: o.ean || null, ean_zrodlo: o.ean_zrodlo || null, okno: konkurencja.okno(),
       // Wyniki dla wszystkich zapisów EAN-u (pricing/konkurencja-allegro.js eanyOferty) — połączone.
-      wynik: o.ean ? konkurencja.podsumowanie(konkurencja.wpisyOferty(o), naszeKonta()) : null } } : {}),
+      wynik: o.ean ? konkurencja.podsumowanie(konkurencja.wpisyOferty(o, az.zRynkuOferty(o.rynek)?.def?.allegro), naszeKonta()) : null } } : {}),
     // Allegro: raport „Czynniki Top oferty” (pricing/allegro-top.js) — cena Top oferty i co jeszcze blokuje.
     top: o.top_czas ? { ocena: o.top_ocena, cena: o.top_cena, roznica: o.top_roznica, cena_nasza: o.top_cena_nasza,
       czas: o.top_czas, aktualny: allegroTop.aktualny({ raport_czas: o.top_czas }), waznosc_h: allegroTop.WAZNOSC_H,
@@ -157,7 +158,7 @@ function chipyKanalow(towary, pasuje) {
   for (const p of [...new Set(KOLUMNY.map((k) => k.platforma))]) {
     const kol = KOLUMNY.filter((k) => k.platforma === p);
     if (kol.length === 1) { chipy.push({ klucz: p, nazwa: kol[0].nazwa, n: ile(kol) }); continue; }
-    chipy.push({ klucz: p, nazwa: `${kol[0].nazwa.split(' ')[0]} — wszystkie`, n: ile(kol) });
+    chipy.push({ klucz: p, nazwa: `${kol[0].nazwaKanalu || kol[0].nazwa.split(' ')[0]} — wszystkie`, n: ile(kol) });
     for (const k of kol) chipy.push({ klucz: k.klucz, nazwa: k.etykieta || k.rynek, n: ile([k]), rynek: true });
   }
   return chipy;
@@ -565,7 +566,7 @@ router.post('/przebicie', (req, res) => {
 router.post('/konkurencja', (req, res) => {
   const o = ofertaPoId(req.body?.oferta_id);
   if (!o) return res.status(404).json({ blad: 'Nie ma takiej oferty' });
-  if (o.platforma !== 'allegro') return res.status(400).json({ blad: 'Ustawienia konkurencji są na razie tylko dla Allegro' });
+  if (o.platforma !== 'allegro' && o.platforma !== az.PLATFORMA) return res.status(400).json({ blad: 'Ustawienia konkurencji są na razie tylko dla Allegro' });
   const coH = req.body?.co_h == null || req.body.co_h === '' ? null : Number(req.body.co_h);
   if (coH != null && !konkurencja.CO_H.includes(coH)) return res.status(400).json({ blad: `Sprawdzanie co ${konkurencja.CO_H.join(', ')} h` });
   const p = req.body?.przebicie == null || req.body.przebicie === '' ? null : granice.liczba(req.body.przebicie);

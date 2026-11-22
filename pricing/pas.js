@@ -46,7 +46,7 @@ function pasyZWyceny(w, { genius, prowizja, strategia = null } = {}) {
     // Minimum liczone TUTAJ z `g` (z docinaniem), nie brane z w.rynki — tamta wycena (services/cennik)
     // idzie z checkboxem docinania wyłączonym. Wcześniej docinanie działało tylko w `ocen`, a minimum
     // zostało bez niego: 2026-10-14 automat podniósł przez to FR NERF7376 33,99 → 47,99 €.
-    let def = k.kalkulator && rynki.RYNKI.find((x) => x.nazwa === k.kalkulator);
+    let def = k.kalkulator && rynki.definicjaRynku(k.kalkulator);   // także Allegro CZ/SK/HU (poza RYNKI)
     if (!def) continue;
     if (k.rynekNadpisz) def = { ...def, ...k.rynekNadpisz };     // np. Allegro NaTropie bez Ads
     let gk = g;

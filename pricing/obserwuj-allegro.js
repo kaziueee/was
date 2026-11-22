@@ -72,4 +72,46 @@ async function obserwujAllegro(oferty, surowe) {
   return wynik;
 }
 
-module.exports = { obserwujAllegro };
+// Rynki zagraniczne (platforma 'allegro_zagr', pricing/allegro-zagranica.js): ta sama lista ofert, cena z
+// additionalMarketplaces, konkurencja z Niezbędnika dla tego rynku (`marketplace_id`). Raport „Czynniki Top oferty”
+// jest tylko dla PL. Bez wyniku Niezbędnika — sama nasza cena (model pilnuje podłogi). Wynik niesie też cenę PL
+// oferty (podłoga „nie mniej niż PL po kursie”).
+async function obserwujAllegroZagr(oferty, surowe) {
+  const az = require('./allegro-zagranica');
+  const poId = new Map((surowe || []).map((o) => [klucz(o._konto, o.id), o]));
+  const nasze = konkurencja.naszeKonta();
+  const konkRynku = new Map(az.RYNKI_ZAGR.map((d) => [d.kod, konkurencja.wyniki(d.allegro)]));
+  const teraz = Date.now();
+  const zapisz = db.prepare(`INSERT INTO obserwacje (oferta_id, cena, wysylka, bb_nasz, bb_cena, bb_fba, najtansza_inna, ofert, bb_nasza_inna)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const ostatnia = db.prepare('SELECT * FROM obserwacje WHERE oferta_id = ? ORDER BY id DESC LIMIT 1');
+  const widziana = db.prepare('UPDATE obserwacje SET widziana = CURRENT_TIMESTAMP WHERE id = ?');
+  const b = (v) => (v == null ? null : v ? 1 : 0);
+  const wynik = new Map();
+  let nowe = 0;
+  db.exec('BEGIN');
+  try {
+    for (const o of oferty) {
+      const r = az.zRynkuOferty(o.rynek);
+      const surowa = r && poId.get(klucz(r.konto, o.asin));
+      const naRynku = surowa && az.cenyNaRynkach(surowa)[r.kod];
+      if (!naRynku) continue;
+      const eany = konkurencja.eanyOferty(o);
+      const konk = konkRynku.get(r.kod);
+      const zNsp = eany.length ? konkurencja.zNiezbednika(eany.map((e) => konk.get(e)).filter(Boolean), naRynku.cena, nasze, teraz) : null;
+      const obs = { ...(zNsp || { ...allegro.zOferty(null), cena: naRynku.cena }), cenaPl: az.cenaPl(surowa), regula: naRynku.regula, kod: r.kod, konto: r.konto };
+      wynik.set(o.id, obs);
+      const w = { cena: obs.cena, wysylka: obs.wysylka, bb_nasz: b(obs.bbNasz), bb_cena: obs.bbCena, bb_fba: b(obs.bbFba),
+        najtansza_inna: obs.najtanszaInna, ofert: obs.ofert, bb_nasza_inna: b(obs.bbInnaNasza) };
+      const prev = ostatnia.get(o.id);
+      if (takaSamaObserwacja(prev, w)) { widziana.run(prev.id); continue; }
+      zapisz.run(o.id, w.cena, w.wysylka, w.bb_nasz, w.bb_cena, w.bb_fba, w.najtansza_inna, w.ofert, w.bb_nasza_inna);
+      nowe++;
+    }
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+  wynik.nowe = nowe;
+  return wynik;
+}
+
+module.exports = { obserwujAllegro, obserwujAllegroZagr };

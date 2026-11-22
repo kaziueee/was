@@ -42,13 +42,28 @@ const KOLUMNY = [
   { klucz: 'ALLEGRO_NATROPIE', platforma: 'allegro', rynek: 'NATROPIE', nazwa: 'Allegro NaTropie', etykieta: 'NaTropie', waluta: 'zł', kalkulator: 'Allegro',
     tylkoOdczyt: true, wysylkaPoZgodzie: 'PRICING_ALLEGRO_WYSYLKA', bezKonkurencji: true,
     rynekNadpisz: { ads: 0 } },   // NaTropie nie prowadzi kampanii Ads (Rozliczenia III kw. 2026: 0 zł)
+  // Allegro CZ / SK / HU (od 2026-11-21, decyzja usera): osobna cena na każdym rynku, platforma 'allegro_zagr'
+  // (pricing/allegro-zagranica.js). Podłoga: PL po kursie przelicznika Allegro (HU +11%), NaTropie nie taniej niż
+  // ekajtek; bez konkurencji +3% raz na dobę do maksimum (reguła 11 w pricing/model.js). Przebicie w walucie rynku.
+  // Wysyłka czeka na osobną zgodę usera (PRICING_ALLEGRO_ZAGR_WYSYLKA=1) — niezależnie od PL.
+  ...['EKAJTEK', 'NATROPIE'].flatMap((konto) => [
+    { kod: 'CZ', waluta: 'Kč', reguly: { krok: 1, progPodwyzki: 5 } },
+    { kod: 'SK', waluta: '€', reguly: { krok: 0.01, progPodwyzki: 0.2 } },
+    { kod: 'HU', waluta: 'Ft', reguly: { krok: 5, progPodwyzki: 50 } },
+  ].map((r) => ({
+    klucz: `ALLEGRO_${konto}_${r.kod}`, platforma: 'allegro_zagr', rynek: `${konto}_${r.kod}`,
+    nazwa: `Allegro ${konto === 'EKAJTEK' ? 'ekajtek' : 'NaTropie'} ${r.kod}`, etykieta: `${konto === 'EKAJTEK' ? 'ekajtek' : 'NaTropie'} ${r.kod}`,
+    waluta: r.waluta, kalkulator: `Allegro ${r.kod}`, wysylkaPoZgodzie: 'PRICING_ALLEGRO_ZAGR_WYSYLKA', bezKonkurencji: true, nazwaKanalu: 'Allegro CZ/SK/HU',
+    reguly: { ...r.reguly, bezKonkurencjiPct: 3, bezKonkurencjiCoH: 24 },
+  }))),
   // Kaufland DE: obserwacja od 2026-10-16, możliwość automatu od 2026-10-18 (decyzja usera po teście zapisu
   // 16.10: cena widoczna po 1–2 min, przez 1,5 doby nikt jej nie cofnął). Smart Pricing Kauflandu wyłączony
   // na wszystkich ofertach (pricing/kaufland-smart.js) — inaczej dwa automaty ciągnęłyby cenę.
   { klucz: 'KAUFLAND_DE', platforma: 'kaufland', rynek: 'DE', nazwa: 'Kaufland DE', waluta: '€', kalkulator: 'Kaufland DE' },
 ];
 
-const kluczKolumny = (platforma, rynek) => (platforma === 'amazon' ? rynek : `${String(platforma).toUpperCase()}_${rynek}`);
+const kluczKolumny = (platforma, rynek) => (platforma === 'amazon' ? rynek
+  : platforma === 'allegro_zagr' ? `ALLEGRO_${rynek}` : `${String(platforma).toUpperCase()}_${rynek}`);
 const kolumna = (platforma, rynek) => KOLUMNY.find((k) => k.klucz === kluczKolumny(platforma, rynek)) || null;
 // Czytane przy każdym wywołaniu, nie przy ładowaniu modułu — zdjęcie blokady to zmiana .env i restart procesu.
 const wysylkaWstrzymana = (k) => !!k?.wysylkaPoZgodzie && process.env[k.wysylkaPoZgodzie] !== '1';

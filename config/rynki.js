@@ -22,6 +22,7 @@ const DOMYSLNE = {
   eur: 4.20,        // PLN za 1 EUR (ostrozny kurs)
   ron: 0.79,        // PLN za 1 RON (ostrozny: NBP 14.10.2026 = 0,8179; ~4% ponizej, jak EUR 4,20 przy 4,37)
   huf: 0.0115,      // PLN za 1 HUF (ostrozny: NBP 15.10.2026 = 0,011998; ~4% ponizej)
+  czk: 0.173,       // PLN za 1 CZK (ostrozny: przelicznik Allegro 20.11.2026 = 0,1808; ~4% ponizej) — repricer Allegro CZ
   paliwowa: 14,     // doplata paliwowa DHL %
   vatProwizji: 23,  // prowizja Amazon to netto -> dolicz VAT (reverse-charge PL)
   ads: 3,           // narzut Allegro Ads/promo % — tylko gdy rynek nie ma własnego `ads` (Allegro ma, patrz RYNKI)
@@ -170,16 +171,18 @@ const ALLEGRO_PROGI = [[45, 0], [65, 2.5], [100, 3.75], [150, 5.82], [200, 7.33]
 //    1490 HUF przy 790 / 1990 od kupującego) — szacujemy ją kwotą zapłaconą przez kupującego.
 // Nie są w RYNKI: Cennik i repricer ich nie wyceniają (nie wystawiamy cen per rynek zagraniczny Allegro).
 const ALLEGRO_ZAGRANICA = {
-  CZ: { nazwa: 'Allegro CZ', kraj: 'CZ', waluta: 'CZK', vat: 21, prowizja: 14.15, ads: 0, vatOplat: 23, typ: 'allegro', zagranica: true,
+  CZ: { nazwa: 'Allegro CZ', kraj: 'CZ', waluta: 'CZK', vat: 21, prowizja: 14.15, ads: 0, vatOplat: 23, typ: 'allegro', zagranica: true, jednostka: 1,
     smart: [[179, 0], [269, 9.29], [379, 18.49], [589, 30.09], [879, 45.69], [Infinity, 57.79]],
     smartKurier: [[179, 0], [269, 11.59], [379, 23.19], [589, 35.29], [879, 54.99], [Infinity, 68.79]] },
-  SK: { nazwa: 'Allegro SK', kraj: 'SK', waluta: 'EUR', vat: 23, prowizja: 14.15, ads: 0, vatOplat: 23, typ: 'allegro', zagranica: true,
+  SK: { nazwa: 'Allegro SK', kraj: 'SK', waluta: 'EUR', vat: 23, prowizja: 14.15, ads: 0, vatOplat: 23, typ: 'allegro', zagranica: true, jednostka: 0.01,
     smart: [[6.9, 0], [10.4, 0.39], [15, 0.79], [23, 1.29], [34.5, 1.89], [Infinity, 2.39]],
     smartKurier: [[6.9, 0], [10.4, 0.49], [15, 0.99], [23, 1.49], [34.5, 2.29], [Infinity, 2.79]] },
-  HU: { nazwa: 'Allegro HU', kraj: 'HU', waluta: 'HUF', vat: 27, prowizja: 14.15, ads: 0, vatOplat: 23, typ: 'allegro', zagranica: true,
+  HU: { nazwa: 'Allegro HU', kraj: 'HU', waluta: 'HUF', vat: 27, prowizja: 14.15, ads: 0, vatOplat: 23, typ: 'allegro', zagranica: true, jednostka: 5,
     lokalna: 4.43, smart: [[2800, 0], [4200, 160], [6000, 310], [9200, 500], [13900, 760], [Infinity, 960]],
     smartKurier: [[2800, 0], [4200, 200], [6000, 390], [9200, 590], [13900, 910], [Infinity, 1140]] },
 };
+// Rynek kalkulatora po nazwie — także Allegro CZ/SK/HU (poza RYNKI, żeby Cennik ich nie wyceniał; repricer tak).
+const definicjaRynku = (nazwa) => RYNKI.find((x) => x.nazwa === nazwa) || Object.values(ALLEGRO_ZAGRANICA).find((x) => x.nazwa === nazwa) || null;
 // Metoda dostawy z ZK (pwd_Tekst03) → czy kurier (druga tabela Smart).
 const czyKurierAllegro = (metoda) => /kurier|courier/i.test(String(metoda || ''));
 
@@ -398,6 +401,43 @@ function policzAllegro(kosztPLN, r, g) {
     status: floorBinds ? 'warn' : 'ok', detal: { dostawaSmart: dost, oplataPct: pb > 0 ? (pb * p + dost) / pb * 100 : 0 } });
 }
 
+// Allegro CZ / SK / HU w repricerze (pricing/allegro-zagranica.js, od 2026-11-21): jedna sztuka, cena towaru w walucie
+// rynku, dostawa w Smart (kupujący nie płaci) — ta sama matematyka co zamówienie w analizie sprzedaży
+// (wycenaZamowienia: prowizja od całości, VAT kraju, Smart wg progów rynku, opłata lokalna HU). Zysk w zł.
+function wycenaAllegroZagranica(kosztPLN, r, g, cena) {
+  const x = wycenaZamowienia(r, g, { pozycje: [{ koszt: +kosztPLN || 0, cena: +cena, szt: 1 }], wysylkaKlienta: 0 });
+  if (x.blad) return x;
+  return wynik(r, { cena: +cena, zysk: x.zysk, marza: x.marza, status: 'ok', reczna: true, detal: x.detal });
+}
+
+// Cena w górę do jednostki rynku (CZK 1, EUR 0,01, HUF 5) — bez końcówek ,99: przelicznik Allegro też ich nie robi.
+const wGoreDoJednostki = (x, j) => +(Math.ceil(x / j - 1e-9) * j).toFixed(j < 1 ? 2 : 0);
+
+// Minimum dla Allegro CZ/SK/HU: najniższa cena (w jednostkach rynku), przy której marża ≥ g.marza (tryb 'zysk': zysk ≥
+// g.celZysk) i zysk ≥ g.minzysk zł. Szukanie po cenie zamiast wzoru, bo dopłata Smart skacze na progach.
+function policzAllegroZagranica(kosztPLN, r, g) {
+  const kurs = kursDla(r.waluta, g);
+  if (kurs <= 0) return wynik(r, { blad: 'brak kursu', status: 'bad' });
+  const j = +r.jednostka || 0.01;
+  const ok = (c) => {
+    const x = wycenaAllegroZagranica(kosztPLN, r, g, c);
+    if (x.blad) return false;
+    const cel = g.tryb === 'zysk' ? x.zysk >= (+g.celZysk || 0) - 1e-9 : x.marza >= (+g.marza || 0) - 1e-9;
+    return cel && x.zysk >= (+g.minzysk || 0) - 1e-9;
+  };
+  let lo = 0, hi = Math.max(j, ((+kosztPLN || 0) + (+g.obsluga || 0) + (+g.minzysk || 0) + 1) / kurs);
+  for (let i = 0; i < 60 && !ok(hi); i++) hi *= 2;
+  if (!ok(hi)) return wynik(r, { blad: 'reguły niespójne', status: 'bad' });
+  for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (ok(m)) hi = m; else lo = m; }
+  let cena = wGoreDoJednostki(hi, j);
+  for (let i = 0; i < 1000 && !ok(cena); i++) cena = wGoreDoJednostki(cena + j, j);   // próg Smart tuż nad ceną
+  const x = wycenaAllegroZagranica(kosztPLN, r, g, cena);
+  // 'warn' jak w policzAllegro: cenę podbił próg minimalnego zysku, a nie marża.
+  const y = wycenaAllegroZagranica(kosztPLN, r, g, cena - j);
+  const minzyskWiaze = !y.blad && g.tryb !== 'zysk' && y.marza >= (+g.marza || 0) - 1e-9 && y.zysk < (+g.minzysk || 0);
+  return wynik(r, { cena, zysk: x.zysk, marza: x.marza, status: minzyskWiaze ? 'warn' : 'ok', detal: x.detal });
+}
+
 // VAT doliczany do prowizji rynku amazon-dhl: z definicji rynku (Kaufland: 0 — prowizja bez VAT, zmierzone),
 // inaczej parametr wspólny (Amazon: 23%).
 const vatProwizji = (r, g) => +(r.vatProwizji ?? g.vatProwizji) || 0;
@@ -429,6 +469,7 @@ function policzAmazonDHL(kosztPLN, r, g) {
 }
 
 function policzRynek(kosztPLN, r, g) {
+  if (r.typ === 'allegro' && r.zagranica) return policzAllegroZagranica(kosztPLN, r, g);
   if (r.typ === 'allegro') return policzAllegro(kosztPLN, r, g);
   if (r.typ === 'amazon-dhl') return policzAmazonDHL(kosztPLN, r, g);
   return policzFlat(kosztPLN, r, g);
@@ -441,6 +482,7 @@ function wycenaPrzyCenie(kosztPLN, rynek, g, cena) {
   const r = profilRynku(rynek, g);
   const pb = +cena || 0;
   if (pb <= 0) return wynik(r, { blad: 'podaj cenę', status: 'bad' });
+  if (r.typ === 'allegro' && r.zagranica) return wycenaAllegroZagranica(kosztPLN, r, g, pb);
   if (r.typ === 'allegro') {
     const v = (+r.vat || 0) / 100, p = oplatyAllegro(r, g), obs = +g.obsluga || 0;
     const denomZysk = 1 / (1 + v) - p;
@@ -611,7 +653,7 @@ function policzWszystkie(kosztPLN, nadpisz = {}) {
 }
 
 module.exports = {
-  DOMYSLNE, RYNKI, DHL_STAWKI, ALLEGRO_PROGI, ALLEGRO_ZAGRANICA, OPLATY_ZAM, SKRYTKA_AUTOMATU_CM, EMPIK_WYSYLKA,
+  DOMYSLNE, RYNKI, DHL_STAWKI, ALLEGRO_PROGI, ALLEGRO_ZAGRANICA, definicjaRynku, OPLATY_ZAM, SKRYTKA_AUTOMATU_CM, EMPIK_WYSYLKA,
   gabarytPaczkomatu, kosztWysylkiEmpik,
   do99, totalCelu, kursDla, doplataSmartAllegro, czyKurierAllegro, stawkaDHL, kosztWysylkiFlat, oplataZamowienia, oplataZamOczekiwana,
   prowizjaUlamek,

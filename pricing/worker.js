@@ -51,6 +51,8 @@ const { obserwujAllegro } = require('./obserwuj-allegro');
 const allegro = require('./allegro');
 const niezbednik = require('./niezbednik');
 const konkurencja = require('./konkurencja-allegro');
+const az = require('./allegro-zagranica');
+const { obserwujAllegroZagr } = require('./obserwuj-allegro');
 const { synchronizujKaufland } = require('./sync-kaufland');
 const { obserwujKaufland } = require('./obserwuj-kaufland');
 const kaufland = require('./kaufland');
@@ -116,6 +118,24 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
     } catch (e) {
       stan.set('blad_niezbednik', e.message);
       console.error(new Date().toISOString(), '[pricing] Niezbędnik:', e.message);
+    }
+    // Allegro CZ/SK/HU (pricing/allegro-zagranica.js): osobny raport na każdy rynek (`marketplace_id`), tylko oferty
+    // zagraniczne z automatem. EAN-y bierzemy jak dla PL — z katalogu Allegro po numerze oferty konta (shim `rynek`).
+    for (const d of az.RYNKI_ZAGR) {
+      try {
+        await konkurencja.odbierz({ rynek: d.allegro });
+        const rynkiKont = Object.keys(allegro.KONTA).map((k) => az.rynekOferty(k, d.kod));
+        const zAuto = db.prepare(`SELECT id, rynek, asin, tw_id, ean, ean_czas, konk_co_h FROM oferty WHERE platforma = '${az.PLATFORMA}'
+            AND rynek IN (${rynkiKont.map(() => '?').join(',')}) AND auto = 1 AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all(...rynkiKont)
+          .map((o) => ({ ...o, rynek: az.zRynkuOferty(o.rynek).konto }));
+        if (!zAuto.length) continue;
+        await konkurencja.odswiezEan(zAuto);
+        const z = await konkurencja.zlec(zAuto, Date.now(), { rynek: d.allegro });
+        if (z.eanow) (wynik.niezbednik_zagr ||= {})[d.kod] = z;
+      } catch (e) {
+        stan.set('blad_niezbednik', `${d.allegro}: ${e.message}`);
+        console.error(new Date().toISOString(), `[pricing] Niezbędnik ${d.allegro}:`, e.message);
+      }
     }
   }
   if (platformy.has('amazon') && minelo('sync_oferty', SYNC_MS)) {
@@ -254,11 +274,12 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
   // ranking Buy Boxa per produkt).
   const oferty = db.prepare(`SELECT id, platforma, rynek, sku, asin, tw_id, auto, genius, dopasowanie, prowizja, min_reczne, max_reczne, ean, konk_przebicie FROM oferty
      WHERE ((platforma = 'amazon' AND ? AND (auto = 1 OR ?)) OR (platforma = 'emag' AND ?) OR (platforma = 'empik' AND ? AND (auto = 1 OR ?))
-            OR (platforma = 'allegro' AND ?) OR (platforma = 'kaufland' AND ?))
+            OR (platforma = 'allegro' AND ?) OR (platforma = 'kaufland' AND ?) OR (platforma = '${az.PLATFORMA}' AND ?))
        AND aktywna = 1 AND ilosc > 0 AND tw_id IS NOT NULL`).all(platformy.has('amazon') ? 1 : 0, pelnyTeraz ? 1 : 0, emagKraje.size ? 1 : 0,
-    empikOk ? 1 : 0, pelnyTeraz ? 1 : 0, allegroKonta.size ? 1 : 0, kauflandRynki.size ? 1 : 0)
+    empikOk ? 1 : 0, pelnyTeraz ? 1 : 0, allegroKonta.size ? 1 : 0, kauflandRynki.size ? 1 : 0, allegroKonta.size ? 1 : 0)
     .filter((o) => o.platforma !== 'emag' || emagKraje.has(o.rynek))       // rynek eMAG z błędem pobrania — bez decyzji
     .filter((o) => o.platforma !== 'allegro' || allegroKonta.has(o.rynek))  // konto Allegro z błędem pobrania — też
+    .filter((o) => o.platforma !== az.PLATFORMA || allegroKonta.has(az.zRynkuOferty(o.rynek)?.konto))   // i jego rynki CZ/SK/HU
     .filter((o) => o.platforma !== 'kaufland' || kauflandRynki.has(o.rynek));
   wynik.ofert = oferty.length;
   wynik.pelny = pelnyTeraz;
@@ -268,6 +289,7 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
   const emagOf = oferty.filter((o) => o.platforma === 'emag');
   const empikOf = oferty.filter((o) => o.platforma === 'empik');
   const allegroOf = oferty.filter((o) => o.platforma === 'allegro');
+  const zagrOf = oferty.filter((o) => o.platforma === az.PLATFORMA);
   const kauflandOf = oferty.filter((o) => o.platforma === 'kaufland');
   // Genius i stawka prowizji są per RYNEK (ten sam towar: RO 16%, HU 18%) — mapa tw_Id → { kolumna: wartość }.
   const poKolumnie = (lista, pole, ok, wartosc) => {
@@ -292,6 +314,14 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
       console.error(new Date().toISOString(), '[pricing] Niezbędnik odbiór:', e.message);
     }
   }
+  for (const d of zagrOf.length ? az.RYNKI_ZAGR : []) {
+    if (!stan.get(konkurencja.kluczStanu('nsp_raport', d.allegro))?.wartosc) continue;
+    etap(`Niezbędnik ${d.allegro} — odbiór raportu`);
+    try { await konkurencja.odbierz({ czekajMs: 60_000, rynek: d.allegro }); } catch (e) {
+      stan.set('blad_niezbednik', `${d.allegro}: ${e.message}`);
+      console.error(new Date().toISOString(), `[pricing] Niezbędnik ${d.allegro} odbiór:`, e.message);
+    }
+  }
   etap('obserwacje i pasy');
   // Empik: błąd P11 (limit, awaria) = oferty bez obserwacji w tym przebiegu, reszta idzie dalej.
   const obsEmpik = empikOf.length ? obserwujEmpik(empikOf, { surowe: empikSurowe }).catch((e) => {
@@ -309,7 +339,7 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
     stan.set('blad_strategie', e.message);
     console.error(new Date().toISOString(), '[pricing] strategie:', e.message);
   }
-  const [obsA, obsE, obsP, obsL, pasy, obsK] = await Promise.all([
+  const [obsA, obsE, obsP, obsL, pasy, obsK, obsZ] = await Promise.all([
     amazon.length ? sledz('obserwacja Amazon', obserwuj(amazon, { naPostep: (i, n) => postep.czeka.set('obserwacja Amazon', `${i}/${n}`) })) : new Map(),
     emagOf.length ? sledz('obserwacja eMAG', obserwujEmag(emagOf, emagSurowe)) : new Map(),
     sledz('obserwacja Empik', obsEmpik),
@@ -317,6 +347,7 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
     sledz('pasy z GT', pasyHurtem(oferty.map((o) => o.tw_id), geniusPoTw, prowizjaPoTw, strategie.poTw)),
     kauflandOf.length ? sledz('obserwacja Kaufland', obserwujKaufland(kauflandOf, kauflandSurowe,
       { naPostep: (x) => postep.czeka.set('obserwacja Kaufland', `${x.gotowe}/${x.wszystkie}, błędy ${x.bledy}`) })) : new Map(),
+    zagrOf.length ? sledz('obserwacja Allegro CZ/SK/HU', obserwujAllegroZagr(zagrOf, allegroSurowe)) : new Map(),
   ]);
   etap('decyzje i wysyłka');
   if (obsA.bledyPaczek) wynik.bledy_paczek = obsA.bledyPaczek;
@@ -324,7 +355,18 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
   if (kauflandOf.length) wynik.kaufland_obs = { ofert: obsK.size, zmian: obsK.nowe || 0, ...(obsK.bledy ? { bledy: obsK.bledy } : {}) };
   if (empikOf.length) wynik.empik_obs = { ofert: obsP.size, zmian: obsP.nowe || 0 };
   if (allegroOf.length) wynik.allegro_obs = { ofert: obsL.size, zmian: obsL.nowe || 0 };
-  const obs = { get: (id) => obsA.get(id) || obsE.get(id) || obsP.get(id) || obsL.get(id) || obsK.get(id) };
+  if (zagrOf.length) wynik.allegro_zagr_obs = { ofert: obsZ.size, zmian: obsZ.nowe || 0 };
+  const obs = { get: (id) => obsA.get(id) || obsE.get(id) || obsP.get(id) || obsL.get(id) || obsK.get(id) || obsZ.get(id) };
+  // Podłoga cen Allegro CZ/SK/HU: kurs przelicznika Allegro (sync-allegro) i — dla NaTropie — najniższa cena ekajtek
+  // tego towaru na tym samym rynku (zasada usera 2026-11-21: NaTropie nie taniej niż ekajtek).
+  const kursyAllegro = (() => { try { return JSON.parse(stan.get('allegro_kursy')?.wartosc || '{}'); } catch { return {}; } })();
+  const cenyGlowne = new Map();
+  for (const o of zagrOf) {
+    const r = az.zRynkuOferty(o.rynek), c = obsZ.get(o.id)?.cena;
+    if (r?.konto !== az.KONTO_GLOWNE || !(c > 0)) continue;
+    const k = `${o.tw_id}|${r.kod}`;
+    cenyGlowne.set(k, Math.min(cenyGlowne.get(k) ?? Infinity, c));
+  }
   const allegroPoId = new Map(allegroSurowe.map((x) => [`${x._konto}|${x.id}`, x]));
   const kluczEmag = (kraj, sku) => `${kraj}|${String(sku || '').trim().toUpperCase()}`;
   const emagPoSku = new Map((emagSurowe || []).map((x) => [kluczEmag(x._kraj, x.part_number), x]));
@@ -359,6 +401,9 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
       FROM decyzje WHERE oferta_id = ? AND wyslano = 1 AND kod IN ('obnizka', 'na_min')
        AND czas >= datetime('now', '-72 hours')
        AND czas > COALESCE((SELECT MAX(czas) FROM obserwacje WHERE oferta_id = ? AND bb_nasz = 1), '')`);
+  // Reguła 11 (bez konkurencji, Allegro CZ/SK/HU): godziny od ostatniej WYSŁANEJ podwyżki tej oferty.
+  const godzOdPodwyzki = db.prepare(`SELECT (julianday('now') - julianday(MAX(czas))) * 24 AS h FROM decyzje
+      WHERE oferta_id = ? AND wyslano = 1 AND cena_nowa > cena_przed`);
   // Decyzję liczymy co przebieg, ale niewysłaną zapisujemy tylko, gdy się zmieniła (niżej).
   const ostDecyzja = db.prepare('SELECT * FROM decyzje WHERE oferta_id = ? ORDER BY id DESC LIMIT 1');
   // Automat czytany jeszcze raz tuż przed wysłaniem: przebieg trwa minuty, a w tym czasie człowiek mógł go
@@ -367,7 +412,12 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
   for (const o of oferty) {
     const ob = obs.get(o.id);
     if (!ob) { kody.brak_odpowiedzi = (kody.brak_odpowiedzi || 0) + 1; continue; }
-    const pas = zGranicami((pasy.get(o.tw_id) || {})[kluczKolumny(o.platforma, o.rynek)] || null, o);
+    let pas = zGranicami((pasy.get(o.tw_id) || {})[kluczKolumny(o.platforma, o.rynek)] || null, o);
+    const rz = o.platforma === az.PLATFORMA ? az.zRynkuOferty(o.rynek) : null;
+    if (rz && pas) {
+      const glowne = rz.konto !== az.KONTO_GLOWNE ? cenyGlowne.get(`${o.tw_id}|${rz.kod}`) ?? null : null;
+      pas = az.zPodloga(pas, az.podloga({ cenaPl: ob.cenaPl, kurs: kursyAllegro[rz.kod]?.kurs, def: rz.def, cenaGlownego: glowne }));
+    }
     // Przebicie ustawiane przy ofercie (remis / kwota — kolumna konk_przebicie): od 2026-10-26 na każdym kanale
     // (decyzja usera: „czy o ile przebijać, czy remisować — wygrywaj o zero”); puste = krok kanału (kolumny.js
     // `reguly.krok`, domyślnie 0,01). Allegro z listą konkurentów z Niezbędnika: cel wybiera doModelu — najtańszy
@@ -379,7 +429,16 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
       ostatniaPodwyzka: ostPodwyzka.get(o.id, okno) || null,
       blokadaPodwyzek: !!cofniecie.get(o.id, okno),
       obnizkiBezBb: obnizkiBezBb.get(o.id, o.id) || null,
+      godzOdPodwyzki: rz ? godzOdPodwyzki.get(o.id)?.h ?? null : null,
     });
+    // CZ/SK/HU: cena w jednostkach rynku (CZK 1, HUF 5) i nigdy pod podłogą po zaokrągleniu.
+    if (rz && d.zmiana) {
+      let c = az.zaokraglij(d.cena, rz.def);
+      if (pas?.min > 0 && c < pas.min) c = az.zaokraglij(pas.min, rz.def, 'gora');
+      if (Math.abs(c - ob.cena) < 1e-9) Object.assign(d, { cena: ob.cena, zmiana: false });
+      else d.cena = c;
+      if (d.cel != null) d.cel = az.zaokraglij(d.cel, rz.def);
+    }
     if (pas?.blad && d.kod === 'brak_pasa') d.powod = pas.blad;   // sprzeczne ręczne granice — powiedz które
     if (pas?.strategia) d.powod += ` · strategia „${pas.strategia.nazwa}”${pas.zrodlo_min === 'reczne' || pas.zrodlo_max === 'reczne' ? ' z odstępstwem (ręczne granice oferty)' : ''}`;
     if (obM.podMin > 0 && obM.podMin < ob.konkurenci.length) d.powod += `; tańszych pod naszym minimum: ${obM.podMin} — przebijamy najtańszego nad minimum`;
@@ -409,6 +468,10 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
           // Oferta z listy tego przebiegu (numer, format, reguła cenowa Allegro — zmianaCeny ją sprawdza).
           const s = allegroPoId.get(`${o.rynek}|${o.asin}`);
           w = s ? await allegro.ustawCene(s, d.cena) : { ok: false, blad: 'oferty nie ma na liście Allegro z tego przebiegu' };
+        } else if (rz) {
+          // Rynek zagraniczny tej samej oferty: zdjęcie reguły przelicznika z tego rynku + cena w walucie rynku.
+          const s = allegroPoId.get(`${rz.konto}|${o.asin}`);
+          w = s ? await allegro.ustawCeneZagr(s, rz.kod, d.cena) : { ok: false, blad: 'oferty nie ma na liście Allegro z tego przebiegu' };
         } else if (o.platforma === 'kaufland') {
           // Unit z listy pobranej na początku przebiegu: id_unit i minimum Smart Pricing.
           const u = kauflandPoSku.get(kluczEmag(o.rynek, o.sku));
@@ -498,7 +561,7 @@ const POTWIERDZENIE_KAUFLAND_MS = interwalMsZMinut(process.env.PRICING_POTWIERDZ
 // (Amazon 3–10 min, eMAG RO bywa wolniejszy), bo oferty bez automatu obserwujemy tylko co 6 h.
 // Zapamiętane w pamięci procesu — po restarcie korekta z ostatnich 2 h może być sprawdzona raz jeszcze.
 const PROPAGACJA_MS = { amazon: POTWIERDZENIE_MS, emag: POTWIERDZENIE_EMAG_MS, empik: POTWIERDZENIE_EMPIK_MS, allegro: POTWIERDZENIE_ALLEGRO_MS,
-  kaufland: POTWIERDZENIE_KAUFLAND_MS };
+  kaufland: POTWIERDZENIE_KAUFLAND_MS, [az.PLATFORMA]: POTWIERDZENIE_ALLEGRO_MS };
 const sprawdzoneKorekty = new Map();   // id decyzji → ile razy sprawdzona
 function korektyDoPotwierdzenia() {
   const wiersze = db.prepare(`SELECT d.id AS dec_id, (julianday('now') - julianday(d.czas)) * 86400000 AS ms,
@@ -509,7 +572,7 @@ function korektyDoPotwierdzenia() {
   for (const w of wiersze) {
     const n = sprawdzoneKorekty.get(w.dec_id) || 0;
     const opoznienie = PROPAGACJA_MS[w.platforma] || POTWIERDZENIE_MS;
-    if (n >= 2 || !PLATFORMY.has(w.platforma) || w.ms < opoznienie * (n ? 3 : 1)) continue;
+    if (n >= 2 || !PLATFORMY.has(w.platforma === az.PLATFORMA ? 'allegro' : w.platforma) || w.ms < opoznienie * (n ? 3 : 1)) continue;
     sprawdzoneKorekty.set(w.dec_id, n + 1);
     if (!lista.some((o) => o.id === w.id)) lista.push(w);
   }
@@ -555,6 +618,8 @@ async function potwierdz(wszystkie) {
   if (emagOf.length) await potwierdzEmag(emagOf);
   if (empikOf.length) await potwierdzEmpik(empikOf);
   if (allegroOf.length) await potwierdzAllegro(allegroOf);
+  const zagrOf = wszystkie.filter((o) => o.platforma === az.PLATFORMA);
+  if (zagrOf.length) await potwierdzAllegroZagr(zagrOf);
   const kauflandOf = wszystkie.filter((o) => o.platforma === 'kaufland');
   if (kauflandOf.length) await potwierdzKaufland(kauflandOf);
   if (!oferty.length) return;
@@ -625,6 +690,25 @@ async function potwierdzAllegro(oferty) {
     }
   } catch (e) {
     console.error(new Date().toISOString(), '[pricing] błąd potwierdzenia Allegro:', e.message);
+  }
+}
+
+// Allegro CZ/SK/HU: ta sama oferta po numerze z konta (cena rynku z additionalMarketplaces) i obserwacja jak w przebiegu.
+async function potwierdzAllegroZagr(oferty) {
+  try {
+    const surowe = [];
+    for (const o of oferty) {
+      const r = az.zRynkuOferty(o.rynek);
+      const s = r && await allegro.ofertaPoId(r.konto, o.asin);
+      if (s && !surowe.some((x) => x._konto === s._konto && x.id === s.id)) surowe.push(s);
+    }
+    const obs = await obserwujAllegroZagr(oferty, surowe);
+    for (const o of oferty) {
+      const ob = obs.get(o.id);
+      console.log(new Date().toISOString(), `[pricing] potwierdzenie ALLEGRO_${o.rynek} ${o.sku}: na Allegro ${ob ? ob.cena : '?'}${ob?.regula ? ' (reguła wciąż na rynku!)' : ''}`);
+    }
+  } catch (e) {
+    console.error(new Date().toISOString(), '[pricing] błąd potwierdzenia Allegro CZ/SK/HU:', e.message);
   }
 }
 
@@ -701,6 +785,7 @@ if (require.main === module) {
       potw(doPotwierdzenia.filter((o) => o.platforma === 'emag'), POTWIERDZENIE_EMAG_MS, 'eMAG');
       potw(doPotwierdzenia.filter((o) => o.platforma === 'empik'), POTWIERDZENIE_EMPIK_MS, 'Empik');
       potw(doPotwierdzenia.filter((o) => o.platforma === 'allegro'), POTWIERDZENIE_ALLEGRO_MS, 'Allegro');
+      potw(doPotwierdzenia.filter((o) => o.platforma === az.PLATFORMA), POTWIERDZENIE_ALLEGRO_MS, 'Allegro CZ/SK/HU');
       potw(doPotwierdzenia.filter((o) => o.platforma === 'kaufland'), POTWIERDZENIE_KAUFLAND_MS, 'Kaufland');
     });
     tik();

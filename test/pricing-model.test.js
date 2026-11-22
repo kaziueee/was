@@ -225,3 +225,28 @@ test('przebicie 0 = remis: schodzimy do ceny zwycięzcy, przy Buy Boxie podnosim
   // kwota: 0,50 pod zwycięzcę
   assert.strictEqual(decyzja(obs({ cena: 24, bbNasz: false, bbCena: 28.49 }), pas, { krok: 0.5 }).cena, 23);
 });
+
+test('reguła 11: bez konkurencji +3% raz na dobę do maksimum — tylko gdy kolumna ją włącza (Allegro CZ/SK/HU, 2026-11-21)', () => {
+  const R = { bezKonkurencjiPct: 3, bezKonkurencjiCoH: 24, krok: 1 };
+  const pasZ = { min: 500, max: 750 };
+  const sama = { cena: 600, wysylka: 0, bbNasz: true, najtanszaInna: null, konkurenci: [] };
+  // domyślnie (PL, Amazon, eMAG) — bez zmian, jak dotąd
+  assert.strictEqual(decyzja(sama, pasZ).kod, 'top_bez_konkurencji');
+  // pierwsza podwyżka: +3%
+  const d = decyzja(sama, pasZ, R, { godzOdPodwyzki: null });
+  assert.strictEqual(d.kod, 'bez_konk_podwyzka');
+  assert.strictEqual(d.cena, 618);
+  // podwyżka 10 h temu — czekamy
+  const c = decyzja(sama, pasZ, R, { godzOdPodwyzki: 10 });
+  assert.strictEqual(c.kod, 'bez_konk_czeka');
+  assert.match(c.powod, /za 14 h/);
+  // po dobie znowu, ale nie ponad maksimum
+  assert.strictEqual(decyzja({ ...sama, cena: 740 }, pasZ, R, { godzOdPodwyzki: 25 }).cena, 750);
+  assert.strictEqual(decyzja({ ...sama, cena: 750 }, pasZ, R, { godzOdPodwyzki: 25 }).kod, 'top_bez_konkurencji');
+  // pojawił się konkurent tańszy od nas — zwykła reguła 3: schodzimy pod niego, nie pod minimum
+  const k = decyzja({ ...sama, bbNasz: false, bbCena: 580, najtanszaInna: 580, konkurenci: [580] }, pasZ, R, { godzOdPodwyzki: 1 });
+  assert.strictEqual(k.kod, 'obnizka');
+  assert.strictEqual(k.cena, 579);
+  // poniżej podłogi (np. PL podrożało) — od razu na minimum, bez czekania
+  assert.strictEqual(decyzja({ ...sama, cena: 450 }, pasZ, R, { godzOdPodwyzki: 1 }).cena, 500);
+});

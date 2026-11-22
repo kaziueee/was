@@ -179,16 +179,24 @@ const naszeKonta = () => {
   return new Set(Object.values(KONTA).flatMap((k) => [String(k.id), String(k.login).toLowerCase()]));
 };
 
-function wyniki() {
+// Rynki Allegro w Niezbędniku (`marketplace_id`). PL bez prefiksu (jak od początku), CZ/SK/HU z prefiksem rynku w kluczu
+// tabeli allegro_konkurencja („cz:5010996…”) i własnymi wpisami w `stan` — inaczej wynik czeski nadpisałby polski.
+const sufiksRynku = (rynek = 'allegro-pl') => (rynek === 'allegro-pl' ? '' : String(rynek).replace(/^allegro-/, ''));
+const kluczBazy = (rynek, ean) => (sufiksRynku(rynek) ? `${sufiksRynku(rynek)}:${ean}` : ean);
+const kluczStanu = (nazwa, rynek) => (sufiksRynku(rynek) ? `${nazwa}_${sufiksRynku(rynek)}` : nazwa);
+
+function wyniki(rynek = 'allegro-pl') {
   const { db } = require('./db');
-  return new Map(db.prepare('SELECT * FROM allegro_konkurencja').all().map((r) => [r.ean, r]));
+  const suf = sufiksRynku(rynek);
+  if (!suf) return new Map(db.prepare("SELECT * FROM allegro_konkurencja WHERE ean NOT LIKE '%:%'").all().map((r) => [r.ean, r]));
+  return new Map(db.prepare('SELECT * FROM allegro_konkurencja WHERE ean LIKE ?').all(`${suf}:%`).map((r) => [r.ean.slice(suf.length + 1), { ...r, ean: r.ean.slice(suf.length + 1) }]));
 }
 // Wyniki dla wszystkich zapisów EAN-u oferty (ekran Ceny — bez wczytywania całej tabeli).
-function wpisyOferty(o) {
+function wpisyOferty(o, rynek = 'allegro-pl') {
   const eany = eanyOferty(o);
   if (!eany.length) return [];
   const { db } = require('./db');
-  return db.prepare(`SELECT * FROM allegro_konkurencja WHERE ean IN (${eany.map(() => '?').join(',')})`).all(...eany);
+  return db.prepare(`SELECT * FROM allegro_konkurencja WHERE ean IN (${eany.map(() => '?').join(',')})`).all(...eany.map((e) => kluczBazy(rynek, e)));
 }
 
 // EAN-y oferty z katalogu Allegro: oferta → productSet → produkt → jego EAN-y, z wariantami 12/13 cyfr, jako
@@ -239,10 +247,11 @@ async function odswiezEan(oferty, teraz = Date.now()) {
 }
 
 // Odbiór zleconego raportu (stan `nsp_raport`). czekajMs > 0 — czekamy na koniec, ile się da.
-async function odbierz({ czekajMs = 0 } = {}) {
+async function odbierz({ czekajMs = 0, rynek = 'allegro-pl' } = {}) {
   const { db, stan } = require('./db');
   const nsp = require('./niezbednik');
-  const s = stan.get('nsp_raport');
+  const SLOT = kluczStanu('nsp_raport', rynek);
+  const s = stan.get(SLOT);
   if (!s?.wartosc) return null;
   const zlec = JSON.parse(s.wartosc);
   const koniec = Date.now() + czekajMs;
@@ -253,7 +262,7 @@ async function odbierz({ czekajMs = 0 } = {}) {
   }
   if (!r.gotowy) {
     // Raport, który nie skończył się w 2 h, porzucamy — EAN-y wrócą do kolejki przy następnym przebiegu.
-    if (Date.now() - zBazy(s.czas) > 2 * 3_600_000) { stan.set('nsp_raport', ''); stan.set('blad_niezbednik', `raport ${zlec.id} nie skończył się w 2 h — porzucony`); }
+    if (Date.now() - zBazy(s.czas) > 2 * 3_600_000) { stan.set(SLOT, ''); stan.set('blad_niezbednik', `raport ${zlec.id} (${rynek}) nie skończył się w 2 h — porzucony`); }
     return { id: zlec.id, status: r.status, gotowy: false };
   }
   const zapisz = db.prepare(`INSERT INTO allegro_konkurencja (ean, czas, oferty, wszystkich, blad, raport, zlecono)
@@ -267,43 +276,44 @@ async function odbierz({ czekajMs = 0 } = {}) {
     for (const it of r.items) {
       if (it.status === 'completed' && it.result) {
         const czas = it.result.checked_at || it.checked_at;
-        zapisz.run(it.ean, czas ? doBazy(Date.parse(czas)) : doBazy(Date.now()), JSON.stringify((it.result.offers || []).map(zWyniku)),
+        zapisz.run(kluczBazy(rynek, it.ean), czas ? doBazy(Date.parse(czas)) : doBazy(Date.now()), JSON.stringify((it.result.offers || []).map(zWyniku)),
           it.result.total ?? null, null, zlec.id, doBazy(zBazy(s.czas) || Date.now()));
         ok++;
       } else {
         // Nieudana pozycja: poprzedni wynik zostaje (stary, ale prawdziwy), dopisujemy tylko błąd.
-        bladTylko.run(it.error?.message || it.status, zlec.id, it.ean);
+        bladTylko.run(it.error?.message || it.status, zlec.id, kluczBazy(rynek, it.ean));
         bledy++;
       }
     }
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
-  stan.set('nsp_raport', '');
-  stan.set('nsp_ostatni', JSON.stringify({ id: zlec.id, eanow: zlec.eans.length, ok, bledy, koszt: r.cost?.charged ?? null }));
+  stan.set(SLOT, '');
+  stan.set(kluczStanu('nsp_ostatni', rynek), JSON.stringify({ id: zlec.id, eanow: zlec.eans.length, ok, bledy, koszt: r.cost?.charged ?? null }));
   return { id: zlec.id, status: r.status, gotowy: true, ok, bledy, koszt: r.cost?.charged ?? null };
 }
 
 // Zlecenie raportu dla EAN-ów, którym minął czas (oferty z automatem, okno dnia, limit dzienny).
-async function zlec(oferty, teraz = Date.now()) {
+async function zlec(oferty, teraz = Date.now(), { rynek = 'allegro-pl' } = {}) {
   const { db, stan } = require('./db');
   const nsp = require('./niezbednik');
-  if (stan.get('nsp_raport')?.wartosc) return { pominiete: 'poprzedni raport jeszcze trwa' };
+  const SLOT = kluczStanu('nsp_raport', rynek), DZIS = kluczStanu('nsp_dzis', rynek);
+  if (stan.get(SLOT)?.wartosc) return { pominiete: 'poprzedni raport jeszcze trwa' };
   const dzien = dzienPL(teraz);
-  const zuzycie = JSON.parse(stan.get('nsp_dzis')?.wartosc || '{}');
+  const zuzycie = JSON.parse(stan.get(DZIS)?.wartosc || '{}');
   const dzis = zuzycie.dzien === dzien ? zuzycie.n : 0;
-  const ostatnie = wyniki();
+  const ostatnie = wyniki(rynek);
   const eans = doSprawdzenia(oferty.flatMap((o) => eanyOferty(o).map((ean) => ({ ean, co_h: o.konk_co_h }))), ostatnie, teraz, { limit: limitDzienny() - dzis });
   if (!eans.length) return { eanow: 0, dzis };
-  const z = await nsp.zlecRaport(eans, FILTRY);
-  stan.set('nsp_raport', JSON.stringify({ id: z.id, eans }));
-  stan.set('nsp_dzis', JSON.stringify({ dzien, n: dzis + eans.length }));
+  const z = await nsp.zlecRaport(eans, FILTRY, rynek);
+  stan.set(SLOT, JSON.stringify({ id: z.id, eans }));
+  stan.set(DZIS, JSON.stringify({ dzien, n: dzis + eans.length }));
   // `zlecono` od razu — także dla EAN-ów bez wcześniejszego wyniku; raport, który padnie, nie zleci się w kółko.
   const ozn = db.prepare(`INSERT INTO allegro_konkurencja (ean, zlecono) VALUES (?, ?) ON CONFLICT (ean) DO UPDATE SET zlecono = excluded.zlecono`);
   db.exec('BEGIN');
-  try { for (const e of eans) ozn.run(e, doBazy(teraz)); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
+  try { for (const e of eans) ozn.run(kluczBazy(rynek, e), doBazy(teraz)); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
   try { stan.set('nsp_pakiet', JSON.stringify(await nsp.pakiet())); } catch { /* stan pakietu to tylko informacja na ekran */ }
   return { id: z.id, eanow: eans.length, dzis: dzis + eans.length };
 }
 
 module.exports = { FILTRY, CO_H, DOMYSLNE, PRZEBICIE_MAX, okno, waznoscH, dobryEan, wariantyEan, eanyOferty, wpisyOferty, coH, przebicie, godzinaPL, wOknie, zWyniku, eanZProduktu, eanyZProduktu, eanZAllegro,
-  konkurenci, zNiezbednika, doModelu, doSprawdzenia, podsumowanie, naszeKonta, wyniki, odswiezEan, odbierz, zlec };
+  konkurenci, zNiezbednika, doModelu, doSprawdzenia, podsumowanie, naszeKonta, wyniki, odswiezEan, odbierz, zlec, sufiksRynku, kluczBazy, kluczStanu };

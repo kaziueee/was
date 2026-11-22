@@ -61,7 +61,31 @@ const PLATFORMY = {
     },
     tylkoAktywne: true,
     // Test 18.10 (HASG1435): PATCH 200 po 0,2 s, nowa cena w API po ~3 s; CZ/SK/HU idą za nią same (reguły kursowe).
-    propagacja: 'Allegro zmienia cenę od razu (kilka sekund); ceny CZ/SK/HU przeliczają się same',
+    propagacja: 'Allegro zmienia cenę od razu (kilka sekund); ceny CZ/SK/HU przeliczają się same, o ile na rynku stoi reguła przelicznika (rynki przejęte przez repricer — nie)',
+  },
+  // Allegro CZ/SK/HU (pricing/allegro-zagranica.js): ta sama oferta, cena jednego rynku. Podłoga twarda także dla
+  // ręcznej ceny (zasada usera 2026-11-21): nie mniej niż PL po kursie przelicznika Allegro (HU +11%), NaTropie nie
+  // taniej niż ekajtek. Bez kursu albo ceny PL nie wysyłamy — nie wiadomo, gdzie jest podłoga.
+  allegro_zagr: {
+    wyslij: async (o, cena) => {
+      const az = require('./allegro-zagranica');
+      const { db } = require('./db');
+      const r = az.zRynkuOferty(o.rynek);
+      if (!r) return { ok: false, blad: `nieznany rynek ${o.rynek}` };
+      const s = await allegro.ofertaPoId(r.konto, o.asin);
+      if (!s) return { ok: false, blad: `Allegro ${r.konto}: oferty ${o.asin} nie ma wśród aktywnych` };
+      const kursy = (() => { try { return JSON.parse(stan.get('allegro_kursy')?.wartosc || '{}'); } catch { return {}; } })();
+      const glowne = r.konto === az.KONTO_GLOWNE ? null : db.prepare(`SELECT MIN(cena) AS c FROM oferty WHERE platforma = ? AND rynek = ?
+          AND tw_id = ? AND aktywna = 1 AND cena > 0`).get(az.PLATFORMA, az.rynekOferty(az.KONTO_GLOWNE, r.kod), o.tw_id)?.c ?? null;
+      const p = az.podloga({ cenaPl: az.cenaPl(s), kurs: kursy[r.kod]?.kurs, def: r.def, cenaGlownego: glowne });
+      if (p.podloga == null) return { ok: false, blad: `podłoga nieznana (${p.brak}) — ceny nie wysłano` };
+      if (az.zaokraglij(cena, r.def) < p.podloga) {
+        return { ok: false, blad: `${cena} ${r.def.waluta} poniżej podłogi ${p.podloga} (PL po kursie${r.def.narzutPct ? ` +${r.def.narzutPct}%` : ''}: ${p.zPl}${p.zGlownego ? `, ekajtek: ${p.zGlownego}` : ''})` };
+      }
+      return allegro.ustawCeneZagr(s, r.kod, cena);
+    },
+    tylkoAktywne: true,
+    propagacja: 'Allegro zmienia cenę rynku od razu; reguła przelicznika na tym rynku zostaje zdjęta',
   },
   empik: {
     // Import cen PRI01 (pricing/empik.js) jedną linią, na ofercie świeżo pobranej po SKU (OF21) —

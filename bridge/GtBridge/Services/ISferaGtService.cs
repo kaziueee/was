@@ -27,5 +27,9 @@ namespace GtBridge.Services
         // Zaklada nowy komplet (rodzaj 8) ze skladem, cenami, EAN-em i polami wlasnymi.
         // Nie rzuca - bledy w KompletResponse.Blad. Podglad = bez zapisu (patrz KompletRequest).
         Task<KompletResponse> ZalozKompletAsync(KompletRequest request);
+
+        // Zaklada zamowienie od klienta (ZK). Nie rzuca - bledy w ZkResponse.Blad.
+        // Podglad = ZK zbudowane i odczytane, zamkniete bez zapisu (patrz ZkRequest).
+        Task<ZkResponse> ZalozZkAsync(ZkRequest request);
     }
 }

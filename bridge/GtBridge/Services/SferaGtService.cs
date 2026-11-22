@@ -102,6 +102,7 @@ namespace GtBridge.Services
         private const int UruchomWTle = 4;               // UruchomEnum.gtaUruchomWTle
         private const int DokumentStatusWywolany = 1;    // SubiektDokumentStatusEnum.gtaSubiektDokumentStatusWywolany
         private const int SubiektDokumentMM = -27;       // SubiektDokumentEnum.gtaSubiektDokumentMM (0xFFFFFFE5)
+        private const int SubiektDokumentZK = -8;        // SubiektDokumentEnum.gtaSubiektDokumentZK (0xFFFFFFF8)
 
         // Laczy sie z Subiektem GT przez Sfere (obiekt InsERT.GT -> Subiekt). Uruchamia
         // dedykowana instancje w tle (gtaUruchomNowy | gtaUruchomWTle) - bez okna UI.
@@ -566,6 +567,176 @@ namespace GtBridge.Services
             {
                 wynik.Pola[$"pole_wlasne:{nazwa}"] = Bezp(() => ((object)tw).GetType().InvokeMember("PoleWlasne",
                     System.Reflection.BindingFlags.GetProperty, null, (object)tw, new object[] { nazwa }));
+            }
+        }
+
+        // Odmowa ZK z powodu danych wykrytych przez most przed Sfera (brak pozycji, ilosc <= 0).
+        private sealed class OdmowaZk : Exception
+        {
+            public OdmowaZk(string komunikat) : base(komunikat) { }
+        }
+
+        // Zamowienie od klienta (ZK) przez Sfere: Dokumenty.Dodaj(gtaSubiektDokumentZK) -> KontrahentId
+        // -> WalutaSymbol + PobierzKursWalutyWgParametrow -> Rezerwacja -> Pozycje.Dodaj (IloscJm,
+        // VatId, CenaNettoPrzedRabatem) -> Przelicz -> Zapisz (gta.chm: SuDokument, SuPozycja).
+        //
+        // Magazyn dokumentu Sfera bierze z biezacego magazynu sesji (Subiekt.MagazynId), wiec
+        // przestawiamy go na czas budowy ZK i zawsze przywracamy - sesje dziela MM z WMS.
+        //
+        // Ceny i kurs ODCZYTUJEMY z obiektu po ustawieniu (tryb Podglad = bez Zapisz): gta.chm nie
+        // mowi wprost, czy CenaNettoPrzedRabatem na dokumencie walutowym jest w walucie, czy w PLN -
+        // sprawdzamy to na podgladzie zamiast zakladac (zasada usera: nie zgadujemy, jak dziala GT).
+        // ZK nie ma skutku magazynowego (tylko rezerwacje), a zerwania sesji nie powtarzamy -
+        // skrypt przed ponowieniem szuka ZK po kluczu "WMS-ZK:" w uwagach.
+        public Task<ZkResponse> ZalozZkAsync(ZkRequest request)
+        {
+            var etykieta = $"ZK kh={request.KontrahentId} mag={request.MagazynId} {request.Waluta ?? "PLN"} vat={request.VatId?.ToString() ?? "kartoteka"} " +
+                $"pozycji={request.Pozycje.Count} [{request.Uwagi}]" + (request.Podglad ? " [PODGLAD]" : "");
+            var zegar = Stopwatch.StartNew();
+            Dziennik.Zapisz("zk", $"START {etykieta}");
+            try
+            {
+                if (request.KontrahentId <= 0) throw new OdmowaZk("Brak kontrahenta.");
+                if (request.MagazynId <= 0) throw new OdmowaZk("Brak magazynu.");
+                if (request.Pozycje.Count == 0) throw new OdmowaZk("ZK bez pozycji.");
+                foreach (var p in request.Pozycje)
+                {
+                    if (p.TwId <= 0 || p.Ilosc <= 0 || p.CenaNetto < 0)
+                        throw new OdmowaZk($"Zla pozycja: tw_Id={p.TwId} ilosc={p.Ilosc} cena={p.CenaNetto}.");
+                }
+
+                var odpowiedz = NaWatkuSta(() =>
+                {
+                    dynamic? dok = null;
+                    dynamic subiekt = Polacz();
+                    int? staryMagazyn = null;
+                    bool sesjaPorzucona = false;
+                    try
+                    {
+                        staryMagazyn = (int)subiekt.MagazynId;
+                        if (staryMagazyn != request.MagazynId) subiekt.MagazynId = request.MagazynId;
+
+                        dok = subiekt.Dokumenty.Dodaj(SubiektDokumentZK);
+                        dok.KontrahentId = request.KontrahentId;
+                        dok.LiczonyOdCenNetto = true;
+                        if (!string.IsNullOrWhiteSpace(request.Waluta) && request.Waluta != "PLN")
+                        {
+                            dok.WalutaSymbol = request.Waluta;
+                            dok.PobierzKursWalutyWgParametrow();
+                        }
+                        dok.Rezerwacja = request.Rezerwacja;
+
+                        dok.AutoPrzeliczanie = false;
+                        foreach (var p in request.Pozycje)
+                        {
+                            dynamic poz = dok.Pozycje.Dodaj((long)p.TwId);
+                            poz.IloscJm = (double)p.Ilosc;
+                            if (request.VatId.HasValue) poz.VatId = request.VatId.Value;
+                            poz.RabatProcent = 0.0;
+                            poz.CenaNettoPrzedRabatem = (double)p.CenaNetto;
+                        }
+                        dok.Przelicz();
+
+                        if (!string.IsNullOrEmpty(request.Uwagi)) dok.Uwagi = request.Uwagi;
+
+                        var wynik = new ZkResponse { Sukces = true, Podglad = request.Podglad };
+                        OdczytajZk(dok, wynik);
+
+                        if (request.Podglad)
+                        {
+                            Dziennik.Zapisz("zk", $"PODGLAD bez zapisu :: {etykieta}");
+                        }
+                        else
+                        {
+                            dok.Zapisz();
+                            wynik.Numer = (string)dok.NumerPelny;
+                        }
+                        return wynik;
+                    }
+                    catch (Exception ex) when (CzyZerwanie(ex))
+                    {
+                        PorzucSesje("zerwana przy ZK");
+                        sesjaPorzucona = true;
+                        dok = null;
+                        throw;
+                    }
+                    finally
+                    {
+                        // Zamknij bez Zapisz = porzucenie (podglad i sciezka bledu); po Zapisz zamyka obiekt.
+                        if (dok != null) { try { dok.Zamknij(); } catch { /* zamykamy mimo bledu */ } }
+                        if (!sesjaPorzucona && staryMagazyn.HasValue && staryMagazyn != request.MagazynId)
+                        {
+                            try { subiekt.MagazynId = staryMagazyn.Value; }
+                            catch (Exception ex) { Dziennik.Zapisz("zk", $"Nie przywrocilem magazynu sesji {staryMagazyn}: {ex.Message}"); }
+                        }
+                    }
+                }, etykieta);
+
+                _stan.ZapiszOk(request.Podglad ? "Podglad ZK" : $"ZK {odpowiedz.Numer}");
+                Dziennik.Zapisz("zk", $"OK {odpowiedz.Numer ?? "-"} po {zegar.ElapsedMilliseconds} ms :: {etykieta}");
+                return Task.FromResult(odpowiedz);
+            }
+            catch (Exception ex)
+            {
+                bool biznesowy = ex is OdmowaZk || CzyBiznesowy(ex);
+                var blad = ex is OdmowaZk ? ex.Message : OpisBledu(ex);
+                if (biznesowy) _stan.ZapiszOdmowa($"ZK odrzucone: {blad}");
+                else _stan.ZapiszBlad($"ZK: {blad}");
+                Dziennik.Zapisz("zk", $"{(biznesowy ? "ODMOWA" : "BLAD")} po {zegar.ElapsedMilliseconds} ms :: {etykieta} :: {blad} :: {ex.GetType().Name}"
+                    + (ex is COMException c ? $" HRESULT=0x{(uint)c.ErrorCode:X8}" : "") + $" :: {ex.Message}");
+                return Task.FromResult(new ZkResponse
+                {
+                    Sukces = false,
+                    Podglad = request.Podglad,
+                    Blad = blad,
+                    Rodzaj = biznesowy ? "biznesowy" : "techniczny",
+                });
+            }
+        }
+
+        // Odczyt ZK z obiektu Sfery - kazdy atrybut osobno, zeby jeden brakujacy nie wywrocil calosci.
+        private static void OdczytajZk(dynamic dok, ZkResponse wynik)
+        {
+            static object? Bezp(Func<object?> f)
+            {
+                try { return f(); } catch (Exception e) { return $"! {e.Message}"; }
+            }
+
+            wynik.Naglowek["typ"] = Bezp(() => (object?)dok.Typ);
+            wynik.Naglowek["kontrahent_id"] = Bezp(() => (object?)dok.KontrahentId);
+            wynik.Naglowek["odbiorca_id"] = Bezp(() => (object?)dok.OdbiorcaId);
+            wynik.Naglowek["magazyn_id"] = Bezp(() => (object?)dok.MagazynNadawczyId);
+            wynik.Naglowek["waluta"] = Bezp(() => (object?)dok.WalutaSymbol);
+            wynik.Naglowek["kurs"] = Bezp(() => (object?)dok.WalutaKurs);
+            wynik.Naglowek["kurs_data"] = Bezp(() => (object?)dok.WalutaDataKursu);
+            wynik.Naglowek["kurs_tabela_banku"] = Bezp(() => (object?)dok.WalutaTabelaBanku);
+            wynik.Naglowek["poziom_cen"] = Bezp(() => (object?)dok.PoziomCenyId);
+            wynik.Naglowek["rezerwacja"] = Bezp(() => (object?)dok.Rezerwacja);
+            wynik.Naglowek["data_wystawienia"] = Bezp(() => (object?)dok.DataWystawienia);
+            wynik.Naglowek["kategoria_id"] = Bezp(() => (object?)dok.KategoriaId);
+            wynik.Naglowek["wystawil"] = Bezp(() => (object?)dok.Wystawil);
+            wynik.Naglowek["wartosc_netto"] = Bezp(() => (object?)dok.WartoscNetto);
+            wynik.Naglowek["wartosc_brutto"] = Bezp(() => (object?)dok.WartoscBrutto);
+            wynik.Naglowek["wartosc_vat"] = Bezp(() => (object?)dok.WartoscVat);
+            wynik.Naglowek["numer"] = Bezp(() => (object?)dok.NumerPelny);
+
+            int liczba = 0;
+            try { liczba = (int)dok.Pozycje.Liczba; } catch { /* zostaje 0 */ }
+            for (int i = 1; i <= liczba; i++)
+            {
+                dynamic p = dok.Pozycje.Element(i);
+                wynik.Pozycje.Add(new Dictionary<string, object?>
+                {
+                    ["tw_id"] = Bezp(() => (object?)p.TowarId),
+                    ["symbol"] = Bezp(() => (object?)p.TowarSymbol),
+                    ["ilosc"] = Bezp(() => (object?)p.IloscJm),
+                    ["vat_id"] = Bezp(() => (object?)p.VatId),
+                    ["vat_procent"] = Bezp(() => (object?)p.VatProcent),
+                    ["cena_netto"] = Bezp(() => (object?)p.CenaNettoPrzedRabatem),
+                    ["rabat"] = Bezp(() => (object?)p.RabatProcent),
+                    ["wartosc_netto"] = Bezp(() => (object?)p.WartoscNettoPoRabacie),
+                    ["magazyn_id"] = Bezp(() => (object?)p.MagazynId),
+                });
             }
         }
 

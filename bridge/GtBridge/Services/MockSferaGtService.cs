@@ -79,6 +79,18 @@ namespace GtBridge.Services
             });
         }
 
+        public Task<ZkResponse> ZalozZkAsync(ZkRequest request)
+        {
+            _logger.LogInformation("MOCK ZK: kh={Kontrahent} mag={Magazyn} pozycji={Liczba} podglad={Podglad}",
+                request.KontrahentId, request.MagazynId, request.Pozycje.Count, request.Podglad);
+            return Task.FromResult(new ZkResponse
+            {
+                Sukces = true,
+                Podglad = request.Podglad,
+                Numer = request.Podglad ? null : $"ZK {_licznikDokumentow++}/{DateTime.Now:yyyy}/MOCK",
+            });
+        }
+
         public Task<DokumentResponse> WystawRwAsync(InwentaryzacjaDokumentRequest request)
         {
             _logger.LogInformation("MOCK RW: magazyn={Magazyn} pozycji={Liczba}", request.Magazyn, request.Pozycje.Count);

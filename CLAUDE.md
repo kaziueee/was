@@ -393,6 +393,7 @@ GET  /api/stan/:magId
 GET  /api/artykul/:id
 GET  /api/zdrowie          # stan mostu (nie dotyka Sfery) — czyta go routes/status.js
 POST /api/komplet          # nowy komplet (rodzaj 8) przez Sferę; tryb podglad = bez zapisu — scripts/zestaw-zaloz.js
+POST /api/zk               # zamówienie od klienta (ZK); tryb podglad = bez zapisu — scripts/zk-zaloz.js
 POST /api/inwentaryzacja/rw
 POST /api/inwentaryzacja/pw
 ```

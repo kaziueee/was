@@ -73,6 +73,15 @@ namespace GtBridge.Controllers
             return StatusCode(wynik.Rodzaj == "biznesowy" ? 409 : 502, wynik);
         }
 
+        // POST /api/zk - zamowienie od klienta. Wola scripts/zk-zaloz.js. Odmowa = 409, awaria = 502.
+        [HttpPost("zk")]
+        public async Task<ActionResult<ZkResponse>> Zk([FromBody] ZkRequest request)
+        {
+            var wynik = await _sfera.ZalozZkAsync(request);
+            if (wynik.Sukces) return Ok(wynik);
+            return StatusCode(wynik.Rodzaj == "biznesowy" ? 409 : 502, wynik);
+        }
+
         [HttpPost("lok")]
         public async Task<ActionResult<DokumentResponse>> Lok([FromBody] LokRequest request)
         {

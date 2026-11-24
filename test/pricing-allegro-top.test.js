@@ -118,8 +118,14 @@ test('zapis raportu: konto po numerze użytkownika, cena Top z naszej ceny, szan
   assert.strictEqual(top.raportyTop().get('EKAJTEK|200').cena_top, 89.99);
 });
 
+test('zapis raportu: konto po loginie (format raportu od 24.11.2026), wielkość liter bez znaczenia', () => {
+  assert.strictEqual(top.zapiszRaport(top.raportTopOferty(arkusze([wiersz('1', 'za wysoka', 1)], ['allegro-pl', 'ekajtek_pl'])), 'Mati').konto, 'EKAJTEK');
+  assert.strictEqual(top.zapiszRaport(top.raportTopOferty(arkusze([wiersz('1', 'za wysoka', 1)], ['allegro-pl', 'natropiezabawek'])), 'Mati').konto, 'NATROPIE');
+});
+
 test('zapis raportu: obce konto albo inny rynek → odmowa z nazwą znanych kont', () => {
   assert.throws(() => top.zapiszRaport(top.raportTopOferty(arkusze([wiersz('1', 'za wysoka', 1)], ['allegro-pl', '123']))), /ekajtek_pl \(21818279\)/);
+  assert.throws(() => top.zapiszRaport(top.raportTopOferty(arkusze([wiersz('1', 'za wysoka', 1)], ['allegro-pl', 'obce_konto']))), /obce_konto/);
   assert.throws(() => top.zapiszRaport(top.raportTopOferty(arkusze([wiersz('1', 'za wysoka', 1)], ['allegro-cz', '21818279']))), /allegro-cz/);
 });
 

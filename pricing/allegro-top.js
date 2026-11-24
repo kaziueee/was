@@ -7,7 +7,7 @@
 // to panel, nie API (decyzja 2026-10-19).
 //
 // Co jest w raporcie (sprawdzone na plikach ekajtek z 19.10.2026): arkusz „Zakres danych” (Rynek, Konto
-// Allegro = numer użytkownika, opcjonalnie Kategoria) i „Top oferta”: ID oferty, ID produktu, nazwa, oceny
+// Allegro = numer użytkownika, od 24.11.2026 login, opcjonalnie Kategoria) i „Top oferta”: ID oferty, ID produktu, nazwa, oceny
 // czynników (Promowanie, Jakość sprzedaży, Stan produktu, Jakość zdjęć, Gwarancja najniższej ceny, Cena,
 // Czas dostawy: „odpowiednia/odpowiedni/odpowiednie” albo „do poprawy”, cena: „za wysoka”) i **Różnica w cenie**
 // = o ile nasza cena przewyższa cenę Top oferty (HASF9494: 77,89 − 7,99 = 69,90 = najtańszy konkurent
@@ -99,7 +99,9 @@ function zRaportu(top, cena, teraz = Date.now(), waznoscH = WAZNOSC_H, inne = []
 function zapiszRaport(raport, kto) {
   const { db } = require('./db');
   const { KONTA } = require('./allegro');
-  const konto = Object.keys(KONTA).find((k) => KONTA[k].id === String(raport.uzytkownik || ''));
+  // „Konto Allegro” w raporcie: do 10.2026 numer użytkownika (21818279), od 24.11.2026 login (ekajtek_pl) — przyjmujemy oba.
+  const u = String(raport.uzytkownik || '').trim().toLowerCase();
+  const konto = u ? Object.keys(KONTA).find((k) => KONTA[k].id === u || KONTA[k].login.toLowerCase() === u) : undefined;
   if (!konto) throw new Error(`Raport z konta Allegro nr ${raport.uzytkownik || '?'} — repricer zna tylko ${Object.values(KONTA).map((k) => `${k.login} (${k.id})`).join(', ')}`);
   if (raport.rynek && raport.rynek !== 'allegro-pl') throw new Error(`Raport z rynku ${raport.rynek} — repricer obsługuje allegro-pl`);
   const oferta = db.prepare(`SELECT o.id, o.cena, (SELECT min FROM decyzje WHERE oferta_id = o.id ORDER BY id DESC LIMIT 1) AS min

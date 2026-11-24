@@ -84,6 +84,13 @@ test('kolumny: Amazon zostaje pod kodem rynku, eMAG dostaje własny klucz i auto
   assert.ok(!kolumna('amazon', 'DE').tylkoOdczyt);
 });
 
+test('kolumny: Amazon przebija Buy Box o 10 centów (decyzja usera 2026-11-24), reszta kanałów bez zmian', () => {
+  for (const r of ['DE', 'FR', 'IT', 'ES', 'NL', 'PL']) assert.strictEqual(kolumna('amazon', r).reguly.krok, 0.1, r);
+  assert.strictEqual(kolumna('emag', 'RO').reguly?.krok, undefined);   // domyślne 0,01 z pricing/model.js
+  const pas = { min: 20, max: 40 };
+  assert.strictEqual(decyzja({ cena: 28.6, wysylka: 0, bbNasz: false, bbCena: 28.49, bbFba: false, najtanszaInna: null }, pas, kolumna('amazon', 'DE').reguly).cena, 28.39);
+});
+
 test('pas eMAG RO: Genius z oferty (API) wygrywa z wymiarami z GT', () => {
   const w = { koszt: 20, waga: 1, docinalny: false, genius: true };   // wymiary mówią: mieści się w automacie
   const zGenius = pasyZWyceny(w).EMAG_RO;

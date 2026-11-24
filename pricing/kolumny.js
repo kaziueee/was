@@ -14,14 +14,18 @@
 //   reguly      — nadpisania pricing/model.js w walucie kanału (krok obniżki, próg podwyżki); forint
 //                 to ~0,012 zł, więc „0,01 pod konkurenta” nic by nie zmieniło na stronie
 
+// Amazon: przebijamy zwycięzcę Buy Boxa o 10 centów (na PL 10 gr), nie o 1 — decyzja usera 2026-11-24.
+// Przebicie ustawione przy ofercie (konk_przebicie, w tym remis) nadal wygrywa (pricing/worker.js).
+const AMAZON_REGULY = { krok: 0.1 };
+
 const KOLUMNY = [
-  { klucz: 'DE', platforma: 'amazon', rynek: 'DE', nazwa: 'Amazon DE', waluta: '€', kalkulator: 'Amazon DE' },
-  { klucz: 'FR', platforma: 'amazon', rynek: 'FR', nazwa: 'Amazon FR', waluta: '€', kalkulator: 'Amazon FR' },
-  { klucz: 'IT', platforma: 'amazon', rynek: 'IT', nazwa: 'Amazon IT', waluta: '€', kalkulator: 'Amazon IT' },
-  { klucz: 'ES', platforma: 'amazon', rynek: 'ES', nazwa: 'Amazon ES', waluta: '€', kalkulator: 'Amazon ES' },
-  { klucz: 'NL', platforma: 'amazon', rynek: 'NL', nazwa: 'Amazon NL', waluta: '€', kalkulator: 'Amazon NL' },
+  { klucz: 'DE', platforma: 'amazon', rynek: 'DE', nazwa: 'Amazon DE', waluta: '€', kalkulator: 'Amazon DE', reguly: AMAZON_REGULY },
+  { klucz: 'FR', platforma: 'amazon', rynek: 'FR', nazwa: 'Amazon FR', waluta: '€', kalkulator: 'Amazon FR', reguly: AMAZON_REGULY },
+  { klucz: 'IT', platforma: 'amazon', rynek: 'IT', nazwa: 'Amazon IT', waluta: '€', kalkulator: 'Amazon IT', reguly: AMAZON_REGULY },
+  { klucz: 'ES', platforma: 'amazon', rynek: 'ES', nazwa: 'Amazon ES', waluta: '€', kalkulator: 'Amazon ES', reguly: AMAZON_REGULY },
+  { klucz: 'NL', platforma: 'amazon', rynek: 'NL', nazwa: 'Amazon NL', waluta: '€', kalkulator: 'Amazon NL', reguly: AMAZON_REGULY },
   // Amazon PL: minimum z kalkulatora od 2026-10-22 (rynek „Amazon PL”: prowizja 6,15%, Easy Ship 4,29 zł za paczkę).
-  { klucz: 'PL', platforma: 'amazon', rynek: 'PL', nazwa: 'Amazon PL', waluta: 'zł', kalkulator: 'Amazon PL' },
+  { klucz: 'PL', platforma: 'amazon', rynek: 'PL', nazwa: 'Amazon PL', waluta: 'zł', kalkulator: 'Amazon PL', reguly: AMAZON_REGULY },
   { klucz: 'EMAG_RO', platforma: 'emag', rynek: 'RO', nazwa: 'eMAG RO', waluta: 'RON', kalkulator: 'eMAG RO' },  // automat od 2026-10-15
   // HU i BG: obserwacja od 2026-10-15, automat od tego samego dnia (decyzja usera po analizie Buy Boxów:
   // osobny automat i osobne minimum na każdy rynek, nie przeliczanie z RO)

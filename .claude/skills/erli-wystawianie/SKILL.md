@@ -42,7 +42,7 @@ Cena na Erli **= Allegro ekajtek + 5%** (w górę do ,99), **w obie strony** (za
 
 ## Zdjęcia
 
-Erli pobiera każdy adres zdjęcia raz; nieudane pobranie (serwer zdjęć Allegro) porzuca go na zawsze. Dlatego adresy dostają unikalny dopisek `#erli-<nr oferty>`, a po `--zapisz` skrypt po 2 min porównuje liczbę zdjęć z galerią Allegro i wysyła brakujące jeszcze raz (nowy dopisek). Ręcznie: `--zdjecia NR,NR [--zapisz]`. **Zdjęć z ludźmi Erli nie przyjmuje** (26.11: dziecko z Littlest Pet Shop, nastolatek z minigunem X-Shot — odrzucone także po ponownym wysłaniu), więc brak jednego takiego zdjęcia to nie błąd i nie ma co ponawiać.
+Erli pobiera każdy adres zdjęcia raz; nieudane pobranie (serwer zdjęć Allegro) porzuca go na zawsze. Dlatego adresy dostają unikalny dopisek `#erli-<nr oferty>`, a po `--zapisz` skrypt po 2 min porównuje liczbę zdjęć z galerią Allegro i wysyła brakujące jeszcze raz (nowy dopisek). Ręcznie: `--zdjecia NR,NR [--zapisz]`. **Pusta galeria (0 zdjęć) = Erli jeszcze nie doszedł do produktu — nie wysyłaj ponownie.** Zdjęcia obrabia kolejka sklepu, po kolei wg numeru produktu; przy dużym ruchu czeka się godzinami (26.11: paczka 46 z 12:30 dostawała zdjęcia od 14:48, po ~2,5 h), a ponowna wysyłka ustawia produkt na koniec kolejki (HWHHXX45 / HASF8401 / HWHFTH79 dostały zdjęcia ostatnie). Ponawiaj tylko galerie częściowe. Przy dużych paczkach dawaj Erli czas: następną paczkę dopiero, gdy poprzednia ma zdjęcia. **Zdjęć z ludźmi Erli nie przyjmuje** (26.11: dziecko z Littlest Pet Shop, nastolatek z minigunem X-Shot — odrzucone także po ponownym wysłaniu), więc brak jednego takiego zdjęcia to nie błąd i nie ma co ponawiać.
 
 ## Producent GPSR
 

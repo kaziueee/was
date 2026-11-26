@@ -4,7 +4,7 @@
 // .claude/skills/erli-wystawianie/SKILL.md). Uruchamiać NA SRV z C:\was — tam są klucz Erli (.env.dpapi), tokeny Allegro
 // (pricing.db) i GT. Logika i zasady: pricing/erli-model.js.
 //
-//   node scripts/erli-wystaw.js --lista [--limit 30] [--min-stan 1] [--csv plik.csv]
+//   node scripts/erli-wystaw.js --lista [--limit 30] [--min-stan 3] [--csv plik.csv]   (stan < 3 i warianty U/P nigdy)
 //       kandydaci: aktywne oferty Allegro ekajtek, których kopii nie ma na Erli; wstępna ocena z GT i feedu
 //       sklepu (bez pobierania pełnych ofert Allegro). Tylko odczyt.
 //   node scripts/erli-wystaw.js --oferty 17715639226,18000000000   (albo --symbole HASF2377,NERF1234)
@@ -33,6 +33,7 @@ const wm = require('../pricing/wystawianie-model');
 const { query } = require('../services/gt-sql');
 const { pobierzAtrybuty } = require('../services/gt-atrybuty');
 const { parsujFeed, kluczSymbolu } = require('../services/sciezka-wystawienia-model');
+const { bazySymboluWariantu } = require('../services/kolejnosc-obchodu');
 
 const KONTO = 'EKAJTEK';
 const MAX_ZAPIS = 50;
@@ -78,6 +79,22 @@ async function daneGt(twIds) {
   return wynik;
 }
 
+// Warianty uszkodzone / poprezentacyjne: symbol na U/P, którego symbol bazowy istnieje w GT (jak oznaczWariantyPU
+// w services/gt-produkty — sam suffiks nie wystarcza: 870BLU, F2713P to zwykłe towary). null = nie udało się sprawdzić.
+async function wariantyPU(symbole) {
+  const kand = [...new Set(symbole.filter(Boolean))].map((s) => ({ s, bazy: bazySymboluWariantu(s) })).filter((k) => k.bazy.length);
+  const istnieje = new Set();
+  try {
+    const bazy = [...new Set(kand.flatMap((k) => k.bazy))];
+    for (let i = 0; i < bazy.length; i += 900) {
+      const cz = bazy.slice(i, i + 900), par = {};
+      const r = await query(`SELECT tw_Symbol FROM tw__Towar WHERE tw_Rodzaj = 1 AND tw_Symbol IN (${cz.map((b, j) => { par[`b${j}`] = b; return `@b${j}`; }).join(',')})`, par);
+      for (const w of r.recordset ?? r) istnieje.add(String(w.tw_Symbol).trim().toUpperCase());
+    }
+  } catch (e) { console.error(`! warianty U/P: ${e.message} — blokada`); return null; }
+  return new Set(kand.filter((k) => k.bazy.some((b) => istnieje.has(b.trim().toUpperCase()))).map((k) => k.s));
+}
+
 // Erli: co już jest (po externalId i po SKU) + próby w toku z pricing.db (zapis Erli jest asynchroniczny).
 async function stanErli() {
   const produkty = await erli.wszystkieProdukty(['externalId', 'sku', 'status', 'archived']);
@@ -100,7 +117,7 @@ const ofertyEkajtek = () => db.prepare(`SELECT asin AS oferta, sku, tw_id, nazwa
 // --- lista --------------------------------------------------------------------------------------
 
 async function trybLista({ cicho = false } = {}) {
-  const limit = Number(arg('--limit') || 30), minStan = Number(arg('--min-stan') || 1);
+  const limit = Number(arg('--limit') || 30), minStan = Math.max(em.MIN_STAN, Number(arg('--min-stan') || em.MIN_STAN));
   const pisz = cicho ? () => {} : console.log;
   const [e, feed] = await Promise.all([stanErli(), feedSklepu()]);
   // Ten sam SKU bywa w kilku ofertach ekajtek (duplikaty na koncie) — na Erli jedna kopia: najstarsza oferta (najniższy numer).
@@ -109,6 +126,7 @@ async function trybLista({ cicho = false } = {}) {
   const bylySku = new Set();
   const oferty = bezKopii.filter((o) => { const k = kluczSymbolu(String(o.sku).split('/')[0]); if (bylySku.has(k)) return false; bylySku.add(k); return true; });
   const gt = await daneGt(oferty.map((o) => o.tw_id).filter(Boolean));
+  const pu = await wariantyPU([...gt.values()].map((g) => g.symbol));
   const wiersze = oferty.map((o) => {
     const g = o.tw_id ? gt.get(o.tw_id) : null;
     const sku = kluczSymbolu(String(o.sku).split('/')[0]);
@@ -125,6 +143,7 @@ async function trybLista({ cicho = false } = {}) {
     if (feed && g && !feed.has(kluczSymbolu(g.symbol))) blokady.push('brak karty Fenom');
     if (!feed) blokady.push('feed?');
     if (/\b(tefal|rowenta)\b/i.test(`${o.nazwa} ${g?.nazwa || ''}`)) blokady.push('Tefal/Rowenta');
+    if (!pu || (g && pu.has(g.symbol)) || /uszkodz|poprezent|powystaw/i.test(`${o.nazwa} ${g?.nazwa || ''}`)) blokady.push('U/P');
     return { oferta: o.oferta, sku: g?.symbol || o.sku, nazwa: o.nazwa, cena_allegro: o.cena, cena_erli: zl(em.cenaErliGrosze(o.cena)), stan: o.ilosc, blokady };
   });
   const gotowe = wiersze.filter((w) => !w.blokady.length).sort((a, b) => b.stan - a.stan);
@@ -179,6 +198,7 @@ async function trybOferty(podane = null) {
   ]);
   const nazwyCennikowErli = new Set(cennikiErli.map((c) => c.name));
   const gt = await daneGt(numery.map((n) => poNumerze.get(n)?.tw_id).filter(Boolean));
+  const pu = await wariantyPU([...gt.values()].map((g) => g.symbol));
 
   const wyniki = [];
   const skuTegoPrzebiegu = new Map();     // SKU → numer oferty: drugi produkt z tym samym SKU w jednym przebiegu = blokada
@@ -196,7 +216,7 @@ async function trybOferty(podane = null) {
     const ocena = em.ocenKandydata({
       oferta, sciezka, gt: g, wFeedzie: feed ? feed.has(kluczSymbolu(g?.symbol || sku)) : null,
       naErli: { poId: e.poId.get(nr) || (e.wToku.has(nr) ? { status: 'wysłany wcześniej, Erli jeszcze przetwarza' } : null), poSku: e.poSku.get(sku) || [] },
-      cennikErli, wagaBlad: g?.wagaBlad, wymiaryBlad: g?.wymiaryBlad,
+      cennikErli, wagaBlad: g?.wagaBlad, wymiaryBlad: g?.wymiaryBlad, wariantPU: pu ? !!(g && pu.has(g.symbol)) : null,
     });
     // GPSR: producent / osoba z Allegro musi być w słowniku Erli, inaczej Erli pomija odwołanie (test BARBBDS6).
     const gpsr = [];

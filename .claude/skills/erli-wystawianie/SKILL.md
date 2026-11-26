@@ -50,7 +50,7 @@ Erli łączy producenta ze swoim słownikiem (`/dictionaries/responsibleProducer
 
 ## Blokady (zasady usera dla każdej nowej oferty)
 
-Flaga „sklep internetowy” i cena Specjalna > 0 w Subiekcie · EAN + waga (kg z przecinkiem) + wymiary w GT · karta na Fenomie (feed sklepu) · bez Tefal / Rowenta · nigdy kategoria „Pozostałe” · oferta Allegro aktywna, ze stanem i zdjęciami · cennik dostawy o tej nazwie istnieje na Erli · na Erli nie ma już produktu z tym numerem oferty (także zarchiwizowanego) ani niezarchiwizowanego z tym SKU · jedna kopia na SKU.
+Flaga „sklep internetowy” i cena Specjalna > 0 w Subiekcie · EAN + waga (kg z przecinkiem) + wymiary w GT · karta na Fenomie (feed sklepu) · bez Tefal / Rowenta · nigdy kategoria „Pozostałe” · oferta Allegro aktywna, ze zdjęciami i **stanem ≥ 3 szt.** · **bez wariantów uszkodzonych / poprezentacyjnych** (symbol na U/P z istniejącym symbolem bazowym w GT albo „uszkodz/poprezent” w nazwie; zasady usera 2026-11-26) · cennik dostawy o tej nazwie istnieje na Erli · na Erli nie ma już produktu z tym numerem oferty (także zarchiwizowanego) ani niezarchiwizowanego z tym SKU · jedna kopia na SKU.
 
 Brak danych w GT naprawia się w Subiekcie / Parametrach WMS, nie obchodzi skryptem.
 

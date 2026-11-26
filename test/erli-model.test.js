@@ -115,6 +115,11 @@ test('blokady zasad usera', () => {
   assert.match(ok({ naErli: { poId: { status: 'inactive', archived: true } } }).blokady.join(), /zarchiwizowany/);
   assert.match(ok({ naErli: { poSku: [{ externalId: '1', status: 'active' }] } }).blokady.join(), /ten SKU/);
   assert.match(ok({ oferta: { ...OFERTA, stock: { available: 0 } } }).blokady.join(), /bez stanu/);
+  assert.match(ok({ oferta: { ...OFERTA, stock: { available: 2 } } }).blokady.join(), /od 3/);
+  assert.deepEqual(ok({ oferta: { ...OFERTA, stock: { available: 3 } } }).blokady, []);
+  assert.match(ok({ wariantPU: true }).blokady.join(), /uszkodzony/);
+  assert.match(ok({ wariantPU: null }).blokady.join(), /nie udało się sprawdzić/);
+  assert.match(ok({ oferta: { ...OFERTA, name: 'LALKA USZKODZONE OPAKOWANIE' } }).blokady.join(), /uszkodzony/);
 });
 
 test('producent GPSR z Allegro → wpis słownika Erli', () => {

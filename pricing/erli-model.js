@@ -179,7 +179,11 @@ function produktZAllegro(oferta, { gramy = null, cennikErli = null, stan = null,
 // → { blokady: [tekst] } — pusta lista = można wystawić. Zasady usera dla KAŻDEJ nowej oferty (pamięć projektu):
 // flaga sklepu + cena Specjalna > 0, EAN + wymiary + waga, karta na Fenomie, bez Tefal/Rowenta, nigdy „Pozostałe”.
 const MARKI_POMIJANE = /\b(tefal|rowenta)\b/i;
-function ocenKandydata({ oferta, sciezka = [], gt = null, wFeedzie = null, naErli = {}, cennikErli = null, wagaBlad = null, wymiaryBlad = null }) {
+// Zasady usera 2026-11-26: bez wariantów uszkodzonych / poprezentacyjnych (symbol bazowy + U/P, rozpoznanie jak
+// oznaczWariantyPU w gt-produkty) i bez towarów, których jest mniej niż 3 szt. (stan oferty Allegro = stan z BaseLinkera).
+const MIN_STAN = 3;
+const NAZWA_PU = /uszkodz|poprezent|powystaw/i;
+function ocenKandydata({ oferta, sciezka = [], gt = null, wFeedzie = null, naErli = {}, cennikErli = null, wagaBlad = null, wymiaryBlad = null, wariantPU = false }) {
   const blokady = [];
   if (!oferta) return { blokady: ['brak oferty Allegro'] };
   if (oferta.publication?.status !== 'ACTIVE') blokady.push(`oferta Allegro nieaktywna (${oferta.publication?.status || '?'})`);
@@ -202,6 +206,9 @@ function ocenKandydata({ oferta, sciezka = [], gt = null, wFeedzie = null, naErl
   if (!(oferta.images || []).length) blokady.push('oferta bez zdjęć');
   if (cenaErliGrosze(oferta.sellingMode?.price?.amount) == null) blokady.push('oferta bez ceny w PLN');
   if (!(Number(oferta.stock?.available) > 0)) blokady.push('oferta Allegro bez stanu');
+  else if (Number(oferta.stock.available) < MIN_STAN) blokady.push(`stan ${oferta.stock.available} szt. — wystawiamy od ${MIN_STAN}`);
+  if (wariantPU === true || NAZWA_PU.test(`${oferta.name || ''} ${gt?.nazwa || ''}`)) blokady.push('wariant uszkodzony / poprezentacyjny — nie wystawiamy');
+  if (wariantPU == null) blokady.push('nie udało się sprawdzić, czy to wariant uszkodzony / poprezentacyjny');
   if (!cennikErli) blokady.push('na Erli nie ma cennika dostawy o nazwie cennika oferty Allegro');
   return { blokady };
 }
@@ -233,4 +240,4 @@ function podmiotErli(a, dane) {
 const producentErli = (a) => podmiotErli(a, a?.producerData);
 const osobaErli = (a) => podmiotErli(a, a?.personalData);
 
-module.exports = { NARZUT, podlogaGrosze, korektaCeny, zDopiskiem, producentErli, osobaErli, DISPATCH, cenaErliGrosze, htmlDlaErli, opisDlaErli, atrybutyZAllegro, stawkaVat, parametr, produktZAllegro, ocenKandydata };
+module.exports = { MIN_STAN, NARZUT, podlogaGrosze, korektaCeny, zDopiskiem, producentErli, osobaErli, DISPATCH, cenaErliGrosze, htmlDlaErli, opisDlaErli, atrybutyZAllegro, stawkaVat, parametr, produktZAllegro, ocenKandydata };

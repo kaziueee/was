@@ -40,8 +40,10 @@ async function api(metoda, sciezka, { body, proby = 4, timeoutMs = 60_000 } = {}
     }
     let j = null;
     try { j = tekst ? JSON.parse(tekst) : null; } catch { /* nie-JSON */ }
+    // 429 = Erli NIE przyjął zapytania (limit) — ponowienie jest bezpieczne także dla POST, więc czekamy do 6 razy
+    // niezależnie od `proby` (pierwsza paczka 26.11: jeden POST odrzucony 429 przy proby = 1). 5xx — wg `proby`.
     if (r.status === 429 || r.status >= 500) {
-      if (i >= proby) throw Object.assign(new Error(`Erli ${metoda} ${sciezka}: HTTP ${r.status}`), { status: r.status });
+      if (i >= (r.status === 429 ? Math.max(proby, 6) : proby)) throw Object.assign(new Error(`Erli ${metoda} ${sciezka}: HTTP ${r.status}`), { status: r.status });
       const ra = Number(r.headers.get('retry-after'));
       await sleep(Number.isFinite(ra) && ra > 0 ? Math.min(ra * 1000, 60_000) : 3000 * i);
       continue;

@@ -4,12 +4,26 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const e = require('../pricing/erli-model');
 
-test('cena Erli = Allegro × 1,02 w górę do ,99, w groszach', () => {
-  assert.equal(e.cenaErliGrosze(109.99), 11299);     // 112,19 → 112,99
-  assert.equal(e.cenaErliGrosze('51.00'), 5299);     // 52,02 → 52,99
-  assert.equal(e.cenaErliGrosze(98.03), 9999);       // 99,99 dokładnie
+test('cena Erli = Allegro × 1,05 w górę do ,99, w groszach', () => {
+  assert.equal(e.cenaErliGrosze(109.99), 11599);     // 115,49 → 115,99
+  assert.equal(e.cenaErliGrosze('50.00'), 5299);     // 52,50 → 52,99
+  assert.equal(e.cenaErliGrosze(95.23), 9999);       // 99,99 dokładnie
   assert.equal(e.cenaErliGrosze(0), null);
   assert.equal(e.cenaErliGrosze(null), null);
+});
+
+test('pilnowanie ceny: dokładnie Allegro +5% (do ,99), w obie strony', () => {
+  assert.equal(e.podlogaGrosze(100), 10500);
+  assert.equal(e.korektaCeny(10299, 100), 10599);    // tańsza → w górę
+  assert.equal(e.korektaCeny(15999, 100), 10599);    // droższa → w dół
+  assert.equal(e.korektaCeny(10599, 100), null);     // równa celowi — zostaje
+  assert.equal(e.korektaCeny(10000, null), null);    // brak ceny Allegro — nie ruszamy
+});
+
+test('adresy zdjęć z unikalnym dopiskiem', () => {
+  assert.equal(e.zDopiskiem('https://a/1', 'erli-5'), 'https://a/1#erli-5');
+  assert.equal(e.zDopiskiem('https://a/1#stary', 'x'), 'https://a/1#x');
+  assert.equal(e.zDopiskiem('https://a/1', null), 'https://a/1');
 });
 
 test('HTML Allegro → dozwolone znaczniki Erli', () => {
@@ -68,7 +82,7 @@ test('produkt Erli z oferty Allegro', () => {
   assert.equal(p.name, 'PLAY-DOH KALENDARZ');
   assert.equal(p.ean, '5010996254474');
   assert.equal(p.sku, 'HASF2377');
-  assert.equal(p.price, 11299);
+  assert.equal(p.price, 11599);
   assert.equal(p.stock, 15);
   assert.equal(p.weight, 874);
   assert.equal(p.taxRate, 'TAX_23');
@@ -78,7 +92,7 @@ test('produkt Erli z oferty Allegro', () => {
   assert.deepEqual(p.externalReferences, [{ kind: 'allegro', id: '17715639226', source: 'api' }]);
   assert.deepEqual(p.externalResponsibleProducer, [{ externalId: 'aae2', source: 'allegro' }]);
   assert.equal(p.externalResponsiblePerson, undefined);
-  assert.deepEqual(p.images, [{ url: 'https://a.allegroimg.com/original/1' }, { url: 'https://a.allegroimg.com/original/2' }]);
+  assert.deepEqual(p.images, [{ url: 'https://a.allegroimg.com/original/1#erli-17715639226' }, { url: 'https://a.allegroimg.com/original/2#erli-17715639226' }]);
   assert.equal(p.description.sections[0].items[0].content, '<h1>T</h1>');
   assert.equal(e.produktZAllegro(OFERTA, { stan: 3 }).stock, 3);
 });

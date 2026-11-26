@@ -1,13 +1,13 @@
 ---
 name: erli-wystawianie
-description: Wystawianie produktów na Erli.pl jako kopii ofert Allegro ekajtek (cena Allegro +2%). Użyj, gdy user prosi o wystawienie / skopiowanie ofert na Erli, listę kandydatów na Erli albo sprawdzenie, czego brakuje na Erli.
+description: Wystawianie produktów na Erli.pl jako kopii ofert Allegro ekajtek (cena ≥ Allegro +5%) i pilnowanie ceny na Erli. Użyj, gdy user prosi o wystawienie / skopiowanie ofert na Erli, listę kandydatów, ceny albo zdjęcia na Erli.
 ---
 
 # Wystawianie na Erli (kopia oferty Allegro)
 
 Zakres (decyzje usera 2026-11-26): **tylko zakładanie produktów** na Erli. Bez zamówień, bez repricera, bez synchronizacji ceny. Stanem po założeniu zajmuje się **BaseLinker** — user wiąże tam nowy produkt sam.
 
-Kopia ma kształt 10 tys. kopii, które na Erli już są (test 2026-11-26: BARBBDS6 → produkt 19134158717, aktywny, bez problemów z zakupem): `externalId` = numer oferty Allegro, `sku` = symbol GT, kategoria i parametry z identyfikatorami Allegro, producent GPSR z Allegro, zdjęcia i opis z oferty, cennik dostawy o tej samej nazwie, wysyłka 24 h. **Cena = Allegro × 1,02 w górę do ,99.** Stan startowy = stan oferty Allegro (to już stan BaseLinkera, ucięty do 50).
+Kopia ma kształt 10 tys. kopii, które na Erli już są (test 2026-11-26: BARBBDS6 → produkt 19134158717, aktywny, bez problemów z zakupem): `externalId` = numer oferty Allegro, `sku` = symbol GT, kategoria i parametry z identyfikatorami Allegro, producent GPSR z Allegro, zdjęcia i opis z oferty, cennik dostawy o tej samej nazwie, wysyłka 24 h. **Cena = Allegro × 1,05 w górę do ,99** — +5% to podłoga (zasada usera 2026-11-26), pierwsze 6 ofert poszło z +2% i zostały podniesione. Stan startowy = stan oferty Allegro (to już stan BaseLinkera, ucięty do 50).
 
 Kod: `pricing/erli-model.js` (logika i blokady, testy `test/erli-model.test.js`), `pricing/erli.js` (klient API), `scripts/erli-wystaw.js` (narzędzie). Dokumentacja API: https://erli.pl/svc/shop-api/doc/
 
@@ -25,8 +25,24 @@ Skrypt musi być w wersji z `main` na SRV (po `git pull` / `aktualizuj-wms.cmd`)
 
 1. **Lista kandydatów** (tylko odczyt): `--lista [--limit N] [--min-stan N] [--csv C:\Users\Adm\erli.csv]`. Aktywne oferty ekajtek bez kopii na Erli, jedna na SKU, wstępnie ocenione z GT i feedu sklepu. Pokaż userowi liczby i blokady.
 2. **Podgląd** wybranych (tylko odczyt): `--oferty NR,NR` albo `--symbole SYM,SYM` (`--json` = pełna treść). Pobiera pełną ofertę Allegro i podaje wszystkie blokady. Pokaż userowi: tytuł, cena Allegro → Erli, stan, kategoria, blokady.
-3. **Zapis tylko na wyraźne „wystaw”** od usera, dla pozycji, które pokazał podgląd: ta sama komenda + `--zapisz` (najwyżej 50 naraz). „Lista” to przegląd, nie zgoda na wystawienie. Pozycje z blokadami skrypt pomija sam.
+3. **Zapis tylko na wyraźne „wystaw”** od usera, dla pozycji, które pokazał podgląd: ta sama komenda + `--zapisz` (najwyżej 50 naraz). Wsadowo: `--gotowe N --zapisz` (N pierwszych gotowych z listy; duże paczki uruchamiaj odłączone od SSH, patrz niżej). „Lista” to przegląd, nie zgoda na wystawienie. Pozycje z blokadami skrypt pomija sam.
 4. Po zapisie przypomnij: **powiązać nowe produkty w BaseLinkerze** (stan) i że Erli publikuje zmiany do ~20 min. Próby zapisują się w `pricing.db` `wystawienia` (platforma `erli`) — widać je w historii Ceny → „Do wystawienia”, odhaczenie „podpięte” = powiązane w BaseLinkerze.
+
+## Duże paczki
+
+Wystawienie trwa ~5–8 s na ofertę (3 zapytania Allegro + zapis Erli). Paczkę większą niż ~50 uruchamiaj na SRV odłączoną od SSH (proces startowany przez SSH ginie razem z sesją), z logiem do pliku:
+
+```bash
+ssh Adm@100.107.156.67 'Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = "cmd /c cd /d C:\was && node --no-warnings --experimental-sqlite scripts/erli-wystaw.js --gotowe 500 --zapisz > C:\Users\Adm\erli-wystaw.log 2>&1" }'
+```
+
+## Pilnowanie ceny
+
+Cena na Erli **= Allegro ekajtek + 5%** (w górę do ,99), **w obie strony** (zasady usera 2026-11-26: „nie może być niższa niż +5%” i „resztę też obniż”). Pilnuje worker repricera co godzinę (`pricing/erli-ceny.js`, `PRICING_ERLI_MIN`, wyłącza `PRICING_ERLI_CENY=0`, przy hamulcu `PRICING_ZAPIS ≠ 1` tylko loguje), najwyżej 500 zmian na przebieg; dotyczy WSZYSTKICH produktów Erli z ofertą ekajtek (po numerze oferty, potem po SKU), także starych kopii. Ręcznie: `--ceny` (podgląd) / `--ceny --zapisz [--limit N]`. Ceny zamrożone ręczną edycją w panelu Erli są tylko zgłaszane.
+
+## Zdjęcia
+
+Erli pobiera każdy adres zdjęcia raz; nieudane pobranie (serwer zdjęć Allegro) porzuca go na zawsze. Dlatego adresy dostają unikalny dopisek `#erli-<nr oferty>`, a po `--zapisz` skrypt po 2 min porównuje liczbę zdjęć z galerią Allegro i wysyła brakujące jeszcze raz (nowy dopisek). Ręcznie: `--zdjecia NR,NR [--zapisz]`. **Zdjęć z ludźmi Erli nie przyjmuje** (26.11: dziecko z Littlest Pet Shop, nastolatek z minigunem X-Shot — odrzucone także po ponownym wysłaniu), więc brak jednego takiego zdjęcia to nie błąd i nie ma co ponawiać.
 
 ## Producent GPSR
 

@@ -17,8 +17,11 @@
 // klucz `idempotenceKey` = id producenta w Allegro). Producenta spoza słownika Erli po cichu pomija (test BARBBDS6),
 // więc brakującego najpierw dodajemy do słownika (producentErli) — tak samo osobę odpowiedzialną.
 
-// Cena: Allegro × 1,02, w górę do ,99 (112,19 → 112,99). W groszach, jak chce API Erli.
-const NARZUT = 1.02;
+// Cena: Allegro ekajtek × 1,05, w górę do ,99 (109,99 → 115,49 → 115,99). W groszach, jak chce API Erli.
+// Zasada usera 2026-11-26: cena na Erli = Allegro ekajtek + 5% — najpierw jako podłoga („nie może być niższa”), tego
+// samego dnia także w dół („resztę też obniż” — stare kopie miały ceny ~30–50% nad Allegro). Pilnuje
+// pricing/erli-ceny.js. Pierwsze 6 ofert z 26.11 poszło jeszcze z narzutem 2%.
+const NARZUT = 1.05;
 function cenaErliGrosze(cenaAllegro) {
   const c = Number(cenaAllegro);
   if (!(c > 0)) return null;
@@ -26,6 +29,15 @@ function cenaErliGrosze(cenaAllegro) {
   let g = Math.floor(cel / 100) * 100 + 99;
   if (g < cel) g += 100;
   return g;
+}
+// Najniższa dozwolona cena na Erli (grosze) — bez zaokrąglenia do ,99.
+const podlogaGrosze = (cenaAllegro) => (Number(cenaAllegro) > 0 ? Math.round(Number(cenaAllegro) * NARZUT * 100) : null);
+// Pilnowanie: cena Erli ≠ Allegro + 5% (do ,99) → nowa cena (grosze), inaczej null. W obie strony; zmienia się tylko
+// wtedy, gdy zmieni się cena Allegro, bo cel wynika wyłącznie z niej.
+function korektaCeny(cenaErliGr, cenaAllegro) {
+  const cel = cenaErliGrosze(cenaAllegro);
+  if (cel == null || !(Number(cenaErliGr) >= 0)) return null;
+  return Number(cenaErliGr) !== cel ? cel : null;
 }
 
 const DISPATCH = { unit: 'hour', period: 24 };     // jak wszystkie obecne kopie
@@ -65,13 +77,18 @@ function htmlDlaErli(html) {
   return wynik.replace(/\n+/g, ' ').replace(/\s*(<\/?(?:h[123]|p|ul|ol|li)>)\s*/g, '$1').replace(/<p><\/p>/g, '').trim();
 }
 
+// Erli pobiera każdy adres zdjęcia RAZ — błąd pobrania (np. serwer zdjęć Allegro odmówił przy wielu pobraniach naraz)
+// porzuca ten adres na zawsze, także dla przyszłych produktów (dokumentacja „Obrazki”; test 26.11: SKDBAT dostał 1 z 3
+// zdjęć, ponowne wysłanie z dopiskiem `#…` — 3 z 3). Dopisek jest unikalny dla produktu i próby, adres zdjęcia ten sam.
+const zDopiskiem = (url, dopisek) => (dopisek ? `${String(url).split('#')[0]}#${dopisek}` : String(url));
+
 // description.sections Allegro → Erli. Sekcja ma 1–2 elementy po obu stronach; pusty tekst odpada.
-function opisDlaErli(opisAllegro) {
+function opisDlaErli(opisAllegro, dopisek = null) {
   const sekcje = [];
   for (const s of opisAllegro?.sections || []) {
     const items = [];
     for (const it of s?.items || []) {
-      if (it?.type === 'IMAGE' && it.url) items.push({ type: 'IMAGE', url: String(it.url) });
+      if (it?.type === 'IMAGE' && it.url) items.push({ type: 'IMAGE', url: zDopiskiem(it.url, dopisek) });
       else if (it?.type === 'TEXT') {
         const content = htmlDlaErli(it.content);
         if (content.length >= 2) items.push({ type: 'TEXT', content });
@@ -123,21 +140,22 @@ function parametr(parametry, nazwa) {
 // Oferta Allegro (GET /sale/product-offers/{id}) + cennik Erli → treść POST /products/{externalId}.
 //   gramy        = waga z GT (wystawianie-model.wagaGramy), null = nie wysyłamy;
 //   cennikErli   = nazwa cennika dostawy na Erli (ta sama co cennik oferty Allegro);
-//   stan         = ile sztuk podać przy założeniu.
-function produktZAllegro(oferta, { gramy = null, cennikErli = null, stan = null } = {}) {
+//   stan         = ile sztuk podać przy założeniu;
+//   dopisek      = znacznik do adresów zdjęć (domyślnie `erli-<nr oferty>`), patrz zDopiskiem.
+function produktZAllegro(oferta, { gramy = null, cennikErli = null, stan = null, dopisek = `erli-${oferta?.id}` } = {}) {
   const ps = oferta?.productSet?.[0] || {};
   const atrybuty = atrybutyZAllegro(ps.product?.parameters || [], oferta?.parameters || []);
   const ean = String(parametr(ps.product?.parameters, 'EAN (GTIN)') || '').trim() || null;
   const body = {
     name: String(oferta?.name || '').trim().slice(0, MAX_NAZWA),
-    description: opisDlaErli(oferta?.description),
+    description: opisDlaErli(oferta?.description, dopisek),
     ean,
     sku: String(oferta?.external?.id || '').trim() || null,
     baseMarket: 'pl',
     externalReferences: [{ kind: 'allegro', id: String(oferta.id), source: 'api' }],
     externalCategories: oferta?.category?.id ? [{ source: 'allegro', breadcrumb: [{ id: String(oferta.category.id) }], index: 0 }] : null,
     externalAttributes: atrybuty.length ? atrybuty : null,
-    images: (oferta?.images || []).filter(Boolean).map((url) => ({ url: String(url) })),
+    images: (oferta?.images || []).filter(Boolean).map((url) => ({ url: zDopiskiem(url, dopisek) })),
     price: cenaErliGrosze(oferta?.sellingMode?.price?.amount),
     stock: Math.max(0, Math.floor(Number(stan ?? oferta?.stock?.available) || 0)),
     status: 'active',
@@ -215,4 +233,4 @@ function podmiotErli(a, dane) {
 const producentErli = (a) => podmiotErli(a, a?.producerData);
 const osobaErli = (a) => podmiotErli(a, a?.personalData);
 
-module.exports = { NARZUT, producentErli, osobaErli, DISPATCH, cenaErliGrosze, htmlDlaErli, opisDlaErli, atrybutyZAllegro, stawkaVat, parametr, produktZAllegro, ocenKandydata };
+module.exports = { NARZUT, podlogaGrosze, korektaCeny, zDopiskiem, producentErli, osobaErli, DISPATCH, cenaErliGrosze, htmlDlaErli, opisDlaErli, atrybutyZAllegro, stawkaVat, parametr, produktZAllegro, ocenKandydata };

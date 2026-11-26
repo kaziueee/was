@@ -22,6 +22,7 @@
 //   4. decyzja (pricing/model.js) → tabela `decyzje`
 //   + oferty wystawione z ekranu Ceny → „Do wystawienia”, które sync zobaczył, dostają automat (pricing/wystawianie.js);
 //     katalogi platform skanowane raz na dobę w nocy poza kolejką (pricing/katalogi.js, PRICING_KATALOGI=0 wyłącza)
+//   + Erli: cena = Allegro ekajtek + 5% co PRICING_ERLI_MIN (60) poza kolejką (pricing/erli-ceny.js, PRICING_ERLI_CENY=0 wyłącza)
 //
 // Dwa tryby oferty (decyzja usera 2026-10-13 — tryb Próba zlikwidowany):
 //   - automat (auto = 1): decyzje ze zmianą ceny idą od razu na Amazona,
@@ -804,6 +805,30 @@ if (require.main === module) {
       };
       setTimeout(billing, 30_000);
       setInterval(billing, BILLING_MS);
+    }
+    // Erli: cena = Allegro ekajtek + 5% w obie strony (pricing/erli-ceny.js, zasada usera 2026-11-26) — POZA kolejką,
+    // jak billing: czyta listę produktów Erli (~50 zapytań) i ceny Allegro z bazy, zmienia tylko rozjechane.
+    // Hamulec PRICING_ZAPIS ≠ 1 = tylko log, bez zmian. Bez ERLI_API_KEY albo z PRICING_ERLI_CENY=0 — wyłączone.
+    if (process.env.ERLI_API_KEY && process.env.PRICING_ERLI_CENY !== '0') {
+      const { pilnujCen } = require('./erli-ceny');
+      const ERLI_MS = interwalMsZMinut(process.env.PRICING_ERLI_MIN, 60, 'PRICING_ERLI_MIN');
+      let erliTrwa = false;
+      const erliCeny = async () => {
+        if (erliTrwa) return;
+        erliTrwa = true;
+        try {
+          const zapisz = process.env.PRICING_ZAPIS === '1';
+          const w = await pilnujCen({ zapisz, log: (s) => console.error(new Date().toISOString(), s) });
+          if (w.ponizej || w.powyzej || w.bledy) {
+            console.log(new Date().toISOString(), `[pricing] Erli ceny: sprawdzone ${w.sprawdzone}, ≠ Allegro+5%: niżej ${w.ponizej} / wyżej ${w.powyzej}, zmienione ${w.zmienione}`
+              + `${w.zamrozone ? `, zamrożone ${w.zamrozone}` : ''}${w.bledy ? `, błędy ${w.bledy}` : ''}${zapisz ? '' : ' (HAMULEC — bez zmian)'}`);
+          }
+          stan.set('erli_ceny', JSON.stringify({ ...w, lista: w.lista.slice(0, 50) }));
+        } catch (e) { console.error(new Date().toISOString(), '[pricing] Erli ceny:', e.message); }
+        finally { erliTrwa = false; }
+      };
+      setTimeout(erliCeny, 90_000);
+      setInterval(erliCeny, ERLI_MS);
     }
     // Skan katalogów platform (pricing/katalogi.js → Ceny → „Do wystawienia”) raz na dobę w nocy, POZA kolejką:
     // trwa ~1 h (eMAG find_by_eans ~25 s na 100 EAN × 3 rynki), a strażnik kolejki ubiłby proces po 60 min. Pisze

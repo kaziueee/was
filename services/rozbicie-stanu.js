@@ -142,6 +142,51 @@ function porownajPrzydzial(a, b) {
     || priorytet(a.rodzaj) - priorytet(b.rodzaj);
 }
 
+// WYDANIA DO SKLEPU Z NIEROZLOZONEJ DOSTAWY (2026-11-26, MM 1941/2026).
+//
+// Nowosci z dostawy biuro przydziela sklepom (MAG = Kajtek, LS = Leszno) recznym MM z K4,
+// wystawionym w Subiekcie ZANIM ktos rozlozy dostawe w WMS. Towar fizycznie wyjezdza z palety,
+// a kubelek dostawy liczyl dalej pelna ilosc z PZ (rozbicie nie odejmuje rozchodow od dokumentow
+// - zejscie bierze polka). Ekran Dostawy podpowiadal wiec "Rozloz N" dokladnie o tyle, ile
+// pojechalo do sklepu: magazynier rozkladal cala palete, a potem dokladal LOK na N sztuk, ktore
+// job rozjazdow scinal po 10 minutach (MM 1941: 24 towary, 78 szt., 7 takich par jednego dnia).
+//
+// Przydzial: kazde wydanie trafia do NAJNOWSZEJ dostawy z data <= data wydania (stamtad realnie
+// bierze sie przydzial dla sklepu), nadmiar przelewa sie na starsze. Wydanie bez pasujacej
+// dostawy przepada - to zwykle MM z polki, ktore nie ma tu nic do roboty. Czy dane wydanie
+// naprawde pochodzilo z palety, rozstrzyga dopiero rozbijStanK4 (data pierwszego rozlozenia).
+function przydzielWydaniaSklepu(dostawy, wydania) {
+  const lista = [...(dostawy || [])]
+    .map((d) => ({ d, wolne: Math.max(Number(d.ilosc) || 0, 0) }))
+    .sort((a, b) => String(b.d.data ?? '').localeCompare(String(a.d.data ?? '')));
+  for (const { d } of lista) d.wydane_sklep = [];
+  const wgDaty = [...(wydania || [])].sort((a, b) => String(a.data ?? '').localeCompare(String(b.data ?? '')));
+  for (const w of wgDaty) {
+    let potrzeba = Math.max(Number(w.ilosc) || 0, 0);
+    for (const poz of lista) {
+      if (potrzeba <= 0) break;
+      if (poz.wolne <= 0 || !w.data || String(poz.d.data ?? '') > String(w.data)) continue;
+      const bierz = Math.min(poz.wolne, potrzeba);
+      poz.d.wydane_sklep.push({ nr: w.nr ?? null, data: w.data, ilosc: bierz });
+      poz.wolne -= bierz;
+      potrzeba -= bierz;
+    }
+  }
+  return dostawy;
+}
+
+// Ile z wydan do sklepu przypisanych dokumentowi WYSZLO Z PALETY, a nie z polki. Granica to
+// dzien PIERWSZEGO rozlozenia tego dokumentu w WMS: wydanie do tego dnia wlacznie liczymy
+// (paleta stala jeszcze cala albo byla wlasnie rozkladana), pozniejsze - nie (towar lezal juz
+// na polce, a polka i tak absorbuje kazdy rozchod). Bez rozlozenia liczy sie kazde wydanie.
+// Dzien rozlozenia i data MM sa w tym samym, lokalnym kalendarzu (gt: dok_DataWyst).
+function wydaneZPalety(dokument, pierwszeRozlozenie) {
+  const wydania = dokument?.wydane_sklep || [];
+  return wydania
+    .filter((w) => !pierwszeRozlozenie || String(w.data) <= String(pierwszeRozlozenie))
+    .reduce((s, w) => s + (Number(w.ilosc) || 0), 0);
+}
+
 // Rozbija stan K4 na rozlaczne czesci, ktore NIE nachodza na siebie:
 //   dostawy    - PZ<-FZ, paleta od dostawcy (rozkladana dowolnie, dol/gora, w czesciach)
 //   zwroty     - PZ<-KFS, sztuki lezace w strefie zwrotow (wracaja na regal)
@@ -172,7 +217,9 @@ function porownajPrzydzial(a, b) {
 // opcje.iloscRozlozona - (artykul_gt_id, magazyn, pz_nr, dok_id) => ile juz rozlozono z dokumentu;
 //           wolane tylko gdy podano artykul_gt_id. dok_id jest wlasciwym kluczem (numer PZ
 //           potrafi sie zmienic przy edycji FZ - services/rozlozone-dokumenty.js)
-function rozbijStanK4(stanGt, sumaWms, dokumenty, { artykul_gt_id, magazyn = MAG_KOD_K4, iloscRozlozona } = {}) {
+// opcje.pierwszeRozlozenie - (artykul_gt_id, magazyn, pz_nr, dok_id) => 'YYYY-MM-DD' (dzien
+//           lokalny) albo null; potrzebne tylko dokumentom z wydane_sklep (wydaneZPalety)
+function rozbijStanK4(stanGt, sumaWms, dokumenty, { artykul_gt_id, magazyn = MAG_KOD_K4, iloscRozlozona, pierwszeRozlozenie } = {}) {
   let zostalo = Math.max(Number(stanGt) || 0, 0);
   const polkaKopia = Math.max(Number(sumaWms) || 0, 0);
   const kubelki = { dostawa: [], zwrot: [], przywozka: [], przyjecie_wewn: [] };
@@ -185,7 +232,9 @@ function rozbijStanK4(stanGt, sumaWms, dokumenty, { artykul_gt_id, magazyn = MAG
   for (const d of wgPrzydzialu) {
     if (zostalo <= 0) break;
     const juz = artykul_gt_id && iloscRozlozona ? iloscRozlozona(artykul_gt_id, magazyn, d.pz_nr, d.dok_id ?? null) : 0;
-    const pozostalo = d.ilosc - juz;
+    const pierwsze = d.wydane_sklep?.length && artykul_gt_id && pierwszeRozlozenie
+      ? pierwszeRozlozenie(artykul_gt_id, magazyn, d.pz_nr, d.dok_id ?? null) : null;
+    const pozostalo = d.ilosc - juz - wydaneZPalety(d, pierwsze);
     if (pozostalo <= 0) continue;             // ten dokument juz rozlozony w calosci
     const ilosc = Math.min(pozostalo, zostalo);
     (kubelki[d.rodzaj] || kubelki.dostawa).push({ ...d, ilosc });
@@ -224,5 +273,5 @@ function rozbijStanK4(stanGt, sumaWms, dokumenty, { artykul_gt_id, magazyn = MAG
 
 module.exports = {
   MAG_KOD_K4, KUBELKI_STREF, PRIORYTET_PRZYDZIALU, GRUPA_PRZYDZIALU, priorytet, porownajPrzydzial,
-  przydzielZwroty, rozbijStanK4,
+  przydzielZwroty, rozbijStanK4, przydzielWydaniaSklepu, wydaneZPalety,
 };

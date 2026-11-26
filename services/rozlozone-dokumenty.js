@@ -33,4 +33,31 @@ function iloscRozlozona(db, artykulGtId, magazyn, dokNr, dokId = null) {
   return Number(r.suma) || 0;
 }
 
-module.exports = { iloscRozlozona };
+// Dzien (lokalny, 'YYYY-MM-DD') PIERWSZEGO rozlozenia z dokumentu albo null, gdy nic jeszcze
+// nie rozlozono. Ten sam klucz co iloscRozlozona (id, a numer tylko dla ruchow bez id).
+// Granica dla wydan do sklepu (rozbicie-stanu: wydaneZPalety): MM z K4 do MAG/LS do tego dnia
+// wlacznie wyszedl z palety, pozniejszy - z polki. data_ruchu jest w UTC (CURRENT_TIMESTAMP),
+// a dok_DataWyst w GT to dzien lokalny, wiec przeliczamy na kalendarz magazynu.
+function dzienLokalny(utc) {
+  const d = new Date(String(utc).replace(' ', 'T') + 'Z');
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Warsaw' });
+}
+
+function pierwszeRozlozenie(db, artykulGtId, magazyn, dokNr, dokId = null) {
+  const id = dokId == null || dokId === '' ? null : Number(dokId);
+  if (!dokNr && id == null) return null;
+
+  const r = id != null
+    ? db.prepare(`
+        SELECT MIN(data_ruchu) AS pierwszy FROM ruchy
+        WHERE artykul_gt_id = ? AND mag_zrodlo_pula = ? AND status != 'blad'
+          AND (zrodlo_dok_id = ? OR (zrodlo_dok_id IS NULL AND zrodlo_dok = ?))
+      `).get(String(artykulGtId), magazyn, id, dokNr == null ? null : String(dokNr))
+    : db.prepare(`
+        SELECT MIN(data_ruchu) AS pierwszy FROM ruchy
+        WHERE artykul_gt_id = ? AND mag_zrodlo_pula = ? AND status != 'blad' AND zrodlo_dok = ?
+      `).get(String(artykulGtId), magazyn, String(dokNr));
+  return r?.pierwszy ? dzienLokalny(r.pierwszy) : null;
+}
+
+module.exports = { iloscRozlozona, pierwszeRozlozenie, dzienLokalny };

@@ -39,4 +39,12 @@ const MAGAZYNY_ZAPAS_K4 = MAGAZYNY
   .filter((m) => m.liczDoRazem !== false && m.zapasDlaK4 !== false)
   .map((m) => m.kod);
 
-module.exports = { MAGAZYNY, MAGAZYNY_WMS, MAGAZYNY_ZEWNETRZNE, MAGAZYNY_RAZEM, MAGAZYNY_ZAPAS_K4, MAGAZYN_GT_ID };
+// Sklepy = magazyny zewnetrzne liczone do "Razem" (MAG = Kajtek, LS = Leszno). Tam biuro
+// przydziela nowosci z dostaw recznym MM z K4 - rozbicie stanu odejmuje takie wydanie od
+// nierozlozonej dostawy (rozbicie-stanu: przydzielWydaniaSklepu). BRK i K4R (towar
+// niepelnowartosciowy) wypadaja same przez liczDoRazem.
+const MAGAZYNY_SKLEPY = MAGAZYNY
+  .filter((m) => m.typ === 'zewnetrzny' && m.liczDoRazem !== false)
+  .map((m) => m.kod);
+
+module.exports = { MAGAZYNY, MAGAZYNY_WMS, MAGAZYNY_ZEWNETRZNE, MAGAZYNY_RAZEM, MAGAZYNY_ZAPAS_K4, MAGAZYNY_SKLEPY, MAGAZYN_GT_ID };

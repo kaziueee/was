@@ -11,7 +11,7 @@
 
 const { query, naCzesci } = require('./gt-sql');
 const db = require('../db/database');
-const { MAGAZYNY_ZEWNETRZNE, MAGAZYN_GT_ID } = require('../config/magazyny');
+const { MAGAZYNY_ZEWNETRZNE, MAGAZYNY_SKLEPY, MAGAZYN_GT_ID } = require('../config/magazyny');
 // Czysta logika rozbicia stanu + rejestr rodzajow stref zyja w osobnym module BEZ zaleznosci
 // od SQLite/GT, zeby dalo sie je testowac bez otwierania bazy (patrz naglowek rozbicie-stanu).
 // Tu doklejamy im to, co siega do GT: `kandydaci` w RODZAJE_STREF i bazodanowy licznik do
@@ -19,7 +19,7 @@ const { MAGAZYNY_ZEWNETRZNE, MAGAZYN_GT_ID } = require('../config/magazyny');
 // przydzielZwroty) zostaje bez zmian.
 const rozbicieStanu = require('./rozbicie-stanu');
 const rozlozoneDokumenty = require('./rozlozone-dokumenty');
-const { KUBELKI_STREF, PRIORYTET_PRZYDZIALU, przydzielZwroty } = rozbicieStanu;
+const { KUBELKI_STREF, PRIORYTET_PRZYDZIALU, przydzielZwroty, przydzielWydaniaSklepu } = rozbicieStanu;
 
 // Uwagi dokumentu MM (Faza A#3): Node buduje tu cala tresc, ktora most C# wpisuje do
 // dok_Uwagi wystawianego dokumentu. Sklada sie z klucza idempotencji + kto + kiedy:
@@ -712,6 +712,9 @@ async function pobierzDostawyK4(twIds) {
 
   // magazyny zewnetrzne (MAG/LS/BRK) jako mag_Id GT - zrodla przywozek
   const zewnGtIds = MAGAZYNY_ZEWNETRZNE.map((k) => MAGAZYN_GT_ID[k]).filter(Boolean);
+  // sklepy (MAG/LS) - cele wydan nowosci z dostawy, patrz zapytanie o wydania nizej
+  const sklepGtIds = MAGAZYNY_SKLEPY.map((k) => MAGAZYN_GT_ID[k]).filter(Boolean);
+  const wydania = new Map();
 
   // Ktore z tych PW to rozmontowanie zestawu ZE ZWROTU - takie skladniki leza na wozku
   // zwrotow, wiec ida do kubelka "zwrot", a nie "przyjecie_wewn". To samo okno co PW nizej.
@@ -780,6 +783,38 @@ async function pobierzDostawyK4(twIds) {
       ORDER BY data DESC, dok_id DESC
     `, parametry);
 
+    // WYDANIA DO SKLEPU: reczne MM z K4 do MAG/LS (poza WMS - nasze MM ida z polki, nie
+    // z palety). Same w sobie nie sa kubelkiem; pomniejszaja dostawe, z ktorej wyjechaly
+    // (rozbicie-stanu: przydzielWydaniaSklepu + wydaneZPalety). Tylko dokumenty zrealizowane
+    // (dok_Status = 1): MM bez skutku magazynowego (status 3, np. odwieszony po edycji FZ)
+    // nie zbil stanu K4, wiec odjety od dostawy zrobilby z niej "do sprawdzenia".
+    const sklepPlaceholders = sklepGtIds.map((id, i) => {
+      parametry[`s${i}`] = id;
+      return `@s${i}`;
+    }).join(', ');
+    if (sklepPlaceholders) {
+      const { recordset: wyd } = await query(`
+        SELECT o.ob_TowId, dok.dok_NrPelny AS dok_nr, dok.dok_DataWyst AS data, SUM(o.ob_Ilosc) AS ilosc
+        FROM dok__Dokument dok
+        JOIN dok_Pozycja o ON o.ob_DokMagId = dok.dok_Id
+        WHERE dok.dok_Typ = @mmTyp AND dok.dok_MagId = @mag AND dok.dok_Status = 1
+          AND dok.dok_OdbiorcaId IN (${sklepPlaceholders})
+          AND ISNULL(dok.dok_Uwagi, '') NOT LIKE 'WMS-RUCH:%'
+          AND dok.dok_DataWyst >= @od
+          AND o.ob_TowId IN (${placeholders})
+        GROUP BY o.ob_TowId, dok.dok_Id, dok.dok_NrPelny, dok.dok_DataWyst
+      `, parametry);
+      for (const r of wyd) {
+        const klucz = String(r.ob_TowId);
+        if (!wydania.has(klucz)) wydania.set(klucz, []);
+        wydania.get(klucz).push({
+          nr: r.dok_nr ? String(r.dok_nr).trim() : null,
+          data: r.data instanceof Date ? r.data.toISOString().slice(0, 10) : null,
+          ilosc: Number(r.ilosc) || 0,
+        });
+      }
+    }
+
     for (const r of recordset) {
       const klucz = String(r.ob_TowId);
       if (!wynik.has(klucz)) wynik.set(klucz, []);
@@ -820,8 +855,12 @@ async function pobierzDostawyK4(twIds) {
 
   // Od najnowszej: nierozlozona jest zwykle ta swieza, starsze zdazyly pojsc na gore.
   // Paczki wracaja rownolegle, wiec sortujemy po scaleniu, nie polegamy na ORDER BY.
-  for (const lista of wynik.values()) {
+  for (const [klucz, lista] of wynik) {
     lista.sort((a, b) => String(b.data).localeCompare(String(a.data)));
+    // wydania do sklepu doklejamy do dostaw jako `wydane_sklep` - nie nowy rodzaj dokumentu,
+    // wiec zaden konsument listy nie musi o nich wiedziec (lekcja z fan-outu rodzajow)
+    const wyd = wydania.get(klucz);
+    if (wyd?.length) przydzielWydaniaSklepu(lista.filter((d) => d.rodzaj === 'dostawa'), wyd);
   }
   return wynik;
 }
@@ -848,8 +887,11 @@ function iloscRozlozonaZDokumentu(artykulGtId, magazyn, dokNr, dokId = null) {
 // (iloscRozlozonaZDokumentu, siega do SQLite przez ruchy). Dzieki temu 9 istniejacych wywolan
 // rozbijStanK4(stan, wms, dok, { artykul_gt_id, magazyn }) dziala bez zmian.
 function rozbijStanK4(stanGt, sumaWms, dokumenty, opcje = {}) {
-  return rozbicieStanu.rozbijStanK4(stanGt, sumaWms, dokumenty,
-    { iloscRozlozona: iloscRozlozonaZDokumentu, ...opcje });
+  return rozbicieStanu.rozbijStanK4(stanGt, sumaWms, dokumenty, {
+    iloscRozlozona: iloscRozlozonaZDokumentu,
+    pierwszeRozlozenie: (art, mag, nr, id) => rozlozoneDokumenty.pierwszeRozlozenie(db, art, mag, nr, id),
+    ...opcje,
+  });
 }
 
 module.exports = {

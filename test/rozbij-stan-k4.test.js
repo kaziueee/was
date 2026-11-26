@@ -19,7 +19,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { rozbijStanK4, KUBELKI_STREF, PRIORYTET_PRZYDZIALU, GRUPA_PRZYDZIALU } =
+const { rozbijStanK4, przydzielWydaniaSklepu, wydaneZPalety, KUBELKI_STREF, PRIORYTET_PRZYDZIALU, GRUPA_PRZYDZIALU } =
   require('../services/rozbicie-stanu');
 
 // Wyciaga klucze najwyzszego poziomu z literalu obiektu `<nazwa> = { ... }` w tekscie zrodla.
@@ -303,4 +303,85 @@ test('iloscRozlozona dostaje dok_id dokumentu (klucz odporny na przenumerowanie 
   assert.deepEqual(wolania, [{ art: '95947', mag: 'K4', nr: 'PZ 4099/2026', id: 6974580 }]);
   assert.equal(r.dostawy.length, 0);
   assert.equal(r.polka, 72);
+});
+
+// --- Wydania do sklepu z nierozlozonej dostawy (MM 1941/2026, 2026-11-26) -------------------
+// Biuro przydziela nowosci sklepom recznym MM z K4 do MAG/LS, zanim ktos rozlozy dostawe.
+// Dostawa ma podpowiadac tylko to, co zostalo na palecie - wczesniej "Rozloz N" pokazywalo
+// dokladnie wydane sztuki i magazynier dokladal LOK, ktory job scinal po 10 minutach.
+
+const dostawa = (ilosc, data, pz_nr, dok_id) => ({ rodzaj: 'dostawa', ilosc, data, pz_nr, dok_id });
+
+test('wydanie idzie do najnowszej dostawy sprzed wydania, nadmiar na starsza', () => {
+  const stara = dostawa(10, '2026-11-01', 'PZ 1/2026', 1);
+  const nowa = dostawa(5, '2026-11-20', 'PZ 2/2026', 2);
+  const pozniejsza = dostawa(50, '2026-11-25', 'PZ 3/2026', 3);   // przyszla PO wydaniu - nie jej
+  przydzielWydaniaSklepu([stara, nowa, pozniejsza], [{ nr: 'MM 1941/2026', data: '2026-11-24', ilosc: 8 }]);
+  assert.deepEqual(nowa.wydane_sklep, [{ nr: 'MM 1941/2026', data: '2026-11-24', ilosc: 5 }]);
+  assert.deepEqual(stara.wydane_sklep, [{ nr: 'MM 1941/2026', data: '2026-11-24', ilosc: 3 }]);
+  assert.deepEqual(pozniejsza.wydane_sklep, []);
+});
+
+test('wydanie bez dostawy sprzed niego przepada (MM z polki)', () => {
+  const d = dostawa(20, '2026-11-25', 'PZ 9/2026', 9);
+  przydzielWydaniaSklepu([d], [{ nr: 'MM 5/2026', data: '2026-11-10', ilosc: 4 }]);
+  assert.deepEqual(d.wydane_sklep, []);
+});
+
+test('HWHHDJ95: paleta 56, 2 szt. do sklepu przed rozlozeniem, 1 WZ - dostawa podpowiada 53, nie 56', () => {
+  const d = dostawa(56, '2026-11-20', 'PZ 4148/2026', 7000001);
+  przydzielWydaniaSklepu([d], [{ nr: 'MM 1941/2026', data: '2026-11-24', ilosc: 2 }]);
+  // nic jeszcze nie rozlozone; stan GT K4 = 56 - 2 (MM) - 1 (WZ) = 53, polka WMS 0
+  const r = rozbijStanK4(53, 0, [d], {
+    artykul_gt_id: '96756', iloscRozlozona: () => 0, pierwszeRozlozenie: () => null,
+  });
+  assert.equal(r.dostawy[0].ilosc, 53);
+  assert.equal(r.reszta, 0);
+  // Po rozlozeniu 53 dokument pokazuje jeszcze 1 szt. - to WZ sprzed rozlozenia. Sprzedazy
+  // celowo NIE odejmujemy od dostawy (regula #3: zejscie bierze polka), ta zmiana dotyczy
+  // wylacznie wydan do sklepu. Wczesniej zostawalo tu 3.
+  const po = rozbijStanK4(53, 53, [d], {
+    artykul_gt_id: '96756', iloscRozlozona: () => 53, pierwszeRozlozenie: () => '2026-11-26',
+  });
+  assert.equal(po.dostawy[0].ilosc, 1);
+});
+
+test('MATJMJ86: paleta 96, 2 szt. do sklepu - podpowiedz 94, po rozlozeniu 94 nic nie zostaje', () => {
+  const d = dostawa(96, '2026-11-20', 'PZ 4149/2026', 7000002);
+  przydzielWydaniaSklepu([d], [{ nr: 'MM 1941/2026', data: '2026-11-24', ilosc: 2 }]);
+  const przed = rozbijStanK4(94, 0, [d], { artykul_gt_id: '1', iloscRozlozona: () => 0, pierwszeRozlozenie: () => null });
+  assert.equal(przed.dostawy[0].ilosc, 94);
+  const po = rozbijStanK4(94, 94, [d], { artykul_gt_id: '1', iloscRozlozona: () => 94, pierwszeRozlozenie: () => '2026-11-25' });
+  assert.equal(po.dostawy.length, 0, 'zadnego "Rozloz 2" po rozlozeniu calej palety');
+  assert.equal(po.polka, 94);
+});
+
+test('wydanie PO pierwszym rozlozeniu poszlo z polki - dostawy nie pomniejsza (NATJBG59)', () => {
+  // PZ 4149 rozkladany 23.11 (42 na K4, 158 na gore), MM 1941 do sklepu 24.11 - z polki
+  const d = dostawa(210, '2026-11-20', 'PZ 4149/2026', 7000002);
+  przydzielWydaniaSklepu([d], [{ nr: 'MM 1941/2026', data: '2026-11-24', ilosc: 2 }]);
+  assert.equal(wydaneZPalety(d, '2026-11-23'), 0);
+  const r = rozbijStanK4(50, 40, [d], {
+    artykul_gt_id: '1', iloscRozlozona: () => 200, pierwszeRozlozenie: () => '2026-11-23',
+  });
+  // 10 szt. zostalo na palecie wg dokumentu - wydanie z polki ich nie zjada
+  assert.equal(r.dostawy[0].ilosc, 10);
+  assert.equal(r.polka, 40);
+});
+
+test('wydanie w dniu pierwszego rozlozenia liczy sie jako z palety', () => {
+  const d = dostawa(30, '2026-11-20', 'PZ 7/2026', 7);
+  przydzielWydaniaSklepu([d], [{ nr: 'MM 8/2026', data: '2026-11-24', ilosc: 6 }]);
+  assert.equal(wydaneZPalety(d, '2026-11-24'), 6);
+  assert.equal(wydaneZPalety(d, '2026-11-23'), 0);
+  assert.equal(wydaneZPalety(d, null), 6, 'bez rozlozenia liczy sie kazde wydanie');
+});
+
+test('inwariant sumy trzyma sie takze z wydaniami do sklepu', () => {
+  const d = dostawa(56, '2026-11-20', 'PZ 4148/2026', 1);
+  przydzielWydaniaSklepu([d], [{ nr: 'MM 1941/2026', data: '2026-11-24', ilosc: 2 }]);
+  for (const [stan, wms] of [[53, 0], [53, 53], [60, 0], [10, 30], [0, 0]]) {
+    const r = rozbijStanK4(stan, wms, [d], { artykul_gt_id: '1', iloscRozlozona: () => 0, pierwszeRozlozenie: () => null });
+    assert.equal(r.wDrodze + r.polka + r.reszta, stan, `stan=${stan} wms=${wms}`);
+  }
 });

@@ -309,6 +309,15 @@ Pole ceny **Hurt_PLN** (`pricesfield_id` 6) w Sellasist = **Hurt × średni kurs
 - **Podejrzane = wynik > 2× ceny w Sellasist** (`MAX_WZGLEDEM_DETALU`) — wypisywane, ale **zapisywane** (decyzja usera 2026-10-26, „na razie wszędzie”). 116 takich 2026-10-26: 22 × Siku z Hurtem = detal co do grosza (cena w PLN wpisana w poziom EUR — SIK1015: 20,99 → 92,41 zł, do poprawy w Subiekcie), ~80 wariantów (U/P/ZE/części zestawów: Hurt pełnego produktu, tańsza cena), kilkanaście zwykłych 2–3×. Po poprawce w Subiekcie job przepisze je sam (różnica > 1%).
 - Ręcznie: `node scripts/sellasist-hurt-pln.js` (podgląd; `--zapisz`, `--kurs`, `--wszystko`, `--tylko SYM`, `--lista`). Czysta logika i testy: `services/sellasist-hurt-pln-model.js`, `test/sellasist-hurt-pln-model.test.js`.
 
+## Erli: kopie ofert Allegro (2026-11-26)
+
+Na Erli wystawia **umiejętność agenta** `erli-wystawianie` (`.claude/skills/erli-wystawianie/SKILL.md`), nie ekran WMS (decyzja usera: „na razie jako umiejętność agenta”). Zakres: **tylko zakładanie** — kopia oferty Allegro ekajtek, cena Allegro × 1,02 w górę do ,99; bez zamówień, repricera i synchronizacji ceny. **Stan pilnuje BaseLinker** (user wiąże nowy produkt tam); przy założeniu idzie stan oferty Allegro.
+
+- Klucz `ERLI_API_KEY` w `.env.dpapi` na SRV. Ten sam klucz obsługuje działającą integrację: na Erli jest ~10 170 kopii ofert ekajtek (`externalId` = numer oferty Allegro), nowych nikt nie zakłada od 22.09.2025, stany idą na żywo, ceny ~30–50% wyżej niż Allegro (pomiar 2026-11-26).
+- Kopia ma ten sam kształt co istniejące: kategoria i parametry z identyfikatorami Allegro (`source: "allegro"`), opis w sekcjach (Erli przyjmuje tylko `h1 h2 h3 p b br/ ol ul li` i **sam obniża nagłówki o poziom** — wysyłamy je bez zmiany), cennik dostawy o nazwie cennika Allegro. Test 2026-11-26: BARBBDS6 → produkt 19134158717, aktywny.
+- **Producent GPSR przez słownik Erli** (`/dictionaries/responsibleProducers`, `idempotenceKey` = id producenta w Allegro): producenta spoza słownika Erli po cichu pomija, więc skrypt dodaje brakującego z danymi z Allegro przed założeniem produktu.
+- Blokady = zasady usera dla każdej nowej oferty (flaga sklepu + Specjalna, EAN/waga/wymiary, karta na Fenomie, bez Tefal/Rowenta, nigdy „Pozostałe”), jedna kopia na SKU. Logika: `pricing/erli-model.js` (testy `test/erli-model.test.js`), klient `pricing/erli.js`, narzędzie `scripts/erli-wystaw.js` (`--lista` / podgląd `--oferty` / `--zapisz`). Próby w `pricing.db` `wystawienia` (platforma `erli`).
+
 ## Repricer Allegro CZ / SK / HU — osobna cena na rynek (2026-11-21)
 
 Dotąd ceny zagraniczne liczyła reguła Allegro przypisana do każdego rynku oferty: CZ/SK „Przelicznik cen”, HU „Cena Węgry” (przelicznik +11%). Zagranica to ~43% przychodu Allegro, a na ~połowie top ofert nie ma tam konkurencji (badanie 20.11). Teraz repricer prowadzi każdy rynek osobno — platforma **`allegro_zagr`**, rynek `EKAJTEK_CZ` itd., kolumny `ALLEGRO_<KONTO>_<KOD>` (osobna platforma celowo: kod znający tylko `allegro` nie ruszy ceny PL). Logika: `pricing/allegro-zagranica.js` (testy `test/pricing-allegro-zagranica.test.js`).

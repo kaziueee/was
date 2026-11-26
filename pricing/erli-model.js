@@ -204,6 +204,7 @@ function ocenKandydata({ oferta, sciezka = [], gt = null, wFeedzie = null, naErl
   if (sciezka.some((n) => /pozosta/i.test(String(n)))) blokady.push(`kategoria „Pozostałe” (${sciezka.join(' > ')}) — popraw kategorię na Allegro`);
   if (!oferta.category?.id) blokady.push('oferta bez kategorii Allegro');
   if (!(oferta.images || []).length) blokady.push('oferta bez zdjęć');
+  if (!(oferta.description?.sections || []).length) blokady.push('oferta Allegro bez opisu — Erli wymaga opisu');
   if (cenaErliGrosze(oferta.sellingMode?.price?.amount) == null) blokady.push('oferta bez ceny w PLN');
   if (!(Number(oferta.stock?.available) > 0)) blokady.push('oferta Allegro bez stanu');
   else if (Number(oferta.stock.available) < MIN_STAN) blokady.push(`stan ${oferta.stock.available} szt. — wystawiamy od ${MIN_STAN}`);

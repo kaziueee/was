@@ -119,6 +119,7 @@ test('blokady zasad usera', () => {
   assert.deepEqual(ok({ oferta: { ...OFERTA, stock: { available: 3 } } }).blokady, []);
   assert.match(ok({ wariantPU: true }).blokady.join(), /uszkodzony/);
   assert.match(ok({ oferta: { ...OFERTA, description: { sections: [] } } }).blokady.join(), /bez opisu/);
+  assert.match(ok({ oferta: { ...OFERTA, description: { sections: [{ items: [{ type: 'TEXT', content: '<p></p>' }] }] } } }).blokady.join(), /bez opisu/);
   assert.match(ok({ wariantPU: null }).blokady.join(), /nie udało się sprawdzić/);
   assert.match(ok({ oferta: { ...OFERTA, name: 'LALKA USZKODZONE OPAKOWANIE' } }).blokady.join(), /uszkodzony/);
 });

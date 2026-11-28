@@ -110,7 +110,7 @@ async function przelicz() {
   const [kandydaci, zDopiskiem] = await Promise.all([zbierzKandydatow(), pobierzSkuZDopiskiem()]);
 
   const ids = [...new Set([...domyWms.keys(), ...kandydaci, ...zDopiskiem.keys()])];
-  if (!ids.length) return { sprawdzone: 0, zapisane: 0, dopisane: 0, zdjete: 0 };
+  if (!ids.length) return { sprawdzone: 0, zapisane: 0, dopisane: 0, zdjete: 0, uzupelnione: 0 };
 
   const { pobierzStanyGt } = require('./gt-produkty');
   const [polaGt, dokMap, stany] = await Promise.all([
@@ -119,7 +119,7 @@ async function przelicz() {
     pobierzStanyGt(ids),
   ]);
 
-  let zapisane = 0, dopisane = 0, zdjete = 0;
+  let zapisane = 0, dopisane = 0, zdjete = 0, uzupelnione = 0;
   for (const id of ids) {
     const maDom = domyWms.has(id);
     const obecne = String(polaGt.get(String(id))?.tw_Pole1 ?? '').trim();
@@ -139,13 +139,14 @@ async function przelicz() {
     try {
       await query('UPDATE tw__Towar SET tw_Pole1 = @pole WHERE tw_Id = @id', { pole: d.docelowe, id: Number(id) });
       zapisane++;
-      if (d.akcja === 'dopisane') dopisane++; else zdjete++;
+      if (d.akcja === 'adres') uzupelnione++;
+      else if (d.akcja === 'dopisane') dopisane++; else zdjete++;
     } catch (err) {
       awarie.blad('strefy-w-gt', `tw_Id ${id}: ${err.message}`);
     }
   }
 
-  return { sprawdzone: ids.length, zapisane, dopisane, zdjete };
+  return { sprawdzone: ids.length, zapisane, dopisane, zdjete, uzupelnione };
 }
 
 function start(ms = interwalMs()) {

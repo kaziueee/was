@@ -169,6 +169,25 @@ test('decyzja: dom WMS chroni pole, gdy GT trzyma INNA baze (reczna edycja / zal
   assert.equal(d.powod, 'baza-inna');
 });
 
+test('decyzja: PUSTE pole w GT + dom WMS = wpisujemy adres (SLH42633, 2026-11-28)', () => {
+  // WMS zna dom E9-P4, GT puste - nie ma czego chronic, pole ma dostac adres
+  const d = decyzjaAdnotacji({ base: 'E9-P4', obecne: '', adnotacja: '', maDomWms: true });
+  assert.deepEqual(d, { docelowe: 'E9-P4', pisz: true, akcja: 'adres' });
+  // z zapasem i ze strefa naraz
+  const z = decyzjaAdnotacji({ base: 'E9-P4/E9-P5', obecne: '', adnotacja: ' +StD3', maDomWms: true });
+  assert.deepEqual(z, { docelowe: 'E9-P4/E9-P5 +StD3', pisz: true, akcja: 'adres' });
+});
+
+test('decyzja: SAM DOPISEK stref w GT + dom WMS = tez puste, wpisujemy adres', () => {
+  // "+StD13" to nie adres - zostal po strefie sprzed rozlozenia
+  const d = decyzjaAdnotacji({ base: 'E9-P4', obecne: '+StD13', adnotacja: '', maDomWms: true });
+  assert.deepEqual(d, { docelowe: 'E9-P4', pisz: true, akcja: 'adres' });
+});
+
+test('decyzja: puste pole BEZ domu WMS - nic nie wymyslamy', () => {
+  assert.equal(decyzjaAdnotacji({ base: '', obecne: '', adnotacja: '', maDomWms: false }).pisz, false);
+});
+
 test('decyzja: BEZ domu straznik nie bije - dopisujemy do adresu z GT (tez smieciowego)', () => {
   // baza = to, co w GT bez dopisku (tak liczy job dla SKU bez domu)
   const smieciowa = 'RB/M2-B36-P1 /';

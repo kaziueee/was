@@ -73,11 +73,18 @@ function zlozPole(base, adnotacja) {
 //   maDomWms  - czy base pochodzi z WMS; wtedy CHRONIMY pole, gdy GT trzyma INNA baze niz WMS
 //               (reczna edycja / zalegly sync - to robota synchronizujLokalizacje, nie tego joba).
 //               Bez domu base = bezAdnotacjiStref(obecne), wiec ten straznik nigdy nie bije.
-// Zwraca { docelowe, pisz, akcja } - akcja: 'dopisane' | 'zdjete' (istotne tylko gdy pisz).
+//               WYJATEK: pole w GT jest PUSTE (albo ma sam dopisek "+StD13") - wtedy nie ma czego
+//               chronic i wpisujemy adres z WMS (akcja 'adres'). Ta sama regula, co wyjatek
+//               "puste pole" w synchronizujLokalizacje. Bez niego puste pole przy znanym domu
+//               WMS wisialo do najblizszego ruchu na SKU (SLH42633, 2026-11-28: ekran Uzupelnien
+//               pokazywal "DO K4: —", choc WMS znal E9-P4; tak samo NERF5031U, MAGI35993A-F).
+// Zwraca { docelowe, pisz, akcja } - akcja: 'dopisane' | 'zdjete' | 'adres' (istotne tylko gdy pisz).
 function decyzjaAdnotacji({ base, obecne, adnotacja, maDomWms }) {
   const docelowe = zlozPole(base, adnotacja);
   if (obecne === docelowe) return { docelowe, pisz: false };
-  if (maDomWms && bezAdnotacjiStref(obecne) !== base) return { docelowe, pisz: false, powod: 'baza-inna' };
+  const obecnaBaza = bezAdnotacjiStref(obecne);
+  if (maDomWms && base && !obecnaBaza) return { docelowe, pisz: true, akcja: 'adres' };
+  if (maDomWms && obecnaBaza !== base) return { docelowe, pisz: false, powod: 'baza-inna' };
   return { docelowe, pisz: true, akcja: adnotacja ? 'dopisane' : 'zdjete' };
 }
 

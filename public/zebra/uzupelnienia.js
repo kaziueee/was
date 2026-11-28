@@ -154,7 +154,7 @@
         + `<span class="poz-kod">${p.symbol}</span>`
         + `<span class="poz-nazwa">${p.nazwa || ''}</span>`
         + `<span class="poz-podpis">${chipyKanalow(p.kanaly, kanal)}</span>`
-        + `<span class="uzup-lok-k4g">K4G: ${p.lokalizacja_gora || '—'}</span>`
+        + `<span class="uzup-lok-k4g">K4G: ${kodK4G(p)}</span>`
         + `</span>`
         + `<span class="poz-prawa"><span class="poz-ilosc">${potrzebne}</span><span class="poz-rez">do ściągn.</span></span>`
         + `<span class="poz-strzalka">›</span>`;
@@ -208,6 +208,19 @@
     aktualizujPrzycisk();
   }
 
+  // Kody do POKAZANIA: najpierw prawda WMS (master lokalizacji), tekst pola GT tylko gdy WMS
+  // nie zna miejsca. Samo pole GT potrafi byc puste mimo znanego domu (SLH42633, 2026-11-28:
+  // "DO · K4 —", choc WMS mial E9-P4 i ruch poszedl tam poprawnie), a pole K4G niesie ilosc
+  // w nawiasie ("L5-P2(103)"), ktora tu dubluje kolumne ilosci. Tylko wyswietlanie - cel/zrodlo
+  // ruchu i tak biora wms_k4 / wms_k4g (patrz przesun).
+  function kodK4(p) {
+    return (p.wms_k4 && p.wms_k4.kod) || p.lokalizacja_k4 || '—';
+  }
+  function kodK4G(p) {
+    if (p.wms_k4g && p.wms_k4g.length) return p.wms_k4g.map((l) => l.kod).join('; ');
+    return p.lokalizacja_gora || '—';
+  }
+
   // Blok info: hierarchia Z K4G -> DO K4. Najwazniejsze dla magazyniera: SKAD i DOKAD
   // (duza lokalizacja), po prawej ile tam jest; DO K4 dodatkowo rezerwacja w nawiasie.
   function renderujStany(p) {
@@ -216,7 +229,7 @@
       <div class="uzup-kierunek uzup-od">
         <span class="uzup-kier-label">Z · K4G</span>
         <div class="uzup-kier-rzad">
-          <span class="uzup-kier-lok">${p.lokalizacja_gora || '—'}</span>
+          <span class="uzup-kier-lok">${kodK4G(p)}</span>
           <span class="uzup-kier-ilosc">${p.stan_gora} szt.</span>
         </div>
       </div>
@@ -224,7 +237,7 @@
       <div class="uzup-kierunek uzup-do">
         <span class="uzup-kier-label">DO · K4</span>
         <div class="uzup-kier-rzad">
-          <span class="uzup-kier-lok">${p.lokalizacja_k4 || '—'}</span>
+          <span class="uzup-kier-lok">${kodK4(p)}</span>
           <span class="uzup-kier-ilosc">${p.stan_k4} szt.${rez}</span>
         </div>
       </div>`;

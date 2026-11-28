@@ -167,25 +167,26 @@ function repricer(ids) {
 
 // Repricer dla WSZYSTKICH towarów (Sprzedaż → Stan, kolumna „Repricer”, prośba usera 2026-11-28): przypisana strategia
 // i ile aktywnych ofert ma włączony automat. Osobno od paczki stanu, bo automat przełącza się w każdej chwili, a paczkę
-// wątek analiz liczy raz na godzinę. Agregat robi SQLite (GROUP BY) — kilka ms w głównym wątku. Kanały spoza kolumn
-// repricera pomijamy jak w repricer(). Best-effort: null = repricer niedostępny.
+// wątek analiz liczy raz na godzinę. Na SRV samo GROUP BY po ~42 tys. ofert trwa ~175 ms — dlatego liczy to wątek
+// analiz co minutę (services/analiza-stan.js odswiezRepricer), a API podaje gotowy wynik. Kanały spoza kolumn repricera
+// pomijamy jak w repricer(); w wl/wyl są indeksy do `kanaly` (nazwy wprost dawały 818 kB). null = repricer niedostępny.
 function repricerWszystkie() {
   try {
     const { db: pdb } = require('../pricing/db');
-    const nazwy = new Map(KOLUMNY.map((k) => [k.klucz, k.nazwa]));
+    const kanaly = KOLUMNY.map((k) => k.nazwa), idx = new Map(KOLUMNY.map((k, i) => [k.klucz, i]));
     const wynik = {};
     for (const o of pdb.prepare(`SELECT tw_id, platforma, rynek, COUNT(*) n, SUM(auto) a FROM oferty
         WHERE aktywna = 1 AND tw_id IS NOT NULL GROUP BY tw_id, platforma, rynek`).all()) {
       const k = kluczKolumny(o.platforma, o.rynek);
-      if (!nazwy.has(k)) continue;
+      if (!idx.has(k)) continue;
       const t = wynik[o.tw_id] ||= { n: 0, a: 0, wl: [], wyl: [] };
       t.n += o.n; t.a += o.a || 0;
-      (o.a ? t.wl : t.wyl).push(nazwy.get(k));
+      (o.a ? t.wl : t.wyl).push(idx.get(k));
     }
     for (const s of pdb.prepare(`SELECT st.tw_id, s.nazwa, s.aktywna, st.do FROM strategie_towarow st JOIN strategie s ON s.id = st.strategia_id`).all()) {
       (wynik[s.tw_id] ||= { n: 0, a: 0, wl: [], wyl: [] }).s = { nazwa: s.nazwa, aktywna: !!s.aktywna, do: s.do };
     }
-    return { domyslna: require('../pricing/strategie').DOMYSLNA.nazwa, towary: wynik };
+    return { domyslna: require('../pricing/strategie').DOMYSLNA.nazwa, kanaly, towary: wynik };
   } catch (e) {
     console.error('[analiza] repricer (stan):', e.message);
     return null;

@@ -61,11 +61,15 @@ router.get('/stan-towaru', (req, res) => {
   else res.send(g.dane);
 });
 
-// Kolumna „Repricer” na ekranie Stan: strategia + automat per towar, prosto z pricing.db (zmienia się częściej niż paczka)
+// Kolumna „Repricer” na ekranie Stan: strategia + automat per towar — gotowy wynik z wątku analiz (co minutę)
 router.get('/stan-towaru/repricer', (req, res) => {
-  const r = q.repricerWszystkie();
-  if (!r) return res.status(503).json({ blad: 'Repricer niedostępny' });
-  res.json(r);
+  const t = require('../services/analiza-stan');
+  const gz = /\bgzip\b/.test(req.get('accept-encoding') || '');
+  const g = t.gotowyRepricer({ gz });
+  if (!g?.dane) return res.status(503).json({ blad: 'Repricer jeszcze się liczy — odśwież za chwilę.' });
+  res.set('Vary', 'Accept-Encoding').type('application/json');
+  if (Buffer.isBuffer(g.dane) || g.dane instanceof Uint8Array) res.set('Content-Encoding', 'gzip').send(Buffer.from(g.dane));
+  else res.send(g.dane);
 });
 
 router.get('/oferty/:tw', (req, res) => {

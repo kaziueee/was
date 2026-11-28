@@ -125,6 +125,10 @@ function start() {
   if (!wWatku()) pierwszy.unref?.();
   const timer = setInterval(() => przebieg(), ms);
   if (!wWatku()) timer.unref?.();
+  // kolumna „Repricer” na ekranie Stan (~175 ms SQLite na SRV): co minutę, niezależnie od przebiegu (ten czeka na GT)
+  const rep = () => { try { require('./analiza-stan').odswiezRepricer(); } catch (e) { awarie.blad('analiza-stan-repricer', e.message); } };
+  const repStart = setTimeout(rep, 30 * 1000), repTimer = setInterval(rep, 60 * 1000);
+  if (!wWatku()) { repStart.unref?.(); repTimer.unref?.(); }
   return timer;
 }
 

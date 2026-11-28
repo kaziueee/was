@@ -46,7 +46,8 @@
       : `<span class="tr-sz">${esc(R.domyslna)}</span>`;
     if (!r || !r.n) return `${strat}<div class="tr-sz">brak ofert</div>`;
     const kl = r.a === r.n ? 'dobry' : r.a ? 'uwaga' : 'zly';
-    const tyt = [r.wl.length ? `włączony: ${r.wl.join(', ')}` : '', r.wyl.length ? `wyłączony: ${r.wyl.join(', ')}` : ''].filter(Boolean).join(' · ');
+    const nz = (l) => l.map((i) => R.kanaly[i]).join(', ');
+    const tyt = [r.wl.length ? `włączony: ${nz(r.wl)}` : '', r.wyl.length ? `wyłączony: ${nz(r.wyl)}` : ''].filter(Boolean).join(' · ');
     return `${strat}<div><span class="tr-znak ${kl}" title="${esc(tyt)}">automat ${r.a ? (r.a === r.n ? 'wł.' : `${r.a}/${r.n}`) : 'wył.'}</span></div>`;
   }
   const st = { kub: 'lezak', mag: '', sila: '', grupa: '', szukaj: '', sort: null, kier: -1 };

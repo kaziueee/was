@@ -80,4 +80,22 @@ function odswiezJesliTrzeba(teraz = new Date(), { wymus = false } = {}) {
   return odswiez(dzis);
 }
 
-module.exports = { policz, odswiez, odswiezJesliTrzeba, gotowe };
+// --- kolumna „Repricer” (strategia + automat): wątek analiz co minutę, API podaje gotowe --------------------------
+// Osobny klucz, bo automat przełącza się w każdej chwili, a paczka stanu liczy się raz na godzinę. Zapis tylko przy
+// zmianie wyniku. Repricer niedostępny = zostaje ostatni wynik (lepszy niż żaden; ekran i tak pyta co wejście).
+const KLUCZ_REP = 'stan-repricer';
+let ostatniRep = null;
+function odswiezRepricer() {
+  const r = require('./analiza-zapytania').repricerWszystkie();
+  if (!r) return null;
+  const json = JSON.stringify(r);
+  if (json === ostatniRep) return { zmiana: false };
+  db.prepare(`INSERT INTO gotowe (klucz, json, gz, dzien, czas) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(klucz) DO UPDATE SET json = excluded.json, gz = excluded.gz, dzien = excluded.dzien, czas = excluded.czas`)
+    .run(KLUCZ_REP, json, zlib.gzipSync(json, { level: 6 }), dzisLokalnie());
+  ostatniRep = json;
+  return { zmiana: true, kb: Math.round(json.length / 1024) };
+}
+const gotowyRepricer = ({ gz = false } = {}) => db.prepare(`SELECT ${gz ? 'gz' : 'json'} dane FROM gotowe WHERE klucz = ?`).get(KLUCZ_REP) || null;
+
+module.exports = { policz, odswiez, odswiezJesliTrzeba, gotowe, odswiezRepricer, gotowyRepricer };

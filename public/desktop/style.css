@@ -1610,6 +1610,7 @@ img.tr-min { width: 64px; height: 64px; object-fit: contain; border-radius: 4px;
 #panel-sprzedaz-trendy .tr-kanalSpadki { margin-bottom: 8px; line-height: 2.1; }
 
 /* === Sprzedaż → Stan (sprzedaz-stan.js) — kolory (zmienne --tr-*) i tabela (.tr-tab) z Trendów === */
+#panel-sprzedaz-stan .tr-rep { font-size: 12px; line-height: 1.35; max-width: 170px; }
 #panel-sprzedaz-stan .ss-kafle { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 12px; }
 #panel-sprzedaz-stan .ss-kafel { text-align: left; font: inherit; color: var(--tr-ink); cursor: pointer; display: flex; flex-direction: column; gap: 2px;
   border: 1px solid var(--tr-grid); border-left: 4px solid var(--ss-k, var(--tr-axis)); border-radius: 10px; padding: 9px 11px; background: var(--tr-surface); }

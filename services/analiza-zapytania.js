@@ -165,6 +165,33 @@ function repricer(ids) {
   return wynik;
 }
 
+// Repricer dla WSZYSTKICH towarów (Sprzedaż → Stan, kolumna „Repricer”, prośba usera 2026-11-28): przypisana strategia
+// i ile aktywnych ofert ma włączony automat. Osobno od paczki stanu, bo automat przełącza się w każdej chwili, a paczkę
+// wątek analiz liczy raz na godzinę. Agregat robi SQLite (GROUP BY) — kilka ms w głównym wątku. Kanały spoza kolumn
+// repricera pomijamy jak w repricer(). Best-effort: null = repricer niedostępny.
+function repricerWszystkie() {
+  try {
+    const { db: pdb } = require('../pricing/db');
+    const nazwy = new Map(KOLUMNY.map((k) => [k.klucz, k.nazwa]));
+    const wynik = {};
+    for (const o of pdb.prepare(`SELECT tw_id, platforma, rynek, COUNT(*) n, SUM(auto) a FROM oferty
+        WHERE aktywna = 1 AND tw_id IS NOT NULL GROUP BY tw_id, platforma, rynek`).all()) {
+      const k = kluczKolumny(o.platforma, o.rynek);
+      if (!nazwy.has(k)) continue;
+      const t = wynik[o.tw_id] ||= { n: 0, a: 0, wl: [], wyl: [] };
+      t.n += o.n; t.a += o.a || 0;
+      (o.a ? t.wl : t.wyl).push(nazwy.get(k));
+    }
+    for (const s of pdb.prepare(`SELECT st.tw_id, s.nazwa, s.aktywna, st.do FROM strategie_towarow st JOIN strategie s ON s.id = st.strategia_id`).all()) {
+      (wynik[s.tw_id] ||= { n: 0, a: 0, wl: [], wyl: [] }).s = { nazwa: s.nazwa, aktywna: !!s.aktywna, do: s.do };
+    }
+    return { domyslna: require('../pricing/strategie').DOMYSLNA.nazwa, towary: wynik };
+  } catch (e) {
+    console.error('[analiza] repricer (stan):', e.message);
+    return null;
+  }
+}
+
 // Stan dostępny ze zdjęcia: Razem − rezerwacje (zestaw: kompletów ze składników). Wiersze sprzed 2026-10-21 nie mają
 // kolumny — wtedy Razem − rezerwacja K4 (rezerwacje poza K4 są rzadkie).
 const dostepneZeStanu = (s) => (!s ? null : s.dostepne != null ? s.dostepne : Math.max(0, (s.razem || 0) - (s.rez_k4 || 0)));
@@ -272,5 +299,5 @@ function live({ przed = null, limit = 40 } = {}) {
   };
 }
 
-module.exports = { BAZY, POZA_SUMA, parametry, warunekKanalu, grupy, stanWczytania, kanalyZakresu, sumaInternetu, podsumowanie, produkty, live, uzupelnijTowary, tempa, stanyTowarow,
+module.exports = { repricerWszystkie, BAZY, POZA_SUMA, parametry, warunekKanalu, grupy, stanWczytania, kanalyZakresu, sumaInternetu, podsumowanie, produkty, live, uzupelnijTowary, tempa, stanyTowarow,
   dostepneZeStanu };

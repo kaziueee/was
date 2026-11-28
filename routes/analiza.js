@@ -61,6 +61,13 @@ router.get('/stan-towaru', (req, res) => {
   else res.send(g.dane);
 });
 
+// Kolumna „Repricer” na ekranie Stan: strategia + automat per towar, prosto z pricing.db (zmienia się częściej niż paczka)
+router.get('/stan-towaru/repricer', (req, res) => {
+  const r = q.repricerWszystkie();
+  if (!r) return res.status(503).json({ blad: 'Repricer niedostępny' });
+  res.json(r);
+});
+
 router.get('/oferty/:tw', (req, res) => {
   const id = Number(req.params.tw);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ blad: 'Zły identyfikator towaru' });

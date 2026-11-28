@@ -425,14 +425,9 @@
     k.className = `tr-ok-msg ${typ}`; k.textContent = tekst; k.hidden = false;
   }
 
-  // Strategie: lista do wyboru (Ceny → Strategie) — pobierana raz na kilka minut, przypisanie zmienia się rzadko.
-  let strategieCache = null;
-  async function listaStrategii() {
-    if (strategieCache && Date.now() - strategieCache.czas < 5 * 60_000) return strategieCache.d;
-    const d = await api('/api/ceny/strategie');
-    strategieCache = { d, czas: Date.now() };
-    return d;
-  }
+  // Strategie: lista do wyboru (Ceny → Strategie) — pobierana przy każdym otwarciu karty. Jedno małe zapytanie
+  // do pricing.db; cache w przeglądarce chował świeżo dodaną strategię (2026-11-28: „Zero zysku”).
+  const listaStrategii = () => api('/api/ceny/strategie');
   async function rysujStrategie(id, w, d) {
     const box = document.getElementById('tr-ok-strat');
     if (!box) return;
@@ -446,31 +441,33 @@
     }
     const obecna = d.strategia?.id;
     box.innerHTML = `${teraz} <form class="tr-strat" novalidate><select name="s" class="tr-pole" aria-label="Strategia towaru">
-        <option value="">— zmień strategię —</option>${s.strategie.map((x) => `<option value="${x.id}" ${x.id === obecna ? 'disabled' : ''}>${esc(x.nazwa)}${x.aktywna ? '' : ' (podgląd)'} — ${esc(x.opis)}</option>`).join('')}</select>
+        <option value="">— zmień strategię —</option>
+        <option value="domyslna" ${obecna ? '' : 'disabled'}>${esc(s.domyslna.nazwa)} (domyślna) — ${esc(s.domyslna.opis)}</option>${s.strategie.map((x) => `<option value="${x.id}" ${x.id === obecna ? 'disabled' : ''}>${esc(x.nazwa)}${x.aktywna ? '' : ' (podgląd)'} — ${esc(x.opis)}</option>`).join('')}</select>
       <input type="date" name="do" class="tr-pole" min="${s.dzis}" title="Do dnia — wymagane dla wyprzedaży" aria-label="Do dnia">
       <button class="btn btn-small">Przypisz</button>${obecna ? ' <button type="button" class="btn btn-small" data-zdejmij>Zdejmij</button>' : ''}</form>`;
     const f = box.querySelector('form');
+    // Powrót do domyślnej = zdjęcie przypisania (domyślna nie jest wierszem w `strategie`).
+    const zdejmij = async () => {
+      try {
+        await api('/api/ceny/strategie/zdejmij', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tw_ids: [id], operator: operator() }) });
+        komunikatKarty(`${w.sym}: strategia zdjęta — wraca domyślna (${s.domyslna.nazwa}).`, 'ok');
+        wczytajCeny(id, w);
+      } catch (err) { komunikatKarty(err.message, 'blad'); }
+    };
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (f.elements.s.value === 'domyslna') { await zdejmij(); return; }
       const st = s.strategie.find((x) => String(x.id) === f.elements.s.value);
       if (!st) { komunikatKarty('Wybierz strategię z listy.', 'blad'); return; }
       try {
         const r = await csWyslij('/api/ceny/strategie/przypisz', { strategia_id: st.id, kody: [w.sym], do: f.elements.do.value },
           { tytul: `${w.sym} → „${st.nazwa}”`, przycisk: 'Przypisz' });
         if (!r) return;
-        strategieCache = null;
         komunikatKarty(r.nieznalezione?.length ? `Nie znaleziono towaru ${w.sym} w GT.` : `${w.sym}: strategia „${st.nazwa}”${st.aktywna ? ' — granice automatu zmienią się w najbliższym przebiegu' : ' (podgląd — granic jeszcze nie zmienia)'}.`, r.nieznalezione?.length ? 'blad' : 'ok');
         wczytajCeny(id, w);
       } catch (err) { komunikatKarty(err.message, 'blad'); }
     });
-    box.querySelector('[data-zdejmij]')?.addEventListener('click', async () => {
-      try {
-        await api('/api/ceny/strategie/zdejmij', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tw_ids: [id], operator: operator() }) });
-        strategieCache = null;
-        komunikatKarty(`${w.sym}: strategia zdjęta — wraca domyślna (${s.domyslna.nazwa}).`, 'ok');
-        wczytajCeny(id, w);
-      } catch (err) { komunikatKarty(err.message, 'blad'); }
-    });
+    box.querySelector('[data-zdejmij]')?.addEventListener('click', zdejmij);
   }
 
   const zl2 = (x) => (x == null ? '—' : `${cenyLiczba(x)} zł`);

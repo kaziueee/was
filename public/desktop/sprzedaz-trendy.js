@@ -497,7 +497,52 @@
     const g = o.granice || {};
     if (g.min == null) return `<span class="tr-sz">${g.gt_ok === false ? 'GT nie odpowiada' : 'brak (kalkulator nie zna rynku)'}</span>`;
     const zr = (z) => (z && z !== 'kalkulator' ? ` <span class="tr-znak uwaga">${esc(cenyZrodlo(z))}</span>` : '');
-    return `${cenyLiczba(g.min)}${zr(g.zrodlo_min)} – ${cenyLiczba(g.max)}${zr(g.zrodlo_max)} ${wal}`;
+    return `${cenyLiczba(g.min)}${zr(g.zrodlo_min)} – ${cenyLiczba(g.max)}${zr(g.zrodlo_max)} ${wal}${graniceEdycjaHtml(o, wal)}`;
+  }
+  // Ręczne granice oferty — te same co na karcie SKU w Cenach (POST /api/ceny/granice). Wygrywają z kalkulatorem
+  // i ze strategią towaru (odstępstwo od niej); puste pole = granica ze strategii albo kalkulatora (placeholder).
+  function graniceEdycjaHtml(o, wal) {
+    const g = o.granice || {};
+    if (o.tylko_odczyt || g.min == null && g.kalk_min == null) return '';
+    const reczne = g.min_reczne != null || g.max_reczne != null;
+    const skad = g.strategia ? `ze strategii „${g.strategia.nazwa}”` : 'z kalkulatora';
+    return `<div class="tr-gran" data-gran="${o.id}"><button type="button" class="tr-link" data-gran-pokaz>zmień</button>
+      <span class="tr-gran-f" hidden><input name="min" class="tr-pole" inputmode="decimal" autocomplete="off" value="${cenyDoPola(g.min_reczne)}" placeholder="${g.kalk_min != null ? cenyLiczba(g.kalk_min) : 'min'}" aria-label="Ręczne minimum ${esc(cenyKanal(o))} ${esc(o.sku)}" title="Puste = minimum ${esc(skad)}">
+        – <input name="max" class="tr-pole" inputmode="decimal" autocomplete="off" value="${cenyDoPola(g.max_reczne)}" placeholder="${g.kalk_max != null ? cenyLiczba(g.kalk_max) : 'max'}" aria-label="Ręczne maksimum ${esc(cenyKanal(o))} ${esc(o.sku)}" title="Puste = maksimum ${esc(skad)}"> ${wal}
+        <button type="button" class="btn btn-small" data-gran-ok>OK</button>${reczne ? `<button type="button" class="btn btn-small" data-gran-kalk title="Usuń ręczne granice — wracają granice ${esc(skad)}">↺</button>` : ''}</span></div>`;
+  }
+  function podepnijGranice(box, d, id, w) {
+    box.querySelectorAll('[data-gran]').forEach((el) => {
+      const o = d.oferty.find((x) => String(x.id) === el.dataset.gran);
+      const f = el.querySelector('.tr-gran-f'), pMin = f.querySelector('[name=min]'), pMax = f.querySelector('[name=max]');
+      const wal = cenyWaluta(o);
+      el.querySelector('[data-gran-pokaz]').addEventListener('click', (e) => { e.currentTarget.hidden = true; f.hidden = false; pMin.focus(); });
+      const zapisz = async (min, max) => {
+        const body = { oferta_id: o.id, min, max };
+        try {
+          let r;
+          try { r = await cenyPost('/api/ceny/granice', body); }
+          catch (err) {
+            if (err.status !== 409 || !err.dane?.ostrzezenia) throw err;
+            const tak = await cenyOknoPotwierdzenia({
+              tytul: `Ustawić granice ${cenyKanal(o)} ${o.sku}?`,
+              tresc: `<p>min <b>${min ? `${esc(min)} ${wal}` : 'domyślne'}</b> · max <b>${max ? `${esc(max)} ${wal}` : 'domyślne'}</b></p>`,
+              ostrzezenia: err.dane.ostrzezenia,
+              uwaga: 'Automat użyje tych granic w najbliższym przebiegu.',
+              przycisk: 'Zapisz granice',
+            });
+            if (!tak) return;
+            r = await cenyPost('/api/ceny/granice', { ...body, potwierdz: true });
+          }
+          const g = r.granice;
+          komunikatKarty(`${cenyKanal(o)} ${o.sku}: granice ${g.min_reczne == null && g.max_reczne == null ? 'domyślne' : 'ręczne'} — ${cenyLiczba(g.min)} – ${cenyLiczba(g.max)} ${wal}. Automat użyje ich w najbliższym przebiegu.`, 'ok');
+          wczytajCeny(id, w);
+        } catch (err) { komunikatKarty(err.message, 'blad'); }
+      };
+      f.querySelector('[data-gran-ok]').addEventListener('click', () => zapisz(pMin.value.trim(), pMax.value.trim()));
+      f.querySelector('[data-gran-kalk]')?.addEventListener('click', () => zapisz('', ''));
+      for (const p of [pMin, pMax]) p.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); zapisz(pMin.value.trim(), pMax.value.trim()); } });
+    });
   }
   // O ile automat przebija konkurenta (decyzja usera 2026-10-26: „czy o ile przebijać, czy remisować — wygrywaj o
   // zero”): domyślny krok kanału, remis (ta sama cena) albo własna kwota. Zapis od razu, worker bierze go w
@@ -747,6 +792,7 @@
     });
     box.querySelectorAll('form.tr-cena').forEach((f) => podepnijCene(f, d.oferty.find((x) => String(x.id) === f.dataset.of), id, w));
     podepnijPrzebicie(box, d, id, w);
+    podepnijGranice(box, d, id, w);
     podepnijGrupowe(d, id, w);
     const linki = {};
     for (const o of d.oferty) if (o.linki?.produkt) (linki[o.kolumna] ||= []).push({ produkt: o.linki.produkt, oferty: o.linki.oferty || null, sku: o.sku, auto: !!o.auto });

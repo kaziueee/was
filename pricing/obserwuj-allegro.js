@@ -44,7 +44,7 @@ async function obserwujAllegro(oferty, surowe) {
   const naProduktach = naszeNaProduktach(top, (k) => { const s = poId.get(k); return s ? allegro.doOferty(s).cena : null; }, teraz);
   const wynik = new Map();
   let nowe = 0;
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const o of oferty) {
       const surowa = poId.get(klucz(o.rynek, o.asin));
@@ -89,7 +89,7 @@ async function obserwujAllegroZagr(oferty, surowe) {
   const b = (v) => (v == null ? null : v ? 1 : 0);
   const wynik = new Map();
   let nowe = 0;
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const o of oferty) {
       const r = az.zRynkuOferty(o.rynek);

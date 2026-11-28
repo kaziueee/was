@@ -160,7 +160,7 @@ const upsert = db.prepare(`INSERT INTO katalog (tw_id, platforma, rynek, ean, pr
     ograniczenie = CASE WHEN excluded.produkt_id IS NOT katalog.produkt_id THEN NULL ELSE katalog.ograniczenie END`);
 function zapiszRynek(platforma, rynek, towary, mapa) {
   let znane = 0;
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const t of towary) {
       const p = mapa.get(t.ean);
@@ -236,7 +236,7 @@ async function cenyRynku(platforma, rynek, twIds) {
     }
   } else return 0;
   const ustaw = db.prepare('UPDATE katalog SET cena_rynek = ?, ofert_rynek = ?, cena_rynek_czas = CURRENT_TIMESTAMP WHERE platforma = ? AND rynek = ? AND produkt_id = ?');
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const [id, c] of ceny) ustaw.run(c?.cena ?? null, c?.ofert ?? 0, platforma, rynek, id);
     db.exec('COMMIT');

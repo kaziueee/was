@@ -42,7 +42,7 @@ async function synchronizujKaufland(surowe = null, rynek = 'DE') {
   const start = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%S','now','-1 second') AS t").get().t;
   let aktywne = 0, dopasowane = 0, blokady = 0, bezSku = 0, smart = 0, nieWidoczne = 0;
   const brak = [];
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const u of lista) {
       const o = kaufland.doOferty(u);

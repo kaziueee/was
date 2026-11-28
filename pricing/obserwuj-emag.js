@@ -24,7 +24,7 @@ async function obserwujEmag(oferty, surowe = null) {
   const b = (v) => (v == null ? null : v ? 1 : 0);
   const wynik = new Map();
   let nowe = 0;
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const o of oferty) {
       const surowa = poSku.get(klucz(o.rynek, o.sku));

@@ -497,7 +497,7 @@ async function przebieg({ pelny = false, platformy = PLATFORMY } = {}) {
   etap('import cen Empik');
   if (empikPaczka.length) wynik.empik_import = await wyslijEmpik(empikPaczka, empikSurowe, wysylka, doPotwierdzenia);
   etap('zapis decyzji');
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const w of wiersze) zapisz.run(...w);
     db.exec('COMMIT');

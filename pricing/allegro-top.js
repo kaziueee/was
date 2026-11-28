@@ -111,7 +111,7 @@ function zapiszRaport(raport, kto) {
     ON CONFLICT (konto, oferta) DO UPDATE SET produkt = excluded.produkt, cena_ocena = excluded.cena_ocena, roznica = excluded.roznica,
       cena_nasza = excluded.cena_nasza, cena_top = excluded.cena_top, czynniki = excluded.czynniki, raport_czas = excluded.raport_czas, kto = excluded.kto`);
   const wynik = { konto, kategoria: raport.kategoria, wierszy: raport.wiersze.length, dopasowane: 0, za_wysoka: 0, odpowiednia: 0, szanse: 0, ponizej_min: 0 };
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const w of raport.wiersze) {
       const o = oferta.get(konto, w.oferta);

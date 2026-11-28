@@ -411,7 +411,7 @@ router.post('/automat', (req, res) => {
   let zmienione = 0;
   const pominiete = [];
   const doPrzywrocenia = [];   // Allegro CZ/SK/HU z wyłączonym automatem — wraca reguła przelicznika
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const id of ids) {
       const o = of.get(id);

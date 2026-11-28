@@ -98,7 +98,7 @@ async function dlaRynku(konto, rynek) {
   const ins = db.prepare(`INSERT INTO allegro_billing (id, konto, rynek, waluta, zamowienie, czas, typ, nazwa, kwota) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET kwota = excluded.kwota, czas = excluded.czas, typ = excluded.typ, nazwa = excluded.nazwa,
       rynek = excluded.rynek, waluta = excluded.waluta`);
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try { for (const w of wiersze) ins.run(w.id, w.konto, w.rynek, w.waluta, w.zamowienie, w.czas, w.typ, w.nazwa, w.kwota); db.exec('COMMIT'); }
   catch (e) { db.exec('ROLLBACK'); throw e; }
   const najnowszy = wiersze.reduce((m, w) => (w.czas > m ? w.czas : m), stan.get(klucz)?.wartosc || '');

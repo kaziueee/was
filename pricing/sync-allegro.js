@@ -52,7 +52,7 @@ async function synchronizujAllegro(konto, surowe = null) {
   const start = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%S','now','-1 second') AS t").get().t;
   let dopasowane = 0, regulyAllegro = 0, duplikaty = 0;
   const brak = [];
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const surowa of lista) {
       const o = allegro.doOferty(surowa);

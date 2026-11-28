@@ -213,7 +213,7 @@ module.exports = function wystawianieRouter({ asyncH }) {
     const ustaw = db.prepare("UPDATE wystawienia SET sellasist = ? WHERE id = ? AND status IN ('wyslane', 'widoczna')");
     const log = db.prepare('INSERT INTO zmiany (kto, oferta_id, akcja, opis) VALUES (?, ?, ?, ?)');
     let n = 0;
-    db.exec('BEGIN');
+    db.exec('BEGIN IMMEDIATE');
     try {
       for (const id of ids) {
         const w = db.prepare('SELECT * FROM wystawienia WHERE id = ?').get(id);

@@ -28,7 +28,7 @@ async function znajdzTowar(kod) {
 
 // Zapis powiązania SKU → towar (nadpisuje poprzednie) i natychmiastowa aktualizacja ofert.
 function powiaz(platforma, sku, towar, kto) {
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     db.prepare(`INSERT INTO powiazania (platforma, sku, tw_id, symbol_gt, kto) VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT (platforma, sku) DO UPDATE SET tw_id = excluded.tw_id, symbol_gt = excluded.symbol_gt,
@@ -51,7 +51,7 @@ function powiaz(platforma, sku, towar, kto) {
 // Usunięcie ręcznego powiązania — oferty wracają do dopasowania automatycznego przy następnej
 // synchronizacji; do tego czasu są bez towaru (i bez automatu).
 function usunPowiazanie(platforma, sku, kto) {
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     db.prepare('DELETE FROM powiazania WHERE platforma = ? AND sku = ?').run(platforma, sku);
     const oferty = db.prepare("SELECT id, rynek FROM oferty WHERE platforma = ? AND sku = ? AND dopasowanie = 'reczne'").all(platforma, sku);

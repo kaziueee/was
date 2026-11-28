@@ -35,7 +35,7 @@ async function synchronizujEmag(surowe = null, kraj = 'RO') {
   const start = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%S','now','-1 second') AS t").get().t;
   let aktywne = 0, dopasowane = 0, blokady = 0;
   const brak = [];
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const surowa of lista) {
       const o = emag.doOferty(surowa);

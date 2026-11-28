@@ -67,7 +67,7 @@ function przypisz(strategia, towary, doDnia, kto) {
     ON CONFLICT (tw_id) DO UPDATE SET strategia_id = excluded.strategia_id, symbol_gt = excluded.symbol_gt, do = excluded.do,
       kto = excluded.kto, czas = CURRENT_TIMESTAMP`);
   const wynik = { przypisane: 0, zmienione: [] };
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const t of towary) {
       const b = byla.get(t.tw_id);
@@ -87,7 +87,7 @@ function zdejmij(twIds, kto, { akcja = 'strategia_zdejmij', powod = null } = {})
   const wiersz = db.prepare('SELECT t.tw_id, t.symbol_gt, s.nazwa FROM strategie_towarow t JOIN strategie s ON s.id = t.strategia_id WHERE t.tw_id = ?');
   const usunWiersz = db.prepare('DELETE FROM strategie_towarow WHERE tw_id = ?');
   let n = 0;
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const id of twIds) {
       const w = wiersz.get(Number(id));

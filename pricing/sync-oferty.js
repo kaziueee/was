@@ -44,7 +44,7 @@ async function synchronizuj(rynki = Object.keys(amazon.RYNKI_AMAZON)) {
     const start = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%S','now','-1 second') AS t").get().t;
     let dopasowane = 0;
     const brak = [];
-    db.exec('BEGIN');
+    db.exec('BEGIN IMMEDIATE');
     try {
       for (const o of oferty) {
         const t = przypisz(o.sku, mapa, reczne);

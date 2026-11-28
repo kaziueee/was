@@ -242,7 +242,7 @@ function dopnijWystawione() {
   const ustawW = db.prepare("UPDATE wystawienia SET status = 'widoczna', oferta_id = ? WHERE id = ?");
   const wlacz = db.prepare('UPDATE oferty SET auto = 1 WHERE id = ? AND auto = 0');
   let widoczne = 0, automat = 0;
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const x of pary) {
       ustawW.run(x.id, x.w_id);

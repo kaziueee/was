@@ -304,7 +304,7 @@ async function odbierz({ czekajMs = 0, rynek = 'allegro-pl' } = {}) {
   const nasze = naszeKonta();
   const bladTylko = db.prepare('UPDATE allegro_konkurencja SET blad = ?, raport = ? WHERE ean = ?');
   let ok = 0, bledy = 0;
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     for (const it of r.items) {
       if (it.status === 'completed' && it.result) {
@@ -344,7 +344,7 @@ async function zlec(oferty, teraz = Date.now(), { rynek = 'allegro-pl' } = {}) {
   stan.set(DZIS, JSON.stringify({ dzien, n: dzis + eans.length }));
   // `zlecono` od razu — także dla EAN-ów bez wcześniejszego wyniku; raport, który padnie, nie zleci się w kółko.
   const ozn = db.prepare(`INSERT INTO allegro_konkurencja (ean, zlecono) VALUES (?, ?) ON CONFLICT (ean) DO UPDATE SET zlecono = excluded.zlecono`);
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try { for (const e of eans) ozn.run(kluczBazy(rynek, e), doBazy(teraz)); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
   try { stan.set('nsp_pakiet', JSON.stringify(await nsp.pakiet())); } catch { /* stan pakietu to tylko informacja na ekran */ }
   return { id: z.id, eanow: eans.length, dzis: dzis + eans.length };
